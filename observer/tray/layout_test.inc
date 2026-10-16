@@ -57,7 +57,9 @@ int main(int argc, char** argv) {
             if (![storage_bytes(0) isEqualToString:ui_text("0 B")]) throw std::runtime_error("storage zero size is not numeric");
             ShinApp* storageApp = [[ShinApp alloc] init];
             [storageApp ensureStorageWindow];
+            for (const auto scrollerStyle : {NSScrollerStyleOverlay, NSScrollerStyleLegacy})
             for (const auto& scenario : {std::string("empty"),std::string("many")}) {
+                storageApp.storageTable.enclosingScrollView.scrollerStyle=NSScrollerStyleOverlay;
                 Json storage{{"ok",true},{"used_bytes",1024ULL*1024*1024},{"shared_bytes",123456ULL},
                     {"project_bytes",1024ULL*1024*1024-123456},{"quota_bytes",8ULL*1024*1024*1024},
                     {"reserve_free_bytes",2ULL*1024*1024*1024},{"reclaimable_bytes",456789ULL},
@@ -78,6 +80,9 @@ int main(int argc, char** argv) {
                     [storageApp.storageWindow orderFront:nil];
                     [body layoutSubtreeIfNeeded];
                     [storageApp layoutStorageColumns];
+                    // A system scrollbar preference can change the clip width
+                    // after the window's resize/layout callback has completed.
+                    storageApp.storageTable.enclosingScrollView.scrollerStyle=scrollerStyle;
                     [storageApp.storageTable layoutSubtreeIfNeeded];
                     [storageApp.storageWindow displayIfNeeded];
                     [[NSRunLoop currentRunLoop] runUntilDate:[NSDate dateWithTimeIntervalSinceNow:0.04]];
@@ -105,7 +110,8 @@ int main(int argc, char** argv) {
                     NSBitmapImageRep* bitmap=[body bitmapImageRepForCachingDisplayInRect:body.bounds];
                     [body cacheDisplayInRect:body.bounds toBitmapImageRep:bitmap];
                     NSData* png=[bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
-                    const auto name=output/("storage-"+scenario+"-"+std::to_string(static_cast<int>(size.width))+".png");
+                    const auto name=output/(std::string("storage-")+(scrollerStyle==NSScrollerStyleLegacy ? "legacy-" : "")+
+                        scenario+"-"+std::to_string(static_cast<int>(size.width))+".png");
                     if (!png.length || ![png writeToFile:diagnostic_text_content(name.string()) atomically:YES])
                         throw std::runtime_error("native storage window render failed");
                 }

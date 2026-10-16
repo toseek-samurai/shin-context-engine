@@ -611,14 +611,14 @@ static std::unique_ptr<Monitor> monitor;
     table.delegate = self; table.dataSource = self; table.rowHeight = 38;
     table.usesAlternatingRowBackgroundColors = YES; table.autoresizingMask = NSViewWidthSizable;
     table.style = NSTableViewStyleFullWidth; table.intercellSpacing = NSMakeSize(6,0);
-    table.columnAutoresizingStyle = NSTableViewNoColumnAutoresizing;
+    table.columnAutoresizingStyle = NSTableViewFirstColumnOnlyAutoresizingStyle;
     NSArray* keys = @[@"project",@"used_bytes",@"index_bytes",@"cache_bytes",@"other_bytes",@"reclaimable_bytes"];
     NSArray* titles = @[ui_text("Project"),ui_text("Total"),ui_text("Indexes"),ui_text("Caches"),ui_text("Other"),ui_text("Reclaimable")];
     for (NSUInteger i=0;i<keys.count;++i) {
         NSTableColumn* column = [[NSTableColumn alloc] initWithIdentifier:keys[i]];
         column.title = titles[i]; column.width = i==0 ? 240 : i==5 ? 90 : 80;
-        column.resizingMask = NSTableColumnNoResizing;
-        column.minWidth = i==0 ? 210 : 80;
+        column.resizingMask = i==0 ? NSTableColumnAutoresizingMask : NSTableColumnNoResizing;
+        column.minWidth = i==0 ? 200 : 80;
         column.headerCell.alignment = i==0 ? NSTextAlignmentLeft : NSTextAlignmentRight;
         [table addTableColumn:column];
     }
@@ -649,7 +649,9 @@ static std::unique_ptr<Monitor> monitor;
 }
 - (void)layoutStorageColumns {
     [self.storageWindow.contentView layoutSubtreeIfNeeded];
-    const auto available=self.storageTable.enclosingScrollView.contentSize.width;
+    NSScrollView* scroll=self.storageTable.enclosingScrollView;
+    [scroll tile];
+    const auto available=NSWidth(scroll.contentView.bounds);
     [self.storageTable setFrameSize:NSMakeSize(available,self.storageTable.frame.size.height)];
     if (self.storageTable.tableColumns.count==6) {
         NSTableColumn* first=self.storageTable.tableColumns[0];

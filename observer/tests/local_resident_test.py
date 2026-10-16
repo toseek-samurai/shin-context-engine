@@ -273,8 +273,28 @@ class LocalResidentTests(unittest.TestCase):
         unregistered.mkdir()
         self.assert_refusal(self.rpc('query', unregistered, query='readLimit'), {'service-project-denied'})
 
+        def idle_maintenance():
+            current = self.service_status()
+            row = next(row for row in current['telemetry']['project_states'] if row['root'] == str(first))
+            return current if row['phase'] == 'current' and row['retry_after_ms'] == 15000 else None
+
+        idle = self.wait_for(idle_maintenance, 'idle maintenance backoff', 20)
+        idle_ticks = next(row['ticks'] for row in idle['telemetry']['project_states'] if row['root'] == str(first))
+        # Begin the ignored-artifact case just after a real background check.
+        # A directory metadata event wakes the watcher without editing a source
+        # file, manually refreshing, or changing the production idle schedule.
+        os.utime(first, None)
+
+        def metadata_checked():
+            current = self.service_status()
+            row = next(row for row in current['telemetry']['project_states'] if row['root'] == str(first))
+            return current if row['ticks'] > idle_ticks and row['phase'] == 'current' and self.resident(current, first) else None
+
+        self.wait_for(metadata_checked, 'background metadata check', 10)
         before_artifact = self.ready_request('query', first, query='readLimit')
         baseline = self.service_status()
+        artifact_preparation = self.resident(baseline, first)['preparation']
+        self.assertEqual(artifact_preparation['snapshot_id'], preparation['snapshot_id'])
         ticks = next(row['ticks'] for row in baseline['telemetry']['project_states'] if row['root'] == str(first))
         (first / 'build/generated.js').write_text('export function buildOnly() { return 42424; }\n')
         artifact = first / 'build/transient.js'
@@ -283,7 +303,7 @@ class LocalResidentTests(unittest.TestCase):
 
         def artifact_observed():
             current = self.service_status()
-            for root, expected in [(first, preparation), (second, other_preparation)]:
+            for root, expected in [(first, artifact_preparation), (second, other_preparation)]:
                 worker = self.resident(current, root)
                 self.assertIsNotNone(worker, 'ignored artifact evicted ready resident')
                 self.assertEqual(worker['preparation'], expected, 'ignored artifact replaced preparation')

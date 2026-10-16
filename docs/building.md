@@ -11,6 +11,11 @@ newer. Observer also requires OpenSSL Crypto. Server requires OpenSSL 3 or newer
 libcurl 7.85 or newer, and PostgreSQL client development libraries 13 or newer.
 CMake downloads pinned dependencies and checks their hashes.
 
+macOS CI uses Xcode 26.3 on macOS 15. The C++20 standard library must provide
+`std::jthread` and stop tokens; the Xcode 15 toolchain is insufficient. Select
+the intended Xcode installation before configuring CMake so its compiler and
+SDK headers are used together.
+
 The native terminal monitor links curses: macOS uses the SDK/system library;
 Linux Observer builds need the ncurses development package (`libncurses-dev` on
 Debian/Ubuntu). No Python or JavaScript runtime is required to run the TUI.

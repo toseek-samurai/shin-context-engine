@@ -328,10 +328,15 @@ void concurrent_source_change(const fs::path& parent, bool whole_file, bool sele
         else (void)session.read(request.dump());
     });
 #else
+    // Thread creation does not guarantee a write before the read. Establish the
+    // changed source first, and never restore a legitimately readable original.
+    const auto changed_a = "// concurrent edit A\n" + original;
+    const auto changed_b = "// concurrent edit B\n" + original;
+    fixture.write("src/a.cpp", changed_a);
     std::jthread writer([&](std::stop_token stop) {
         while (!stop.stop_requested()) {
-            fixture.write("src/a.cpp", original + "// concurrent edit\n");
-            fixture.write("src/a.cpp", original);
+            fixture.write("src/a.cpp", changed_b);
+            fixture.write("src/a.cpp", changed_a);
         }
     });
     bool refused = false;

@@ -1733,8 +1733,22 @@ class LocalRouteTests(unittest.TestCase):
         self.assertTrue(self.ce('status', '--service')['watch']['running'])
         self.assertEqual(before, self.canonical_files())
         (self.f.root / 'src/limits.js').write_text('export function readLimit() { return 29; }\n')
+        # An external publisher has not rebuilt yet. Wait for the completed
+        # freshness check instead of racing its intermediate project-updating state.
+        blocked = None
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            projects = self.ce('service-status')['telemetry']['project_states']
+            blocked = next((p for p in projects if p['root'] == str(self.f.root) and p['active_issue']), None)
+            if blocked:
+                break
+            time.sleep(.05)
+        self.assertIsNotNone(blocked, 'stale external publication was not reported')
         stale = self.ce('query', 'readLimit', '--service', expected=2)
-        self.assertEqual(stale['error']['code'], 'project-updating')
+        self.assertEqual(stale['error']['code'], 'project-check-failed')
+        gates = stale['error']['diagnostic']['gates']
+        self.assertTrue(any(gate['id'] == 'worktree-diff' and
+                            'worktree-not-current' in gate.get('reasons', []) for gate in gates), stale)
         self.assertNotIn('source_context', stale)
         self.build()
         published = self.canonical_files()

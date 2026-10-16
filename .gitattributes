@@ -1,0 +1,5 @@
+# Keep vendored syntax sources byte-identical to their pinned upstream releases.
+third_party/tree-sitter/** -whitespace linguist-vendored
+third_party/tree-sitter-java/** -whitespace linguist-vendored
+third_party/tree-sitter-typescript/** -whitespace linguist-vendored
+third_party/pugixml/** -whitespace linguist-vendored

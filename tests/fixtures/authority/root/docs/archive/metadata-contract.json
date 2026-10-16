@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "authority-metadata-contract-v1",
+  "title": "Metadata Contract",
+  "status": "active",
+  "summary": "Explicit active metadata wins over this archive path."
+}

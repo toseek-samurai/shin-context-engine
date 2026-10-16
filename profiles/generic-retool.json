@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-retool",
+  "status": "active",
+  "summary": "Bootstrap-only Retool source profile without consumer-specific interpretation documents or eval cases.",
+  "id": "generic-retool",
+  "sourceLabel": "Retool bootstrap source evidence",
+  "rootFiles": [],
+  "optionalRootFiles": ["README.md", "readme.md", "AGENTS.md"],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": ["apps", "resources", "workflows"],
+  "sourceFactExtensions": [".rsx", ".js", ".sql", ".query", ".css", ".html", ".json", ".yml", ".yaml"],
+  "sourceFactExtractors": ["retool", "language"],
+  "sourceFactAttributeKeys": ["disabled", "hidden", "readonly", "readonlyMode", "queryDisabled", "label", "text", "viewKey", "formDataKey"],
+  "sourceFactMaxFiles": 10000,
+  "sourceFactMaxFileBytes": 2097152,
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonlMaxRowsPerFile": 2000,
+  "sortTopics": true,
+  "defaultTopic": "retool-source",
+  "compoundQueryFirstTermScope": true,
+  "compoundQueryPreferredStems": ["main", "functions", "sidebar"],
+  "compoundQueryPreferredStemSuffixes": ["sidebar"],
+  "compoundQueryScopeStemSuffixes": ["", "pageguard", "searchtrigger"],
+  "aliases": [
+    {"term": "query", "expands": ["datasource", "javascriptquery", "sqlqueryunified", "openapiquery", "restquery"]},
+    {"term": "resource", "expands": ["resource binding", "resourceDisplayName", "resourceName", "connector"]},
+    {"term": "application", "expands": ["retool app", "app-root", "multi-page", "single-page", "main.rsx"]},
+    {"term": "page", "expands": ["screen", "openpage", "sidebar", "multi-page"]},
+    {"term": "section", "expands": ["include", "frame", "container", "functions.rsx"]},
+    {"term": "navigation", "expands": ["sidebar", "sidebar.rsx", "openpage", "nav", "page guard", "pageguard"]},
+    {"term": "role", "expands": ["permission", "userroles", "currentrolesconfig", "accesslevel"]},
+    {"term": "feature", "expands": ["featureflags", "configvars"]},
+    {"term": "flag", "expands": ["featureflags", "feature flag", "configvars"]},
+    {"term": "sql", "expands": ["sqlqueryunified", ".sql", "database"]},
+    {"term": "javascript", "expands": ["javascriptquery", ".js", "payload"]},
+    {"term": "write", "expands": ["trigger", "searchtrigger", "mutation", "update", "save", "post"]},
+    {"term": "approval", "expands": ["approver", "approvalflowoperations", "approvalrequest"]}
+  ],
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "retool-source",
+      "description": "Retool apps, RSX declarations, ownership, and source topology.",
+      "keywords": ["retool", "rsx", "app", "screen", "component", "state"]
+    },
+    {
+      "id": "queries",
+      "description": "Retool queries, payloads, calls, and event wiring.",
+      "keywords": ["query", "payload", "trigger", "event", "include", "javascriptquery", "sqlquery"]
+    },
+    {
+      "id": "resources",
+      "description": "Retool resource definitions and bindings.",
+      "keywords": ["resource", "connector", "resourcename", "resourcedisplayname"]
+    },
+    {
+      "id": "workflows",
+      "description": "Retool workflows, blocks, and graph edges.",
+      "keywords": ["workflow", "block", "edge", "workflowid", "blockid"]
+    }
+  ]
+}

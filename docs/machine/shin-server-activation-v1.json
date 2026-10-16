@@ -1,0 +1,79 @@
+{
+  "schemaVersion": "shin.server-activation.v1",
+  "document": "shin-server-activation-v1",
+  "status": "active-contract",
+  "title": "Managed Active Generation And Durable Activation",
+  "summary": "P3D2 selects a durable immutable candidate through a PostgreSQL compare-and-swap transaction. CLI publications are independent and never become Server authority implicitly.",
+  "configuration": {
+    "schema": "shin.server-config.v10",
+    "routeFields": [
+      "id",
+      "project_id",
+      "workspace_id",
+      "root",
+      "profile",
+      "profile_dir"
+    ],
+    "cutover": "Author service configuration using the current schema, complete template and check-config gate in docs/machine/shin-companion-protocols-v1.json. That inventory owns the required deployment pin, observability, knowledge and journal_writer policies; the schema field here is a tested projection. The original P3D2 cutover removed out_dir and later v5 added workspace binding. Those historical version numbers are not accepted configurations. Preserve credentials, database volume and source identity during any explicit stand transition. No compatibility reader, automatic import, source copying or stable consumer cutover.",
+    "namespace": "All prepared and active artifacts stay under the configured owner-private preparations.state_dir. Existing namespace/key binding and lifetime lock rules are unchanged.",
+    "initialState": "A configured registered route starts at revision 0 with no preparation_id or snapshot_id. Retrieval returns 503/active-generation-missing until an explicit successful activation. New preparation remains separately enabled by preparations.enabled. Existing selections may be read, activated or deactivated when the worker is disabled."
+  },
+  "api": {
+    "path": "/api/v1/projects/{project}/routes/{route}/activation",
+    "get": "Authenticated project-scoped metadata only: project_id, route_id, revision, preparation_id and snapshot_id. No filesystem access or freshness claim. Unknown and unauthorized projects return 404; unknown configured routes return 404.",
+    "post": "Administrator only. Exact JSON fields preparation_id (positive BIGINT or null) and expected_revision (nonnegative BIGINT smaller than maximum). No query parameters, client paths or automatic actions.",
+    "response": "shin.server-response.v1 contains replayed and receipt. Receipt fields: project_id, route_id, previous_revision, revision, preparation_id, snapshot_id and created_at (server database UTC). It records a historical management transition, not current source readiness or product deployment proof. Audit events carry nullable activation_route_id and activation_previous_revision, a foreign-key reference to the exact receipt, including deactivation events without a target preparation.",
+    "deactivation": "preparation_id=null clears the reference and advances the revision, including an initially empty route. It performs no source IO, artifact deletion or quota release. Deactivation can recover a stale/corrupt selected artifact without pretending it passed quality gates.",
+    "cas": "Exactly one new transition may consume a route revision. A different target at a consumed revision returns 409/activation-conflict. Revision never goes backwards, including after deactivation, so an old snapshot identity cannot bypass an ABA change.",
+    "replay": "Same route, consumed expected_revision and same target returns the stored receipt without source or artifact access, audit duplication or reactivation. The receipt may name a retired and deleted generation; use GET separately for the present head. Authorization and configured route lookup still apply. A concurrent in-progress request may receive bounded busy/conflict diagnostics and can be retried explicitly."
+  },
+  "publication": {
+    "prepare": "Prepare remains a separate operation. Store captures expected_route_revision when admitting a new preparation, alongside caller-supplied expected_snapshot_id. Replayed preparation requests keep their original captured base. Worker guards compare both DB revision and snapshot identity.",
+    "verify": "Activation invokes the same structural and quality pipeline as preflight: root/profile/state binding, candidate lifetime lock, immutable artifact integrity, prepared ledger, strict Doctor, exact source comparison, strict profile-check, nonempty passing Eval and Pack-eval, then final source/base/route/artifact/ledger guards. It never trusts a prior GET preflight boolean.",
+    "locks": "The candidate shared lifetime descriptor and existing Core publication read lock remain held through final verification and database commit. The activation path does not copy, rename or rewrite generated files.",
+    "transaction": "A short PostgreSQL activation-writer advisory transaction lock bounds history admission and serializes route CAS. The target preparation row is then locked FOR UPDATE. Recheck owner, route, prepared state, captured base revision/snapshot, artifact binding and absence of retention intent. Update active_routes, insert activation_receipts and append audit atomically; the existing audit-writer lock preserves cursor commit order.",
+    "durability": "Artifact files and parent directories were synchronized before prepared was committed. PostgreSQL is the single switching point. Before commit, the old head remains. After commit, a lost HTTP response is recovered by exact receipt replay. No read repair or filesystem/database double-write reconciliation is required for the active reference.",
+    "observationBoundary": "Source verification is an observation interval, not an atomic freeze of the project worktree. Source can change independently after observation. Receipt history is never reused as currentness; every exact-current retrieval performs its own Core freshness admission.",
+    "qualityAuthority": "Eval and Pack-eval are executed retrieval goldens. They do not run application tests, shell commands, SQL business operations, migrations in consumer databases or browser scenarios."
+  },
+  "retrieval": {
+    "selection": "Authorize first, read the DB head, validate its execution fingerprint and namespace, open its shared candidate lifetime lock, and reread the head before admission. Missing selection fails closed; a changed selection returns active-generation-changed for explicit retry.",
+    "cache": "Cache identity includes route, preparation id, artifact key and snapshot id. Equal manifest bytes in two candidates do not share artifact ownership or out_root. Shared immutable payload ownership and resident byte/generation limits remain unchanged.",
+    "readerLifetime": "Hold the candidate descriptor for the entire request. A newer activation may advance the head while an already admitted reader finishes its old immutable generation. Its response includes the admitted revision and preparation_id, not an assertion that the head is unchanged at response time.",
+    "integrity": "Cold loads verify managed layout, full immutable payload, snapshot id and payload bytes against the ledger. Warm snapshot-only reads use verified retained bytes without claiming source currentness. Strict reads retain exact Core source and generated-output verification. No fallback to CLI output, an older generation or live source scan.",
+    "metadata": "The existing retrieval envelope adds revision and preparation_id; Core evidence schemas and ranking semantics are unchanged. Local artifact paths, random keys and internal fingerprints are not exposed."
+  },
+  "retention": {
+    "activeProtection": "An active candidate reports can_apply=false with candidate-active. Apply returns 409/candidate-active. Store checks active references again under the preparation row lock before both intent and release.",
+    "race": "If activation wins the target row lock, retention sees the committed active reference and refuses. If retention wins, activation sees its committed intent and refuses. The shared activation descriptor also prevents a cleanup writer from deleting files during verification/commit.",
+    "retiredReaders": "After switching away, active-reference protection ends but reader lifetime protection remains. Explicit cleanup requires the exclusive descriptor lock and refuses while an admitted reader still holds it. Cached idle payload bytes do not hold filesystem locks indefinitely.",
+    "history": "Retirement and deactivation do not release reservations. Only the existing durable retention protocol confirms deletion and releases them. Job, receipt, audit and lifetime lock history remain; no automatic pruning."
+  },
+  "storage": {
+    "migration": "Explicit migration 004 adds preparations.expected_route_revision and composite owner identity, active_routes and immutable activation_receipts. Migration 005 adds the typed audit-to-receipt reference. Existing preparation history gets base revision 0 but no active reference, guessed namespace or publication authority. Already applied development migrations retain their checksums.",
+    "constraints": "Head/receipt project ownership and composite project-route-preparation foreign keys, monotonic revision shapes, nullable target/snapshot pairing and identifier formats are checked by PostgreSQL. Runtime schema verification checks exact columns and required constraints/indexes.",
+    "permissions": "Runtime may select/insert/update active_routes and only select/insert activation_receipts. No receipt updates/deletes, DDL or artifact-history deletion grants.",
+    "capacity": "At most 65536 activation receipts globally, checked under the activation-writer lock. Exact replay precedes capacity admission. Preparation reservations and resident cache limits remain independent bounds."
+  },
+  "deploymentBoundary": {
+    "supported": "Local cooperating processes using one private artifact namespace and PostgreSQL. Same-version processes may coordinate via database row/advisory locks and local descriptor locks.",
+    "notClaimed": [
+      "atomic worktree source freeze",
+      "same-UID adversary filesystem sandbox",
+      "NFS or SMB fencing",
+      "mixed-version server fleet compatibility",
+      "distributed artifact replication",
+      "hard verification deadline",
+      "remote Observer readiness",
+      "stable 2.0 release"
+    ],
+    "versionChange": "Execution fingerprint includes development version, route identity and configured resource limits. A changed route requires explicit new preparation/activation rather than silently reinterpreting old selected artifacts. Deactivation and historical receipt reads are separate management operations."
+  },
+  "relatedContracts": [
+    "docs/machine/shin-server-candidate-preflight-v1.json",
+    "docs/machine/shin-server-retention-v1.json",
+    "docs/machine/shin-server-preparation-v1.json",
+    "docs/machine/shin-server-retrieval-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

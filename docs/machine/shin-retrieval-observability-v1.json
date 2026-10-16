@@ -1,0 +1,57 @@
+{
+  "schemaVersion": "shin.retrieval-observability-contract.v1",
+  "document": "shin-retrieval-observability-v1",
+  "status": "accepted",
+  "summary": "P3E14 process-local retrieval measurements and bounded opt-in query diagnostics, separate from project authority and durable history.",
+  "currentConfigurationSchema": "shin.server-config.v10",
+  "configuration": {
+    "observability": {
+      "max_retained_requests": 128,
+      "max_query_bytes": 4096,
+      "capture_query_projects": []
+    },
+    "bounds": "Required v7 object with exactly these fields. Retained requests 0..256, query bytes 1..8192, at most 32 unique valid project IDs. Empty capture list is metadata-only; wildcards and capture with zero retention are rejected. Earlier service-config versions are rejected; no legacy reader."
+  },
+  "currentExtension": "P3E17 knowledge policy is independent of unchanged observability fields. versions below identifies the original P3E14 verification, not current Server deployment. Session bootstrap measures one ordinary Brief service attempt per member; these counters are not outer HTTP request counts.",
+  "api": {
+    "metrics": "GET /api/v1/telemetry/retrieval, no query parameters, administrator only. Schema shin.retrieval-metrics.v1, instance_id, scope process-lifetime-authorized-service-attempts, fixed operation/selector cells, counters and explicit duration histogram buckets. No query text, project labels, request IDs or paths in metric dimensions.",
+    "requests": "GET /api/v1/telemetry/retrieval/requests?after=0&limit=20[&instance_id=...], administrator only. Schema shin.retrieval-request-page.v1. Limit1..32; after is a nonnegative integer. Nonzero after requires this process instance_id; another instance is 409/telemetry-instance-mismatch. Report oldest_available_sequence, latest_sequence, gap and next_after. Empty or evicted history is never complete request history.",
+    "resultBoundary": "Existing search/Brief/Pack response bodies are unchanged. These records describe Server requests, not a claim about which LLM generated them. No HTTP response correlation header or automatic agent action is added."
+  },
+  "requestRecords": {
+    "identity": "Each completed attempt has a process-local monotonic sequence, operation, selector kind, authorized project/selector IDs and wall timestamp. Successful selection identity comes from the actual returned result; unavailable failure provenance stays null.",
+    "capture": "Only explicitly allowlisted projects with a validated request may retain the request JSON. Bound the encoded input by max_query_bytes; omit oversized input entirely, never truncate it into a misleading replay. Distinguish disabled, invalid-request, captured, omitted-budget and capture-failed. The collector does not read transport headers or authentication credentials, exception messages or response source fragments. Sensitive text embedded in an opted-in query is not automatically removed.",
+    "privacy": "Query or task text can itself contain sensitive data. Opt-in is not a secret scrubber or anonymization guarantee. Administrators must review project policy before enabling capture, protect exported diagnostics, and never submit credentials in queries. The default capture list is empty; no consumer is enrolled here.",
+    "retention": "Keep at most configured records and 2MiB encoded record payload; evict oldest diagnostic records and count evictions. This is not a total RSS bound. Restart loses all process-local data. No TTL, disk persistence, PostgreSQL query journal or durable export guarantee in this slice.",
+    "isolation": "Recording failure must not change a retrieval result. No source/index/consumer writes, telemetry SQL transactions, new background worker or dependency on an external collector. Diagnostic reads do not increment retrieval measurements."
+  },
+  "acceptance": [
+    "Fixed counter/histogram cells and phase totals under concurrent calls",
+    "Bounded count/byte retention and explicit eviction/restart cursor gaps",
+    "Default absence of query text and allowlisted validated capture only",
+    "Correct null quality on failures and incomplete Pack distinct from failure",
+    "Telemetry cannot alter evidence or authorize access",
+    "Measured recording overhead and full companion regression gates"
+  ],
+  "implementation": {
+    "collector": "server/src/retrieval_telemetry.cpp",
+    "api": "server/include/shin/server/retrieval_telemetry.h",
+    "serviceIntegration": "server/src/retrieval_service.cpp",
+    "http": "server/src/http.cpp",
+    "configuration": "server/src/config.cpp",
+    "nativeChecks": "server/tests/retrieval_telemetry_test.cpp",
+    "httpChecks": "server/tests/retrieval_observability_checks.py",
+    "benchmark": "server/tests/retrieval_telemetry_benchmark.cpp"
+  },
+  "later": "P3E15 builds an explicit administrative capture and typed PostgreSQL reports from this bounded buffer; see shin-retrieval-journal-v1. Continuous delivery, retention and optional OpenTelemetry export remain separate. Keep client-reported follow-up actions/evaluations distinct from Server measurements. Publication-history lifecycle remains planned; this P3E14 slice does not solve it.",
+  "sources": [
+    "https://opentelemetry.io/docs/specs/otel/metrics/sdk/",
+    "https://opentelemetry.io/docs/specs/semconv/http/http-metrics/",
+    "https://cheatsheetseries.owasp.org/cheatsheets/Logging_Cheat_Sheet.html"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-server-plan-v1.json",
+    "docs/machine/shin-server-retrieval-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-kotlin",
+  "status": "active",
+  "summary": "Bootstrap-only Kotlin source profile for projects that do not yet have machine documentation.",
+  "id": "generic-kotlin",
+  "sourceLabel": "Kotlin bootstrap source evidence",
+  "rootFiles": [],
+  "optionalRootFiles": [
+    "README.md",
+    "readme.md",
+    "AGENTS.md",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts",
+    "gradle.properties"
+  ],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": ["."],
+  "sourceFactExtensions": [".kt", ".kts"],
+  "sourceFactExtractors": ["language"],
+  "sourceFactMaxFiles": 10000,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonlMaxRowsPerFile": 2000,
+  "sortTopics": true,
+  "defaultTopic": "kotlin-source",
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "kotlin-source",
+      "description": "Kotlin packages, classes, interfaces, objects, type aliases, functions, and tests.",
+      "keywords": ["kotlin", "package", "class", "interface", "object", "typealias", "function"]
+    },
+    {
+      "id": "build",
+      "description": "Gradle and Kotlin DSL project structure.",
+      "keywords": ["gradle", "build.gradle.kts", "settings.gradle.kts", "kotlin dsl"]
+    },
+    {
+      "id": "tests",
+      "description": "Kotlin test source evidence.",
+      "keywords": ["test", "junit", "kotest", "src/test"]
+    }
+  ]
+}

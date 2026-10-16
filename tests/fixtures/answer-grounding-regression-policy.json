@@ -1,0 +1,32 @@
+{
+  "schema_version": "shin.answer-grounding-regression-policy.v1",
+  "status": "declared-before-implementation",
+  "classification": "known-case regression, not a fresh holdout or P6b regrade",
+  "cases": [
+    "bootstrap-authorization-russian",
+    "bootstrap-health-russian",
+    "writer-russian"
+  ],
+  "variant": "candidate",
+  "attempts_per_case": 1,
+  "answer_contract": "quoted-v2",
+  "acceptance": [
+    "Original mandatory clauses remain covered by the final answer.",
+    "No unsupported extra assertions under main-session source review.",
+    "Every claim supplies bounded literal quotes uniquely found in already delivered complete bodies.",
+    "Source lines are resolved from delivered text, not guessed by the model.",
+    "All original source, snapshot, tool, byte and time limits hold."
+  ],
+  "limits": {
+    "max_answer_bytes": 32768,
+    "max_claims": 8,
+    "max_citations_per_claim": 3,
+    "max_quote_bytes": 512
+  },
+  "boundaries": [
+    "Literal matching is not semantic entailment or execution proof.",
+    "No Core, parser, ranking, embedding, provider or installed client changes.",
+    "Do not inject case-specific names, expected answers or rubric clauses into the guide.",
+    "Do not retry failed answers or repeat the full paid cohort."
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "shin.federated-eval-suite.v1",
+  "id": "fixture-federation-invalid",
+  "federationId": "fixture-federation",
+  "requiredMemberIds": ["primary", "replica"],
+  "unexpectedPolicy": true,
+  "cases": [
+    {
+      "id": "fixture-invalid-suite",
+      "query": "fixture",
+      "mustEvidence": [
+        {"member": "primary", "path": "docs/architecture.md"}
+      ]
+    }
+  ]
+}

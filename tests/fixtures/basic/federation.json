@@ -1,0 +1,20 @@
+{
+  "schemaVersion": "shin.federation.v1",
+  "id": "fixture-federation",
+  "members": [
+    {
+      "id": "primary",
+      "profile": "fixture",
+      "profileDir": "profiles",
+      "root": "root",
+      "outDir": "out"
+    },
+    {
+      "id": "replica",
+      "profile": "fixture",
+      "profileDir": "profiles",
+      "root": "root-two",
+      "outDir": "out-two"
+    }
+  ]
+}

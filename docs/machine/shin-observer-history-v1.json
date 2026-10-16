@@ -1,0 +1,56 @@
+{
+  "schemaVersion": "shin.observer-history-contract.v1",
+  "document": "shin-observer-history-v1",
+  "status": "active-contract",
+  "title": "Confirmed Receipt Prefix Retention And Read-Only Reconciliation",
+  "summary": "P3E6 separates lifetime submission identity from retained receipt capacity. Only a producer-confirmed prefix may be retired by an explicit administrator plan/apply operation; stale history and divergent local/Server cursors remain visible and never cause an automatic reset.",
+  "successor": "P3E7 adds the separate audit lifecycle policy; P3E8 Server/Observer dev.16 adds deployment/request identity fencing and offline recovery in docs/machine/shin-server-recovery-v1.json. The P3E6 versions and handshake below describe the recorded baseline, not a supported fallback. Current handshake is v3; local state/outbox/submission/ack/confirmation/reconciliation schemas are unchanged. Old-identity retention plan replay is rejected after recovery. Observer prefix retention itself never deletes management audit rows.",
+  "confirmation": "POST /api/v1/observer-streams/{stream}/confirmations takes exact {receipt:<shin.observer-ack.v1>}. Current enrolled owner/project authorization and revocation checks apply. Compare the complete receipt to retained Server evidence before advancing confirmed_sequence. This is an authenticated producer durability report, not independently verified client fsync or source truth. Native sender submits its already committed last receipt before the next packet; handshake, confirmation and submission share one configured network deadline. An idle final receipt may remain unconfirmed; the previous confirmed anchor and unconfirmed suffix are retained. No automatic history deletion is implied.",
+  "retention": {
+    "inspect": "GET /api/v1/observer-streams/{stream}/retention is owner/admin read-only. A deterministic plan binds Server/stream identity, accepted/confirmed/retired cursors and exact row/byte counts. It proposes retiring through confirmed_sequence-1, preserving the confirmed anchor and all unconfirmed receipts.",
+    "apply": "POST the exact {plan:<inspected plan>} to the same route as administrator. Under stream lock, validate unchanged preconditions, update retained global quota, delete the bounded prefix, advance retired_sequence, store the last retention receipt and append audit in one transaction. An exact retry of the latest plan returns its saved receipt; an older/different plan conflicts. No automatic pruning from ready, sampling, reconciliation, receipt confirmation or delivery.",
+    "identity": "accepted_sequence never decreases or reuses a number. A structurally valid submission at or below retired_sequence returns 410 observer-history-retired, without accepting it or inventing a historical replay result. Retained exact replay continues to return its original receipt even at capacity.",
+    "bounds": "1024 retained submissions/4MiB per stream and 65536 retained submissions/128MiB globally remain enforced. The lifetime counter is now bounded by signed 64-bit protocol space, not the retained-row limit. Stream registry and latest retention-receipt metadata remain separately bounded.",
+    "audit": "Existing immutable management audit rows are preserved, including original stream/sequence references after payload retirement. Their FK to the stream remains; the receipt-row FK is intentionally removed because audit is historical metadata, not a promise that the original payload remains queryable. General audit-log retention/export is a separate operational policy; receipt bounds are not a total PostgreSQL disk quota. PostgreSQL vacuum reclaims reusable dead-tuple space separately from this logical retention operation."
+  },
+  "reconciliation": {
+    "request": "POST /api/v1/observer-streams/{stream}/reconciliation accepts exact shin.observer-reconcile-request.v1 with server_id, stream_id, acknowledged_sequence, accepted_sequence, last_receipt and next_submission. Probe contains only already authorized metadata. It is read-only despite HTTP POST and performs no confirmation or receipt application.",
+    "outcomes": [
+      "caught-up",
+      "send-next",
+      "replay-head",
+      "server-behind",
+      "server-ahead",
+      "history-retired",
+      "receipt-conflict",
+      "submission-conflict",
+      "history-gap",
+      "revoked",
+      "server-identity-mismatch"
+    ],
+    "authority": "Output compares declared local cursors and supplied evidence with retained Server state. It does not independently inspect the local filesystem. resume_allowed is advice for the compared boundary, not a reusable send permit, current-source claim or permission to reset anything. caught-up never clears local resync_required or proves complete observation history; inspect local metrics separately. Later mutations still perform their own authorization, ordering and replay checks.",
+    "recoveryLimit": "Comparison can detect a Server behind a supplied local receipt, not reconstruct evidence lost by every party. Restoring an older database may lose watermarks and unacknowledged operations; exactly-once history across such disaster recovery is not promised. Backup/PITR lineage and explicit Server/stream identity replacement require a separate operator procedure, never an automatic cursor reset.",
+    "observer": "Explicit reconcile --config FILE --delivery-config FILE uses read-only local state and requires an already persisted non-null destination. An unbound queue returns delivery-binding-required before network access; a different destination returns delivery-binding-mismatch. Only explicit mutating delivery may establish the pin before its first network operation. Reconcile validates the remote envelope, never acquires the writer lock, advances a cursor, consumes a receipt, recovers a pending file or clears a gap. Resumable responses cannot reference an acknowledged anchor at or below a nonzero retired floor. Restore, cloning, revocation and retired history require operator review rather than last-writer-wins repair."
+  },
+  "cli": [
+    "shin-observer",
+    "reconcile",
+    "--config",
+    "/absolute/private/observer.json",
+    "--delivery-config",
+    "/absolute/private/delivery.json"
+  ],
+  "migration": "Explicit SQL 008 preserves schema 007 identities, submissions, receipts, usage and audit; initializes confirmed/retired cursors to zero without guessing producer confirmation. No automatic downgrade or historical schema reader is introduced. Observer state v3/outbox v2 and submission/ack v1 remain unchanged.",
+  "identityHandshake": "Server identity envelope is now shin.observer-server-identity.v2 and explicitly declares confirmation_schema and reconciliation_schema. Native dev.14 rejects earlier handshakes before exporting a new packet; no v1 compatibility fallback. Config and existing state bindings remain unchanged when the same DB Server identity is retained.",
+  "sources": [
+    "https://www.postgresql.org/docs/current/ddl-constraints.html",
+    "https://www.postgresql.org/docs/current/transaction-iso.html",
+    "https://www.postgresql.org/docs/current/routine-vacuuming.html"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-observer-delivery-v1.json",
+    "docs/machine/shin-observer-ingestion-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

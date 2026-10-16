@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "shin.headless-workflow-examples.v1",
+  "notice": "Examples, not an executable plan or permission grant. Replace identities and obtain revisions/times from the reviewed binding and current responses. Keep complete mutation bodies for exact retries.",
+  "project": {
+    "id": "workflow-project",
+    "display_name": "Workflow project"
+  },
+  "workspace": {
+    "id": "primary",
+    "display_name": "Primary",
+    "root": "/absolute/reviewed/source"
+  },
+  "prepare": {
+    "expected_snapshot_id": null
+  },
+  "activate": {
+    "preparation_id": 1,
+    "expected_revision": 0
+  },
+  "refresh": {},
+  "bootstrap": {
+    "schema_version": "shin.session-bootstrap-request.v2",
+    "task_id": "host-task",
+    "members": [
+      {
+        "project_id": "workflow-project",
+        "selector": {
+          "kind": "route",
+          "id": "workflow-route"
+        },
+        "query": "publication authorization",
+        "required": true
+      }
+    ],
+    "max_evidence_bytes": 16384
+  },
+  "draft": {
+    "schema_version": "shin.session-draft.v1",
+    "task_request": {
+      "schema_version": "shin.task-request.v1",
+      "request_id": "continuation",
+      "task": {
+        "objective": "Review current publication authorization",
+        "must": [
+          {
+            "id": "policy",
+            "query": "publication authorization"
+          }
+        ]
+      },
+      "budget": {
+        "max_evidence_bytes": 8192,
+        "max_records": 6,
+        "per_query_records": 4,
+        "per_document_records": 2
+      }
+    },
+    "state": {
+      "current_slice": "Review publication authorization",
+      "assertions": [
+        {
+          "id": "check-policy",
+          "kind": "pending",
+          "text": "Verify the current publication authorization rule.",
+          "paths": [
+            "docs/policy.md"
+          ],
+          "receipt_ids": []
+        }
+      ],
+      "changed_paths": [],
+      "identifiers": [],
+      "next_actions": [
+        {
+          "id": "review",
+          "text": "Review returned source and rerun authorized checks after changes."
+        }
+      ]
+    },
+    "receipts": [],
+    "vcs": null,
+    "ttl_seconds": 3600
+  },
+  "save": {
+    "schema_version": "shin.task-checkpoint-write.v1",
+    "selector": {
+      "kind": "route",
+      "id": "workflow-route"
+    },
+    "task_id": "host-task",
+    "thread_id": "host-thread",
+    "expected_revision": 0,
+    "request_id": "00000000000000000000000000000000",
+    "request_deadline": 0,
+    "require_current": true,
+    "draft": null
+  },
+  "confirmReceipts": {
+    "schema_version": "shin.task-receipt-import.v1",
+    "task_id": "host-task",
+    "thread_id": "host-thread",
+    "expected_revision": 0,
+    "request_id": "00000000000000000000000000000000",
+    "request_deadline": 0,
+    "receipts": []
+  },
+  "resume": {
+    "schema_version": "shin.task-resume-request.v1",
+    "task_id": "host-task",
+    "thread_id": "host-thread",
+    "require_current": true
+  },
+  "impact": {
+    "schema_version": "shin.task-impact-request.v1",
+    "task_id": "host-task",
+    "thread_id": "host-thread",
+    "require_current": false
+  },
+  "clear": {
+    "schema_version": "shin.task-checkpoint-clear.v1",
+    "task_id": "host-task",
+    "thread_id": "host-thread",
+    "expected_revision": 0,
+    "request_id": "00000000000000000000000000000000",
+    "request_deadline": 0
+  },
+  "executionInputs": {
+    "schema_version": "shin.execution-input-request.v1",
+    "coverage": "profile",
+    "selectors": []
+  },
+  "reportImport": {
+    "schema_version": "shin.receipt-import-request.v1",
+    "format": "junit",
+    "report_path": "/absolute/private/report.xml",
+    "inputs_path": "/absolute/private/inputs.json",
+    "receipt_id": "authorized-check",
+    "producer": "authenticated-principal",
+    "started_at": 0,
+    "observed_at": 0,
+    "ttl_seconds": 3600,
+    "command_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000000",
+    "complete": true
+  }
+}

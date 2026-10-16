@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "id": "excessive-source-fact-attributes",
+  "sourceLabel": "Excessive source attribute validation fixture",
+  "rootFiles": ["README.md"],
+  "sourceFactRoots": ["src"],
+  "sourceFactExtensions": [".ts"],
+  "sourceFactExtractors": ["retool"],
+  "sourceFactAttributeKeys": [
+    "key00", "key01", "key02", "key03", "key04", "key05", "key06", "key07",
+    "key08", "key09", "key10", "key11", "key12", "key13", "key14", "key15",
+    "key16", "key17", "key18", "key19", "key20", "key21", "key22", "key23",
+    "key24", "key25", "key26", "key27", "key28", "key29", "key30", "key31",
+    "key32", "key33", "key34", "key35", "key36", "key37", "key38", "key39",
+    "key40", "key41", "key42", "key43", "key44", "key45", "key46", "key47",
+    "key48", "key49", "key50", "key51", "key52", "key53", "key54", "key55",
+    "key56", "key57", "key58", "key59", "key60", "key61", "key62", "key63",
+    "key64"
+  ],
+  "agentStartPaths": ["README.md"],
+  "evalCases": []
+}

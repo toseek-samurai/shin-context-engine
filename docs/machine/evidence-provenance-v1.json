@@ -1,0 +1,112 @@
+{
+  "schemaVersion": "shin.evidence-provenance-contract.v1",
+  "document": "evidence-provenance-v1",
+  "status": "accepted",
+  "title": "Evidence Kind And Verification Provenance Contract",
+  "summary": "Expose the kind of evidence and the way it was verified as two closed, consumer-neutral axes without conflating either with lifecycle status or authority.",
+  "retrievalAnchor": "Evidence kind and verification provenance are orthogonal to lifecycle status and authority.",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v21-cpp-syntax",
+    "compatibility": "The historical v1.25 authority cutover requires an explicit generator-v17 rebuild. Native CF2 additionally requires an explicit generator-v20 rebuild for bounded searchable text and redaction before clipping. No compatibility reader or implicit migration is retained."
+  },
+  "axes": {
+    "evidence_kind": "What kind of carrier produced this row.",
+    "verification_level": "What deterministic observation or trusted receipt supports this row.",
+    "status": "Lifecycle or currentness declared or inferred by the existing authority model.",
+    "authority_level": "Repository authority and ranking signal owned by the existing authority model.",
+    "orthogonality": "History, proposal state, acceptance, source-of-truth, and confidence are not evidence kinds or verification levels."
+  },
+  "evidenceKinds": {
+    "implementation-source": "Code, configuration, or structured application/workflow source extracted from current source bytes. The name makes no production-deployment claim.",
+    "test-source": "Test code or a test definition selected by exact path and filename conventions. It does not claim the test executed or passed.",
+    "machine-contract": "Schema, manifest, protocol, OpenAPI, AsyncAPI, or typed contract evidence.",
+    "decision-record": "ADR, decision index, or typed decision evidence.",
+    "architecture-document": "System architecture or boundary documentation.",
+    "operational-document": "Runbook, deployment, operations, or security operations documentation.",
+    "generated-artifact": "Reserved for an artifact with trusted explicit lineage. A generated directory name, filename suffix, or arbitrary JSON field cannot grant this kind.",
+    "structured-evidence": "JSON or JSONL facts, findings, and other structured evidence that is not independently trusted lineage.",
+    "reference-document": "Planning, handoff, index, context, history, and neutral fallback documentation; lifecycle and authority remain separate fields."
+  },
+  "verificationLevels": {
+    "declared": "The value is asserted by a document, contract, or structured record and parsed without an execution claim.",
+    "source-observed": "The row is deterministically extracted from the exact current source bytes selected for the snapshot or source scan.",
+    "validated": "Reserved for a trusted validation receipt bound to source content, snapshot, gate identity, and validation contract.",
+    "executed": "Reserved for a trusted execution receipt bound to source content, snapshot, gate identity, and execution contract. Pass or failure belongs in a separate outcome field.",
+    "trustRule": "Arbitrary source JSON, JSONL, path names, and generated filenames cannot escalate a row to validated or executed."
+  },
+  "classification": {
+    "scope": "One pure consumer-neutral classifier uses normalized repository-relative paths plus exact internal document and record types.",
+    "priority": [
+      "trusted generated lineage when a future accepted lineage contract supplies it",
+      "test source",
+      "implementation source",
+      "decision record",
+      "machine contract",
+      "operational document",
+      "architecture document",
+      "structured evidence",
+      "reference document"
+    ],
+    "historyRule": "Historical paths and authority_level=history retain their carrier kind and express history through status and authority_level.",
+    "generatedRule": "No current producer infers generated-artifact from a path. The value remains reserved until explicit trusted lineage exists.",
+    "testRule": "Exact test directory segments and conventional test filename forms select test-source; source-observed still means static extraction only."
+  },
+  "generatedStores": {
+    "fields": [
+      "evidence_kind",
+      "verification_level"
+    ],
+    "stores": [
+      "documents",
+      "sections",
+      "facts",
+      "decisions",
+      "contracts",
+      "runbooks"
+    ],
+    "producerRule": "Every producer assigns both fields before rows enter the aggregate generated model. The final generation pass validates but never repairs missing provenance.",
+    "decoderRule": "Generated row decoders reject missing, non-string, or unknown values as index-corrupt.",
+    "generatorRule": "Every retrieval session rejects an index whose generator_version differs from the binary even when exact source freshness was not requested.",
+    "doctorRule": "Doctor uses the same fail-closed generated row decoder as retrieval; missing, non-string, or unknown provenance stops inspection with index-corrupt before an invalid row can enter DoctorResult."
+  },
+  "retrieval": {
+    "outputs": [
+      "search",
+      "context",
+      "brief",
+      "pack",
+      "batch",
+      "diagnose",
+      "federated-brief",
+      "pack-diff"
+    ],
+    "fullAndCompact": "Full and compact projections preserve both fields on transported evidence. Search also exposes status, authority_level, and record_type so its compact hit is not an ungraded snippet.",
+    "ranking": "The fields are not sparse terms, scoring inputs, boosts, or penalties in v1.17. Existing status and authority ranking remains unchanged.",
+    "deduplication": "Pack shares only exact canonical stable records. Similar text, overlapping ranges or equivalent grading do not merge different record fields or their match edges. Federation also retains distinct provenance grading.",
+    "diagnose": "The best path-local matching row exposes its evidence kind and verification level alongside record type and score."
+  },
+  "conflictBoundary": {
+    "current": "Shin can return differently graded evidence together and show exact source paths, ranges, authority, and lifecycle state.",
+    "notClaimed": "Free-form prose and implementation rows do not yet share a universal subject-predicate-value claim model, so Core does not label textual differences as semantic contradictions.",
+    "futureGate": "A deterministic conflict report requires an accepted explicit claim or validation-receipt schema with stable subject identity, predicate, normalized value, source range, snapshot binding, and outcome semantics."
+  },
+  "verification": [
+    "implementation and test source classification without execution claims",
+    "machine contract, decision, architecture, operations, structured, and reference classification",
+    "history remains an authority and status property",
+    "all generated stores contain closed values",
+    "generated search, source-scan search, full and compact brief, Pack, diagnose, and federation preserve grading",
+    "Pack canonical dedup and federation retain differently graded records; Pack never transports support from a discarded origin",
+    "missing, wrong-type, and unknown enum values fail closed",
+    "generator mismatch rejects retrieval without requiring --require-current",
+    "serial and parallel deterministic identities remain equal"
+  ],
+  "nonGoals": [
+    "no claim that source is deployed in production",
+    "no claim that test-source executed or passed",
+    "no trust escalation from consumer-controlled fields",
+    "no grading-based scoring change in v1.17",
+    "no heuristic natural-language contradiction detector"
+  ]
+}

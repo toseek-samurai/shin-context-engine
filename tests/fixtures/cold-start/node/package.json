@@ -1,0 +1,5 @@
+{
+  "name": "cold-start-node",
+  "private": true,
+  "type": "module"
+}

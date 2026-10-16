@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "shin.store-validation-evidence.v1",
+  "document": "shin-server-store-validation-v1",
+  "status": "active-contract",
+  "title": "P3E10 Batched Catalog Validation And Store Ownership",
+  "summary": "Measure fewer catalog round trips while preserving per-lease database admission and keeping pool/session/schema responsibilities out of domain methods.",
+  "invariants": [
+    "Same schema 011 and unchanged SQL migration checksums; no DDL or wire schema upgrade for this refactor.",
+    "Role and migration admission still precede structural checks; deployment pin is checked before the domain operation.",
+    "Each lease executes current database checks. Static cached data is compiled SQL and expected metadata, never an observed green result or TTL.",
+    "Failed validation discards its reserved connection and releases pool capacity. Domain transaction and lifecycle semantics remain unchanged.",
+    "Historical workspace unsupported-schema error spelling is retained; batching does not silently revise its API error.",
+    "No alternate serial production path, new third-party dependency, observer/consumer/global skill change or remote transport installation."
+  ],
+  "ownership": {
+    "domain": "store.cpp retains project/audit request behavior and Store operation dispatch. Dedicated domain stores are unchanged except schema-check extraction.",
+    "pool": "store_pool.h/cpp owns exclusive leases, bounded waiting, connection replacement and the shared session lifecycle fence.",
+    "session": "store_session.cpp owns connection configuration, runtime database/role checks and deployment identity admission.",
+    "schema": "store_schema.cpp owns embedded migration history, explicit migration/recovery entrypoints and composition of schema validators. Domain validators register their own predicates and expected fields.",
+    "batch": "SchemaChecks owns at most 32 constant queries with pure result validators. It queues through libpqxx pipeline, retrieves in order and drains/detaches before invoking validators. Missing relation/column/index/schema SQLSTATEs fail as schema-unsupported; connection/timeout errors are not disguised as a successful schema check."
+  },
+  "limits": [
+    "Development-only Server, no stable release or consumer cutover.",
+    "No new off-loopback, TLS, remote host, power-loss or zero-downtime migration proof.",
+    "Audit load seeds 16384 synthetic rows; Observer load uses 4096 submissions; default recovery uses registry size 1, not maximum-size recovery certification.",
+    "Broad development Core retrieval was rerun and remains 23/29 cases and 46/54 queries, report build/p3e10-self-eval.json. The inherited stable release metadata gate rejects dev.9 and was not rerun in this Store-only slice. Focused companion success does not waive those release debts."
+  ],
+  "sources": [
+    "https://libpqxx.readthedocs.io/8.0.2/classpqxx_1_1pipeline.html",
+    "https://libpqxx.readthedocs.io/8.0.2/thread-safety.html",
+    "https://www.postgresql.org/docs/18/explicit-locking.html"
+  ]
+}

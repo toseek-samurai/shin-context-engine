@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "current-runtime-contract-v1",
+  "status": "ready-for-integration",
+  "summary": "Stable integration readiness contract for the current runtime.",
+  "runtimeBoundary": "The current runtime contract remains authoritative while future modules are evaluated separately."
+}

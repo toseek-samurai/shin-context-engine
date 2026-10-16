@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "shin.adoption-planner-contract.v1",
+  "document": "shin-adoption-planner-v1",
+  "status": "accepted",
+  "title": "Read-Only Adoption Planner",
+  "release": "2.0.4",
+  "summary": "Core provides a deterministic read-only adoption planner that reports lifecycle gaps and recommended commands from cold-start discovery to explicit permanent adoption, without generating consumer policy or mutating the consumer repository.",
+  "command": {
+    "syntax": "shin-context [--profile CANDIDATE_PROFILE] --profile-dir PROFILE_DIR --root PROJECT adoption-plan [--marker FILE] [--agent-entry RELATIVE_FILE]",
+    "outputSchema": "shin.adoption-plan.v1",
+    "candidateProfile": "Optional --profile identifies a human-authored permanent profile candidate. The planner validates it but never creates or rewrites it.",
+    "markerSelection": "An explicit --marker wins and is normalized to a canonical repository-relative path when its absolute or dot-segment spelling remains below --root. Otherwise Core selects the first existing conventional marker and falls back to the canonical proposal assembled from canonicalMarkerDirectory and canonicalMarkerFile.",
+    "canonicalMarkerDirectory": "docs/machine",
+    "canonicalMarkerFile": "shin-project-adoption-v1.json",
+    "agentSelection": "An explicit --agent-entry wins; otherwise AGENTS.md is the canonical proposal.",
+    "externalOutputTemplate": "Every generated-index command uses <EXTERNAL_OUTPUT_BASE>/<INDEX_KEY>. Bootstrap may choose a temporary key; permanent adoption must substitute the exact validated marker.index.key.",
+    "indexAccess": "The command does not read, build, or mutate a generated index and rejects --out-dir, --from-index, and --source-scan.",
+    "exitPolicy": "A successfully generated plan returns exit 0 even when lifecycle gaps remain. Unsafe paths, malformed options, or invalid profile identifiers return shin.error.v1 with a non-zero exit."
+  },
+  "states": {
+    "not-indexable": "Discovery found no supported source or machine-document evidence. Add indexable evidence before bootstrap.",
+    "bootstrap-ready": "A strict generic bootstrap profile is available, but no permanent profile candidate or adoption marker was selected.",
+    "promotion-incomplete": "A candidate permanent profile was supplied but one or more reviewed promotion requirements remain unresolved.",
+    "marker-authoring-ready": "The permanent profile, eval corpus, agent entry, and path registration pass strict validation except for the intentionally absent marker file.",
+    "adoption-check-ready": "A regular non-symlink adoption marker exists and takes precedence; adoption-check --strict remains the authority that validates its content and coherence.",
+    "blocked": "The repository is indexable but the selected bootstrap route cannot pass strict bootstrap validation."
+  },
+  "output": {
+    "deterministic": true,
+    "projectMutationPerformed": false,
+    "adoptionValidated": false,
+    "sections": [
+      "discovery",
+      "marker",
+      "agent",
+      "bootstrap",
+      "candidate_profile",
+      "readiness",
+      "external_output",
+      "review_requirements",
+      "quality_gates",
+      "gaps",
+      "commands",
+      "next_actions"
+    ],
+    "commandEncoding": "Every recommended command is emitted as an argv array with writes_consumer=false so callers do not need shell parsing.",
+    "outputClosure": "The external_output object identifies the directory template and key source. An adopter must use one external base plus the marker-owned key for every permanent command and project helper.",
+    "gapEncoding": "Every unresolved requirement has a stable code, lifecycle stage, path or identifier, and concise summary."
+  },
+  "promotionPolicy": {
+    "genericBootstrapIsPermanentAuthority": false,
+    "requiredCandidateProperties": [
+      "bootstrapOnly is false",
+      "at least one reviewed evalCases entry",
+      "at least one representative packEvalCases entry",
+      "selected marker is registered in agentStartPaths",
+      "selected agent entry is registered in agentStartPaths",
+      "strict profile validation has no unresolved error or warning after marker creation"
+    ],
+    "humanReviewRequired": [
+      "document and source roots",
+      "bounded file and structured-data limits",
+      "topic, alias, and authority policy",
+      "agent start paths",
+      "golden retrieval cases",
+      "representative Agent Context Pack cases",
+      "location-independent adoption marker content",
+      "one canonical external output based on marker.index.key",
+      "one project-owned adoption gate covering marker, profile, snapshot health, eval, and Pack-eval"
+    ]
+  },
+  "integrationClosure": {
+    "requiredProjectGate": [
+      "adoption-check --strict",
+      "profile-check --strict",
+      "build",
+      "check",
+      "doctor --strict",
+      "eval --strict",
+      "pack-eval --strict"
+    ],
+    "sameSnapshotPolicy": "Build and every index-reading gate use <EXTERNAL_OUTPUT_BASE>/<INDEX_KEY>; after marker validation INDEX_KEY is exactly marker.index.key.",
+    "legacyHelperPolicy": "Existing profile-id or bootstrap helper targets must be updated or retired during cutover. A passing ad hoc command does not prove that the documented project route is coherent.",
+    "plannerBoundary": "The planner reports this requirement but remains read-only and does not inspect or rewrite consumer Make, shell, CI, or IDE helpers."
+  },
+  "precedence": {
+    "existingMarker": "A safe existing marker produces adoption-check-ready regardless of bootstrap or candidate completeness because the marker owns the adopted route.",
+    "validator": "adoption-check --strict is the only Core command that validates shin.project-adoption.v1 content, engine compatibility, permanent profile evidence, and agent-entry coherence."
+  },
+  "security": [
+    "Marker output and agent-entry input remain canonical repository-relative paths below --root; a safe explicit marker input may be normalized from another below-root spelling.",
+    "Symlink traversal and non-regular selected files are rejected.",
+    "Profile identifiers use the portable lowercase identifier policy before registry path construction.",
+    "The planner grants no source, network, process, index, or consumer-write authority."
+  ],
+  "nonGoals": [
+    "No automatic profile generation or product-semantic inference.",
+    "No automatic marker or agent-entry generation.",
+    "No automatic consumer helper or CI target generation.",
+    "No replacement for discovery, profile-check, build, check, doctor, eval, pack-eval, or adoption-check.",
+    "No consumer-specific paths, identifiers, or policy in C++ Core."
+  ],
+  "acceptance": {
+    "hermeticRunner": "tests/run_adoption_plan_tests.sh",
+    "portableInstallRunner": "tests/run_portable_install_tests.sh",
+    "requiredEvidence": [
+      "source-only bootstrap readiness",
+      "empty repository behavior",
+      "permanent-profile promotion gaps",
+      "marker-authoring readiness",
+      "existing marker precedence",
+      "byte-identical repeated output",
+      "zero consumer mutation",
+      "path traversal and symlink rejection",
+      "relocated installed-binary execution"
+    ]
+  }
+}

@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "shin.headless-workflow.v1",
+  "document": "shin-headless-workflow-v1",
+  "status": "active-contract",
+  "summary": "One development-only entrypoint composes existing Core CLI, authenticated Server requests and local Observer. Scripted replay and reviewed fresh agents now verify the complete local workflow without implying stable deployment or R2/R3 completion.",
+  "entrypoint": "integrations/shin-server/AGENT-WORKFLOW.md",
+  "requestExamples": "integrations/shin-server/workflow-examples.json",
+  "replay": "server/tests/headless_workflow_test.py",
+  "contracts": [
+    "docs/machine/shin-private-checkpoints-v1.json",
+    "docs/machine/shin-authenticated-receipts-v1.json",
+    "docs/machine/shin-session-bootstrap-v2.json",
+    "docs/machine/shin-server-activation-v1.json",
+    "docs/machine/shin-local-observer-v1.json"
+  ],
+  "deliveryBoundary": [
+    "No new context engine, client framework, mandatory MCP, daemon or globally installed candidate skill.",
+    "Operator-reviewed absolute bindings, independently pinned Server identity, private curl credentials and task state stay outside consumer source.",
+    "Server-managed publication and explicit local Core publication are distinct. An outage cannot restore state that was only saved remotely.",
+    "No stable1.27.2 change, consumer cutover, remote deployment or release qualification is implied."
+  ]
+}

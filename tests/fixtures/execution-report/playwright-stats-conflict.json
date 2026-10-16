@@ -1,0 +1,13 @@
+{
+  "suites": [{
+    "title": "sample", "file": "sample.spec.ts", "line": 0, "column": 0,
+    "specs": [{
+      "title": "passes", "tests": [{
+        "expectedStatus": "passed", "status": "expected",
+        "results": [{"status": "passed", "retry": 0}]
+      }]
+    }]
+  }],
+  "errors": [],
+  "stats": {"expected": 0, "unexpected": 1, "flaky": 0, "skipped": 0}
+}

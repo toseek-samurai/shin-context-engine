@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="unit" tests="2" failures="0" errors="0" skipped="0">
+  <testcase classname="fixture" name="passes-one" time="0.01" />
+  <testcase classname="fixture" name="passes-two" time="0.01">
+    <system-out>Authorization: Bearer execution-evidence-test-secret</system-out>
+  </testcase>
+</testsuite>

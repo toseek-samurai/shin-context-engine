@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "fixture-no-profile-inputs",
+  "status": "active",
+  "id": "no-inputs",
+  "sourceLabel": "Invalid profile without document or source inputs",
+  "rootFiles": [],
+  "optionalRootFiles": [],
+  "sourceFactRoots": [],
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "evalCases": []
+}

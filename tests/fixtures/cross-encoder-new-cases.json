@@ -1,0 +1,39 @@
+{
+  "schema_version": "shin.cross-encoder-new-cases.v1",
+  "scope": "Four source-reviewed questions declared before E5 candidate capture or cross-encoder inference. Two new target files, not a broad generalization claim.",
+  "project": "shin",
+  "sources": {
+    "server/src/candidate_artifact.cpp": "decfd828bc38989623b7c87ca47fe70d0feb738d713be7df9886fbfc87417b13",
+    "server/src/route_files.cpp": "2c9cb4d6c6b6d6834483f6c91eab6986cbf7a97ee7237d15bae9bce4de702b09"
+  },
+  "cases": [
+    {
+      "id": "artifact-lock-english",
+      "kind": "english",
+      "query": "Where does a concurrent operation refuse to access candidate files when another operation holds their lifetime lock, instead of waiting?",
+      "expected_paths": ["server/src/candidate_artifact.cpp"],
+      "reviewed_ranges": [[31, 62]]
+    },
+    {
+      "id": "artifact-lock-russian",
+      "kind": "russian",
+      "query": "Где операция отказывается работать с файлами кандидата, если другая операция удерживает блокировку их времени жизни, вместо ожидания?",
+      "expected_paths": ["server/src/candidate_artifact.cpp"],
+      "reviewed_ranges": [[31, 62]]
+    },
+    {
+      "id": "route-file-english",
+      "kind": "english",
+      "query": "Where does reading a configured input file reject a size overflow and detect that the file changed during the read?",
+      "expected_paths": ["server/src/route_files.cpp"],
+      "reviewed_ranges": [[43, 63]]
+    },
+    {
+      "id": "route-file-russian",
+      "kind": "russian",
+      "query": "Где чтение настроенного входного файла отклоняет превышение размера и замечает, что файл изменился во время чтения?",
+      "expected_paths": ["server/src/route_files.cpp"],
+      "reviewed_ranges": [[43, 63]]
+    }
+  ]
+}

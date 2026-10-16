@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "shin.observer-offline-collaboration-plan.v1",
+  "document": "shin-observer-offline-collaboration-v1",
+  "status": "active-contract",
+  "title": "Offline Local Core And Multi-Worktree Collaboration",
+  "summary": "An Observer remains a useful local Context Engine during a long Server outage. Reconnection synchronizes bounded observations and explicitly authorized candidates without last-writer-wins publication or mixing different developers' worktrees.",
+  "localContinuity": {
+    "process": "Observer must have a lifecycle independent from Server and PostgreSQL. Stopping or losing Server must not stop local observation, explicitly authorized local publication or agent retrieval. A same-process combined mode may be a development convenience, but cannot claim this fault isolation.",
+    "core": "Use the same deterministic Core, profile-owned policy, generated-snapshot format, strict freshness, Brief, Pack, Impact and local task-continuity contracts. Do not create a second ranker, downgrade to an unverified cache or require a Server round trip for local source verification.",
+    "localAuthority": "A local current result is current for that local worktree and profile, not for every collaborator or the shared Server publication. Local retrieval remains useful when synchronization is pending, blocked or offline.",
+    "publicationPolicy": "Local index rebuilding remains explicit or enabled by a separately reviewed opt-in watch-publication policy. ready and normal read paths never acquire hidden write behavior merely because a Server is unreachable.",
+    "storage": "Keep local snapshots and a crash-safe bounded synchronization outbox outside consumer repositories. P3E3 stores typed observation submissions in the same atomic private state file; no local PostgreSQL is needed. It is pending transport metadata, not project authority, chat history, source backup or an unlimited outage journal. Source-bearing candidate exports remain separate work."
+  },
+  "identity": {
+    "logicalProject": "Separate logical project/repository identity from a host-local root. Remote filesystem strings and equal directory names never establish global repository identity.",
+    "worktree": "An observation is scoped to repository, worktree, profile revision, Observer identity and epoch, plus branch/commit when available. Distinct developers and concurrent worktrees never overwrite one another's private source observations.",
+    "actor": "Record the authenticated producer and the explicitly declared author where relevant; authentication does not prove source truth. Agent task/thread identity remains optional bounded task state, not project authority.",
+    "currentLimitation": "Logical projects, rootless/local workspaces, private Observer streams, explicit enrollment and owner-scoped receipt ingestion exist. Authentication/configuration is still local development policy, not a certified remote multi-tenant deployment. Do not simulate multiple developers by overwriting one binding or silently sharing an active route.",
+    "gitOptional": "A project can be an ordinary directory that never had Git. Workspace identity and content/profile fingerprints must remain sufficient; branch/commit are optional enrichment. Never require git init or a commit as an indexing, observation, synchronization or conflict-review prerequisite."
+  },
+  "outbox": {
+    "identity": "Each durable submission needs a stable producer/epoch/sequence or equivalent operation id, payload integrity identity, source/worktree/profile binding and its base publication revision. Retries preserve the same identity; reconnect is not a new operation.",
+    "persistence": "Persist accepted outbox entries before claiming they are queued. Preserve unacknowledged durable entries across Observer crashes. Delete or compact them only after an authoritative Server acknowledgement or an explicit operator decision.",
+    "bounds": "Bound bytes, entries, per-project use and retained generations. Coalesce replaceable telemetry under explicit rules. Queue exhaustion or a lost interval becomes an observable resync-required/gap state, not silent successful delivery; local retrieval can continue independently within its own storage budget.",
+    "delivery": "Use at-least-once delivery with idempotent Server ingestion, durable acknowledgement and bounded retry/backoff. Disconnection, timeout or an ambiguous response cannot justify dropping a candidate or assigning a fresh operation id.",
+    "reconnect": "First reconcile producer epoch/cursor, known revision and supported schema/generator capabilities, then send bounded pending batches. A changed profile/schema, revoked credential or missing base produces a separate review or resync result. Never silently reinterpret incompatible evidence.",
+    "time": "Keep capture and receive times distinct. Monotonic sequence and acknowledged cursors govern delivery order; wall-clock time is not conflict resolution. Expired runtime receipts remain expired even if uploaded after reconnect."
+  },
+  "conflictModel": {
+    "observations": "Store independent per-worktree observations rather than treating every difference as a conflict. History can coexist; currentness and ownership are explicit in retrieval and the UI.",
+    "publication": "A proposal for a shared route carries its known base revision. If that route advanced, retain the proposal as conflicted/review-required rather than overwriting the winner, discarding the proposal or using clock-based last-writer-wins.",
+    "review": "Present base, current accepted generation and proposed generation, their producer/worktree/profile identities and bounded structural differences. Reuse snapshot/Impact primitives where applicable; they are evidence for review, not proof of semantic code equivalence.",
+    "resolution": "An authorized resolver may choose a candidate, reject a proposal, or request a new preparation against the new base. Record the resolution, actor, consumed revision and audit together. Neither automatic ingestion nor a pending conflict may execute next actions or mutate source.",
+    "notGitMerge": "Shin coordinates context publication and knowledge evidence. Source-code/document merges and product decisions remain with Git, project owners and their tools. Do not auto-merge arbitrary prose or code, erase a negative decision, or promote conflicting assertions into a synthesized fact.",
+    "sameContent": "Equal content identity may avoid duplicate payload transfer but does not erase different worktree ownership, provenance, base revision or artifact lifecycle. P3D2's artifact-owner cache key and historical receipt semantics must be preserved."
+  },
+  "authority": {
+    "localProof": "The local Observer can assess its own filesystem using Core. Server cannot independently repeat exact worktree verification without access to those sources.",
+    "remoteProof": "Received material remains producer-observed, with scope, completeness, integrity, capture/receive time and producer policy. A trusted signature or fresh heartbeat does not make it Server-source-verified or prove that the remote worktree has not changed.",
+    "export": "Export of source-bearing snapshots or evidence requires explicit project policy, secret/safety checks, allowed scopes and authenticated encrypted transport off loopback. Default telemetry excludes secrets, raw provider payloads and full chat transcripts.",
+    "facets": "Expose local retrieval readiness, local source freshness, outbox durability/capacity, transport connectivity, Server acknowledgement, remote observation age, conflict state and active publication separately. A single green online flag must not mask any of these distinctions.",
+    "permissions": "Observe locally, export, ingest, inspect another worktree and activate a shared publication are separate authorities. Revocation blocks further unauthorized sync/activation; it does not pretend to retroactively revoke the local OS owner's access to their own files."
+  },
+  "deliveryOrder": [
+    "Finish and verify P3D2 local CAS, receipt replay, audit trace and reader/retention exclusion.",
+    "Separate logical repository/project identity from physical host/worktree binding before remote ingestion.",
+    "Implement standalone local Observer/Core continuity with opt-in observation and explicit publication policy.",
+    "Implement bounded durable outbox and idempotent ingestion/acknowledgement without automatic shared activation.",
+    "Add explicit proposal conflict/review/resolution services and UI states.",
+    "Validate Mac Observer to remote host Server through long outages and fault injection before consumer rollout."
+  ],
+  "acceptanceCases": [
+    "Local Brief/Pack/Impact and exact-current checks remain usable through a long Server/PostgreSQL outage.",
+    "Observer restart during outage preserves acknowledged cursor and pending durable submissions.",
+    "Two people with one logical repository and distinct worktrees retain isolated observations and local heads.",
+    "Two proposals from the same shared base yield one accepted transition and one visible unresolved proposal, never silent overwrite.",
+    "Server commits a submission but the reply is lost; replay does not duplicate payload ownership, audit or activation.",
+    "Queue full, dropped telemetry and watch overflow do not falsely report complete synchronized knowledge.",
+    "Expired runtime evidence, clock skew, revoked credentials and incompatible generators remain explicitly non-current or blocked.",
+    "Repeated disconnect/reconnect converges only through explicit acknowledgement and resolution, within measured CPU/RAM/disk/network limits."
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-server-observer-v1.json",
+    "docs/machine/shin-server-activation-v1.json",
+    "docs/machine/shin-server-development-v1.json",
+    "docs/machine/session-checkpoint-v1.json",
+    "docs/machine/execution-receipt-v1.json",
+    "docs/machine/evidence-provenance-v1.json"
+  ]
+}

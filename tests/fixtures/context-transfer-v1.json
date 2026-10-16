@@ -1,0 +1,32 @@
+{
+  "schema_version": "shin.context-transfer.v1",
+  "classification": "frozen-synthetic-transfer-not-heldout-project-or-task-proof",
+  "files": {
+    "src/retry.py": "def retry_delay_seconds(attempt, base_seconds, maximum_seconds):\n    return min(maximum_seconds, base_seconds * 2 ** attempt)\n",
+    "src/pool.go": "package worker\n\ntype WorkerPool struct { pendingJobs int; runningJobs int }\nfunc (p *WorkerPool) pendingCount() int { return p.pendingJobs }\n",
+    "src/checksum.rs": "pub fn checksum_matches(expected: u64, actual: u64) -> bool {\n    expected == actual\n}\n",
+    "src/cache.cpp": "#include <cstddef>\nbool cacheOverBudget(std::size_t cacheBytes, std::size_t byteBudget) {\n    return cacheBytes > byteBudget;\n}\n",
+    "src/coordinates.ts": "import { inverse } from './matrix';\nexport function cursorInCanvas(point: number): number {\n    return inverse(point);\n}\n",
+    "src/matrix.ts": "export function inverse(point: number): number {\n    return -point;\n}\n",
+    "src/aggregation.sql": "SELECT warehouse_id, SUM(quantity) AS stock_quantity\nFROM inventory\nGROUP BY warehouse_id;\n",
+    "src/service.yaml": "service:\n  worker_count: 4\n  shutdown_timeout_seconds: 30\n",
+    "src/ambiguous.ts": "import { route } from './dual';\nexport const ambiguousRoute = route;\n",
+    "src/dual.ts": "export const route = () => true;\n",
+    "src/dual.tsx": "export const route = () => false;\n",
+    "docs/operations.md": "# Service Drain\n\nStop accepting new work before waiting for running jobs to finish.\n\nDrain timeout is thirty seconds.\n"
+  },
+  "cases": [
+    {"id":"python-retry","kind":"direct","query":"How is the retry delay capped while attempt count increases?","expected_path":"src/retry.py","clause":"min(maximum_seconds, base_seconds * 2 ** attempt)"},
+    {"id":"go-pending","kind":"direct","query":"How many pending jobs are in the worker pool?","expected_path":"src/pool.go","clause":"return p.pendingJobs"},
+    {"id":"rust-checksum","kind":"direct","query":"What checks whether the actual checksum matches the expected checksum?","expected_path":"src/checksum.rs","clause":"expected == actual"},
+    {"id":"cpp-cache","kind":"direct","query":"Which function decides whether cache bytes exceed the byte budget?","expected_path":"src/cache.cpp","clause":"cacheBytes > byteBudget"},
+    {"id":"sql-stock","kind":"direct","query":"Where is stock quantity aggregated for each warehouse?","expected_path":"src/aggregation.sql","clause":"GROUP BY warehouse_id"},
+    {"id":"yaml-workers","kind":"direct","query":"What configures the service worker count and shutdown timeout?","expected_path":"src/service.yaml","clause":"worker_count: 4"},
+    {"id":"coordinate-owner","kind":"linked","query":"Where is the cursor mapped into canvas coordinates?","expected_owner":"src/coordinates.ts","expected_path":"src/matrix.ts","clause":"return -point"},
+    {"id":"ambiguous-import","kind":"ambiguous","query":"ambiguous route import","expected_owner":"src/ambiguous.ts","forbidden_targets":["src/dual.ts","src/dual.tsx"]},
+    {"id":"documentation-drain","kind":"document","query":"service drain stop accepting work","expected_path":"docs/operations.md","clause":"Stop accepting new work"},
+    {"id":"absent-token","kind":"negative","query":"opaqueAbsentMarkerX97531"},
+    {"id":"document-channel-isolation","kind":"negative","query":"drain"},
+    {"id":"russian-to-english-source","kind":"observation","query":"\u0413\u0434\u0435 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0438\u0432\u0430\u0435\u0442\u0441\u044f \u0437\u0430\u0434\u0435\u0440\u0436\u043a\u0430 \u043f\u043e\u0432\u0442\u043e\u0440\u043d\u043e\u0439 \u043f\u043e\u043f\u044b\u0442\u043a\u0438?","expected_path":"src/retry.py"}
+  ]
+}

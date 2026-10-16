@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "tree-sitter",
+  "repository": "https://github.com/tree-sitter/tree-sitter",
+  "version": "v0.27.0",
+  "tagObject": "3e719425fc48f5b4cdb25c580e44023882f5e2a7",
+  "commit": "6070dbfefd326bd735e5683eb128cc1b57dad0c0",
+  "license": "MIT",
+  "vendoredPaths": ["include/tree_sitter/api.h", "src"]
+}

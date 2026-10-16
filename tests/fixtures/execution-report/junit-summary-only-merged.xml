@@ -1,0 +1,6 @@
+<testsuites>
+  <testsuite name="summary" tests="5" failures="0" errors="0" skipped="0"/>
+  <testsuite name="observed" tests="1" failures="0" errors="0" skipped="0">
+    <testcase name="passes"/>
+  </testsuite>
+</testsuites>

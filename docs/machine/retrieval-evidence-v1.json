@@ -1,0 +1,450 @@
+{
+  "compactLexicalCandidate": {
+    "version": "2.0.5-dev.1",
+    "generator": "shin-generator-v22-compact-lexical",
+    "format": "shin.lexical.v1",
+    "contract": "docs/machine/lexical-retrieval-v1.json",
+    "legacyReader": "shin-generator-v21-cpp-syntax only; no automatic migration",
+    "evidenceRowsChanged": false,
+    "installed": false
+  },
+  "schemaVersion": "shin.retrieval-evidence-contract.v1",
+  "document": "retrieval-evidence-v1",
+  "status": "accepted",
+  "title": "Retrieval Evidence and Evaluation Contract",
+  "summary": "Consumer-neutral provenance, query-group coverage, and query-robustness quality gates for bounded local retrieval.",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v20-preview-redaction",
+    "compatibility": "The historical Shin v1.25 authority cutover requires an explicit generator-v17 rebuild. Native CF2 additionally requires an explicit generator-v20 rebuild for section publication and redaction. No compatibility reader or implicit migration is retained."
+  },
+  "publishedSnapshot": {
+    "field": "snapshot_id",
+    "generatedIndexValue": "fnv1a64 of the exact bytes of the active docs/kb/generated/manifest.json",
+    "sourceScanValue": null,
+    "commandCoverage": [
+      "search",
+      "context",
+      "brief",
+      "pack",
+      "pack-diff",
+      "eval",
+      "batch",
+      "diagnose"
+    ],
+    "freshnessRelation": "snapshot_id identifies the active publication. index_freshness independently reports whether that publication is current relative to configured sources and canonical generated output.",
+    "driftSemantics": [
+      "unpublished source drift does not change snapshot_id",
+      "non-manifest generated-file corruption does not change snapshot_id but makes index_freshness current=false",
+      "cache repair or canonical vacuum repair does not change a deterministic snapshot_id",
+      "a content-changing successful publication changes manifest bytes and therefore snapshot_id"
+    ],
+    "federationRelation": "Each federation member snapshot_id is exactly the member local generated-index snapshot_id. snapshot_set_id is derived from the ordered member identities and federation configuration.",
+    "trustBoundary": "FNV-1a-64 detects accidental drift and identifies deterministic publications; it is not cryptographic authentication."
+  },
+  "liveSourceScan": {
+    "mode": "source-scan",
+    "activation": "The explicit --source-scan option reads configured documentation and profile-selected source-fact files directly from the repository without opening a generated publication.",
+    "evidence": "Search, context, and brief build the same bounded document rows and source facts used for publication. Structured extractor facts retain their evidence_kind, verification_level, and exact source ranges.",
+    "snapshotIdentity": null,
+    "freshness": {
+      "current": "Every input observed by this invocation was read from the live root.",
+      "fully_verified": "Every eligible source-fact input was scanned without a configured file-count cap or large-file skip.",
+      "counters": [
+        "source_fact_candidate_files",
+        "source_fact_scanned_files",
+        "source_fact_skipped_large_files",
+        "source_fact_capped_files"
+      ]
+    },
+    "strictBoundary": "--require-current accepts a live source scan only when current=true and fully_verified=true. A capped or skipped source-fact corpus fails with incomplete-source-scan instead of presenting partial evidence as complete.",
+    "nonGoal": "Source scan is an explicit inspection route, not an implicit fallback, publication replacement, cache, daemon, or automatic rebuild."
+  },
+  "generatedIndexDecoding": {
+    "policy": "hybrid-json-decoder-v1",
+    "generatedJsonlLibrary": "simdjson 4.6.10 DOM",
+    "controlPlaneLibrary": "nlohmann/json 3.12.0",
+    "scope": [
+      "sections",
+      "documents",
+      "links",
+      "facts",
+      "decisions",
+      "typed references",
+      "term postings"
+    ],
+    "compatibility": "Existing parsing, term-posting bounds, and row ordering remain. Provenance enums are required, malformed values fail as index-corrupt, and the generator identity changes.",
+    "memoryPolicy": "One parser is reused per worker thread for rows up to 4 MiB. Larger accepted rows use a temporary parser so exceptional rows cannot permanently raise retained thread-local parser capacity.",
+    "portability": "simdjson is compiled into the binary and selects a supported ARM64 or AMD64 implementation at runtime; no shared simdjson installation is required.",
+    "benchmarkEvidence": {
+      "method": "Alternating-order in-process DOM decode and representative field access over identical immutable generated JSONL rows; median of 31 measured iterations for the portable self corpus.",
+      "selfCorpus": {
+        "rows": 12920,
+        "bytes": 2528442
+      },
+      "appleM4ProMs": {
+        "nlohmannDomP50": 19.2325,
+        "simdjsonDomP50": 2.00929,
+        "speedup": 9.57176,
+        "selectedImplementation": "arm64"
+      },
+      "amd64Wsl2Ms": {
+        "nlohmannDomP50": 18.8452,
+        "simdjsonDomP50": 1.4847,
+        "speedup": 12.6929,
+        "selectedImplementation": "icelake"
+      },
+      "largeRetoolCorpus": {
+        "rows": 198998,
+        "bytes": 68159488,
+        "iterations": 5,
+        "nlohmannDomP50Ms": 438.718,
+        "simdjsonDomP50Ms": 36.7345,
+        "speedup": 11.9429
+      },
+      "interpretation": "The decoder microbenchmark isolates parse cost. End-to-end retrieval gains are smaller because freshness verification, candidate planning, ranking, selection, and serialization remain in the measured path."
+    },
+    "boundary": "Profiles, task requests, source structured documents, manifests, and command envelopes remain on nlohmann/json because they need strict policy validation, mutable DOM operations, or structured serialization rather than hot immutable-row decoding."
+  },
+  "rankedRetrieval": {
+    "policy": "global-evidence-order-unique-path-v1",
+    "commands": [
+      "brief",
+      "eval",
+      "diagnose"
+    ],
+    "selectionRule": "Brief first selects one globally bounded evidence sequence across typed facts and sections. One per-document limit applies across all types, and allowed evidence types are filtered both when choosing a retrieval branch and before consuming that limit. Existing evidence-kind seeds are followed by the highest eligible evidence for unrepresented paths, then additional per-document evidence fills remaining slots. Section preselection uses the same diversity rule only for Brief. Candidate competition applies compoundBriefRetention from lexical-retrieval-v1.json before comparing unchanged field scores and deterministic tie breaks. The ranked path table deduplicates the resulting fixed evidence order.",
+    "tieBreakRule": "Score ties use complete canonical row fields after evidence type and path so libc++ and libstdc++ observe the same strict ordering.",
+    "rankFields": {
+      "path": "Canonical repository-relative evidence path.",
+      "unique_path_rank": "One-based rank after first-occurrence path deduplication.",
+      "first_evidence_rank": "One-based position of the first selected evidence row carrying that path before path deduplication."
+    },
+    "briefRule": "Full ranked_paths and related_documents describe the same path order. Compact brief preserves ranked_paths and the same globally ordered selected evidence without full scoring diagnostics. evidence_budget.policy is global-record-document-diversity-with-type-seeding-v3.",
+    "evalRule": "returned_paths, ranked_paths, path_ranks, rank_assertions, and rank_violations are derived from the same BriefExecution object as brief output.",
+    "diagnoseRule": "retrieval.ranked_paths is the same table for identical profile, snapshot, query, limit, and per-document limit.",
+    "mustRankBefore": {
+      "shape": {
+        "higher": "path",
+        "lower": "path"
+      },
+      "passRule": "higher must be returned; lower may be absent, but when returned it must have a strictly larger unique_path_rank.",
+      "limitPerCase": 64,
+      "validation": [
+        "both paths are canonical, distinct, existing repository-relative paths",
+        "duplicate and cyclic constraints are rejected",
+        "rank paths may not also appear in mustNotPaths",
+        "mustTopN may not exceed the case limit or a smaller CLI limit override"
+      ]
+    },
+    "metrics": {
+      "perQuery": [
+        "relevant_paths",
+        "relevant_paths_found",
+        "recalled_at_n",
+        "at_n",
+        "first_relevant_rank",
+        "reciprocal_rank",
+        "recall_at_n"
+      ],
+      "suite": [
+        "ranked_queries",
+        "expected_paths",
+        "found_paths",
+        "mean_reciprocal_rank",
+        "recall_by_n"
+      ],
+      "aggregationRule": "Recall is aggregated separately for each N; unlike MRR, recalls with different cutoffs are never averaged together.",
+      "relevantPathRule": "Required paths, required top paths, and every higher path in mustRankBefore are relevant. Optional lower paths are not counted as required recall."
+    }
+  },
+  "documentOwnerScope": {
+    "policy": "document-owner-scope-v1",
+    "mode": "owner-scoped",
+    "activation": "A literal single-token filename with a supplied extension may identify a unique indexed repository document from any query position, by exact normalized full path or basename. Names come from manifest identity, never a prose mention or an expanded alias. Ambiguous basenames and multiple distinct named owners do not force one-document scope. Leading explicit directory boundaries and complete leading literal aliases containing spaces keep their existing interpretation. Other owner resolution still requires the first meaningful query group to identify a unique document by path, basename, stem or bounded humanized compound identity. Ordinary unpunctuated multi-group owners must cover every group across matching rows before shortlist caps. A best humanized compound identity takes precedence over a weaker single-segment first-word stem when no longer literal alias exists.",
+    "literalFilenameBoundary": "Identity remains case-folded with complete path components, separators and extension preserved. Prefix and suffix qualifiers keep their original query-group indices; the actual owner group, not group zero, receives the resolved path match and is reported in scope_group_index. Missing qualifiers stay uncovered. Embedded multiword filenames remain ordinary retrieval and cannot be reinterpreted as their final filename token. Unindexed paths, aliases alone and extension mismatches cannot create an owner or expand authority. This changes selection only, not vocabulary, publication, source freshness or snapshot format.",
+    "humanizedCompoundIdentity": "A filename stem with 3 to 8 meaningful camel, Pascal, snake, or kebab segments may be addressed by natural query words when its first two segments are the first two meaningful query segments, its remaining segments occur in order, and exactly one qualifier is interposed inside that identity. More distant completion is a semantic sentence rather than a high-confidence filename identity and remains on ordinary multi-document retrieval. A contiguous space-separated topic also remains ordinary multi-document retrieval unless it already satisfies an exact path, basename, or stem rule. A trailing vN filename version is metadata rather than an identity segment. Selection first prefers the identity with the most matched stem segments, then the earliest completion, and accepts it only when that best result is unique. An equal or more specific contiguous stem blocks a shorter humanized candidate instead of forcing one-document scope. Equal best humanized candidates also fail closed. A resolved humanized identity is explicit, so trailing qualifiers select evidence but do not have to be represented by generated rows.",
+    "ranking": "Exact owner evidence receives a deterministic bounded boost and is selected before proxy documents that merely mention the owner name.",
+    "safety": "Humanized identities require a topic-leading two-segment prefix, exactly one interposed qualifier, bounded stem and query sizes, maximum-specificity ordered completion, no equally specific contiguous topic, and one unique best manifest path. This prevents a long semantic sentence or a normal or more specific compound topic from collapsing legitimate multi-document retrieval into a shorter implementation owner. Ambiguous names, separator collisions, extension mismatches, weak or distant filename matches, or a branch with no allowed evidence type fall through to the existing strict, planned, scoped, and relaxed retrieval pipeline. No consumer path or vocabulary exists in Core.",
+    "diagnostics": "matched row and typed-fact counters describe all qualified owner rows before shortlist caps; returned evidence remains bounded independently."
+  },
+  "directoryOwnerScope": {
+    "policy": "directory-owner-scope-v1",
+    "mode": "directory-scoped",
+    "profileGate": "compoundQueryFirstTermScope must be enabled by the active profile.",
+    "activation": "An extensionless path-like first query term activates directory resolution directly. A bare first term remains subject to the existing long compound-query threshold and must resolve to one unique indexed directory component.",
+    "resolution": "Directory candidates are derived only from manifest sources and source_fact_sources. Path matching is case-folded and canonicalized independently per complete path component without consulting consumer vocabulary.",
+    "boundary": "Returned evidence must be a descendant of the resolved directory using a complete path-component boundary. A sibling such as Scope2 is outside Scope.",
+    "failure": "An explicit path-like directory anchor is fail-closed: an unresolved or empty scoped result does not fall through to evidence outside that directory.",
+    "diagnostics": "Full results expose directory_owner_scope_used, retrieval_mode=directory-scoped, and matching_policy=directory-owner-scope-v1. Compact results preserve retrieval_mode."
+  },
+  "briefProjections": {
+    "default": "full",
+    "option": "--projection full|compact",
+    "full": {
+      "schema": "shin.context-brief.v1",
+      "purpose": "Retrieval debugging and complete scoring, planner, match, type, and coverage diagnostics."
+    },
+    "compact": {
+      "schema": "shin.context-brief-compact.v1",
+      "purpose": "Normal single-question agent transport.",
+      "preserved": [
+        "profile",
+        "index_mode",
+        "index_freshness",
+        "snapshot_id",
+        "query",
+        "retrieval_mode",
+        "query_coverage",
+        "evidence_budget",
+        "ranking_policy",
+        "ranked_paths",
+        "evidence",
+        "verification_paths"
+      ],
+      "omitted": [
+        "query_diagnostics",
+        "matched row counters",
+        "score_components",
+        "matched_fields",
+        "per-group planner internals"
+      ],
+      "evidenceRule": "One globally ranked array retains path, source range, excerpt, status, authority_level, evidence_kind, verification_level, and matched_group_indices for verification.",
+      "verificationRule": "verification_paths deduplicates selected repository paths, exact source ranges, and stable evidence ids so normal agent use does not require a second broad path scan."
+    }
+  },
+  "queryCoverage": {
+    "field": "query_coverage",
+    "policy": "returned-evidence-and-planned-document-coverage-v1",
+    "commands": [
+      "search",
+      "context",
+      "brief",
+      "pack",
+      "eval"
+    ],
+    "schemaVersion": "shin.query-group-coverage.v1",
+    "compactSchemaVersion": "shin.query-group-coverage-compact.v1",
+    "topLevelFields": [
+      "schema_version",
+      "policy",
+      "total_groups",
+      "covered_groups",
+      "returned_evidence_covered_groups",
+      "selected_document_covered_groups",
+      "uncovered_groups",
+      "groups"
+    ],
+    "groupFields": [
+      "index",
+      "term",
+      "covered",
+      "returned_evidence_covered",
+      "selected_document_covered",
+      "returned_evidence_paths",
+      "selected_document_paths",
+      "planner_candidate_rows",
+      "planner_disposition"
+    ],
+    "termRule": "One group represents one normalized user term plus its profile-local aliases. index preserves normalized query order.",
+    "inflectionRule": "Conservative regular singular and plural variants are expanded bidirectionally for ASCII word terms before sparse posting lookup and final scoring. This keeps candidate discovery complete for common number inflection without compiling a consumer vocabulary into Core.",
+    "identifierRule": "Camel and acronym boundaries are preserved during query parsing and expanded with compact, spaced, hyphen, and underscore equivalents under docs/machine/identifier-evidence-v1.json. A sparse relaxed compound shortlist may additionally complete bounded compact identifier prefixes against the existing term lexicon without changing required groups or final scoring.",
+    "coveredRule": "covered_groups is the union of returned row evidence and accepted selected planner documents. The two component counts and path sets remain separate, so path-level planner support cannot be mistaken for an emitted representative row.",
+    "plannerRule": "planner_candidate_rows and planner_disposition are emitted when document-coverage planning was attempted. A selected document may support a group through a different indexed row than its representative returned record; rejected plans expose work and disposition but no selected_document_paths.",
+    "plannerDispositions": [
+      "no-postings",
+      "group-limit-exceeded",
+      "merged",
+      "union-limit-exceeded"
+    ],
+    "rowEvidenceField": "matched_group_indices",
+    "rowEvidenceRule": "Every returned search/context/brief row reports only the query groups matched by that row. Pack preserves those indices per requirement match. Row evidence does not inherit document-level planner coverage.",
+    "compactRule": "Compact brief retains aggregate coverage counts and the index plus normalized term of every uncovered group; full per-group evidence paths and planner diagnostics remain in full brief.",
+    "authorityBoundary": "Coverage proves retrieval support, not correctness or authority. Agents still verify returned paths against source and machine contracts."
+  },
+  "sectionAuthority": {
+    "generatedFields": [
+      "status",
+      "authority_level"
+    ],
+    "authorityLevels": [
+      "source-of-truth",
+      "accepted",
+      "review",
+      "history",
+      "advisory"
+    ],
+    "rankingPolicy": "current-authority-weight-v1",
+    "semantics": [
+      "Section status and authority are inferred once from document metadata and path, serialized into the deterministic index, and exposed on every section hit.",
+      "Source-of-truth and accepted evidence receive bounded trust boosts; history, review, and explicitly non-current advisory evidence receive bounded penalties.",
+      "Ordinary active advisory documents are not penalized merely because no stronger authority classification exists.",
+      "The score floor keeps proposal and history evidence retrievable when explicitly requested; authority never acts as a hard exclusion.",
+      "Profile mustRankBefore cases own consumer-specific current-versus-proposal expectations."
+    ]
+  },
+  "evidenceProvenance": {
+    "contract": "docs/machine/evidence-provenance-v1.json",
+    "generatedFields": [
+      "evidence_kind",
+      "verification_level"
+    ],
+    "stores": [
+      "documents",
+      "sections",
+      "facts",
+      "decisions",
+      "contracts",
+      "runbooks"
+    ],
+    "outputCoverage": [
+      "search",
+      "context",
+      "brief",
+      "pack",
+      "batch",
+      "diagnose",
+      "federated-brief",
+      "pack-diff"
+    ],
+    "rankingEffect": "Neither field is a term, boost, penalty, or candidate-selection input in v1.17.",
+    "compatibilityRule": "Retrieval rejects any generator identity other than the binary identity even when exact source freshness was not requested."
+  },
+  "worktreeAwareness": {
+    "contract": "docs/machine/worktree-diff-v1.json",
+    "command": "worktree-diff",
+    "boundary": "Exact profile-owned unpublished input drift is reported against a verified publication without changing retrieval or claiming semantic equivalence."
+  },
+  "agentContextPack": {
+    "contract": "docs/machine/agent-context-pack-v1.json",
+    "requestSchema": "shin.task-request.v1",
+    "resultSchema": "shin.agent-context-pack.v1",
+    "receiptSchema": "shin.context-pack-receipt.v1",
+    "evidenceRelation": "Each task requirement executes the normal BriefExecution pipeline. Pack deduplicates the resulting stable records, retains requirement-specific rank and match edges, and applies one global record and compact-JSON byte budget.",
+    "coverageRelation": "Each requirement retains its shin.query-group-coverage.v1 retrieval object and adds selected_query_coverage derived only from transported match edges. Default completion remains any selected evidence; optional all-group or minimum-group policy can require selected coverage, while completion.coverage_complete always reports full required-group transport independently.",
+    "snapshotRelation": "One RetrievalSession snapshot_id and freshness assessment cover every requirement, selected record, verification path, and receipt."
+  },
+  "agentContextPackDiff": {
+    "contract": "docs/machine/agent-context-pack-diff-v1.json",
+    "resultSchema": "shin.agent-context-pack-diff.v1",
+    "requestRelation": "The exact same validated task request and active profile policy execute against both snapshots.",
+    "snapshotRelation": "Both generated publications receive complete integrity verification. Historical source freshness is intentionally not required; optional exact freshness is scoped to the target.",
+    "evidenceRelation": "Exact evidence ids, retained-evidence rank, requirement match edges, requirement coverage, Pack completion, and receipt identity are compared without a second retrieval or scoring implementation."
+  },
+  "queryRobustnessEval": {
+    "resourcePolicy": {
+      "profileField": "evalResourcePolicy",
+      "values": [
+        "strict",
+        "advisory"
+      ],
+      "default": "strict",
+      "scope": "Only maxCandidateRows, maxMatchedSections and maxMatchedFacts are advisory after explicit owner opt-in. Coverage, rank, required/forbidden paths, types, freshness, integrity and safety remain blocking. No runtime or Pack cap changes.",
+      "results": "Raw ceiling violations remain; quality_passed and resources_passed are independent. resource_check.ok is false on any exceeded work ceiling or empty suite, regardless of admission policy. Bounded warnings and explicit omissions survive failed-only eval, compact validation and readiness. Server observations expose policy and counts without queries.",
+      "regressionJob": "Check normal eval strict exit and resource_check.ok separately on a fixed corpus. Live-corpus advisory readiness is not resource-regression acceptance.",
+      "compatibility": "Native dev22 addition; a separately qualified Stable1.27.4 backport is installed locally with owner-approved BFF working-profile opt-in. Stable1.27.3 does not support it. Profile hash binds opt-in; rebuild required. Invalid types/values reject. No CLI bypass, automatic threshold mutation or native deployment."
+    },
+    "compactCeilingDetails": "Full eval, failed-only records and bounded header fallback carry ceiling_violation_details: metric, actual, allowed, comparator and stage. Candidate rows use candidate-discovery, scored matches use scored-matches, and minimum coverage uses coverage with >=. These are measurement categories, not invented timing attribution or a sum across phases. Output byte and record budgets remain enforced.",
+    "sessionSemantics": "One RetrievalSession retains the shared publication lock, freshness result, and active manifest identity across every base query and variant in the local eval command.",
+    "profileFields": {
+      "queryVariants": "Zero to eight normalized-distinct meaningful alternative phrasings. Every variant runs the same path, type, negative-path, breadth, candidate, and coverage assertions as the base query. This is a robustness gate, not a claim that arbitrary formulations are semantically equivalent.",
+      "maxCandidateRows": "Optional inclusive upper bound for retrieval candidate work; -1 or omission disables it.",
+      "minCoveredGroups": "Optional inclusive lower bound for evidence-backed normalized query groups; -1 or omission disables it.",
+      "mustRankBefore": "Zero to 64 reviewed higher/lower path constraints over the emitted global unique-path rank."
+    },
+    "validation": [
+      "variant text must be meaningful after normalization",
+      "variants must be distinct from the base query and from each other",
+      "queryVariants is bounded at eight entries, evalCases at 128 entries, and one profile at 256 total base plus variant executions",
+      "each base or variant query is bounded at 16384 bytes, 64 normalized groups, and 512 profile-expanded terms",
+      "direct eval enforces the same query-group and expanded-term bounds as profile-check before opening the generated index",
+      "simultaneous camelCase and snake_case aliases for one eval field are rejected instead of selecting one implicitly",
+      "unsigned JSON integers above the supported int range are rejected without signed conversion",
+      "maxCandidateRows and minCoveredGroups must be -1 or non-negative",
+      "rank constraints must be unique, acyclic, path-valid, and non-contradictory with forbidden paths",
+      "mustTopN must fit both the case result limit and any CLI limit override"
+    ],
+    "resultSemantics": {
+      "summary": "Counts logical eval cases; a case passes only when its base query and every variant pass.",
+      "query_summary": "Counts every executed base query and variant independently.",
+      "query_passed": "Pass state for the concrete query represented by that result object.",
+      "passed": "For a top-level case, aggregate pass state across base and variants; for a nested variant, equal to query_passed.",
+      "query_variants": "Nested concrete result objects with zero-based variant_index values.",
+      "rank_assertions": "Concrete higher/lower ranks and pass state for every mustRankBefore pair.",
+      "rank_violations": "higher-missing or order-violated diagnostics with nullable concrete ranks.",
+      "rank_summary": "Suite MRR and recall grouped by the exact configured N."
+    },
+    "violationNames": [
+      "matched_sections",
+      "matched_facts",
+      "candidate_rows",
+      "covered_groups"
+    ]
+  },
+  "resourceAndPerformanceBoundary": {
+    "queryVariantLimit": 8,
+    "evalCaseLimit": 128,
+    "evalExecutionLimit": 256,
+    "evalQueryByteLimit": 16384,
+    "evalQueryGroupLimit": 64,
+    "evalExpandedTermLimit": 512,
+    "evalRankPairLimit": 64,
+    "plannerCandidateLimitPerGroup": 20000,
+    "plannerUnionCandidateLimit": 20000,
+    "compoundPrefixCompletionTermLimit": 2048,
+    "compoundPrefixCompletionPostingByteLimit": 67108864,
+    "compoundPrefixCompletionOffsetIndexByteLimit": 67108864,
+    "generatedIndexRowByteLimit": 67108864,
+    "generatedOffsetIndexLineByteLimit": 1048576,
+    "measurementRule": "Use candidate_rows and per-group planner_candidate_rows to justify algorithm changes; do not tune scoring from one consumer query without a failed neutral or profile-owned eval case.",
+    "m4Evidence": {
+      "queryGroups": 11,
+      "candidateRows": 655,
+      "returnedEvidenceCoveredGroups": 9,
+      "selectedDocumentCoveredGroups": 11,
+      "selectedDocuments": 4,
+      "iterations": 50,
+      "briefP50Ms": 19.969,
+      "briefP95Ms": 20.623,
+      "previousComparableP50Ms": 25.555,
+      "p50ChangePercent": -21.9,
+      "decision": "The bounded candidate ceiling is sufficient; the bounded buffered index reader improved the sequential lookup path without a planner algorithm change."
+    }
+  },
+  "ownership": {
+    "core": "C++ Core owns deterministic provenance, one global evidence-order path rank, coverage accounting, bounded eval mechanics, and result schemas.",
+    "profiles": "Consumer-specific queries, aliases, required paths, forbidden history paths, reviewed rank constraints, and ceilings remain in profiles/*.json.",
+    "consumers": "Product repositories own source authority and the interpretation of returned evidence; they do not modify Core scoring for local vocabulary."
+  },
+  "verification": [
+    "snapshot identity equality across exact eval, cold search, warm context, and warm brief",
+    "source-scan null identity",
+    "identity stability across cache repair, generated corruption, source drift, vacuum repair, concurrent readers, and interrupted-publication recovery",
+    "identity change after a content-changing publication",
+    "per-row matched group indices and aggregate evidence paths",
+    "returned-row coverage remains separate from accepted selected-document coverage",
+    "rejected planner attempts retain per-group candidate disposition and rejection reason without claiming selected evidence",
+    "passing base plus reordered and natural-language query variants",
+    "brief, eval, and diagnose rank-table equality for one snapshot and request",
+    "passing, reversed, higher-missing, and lower-absent mustRankBefore semantics",
+    "duplicate, cyclic, contradictory, malformed, excessive, and unevaluable rank constraint rejection",
+    "MRR plus recall aggregation grouped by N",
+    "invalid duplicate, empty, excessive, unknown, wrong-type, alias-conflicting, unsigned-overflow, and out-of-range eval configuration rejection",
+    "binary and sequential term-offset plus row-offset oversized-range rejection before allocation",
+    "binary, sequential, and row offset index lines exceeding the physical line bound are rejected during bounded reads",
+    "malformed term posting arrays fail closed as index-corrupt",
+    "missing, wrong-type, and unknown evidence provenance enums fail closed as index-corrupt",
+    "incompatible generator identity rejects retrieval without --require-current",
+    "generated and source-scan retrieval expose the same closed provenance axes",
+    "live source-scan search, context, and brief include profile-selected source facts with null snapshot identity",
+    "capped live source-fact scans fail --require-current as incomplete-source-scan",
+    "exact directory owner scope excludes prefix-colliding sibling directories and fails closed",
+    "a singular query term retrieves and fully covers a row containing its regular plural form through the sparse candidate index"
+  ],
+  "nonGoals": [
+    "no semantic embeddings, LLM judging, RAG service, or GPU dependency",
+    "no product vocabulary or paths compiled into C++ Core",
+    "no cryptographic attestation",
+    "no distributed snapshot transaction or remote locking"
+  ]
+}

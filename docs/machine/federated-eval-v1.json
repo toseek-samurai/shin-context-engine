@@ -1,0 +1,118 @@
+{
+  "schemaVersion": "shin.federated-eval-contract.v1",
+  "document": "federated-eval",
+  "status": "active-contract",
+  "title": "Federated Evaluation Contract",
+  "summary": "Deterministic quality evaluation over one stable set of independently published Shin profile snapshots, with typed provenance assertions and bounded retrieval ceilings.",
+  "command": {
+    "name": "federated-eval",
+    "syntax": "shin-context federated-eval --config FILE --suite FILE [--strict] [--require-current]",
+    "indexMode": "generated-index-only",
+    "qualityFailureExitCode": 1,
+    "configurationFailureExitCode": 2,
+    "globalSingleProfileOptions": "--profile, --profile-dir, --root, --out-dir, --from-index, and --source-scan are rejected; member locations come only from the reviewed federation config"
+  },
+  "suite": {
+    "schemaVersion": "shin.federated-eval-suite.v1",
+    "requiredFields": [
+      "schemaVersion",
+      "id",
+      "federationId",
+      "requiredMemberIds",
+      "cases"
+    ],
+    "memberSetRule": "requiredMemberIds must equal the complete sorted member-id set resolved from the selected federation config.",
+    "caseFields": [
+      "id",
+      "query",
+      "limit",
+      "perDocLimit",
+      "mustEvidence",
+      "mustTopEvidence",
+      "mustTopN",
+      "mustNotEvidence",
+      "expectedEvidenceTypes",
+      "memberBounds",
+      "maxCandidateRecords",
+      "maxBudgetedOutRecords"
+    ],
+    "evidenceExpectationFields": [
+      "member",
+      "path",
+      "evidenceType",
+      "recordType"
+    ],
+    "memberBoundFields": [
+      "id",
+      "minReturnedRecords",
+      "maxReturnedRecords"
+    ],
+    "pathRule": "Evidence paths are exact canonical repository-relative paths; absolute paths and parent traversal are rejected.",
+    "unknownFieldPolicy": "Unknown suite, case, expectation, and member-bound fields are rejected.",
+    "hash": "suite.content_hash is an FNV identity of the exact suite bytes and is intended for drift detection, not cryptographic authentication."
+  },
+  "limits": {
+    "suiteBytes": 1048576,
+    "cases": 128,
+    "queryBytesPerCase": 16384,
+    "evidencePathBytes": 4096,
+    "globalEvidenceRecordsPerCase": 64,
+    "perDocumentRecordsPerCase": 8
+  },
+  "assertions": {
+    "mustEvidence": "Every expectation must match a returned record by member_ids provenance and exact hit.path; evidenceType and recordType are optional additional constraints.",
+    "mustTopEvidence": "Every expectation must match within the first mustTopN global evidence records.",
+    "mustNotEvidence": "No expectation may match any returned evidence record.",
+    "expectedEvidenceTypes": "Every declared type must occur in the returned global evidence set.",
+    "memberBounds": "Returned-record contribution for each member, including retained deduplicated provenance, must remain inside optional inclusive bounds.",
+    "retrievalCeilings": "candidate_records and budgeted_out_records must not exceed their declared case ceilings.",
+    "scorePolicy": "Suites cannot assert raw scores because scores are member-local and are not cross-profile authority."
+  },
+  "ownership": "Evaluation fixtures and output are owned by the caller; the engine reads configured inputs and writes only the requested result destination.",
+  "nonGoals": [
+    "no implicit member discovery",
+    "no merged federation index",
+    "no product-specific path or query compiled into C++",
+    "no raw-score thresholds or cross-profile score comparison",
+    "no distributed transaction, remote lock, daemon, or runtime dependency"
+  ],
+  "verification": "Run hermetic arbitrary-member fixtures; deployed integrations require separate authorization and qualification.",
+  "snapshotAndLocking": {
+    "session": "One FederationSession resolves the config and acquires every member shared index lock once for the complete suite.",
+    "publicationGuard": "A publication-in-progress marker observed after lock acquisition fails the suite closed before retrieval.",
+    "lockLifetime": "The shared lock set remains held through all cases and result construction, then is released before the final multi-case JSON report is written.",
+    "memberSnapshotIdentity": "Every federation member uses the same active-manifest snapshot_id as its local generated-index commands.",
+    "stableSnapshotSet": "Every case must return the same snapshot_set_id; otherwise the suite fails even when individual assertions pass.",
+    "strictFreshness": "--strict and --require-current both request exact freshness verification for every member in every case."
+  },
+  "result": {
+    "schemaVersion": "shin.federated-eval.v1",
+    "topLevelFields": [
+      "federation",
+      "suite",
+      "strict",
+      "require_current",
+      "summary",
+      "cases"
+    ],
+    "federationFields": [
+      "id",
+      "config",
+      "config_hash",
+      "member_ids",
+      "snapshot_set_id",
+      "stable_snapshot_set"
+    ],
+    "caseDiagnostics": [
+      "returned_evidence",
+      "missing_evidence",
+      "missing_top_evidence",
+      "unexpected_evidence",
+      "missing_evidence_types",
+      "member_bound_violations",
+      "ceiling_violations",
+      "freshness_violation"
+    ],
+    "failureSemantics": "Any failed quality case or unstable snapshot set emits the normal result schema with ok=false and exits 1, with or without --strict. Invalid input emits shin.error.v1 and exits 2."
+  }
+}

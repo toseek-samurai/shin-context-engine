@@ -1,0 +1,102 @@
+{
+  "schemaVersion": "shin.profile-routing-contract.v1",
+  "document": "profile-routing-v1",
+  "status": "accepted",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "summary": "Recommend one explicit project/profile route for a task query without opening an index, mixing project context, switching automatically, or embedding consumer semantics in C++ Core.",
+  "command": {
+    "name": "suggest-profile",
+    "syntax": "shin-context suggest-profile --config FILE QUERY [--from-root PATH] [--limit N]",
+    "outputSchema": "shin.profile-suggestion.v1",
+    "generatedIndexRequired": false,
+    "indexAccess": false,
+    "projectMutationAllowed": false,
+    "automaticSwitchAllowed": false,
+    "globalProfileRootOptionsAllowed": false
+  },
+  "configuration": {
+    "schemaVersion": "shin.profile-routing.v1",
+    "maximumBytes": 1048576,
+    "maximumRoutes": 32,
+    "pathResolution": "profileDir and root may be absolute or relative to the routing config. They must resolve to existing directories.",
+    "routeFields": [
+      "id",
+      "description",
+      "profile",
+      "profileDir",
+      "root",
+      "marker",
+      "signals"
+    ],
+    "routePolicy": "Route and profile ids are portable identifiers. Each root has exactly one route. The selected profile must exist and must not be bootstrap-only.",
+    "markerPolicy": "Optional marker is a canonical path relative to that route's configured root and must resolve to a regular non-symlink file. Suggestion confirms presence only; adoption-check remains the marker semantic authority.",
+    "indexingPolicy": "JSON path-reference extraction recognizes shin.profile-routing.v1 and shin.profile.v1 by schema, regardless of file location. Their profileDir, root, marker, and profile-owned paths belong to external namespaces and are never reclassified as local links; ordinary JSON under routing/ retains normal local-link validation.",
+    "signals": "Each route owns 1-64 unique normalized phrases of 1-256 bytes. Product and ecosystem vocabulary belongs here, never in Core.",
+    "unknownFieldsRejected": true,
+    "symlinkConfigRejected": true
+  },
+  "matching": {
+    "policy": "explicit-signal-all-terms-v1",
+    "queryBytes": 16384,
+    "normalization": "Query and signal text reuse Shin query token normalization and stop-word handling. Duplicate normalized query terms are removed.",
+    "signalMatch": "A configured signal matches only when every normalized signal term is present in the query term set.",
+    "score": "Each matching signal contributes 100 plus 10 per unique signal term. Scores and matched-term/signal counts are deterministic and auditable.",
+    "ranking": "Descending score, unique matched query terms, and matched signal count; route id is only the deterministic display tie-breaker.",
+    "recommendation": "A recommendation exists only when the top semantic rank is unique. A tied top rank returns ambiguous with recommendation=null.",
+    "currentRoute": "Optional --from-root is canonicalized, returned in that resolved form, and matched to the deepest configured route root. It affects switch_recommended only and never boosts semantic score.",
+    "noMatch": "No matching configured signal returns no-match with recommendation=null. Core does not guess or fall back to the current profile."
+  },
+  "output": {
+    "states": [
+      "recommended",
+      "current-route",
+      "ambiguous",
+      "no-match"
+    ],
+    "configIdentity": "content_hash binds the canonical resolved route set for deterministic local replay.",
+    "candidateEvidence": "Candidates expose route/profile/root/marker, score, exact matched signals, exact matched query terms, and current-route identity.",
+    "switchBoundary": "switch_recommended is advice only. The caller must explicitly invoke the returned profile route and remains responsible for adoption and freshness gates.",
+    "limit": {
+      "default": 3,
+      "maximum": 16,
+      "semantics": "Limits returned candidates only; ambiguity is decided over the complete bounded route set."
+    }
+  },
+  "ownership": {
+    "core": "Owns strict parsing, bounded exact matching, deterministic ranking, ambiguity behavior, path safety, and the read-only result envelope.",
+    "configuration": "Owns project roots, profiles, markers, descriptions, and routing signals.",
+    "client": "Owns whether to follow a recommendation, how to resolve the external index key, and all later retrieval commands."
+  },
+  "security": [
+    "the config must be a bounded regular non-symlink JSON file",
+    "route directories and optional markers are validated before matching",
+    "suggest-profile never opens generated output, source documents, network resources, or processes",
+    "ambiguous and unmatched questions never trigger an implicit profile",
+    "configuration cannot grant runtime or product authority"
+  ],
+  "nonGoals": [
+    "No automatic cross-index federation or evidence merging.",
+    "No classifier model, embedding, LLM, or probabilistic confidence.",
+    "No hidden discovery of projects or profiles outside the explicit config.",
+    "No archaeology-profile multiplexing for one root in v1.",
+    "No IDE process control or automatic file opening."
+  ],
+  "acceptance": {
+    "hermeticRunner": "tests/run_profile_suggest_tests.sh",
+    "requiredEvidence": [
+      "byte-identical repeated recommendation",
+      "current-route and cross-route recommendations",
+      "tie returns ambiguous without recommendation",
+      "unknown query returns no-match without fallback",
+      "candidate limit cannot hide ambiguity",
+      "invalid fields, duplicate roots, symlink config, global-route options, missing config, and missing query fail closed",
+      "no generated index or consumer mutation",
+      "schema-identified routing/profile path values do not create false local-link failures while ordinary JSON under routing/ retains local-link validation",
+      "symlink and lexical --from-root spellings return the canonical path used for route selection"
+    ]
+  }
+}

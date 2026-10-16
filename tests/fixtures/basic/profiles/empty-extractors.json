@@ -1,0 +1,12 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "fixture-empty-extractors",
+  "status": "active",
+  "id": "empty-extractors",
+  "sourceLabel": "Fixture profile with an explicitly empty extractor registry",
+  "rootFiles": ["README.md"],
+  "sourceFactRoots": ["apps"],
+  "sourceFactExtensions": [".rsx"],
+  "sourceFactExtractors": [],
+  "agentStartPaths": ["README.md"]
+}

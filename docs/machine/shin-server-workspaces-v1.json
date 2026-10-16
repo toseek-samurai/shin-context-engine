@@ -1,0 +1,73 @@
+{
+  "schemaVersion": "shin.server-workspace-registry.v1",
+  "document": "server-workspaces",
+  "status": "active-contract",
+  "title": "Git-Optional Projects And Local Workspace Bindings",
+  "summary": "Separate logical project identity from host-local working directories before independent Observer delivery. A directory without Git is a first-class source workspace; commits are not the change clock.",
+  "routes": {
+    "config": "Use the accepted schema, complete service template and check-config gate in docs/machine/shin-companion-protocols-v1.json, including its required policies. Workspace binding requires source_host_id at top level and an explicit database.server_id deployment pin. Exact route fields remain id,project_id,workspace_id,root,profile,profile_dir. Earlier service configuration schemas are rejected; there is no default workspace selector. See shin-server-recovery-v1 for identity fencing.",
+    "binding": "Route fingerprint includes project, workspace, source host, canonical root/inode, profile bytes/path and generator. Preparation execution fingerprint additionally includes candidate version and existing state/limits. Retrieval verifies registered workspace and current physical root before accepting evidence.",
+    "authority": "A logical project reader currently has read access to all its registered workspace metadata and configured routes. Per-person private workspace policy is not implemented or claimed. Remote file paths never grant Server filesystem access.",
+    "publication": "Active head remains project/route-scoped. Changing workspace or host configuration cannot make a retained generation current because its execution fingerprint differs. Explicit deactivation and preparation/activation against the reviewed route remain required. No automatic cross-workspace merge or promotion."
+  },
+  "currentContract": "docs/machine/shin-observer-ingestion-v1.json",
+  "scope": "P3E1 local registry and route binding only. Observer, offline outbox, remote enrollment, private per-workspace grants and conflict-resolution UI remain separate work.",
+  "identities": {
+    "project": "An explicit id and display name describe the logical project. No root, Git remote, branch or commit is required. Equal names, directory names or source content do not automatically associate projects.",
+    "workspace": "An explicit id scoped to project_id identifies one immutable local binding. Several workspaces may belong to one project, including ordinary directories, independent copies and Git worktrees. In this contract workspace avoids implying a Git requirement.",
+    "sourceHost": "A reviewed source_host_id from private Server config names this source host. It is not inferred from hostname, an IP address or a client-supplied root. This local configuration is not a remote Observer identity/enrollment protocol.",
+    "physicalBinding": "Canonical allowed root plus device/inode identifies the bound local directory. The tuple source_host_id/root and source_host_id/root_identity is unique; project_id/workspace_id is immutable. Paths and inode tuples are local bindings, not global repository identity or cryptographic authentication.",
+    "contentObservation": "Core worktree-diff.worktree_id remains a content/profile observation fingerprint, not this persistent workspace id. Ordinary file edits change content evidence without replacing the workspace binding. Snapshot identity and publication revision are separate again.",
+    "git": "Git metadata is optional future enrichment, not currently captured by this registry. Absence of .git, uncommitted edits and a project that never had commits do not prevent registration, indexing, strict freshness or retrieval. Do not run git init, demand a commit or infer ancestry from a timestamp.",
+    "notBackup": "A Shin snapshot is selected context evidence, not a complete source backup or version-control history. Offline continuity and future conflict review must not promise recovery or automatic merging of arbitrary source edits."
+  },
+  "api": {
+    "POST /api/v1/projects": "Administrator, Idempotency-Key, exact body {id,display_name}. Returns project/replayed, 201 or 200. The project envelope contains id/display_name/created_at/revision only, not constant readiness claims or a filesystem binding.",
+    "POST /api/v1/projects/{project}/workspaces": "Administrator, Idempotency-Key, exact body {id,display_name,root}. Host comes from private config. New admission resolves and authorizes the directory but does not scan, index or mutate it. Returns workspace/replayed, 201 or 200.",
+    "GET /api/v1/projects/{project}/workspaces": "Project-scoped keyset page, optional after identifier and limit 1..100. Returns items/next_cursor.",
+    "GET /api/v1/projects/{project}/workspaces/{id}": "Project-scoped historical binding metadata, not filesystem currentness. Missing and unauthorized projects use the existing 404 boundary.",
+    "workspaceFields": [
+      "project_id",
+      "id",
+      "source_host_id",
+      "display_name",
+      "root",
+      "root_identity",
+      "created_at",
+      "revision"
+    ],
+    "immutability": "No implicit retarget, update or detach endpoint. A new path or replacement directory requires a separately reviewed binding; the current slice refuses reuse of the same workspace id. Moving an existing workspace will need its own explicit lifecycle contract.",
+    "audit": "workspace.registered records project_id plus workspace_id; a composite foreign key binds audit to the registered workspace. Project and older preparation/activation audit entries have workspace_id=null. Their existing route fingerprints retain source binding; no fabricated historical workspace attribution."
+  },
+  "transaction": {
+    "writeUnit": "Workspace, historical response and audit commit together. Limited runtime role can SELECT/INSERT registry and receipts, not UPDATE/DELETE or DDL.",
+    "idempotency": "Key scope is workspace registration plus principal. Hash binds logical project, configured host and exact validated request JSON. Replay lookup precedes filesystem access and is repeated under the registration lock. The original response can be recovered after root removal or a lost reply; that historical receipt never asserts current filesystem state. Changed request under the same key conflicts.",
+    "concurrency": "A short transaction advisory lock serializes workspace admission and quota accounting. Unique keys enforce workspace and physical-root exclusion. Shared audit writer lock preserves cursor commit order. No timestamp-based last-writer-wins.",
+    "limits": "At most 4096 workspaces globally, 128 per project and 65536 workspace request receipts through normal admission. Replays precede capacity checks. Capacity exhaustion is explicit, not automatic pruning; imported preexisting migration records are preserved."
+  },
+  "migration": {
+    "version": 6,
+    "source": "server/migrations/006_workspaces.sql",
+    "procedure": "Explicit migration preserves each old project and moves its root/identity into workspace primary, attributed to the reviewed source_host_id supplied by the migrator through transaction-local set_config. SQL checksums 001..005 remain untouched. No filesystem access, Git discovery or implicit activation occurs in this SQL transition.",
+    "history": "Prior project registration receipt keys stay consumed with their original request hashes; a new logical-only request must use a new key. Existing route heads and candidate rows are retained but old execution fingerprints do not become valid v5 bindings.",
+    "failure": "Invalid host identity, duplicate physical binding or a failed constraint aborts migration atomically. A later different config host does not rewrite already migrated workspaces."
+  },
+  "noGitWorkflow": [
+    "Choose a project and an explicit local workspace id; attach the allowed directory without writing .git or a Shin marker implicitly.",
+    "Use the same Core profile and explicitly publish a local or managed snapshot. Registration alone does not select a profile or build an index.",
+    "On saves, compare profile-owned content and input inventory with the snapshot. Added, changed and removed files matter regardless of Git tracking or commit state.",
+    "Strict stale retrieval fails closed; explicit build or preparation/activation publishes newly checked evidence. Read-only Impact can describe what needs rereading without publishing.",
+    "Future offline sync will carry workspace observation identity and base publication revision. Git ancestry may enrich review but cannot be its prerequisite or substitute for content verification."
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-server-foundation-v1.json",
+    "docs/machine/shin-server-retrieval-v1.json",
+    "docs/machine/shin-server-activation-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/worktree-diff-v1.json"
+  ],
+  "sources": [
+    "https://www.postgresql.org/docs/current/functions-admin.html#FUNCTIONS-ADMIN-SET",
+    "https://www.postgresql.org/docs/current/ddl-constraints.html"
+  ]
+}

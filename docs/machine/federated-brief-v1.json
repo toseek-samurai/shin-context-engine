@@ -1,0 +1,121 @@
+{
+  "schemaVersion": "shin.federated-brief-contract.v1",
+  "document": "federated-brief",
+  "status": "active-contract",
+  "title": "Federated Brief Contract",
+  "summary": "Host-neutral read-only federation of independently published Shin indexes with per-member freshness, local-rank fusion, bounded global evidence, and source provenance.",
+  "command": {
+    "name": "federated-brief",
+    "syntax": "shin-context federated-brief --config FILE QUERY [--limit N] [--per-doc N] [--require-current]",
+    "indexMode": "generated-index-only",
+    "globalSingleProfileOptions": "--profile, --profile-dir, --root, --out-dir, --from-index, and --source-scan are rejected; all member locations come from the federation config"
+  },
+  "config": {
+    "schemaVersion": "shin.federation.v1",
+    "requiredFields": [
+      "schemaVersion",
+      "id",
+      "members"
+    ],
+    "memberRequiredFields": [
+      "id",
+      "profile",
+      "profileDir",
+      "root",
+      "outDir"
+    ],
+    "pathResolution": "Relative profileDir, root, and outDir values resolve against the federation config directory, independent of process cwd.",
+    "ordering": "Member array order has no authority meaning; runtime order is stable member id order.",
+    "rejections": [
+      "unknown config or member fields",
+      "symlink or non-regular config file",
+      "missing or non-directory member paths",
+      "duplicate member ids",
+      "canonical-equivalent outDir values",
+      "unsafe member or profile identifiers"
+    ]
+  },
+  "limits": {
+    "configBytes": 1048576,
+    "members": 16,
+    "queryBytes": 16384,
+    "termGroupsPerMember": 64,
+    "expandedTermsPerMember": 512,
+    "globalEvidenceRecords": 64,
+    "perDocumentRecords": 8,
+    "materializedRecords": "At most members multiplied by the global evidence limit; each member retains the existing 20000-row generated-index candidate ceiling."
+  },
+  "snapshotAndLocking": {
+    "lockProtocol": "Canonical outDir paths are sorted and shared index locks are acquired in that order before any member freshness or retrieval work.",
+    "lockLifetime": "FederationSession owns the complete shared lock set. federated-brief holds it through final JSON emission; federated-eval holds it across every suite case and releases it before report emission.",
+    "snapshotConsistency": "cooperating-local-index-set-v1",
+    "boundary": "The command observes one stable published snapshot per member but does not claim a distributed transaction or one cross-repository source timestamp.",
+    "memberSnapshotId": "Each member snapshot_id is the same active-manifest identity emitted by that member's local generated-index search, context, brief, and eval commands.",
+    "snapshotSetId": "Deterministic FNV identity over federation id, sorted member ids, profiles, and generated manifest snapshots; it is a drift identity, not a cryptographic authenticity proof.",
+    "publicationGuard": "Every member publication-in-progress marker is checked after the shared lock set is acquired; incomplete publication fails closed before freshness or retrieval."
+  },
+  "freshness": {
+    "normal": "Every member runs the existing complete normal freshness contract; aggregate current and fully_verified are conjunctions across members.",
+    "requireCurrent": "--require-current performs exact generated-output verification for every member and fails the complete command when any member is stale.",
+    "partialResults": false,
+    "profileSnapshot": "Profile bytes are hashed when the profile is loaded so generation and freshness use the parsed configuration snapshot rather than rereading changed bytes later."
+  },
+  "nonGoals": [
+    "no merged cross-repository generated index",
+    "no product-specific routing or implicit repository discovery",
+    "no source-scan federation",
+    "no remote service, daemon, MCP, ACL, or distributed lock",
+    "no cross-profile comparison of raw retrieval scores"
+  ],
+  "verification": "Use arbitrary synthetic member roots, including denied, missing, stale, and valid publications.",
+  "retrieval": {
+    "memberPipeline": "Each member independently runs its profile aliases, strict/scoped/relaxed/planned brief pipeline and local global evidence selector.",
+    "scoreScope": "member-local",
+    "rankFusion": [
+      "Raw scores are never compared as cross-profile authority because profile aliases, topics, and planned boosts are local.",
+      "Cross-member ordering uses local_rank ascending, matched query group count descending, strict before fallback, evidence type, member id, path, line, and stable id.",
+      "The global selector seeds non-empty evidence types before filling the remaining budget from rank-fused candidates."
+    ],
+    "deduplication": [
+      "Cross-member deduplication requires the same canonical relative source path, generated content hash, byte count, evidence type, evidence_kind, verification_level, and canonical row payload.",
+      "Records without generated source identity are namespaced by member and are never deduplicated across members.",
+      "A deduplicated record retains sorted member_ids; duplicate appearances never improve local rank."
+    ]
+  },
+  "result": {
+    "schemaVersion": "shin.context-federated-brief.v1",
+    "configHash": "federation.config_hash is a semantic FNV identity over sorted resolved member ids, profiles, profile directories, roots, and output roots; declaration order and JSON formatting do not affect it.",
+    "memberFields": [
+      "id",
+      "profile",
+      "profile_dir",
+      "root",
+      "out_root",
+      "snapshot_id",
+      "index_freshness",
+      "retrieval_mode",
+      "query_diagnostics",
+      "candidate_records",
+      "returned_records"
+    ],
+    "evidenceFields": [
+      "global_rank",
+      "primary_member",
+      "member_ids",
+      "profile",
+      "evidence_type",
+      "local_rank",
+      "score_scope",
+      "score",
+      "hit with evidence_kind and verification_level"
+    ],
+    "budgetFields": [
+      "max_records",
+      "candidate_records",
+      "deduplicated_records",
+      "eligible_records",
+      "returned_records",
+      "budgeted_out_records"
+    ]
+  }
+}

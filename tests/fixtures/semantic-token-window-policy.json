@@ -1,0 +1,41 @@
+{
+  "schema_version": "shin.semantic-token-window-experiment.v1",
+  "scope": "Offline Shin-only diagnostic; no production projection, Core scorer, consumer route or Stable change",
+  "extensions": [".c", ".cc", ".cpp", ".h", ".hpp"],
+  "max_tokens": 512,
+  "overlap_tokens": 48,
+  "max_windows_per_parent": 3,
+  "max_header_tokens": 128,
+  "max_extra_vectors": 4000,
+  "max_extra_bytes": 8388608,
+  "max_run_seconds": 600,
+  "selection": "Keep original parent vectors; max-pool window similarities into the same bound parent. Keep the existing candidate limit, physical citations and final selector unchanged. Windows are captured model-input slices, not new syntax-owned source ranges.",
+  "acceptance": "Replay all 60 frozen cases with exact parent parity first. No existing positive path rank may worsen or disappear; preserve negative/exact routing. Require an improved existing miss and no regression on predeclared new questions. Even a pass is experiment evidence, not authority for activation.",
+  "limitations": "Windowing cannot recover text already removed by the native 2048-byte body cap. Longer inputs may hit the window cap; report this explicitly. Same-model max pooling can favor longer parents and is not a calibrated relevance probability.",
+  "new_cases": [
+    {
+      "id": "shin-deadline-window-english",
+      "kind": "english",
+      "query": "Where is a database operation deadline enforced by shutting down an owned duplicate of its socket so a reused descriptor cannot interrupt an unrelated connection?",
+      "expected_paths": ["server/src/store_deadlines.cpp"]
+    },
+    {
+      "id": "shin-deadline-window-russian",
+      "kind": "russian",
+      "query": "Где истечение срока операции с базой прерывает соединение через собственную копию сокета, чтобы повторно использованный номер дескриптора не привёл к закрытию чужого соединения?",
+      "expected_paths": ["server/src/store_deadlines.cpp"]
+    },
+    {
+      "id": "shin-deadline-window-exact",
+      "kind": "exact",
+      "query": "StoreDeadlines::arm",
+      "expected_paths": ["server/src/store_deadlines.cpp"]
+    },
+    {
+      "id": "shin-deadline-window-absent",
+      "kind": "negative",
+      "query": "StoreDeadlines::arm_infinite_lease_missing_20260929",
+      "expected_paths": []
+    }
+  ]
+}

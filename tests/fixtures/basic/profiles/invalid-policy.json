@@ -1,0 +1,110 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "id": "invalid-policy",
+  "sourceLabel": "Invalid profile validation fixture",
+  "rootFiles": [
+    "README.md",
+    "../root-escape.md"
+  ],
+  "optionalRootFiles": [
+    "README.md",
+    "../outside.md"
+  ],
+  "documentIncludePrefixes": [
+    "docs"
+  ],
+  "documentExcludePrefixes": [
+    "../outside"
+  ],
+  "sourceFactRoots": ["src", "src", "../source-escape"],
+  "sourceFactExtensions": [".ts"],
+  "sourceFactExtractors": ["language", "language", "missing"],
+  "sourceFactAttributeKeys": [
+    "hidden",
+    "hidden",
+    "invalid key",
+    "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+  ],
+  "compoundQueryFirstTermScope": true,
+  "compoundQueryPreferredStems": ["", "main", "MAIN"],
+  "compoundQueryPreferredStemSuffixes": ["", "sidebar", "SideBar"],
+  "compoundQueryScopeStemSuffixes": ["", ""],
+  "jsonlMaxRowsPerFile": -1,
+  "agentStartPaths": [
+    "README.md"
+  ],
+  "evalCases": [
+    {
+      "id": "invalid-query-variants",
+      "query": "capability contract",
+      "queryVariants": [
+        "capability contract",
+        "",
+        "variant one",
+        "variant two",
+        "variant three",
+        "variant four",
+        "variant five",
+        "variant six",
+        "variant seven"
+      ],
+      "mustPaths": ["README.md"],
+      "maxCandidateRows": -2,
+      "minCoveredGroups": -2
+    },
+    {
+      "id": "invalid-eval-field-types",
+      "query": "capability contract",
+      "queryVariants": "capability result contract",
+      "mustPaths": ["README.md"],
+      "mustRankBefore": [
+        {
+          "higher": 42,
+          "lower": "README.md",
+          "unexpected": true
+        }
+      ],
+      "maxCandidateRows": "3",
+      "minCoveredGroups": [],
+      "unexpectedGate": true
+    },
+    {
+      "id": "invalid-eval-alias-overflow",
+      "query": "capability contract",
+      "queryVariants": ["capability result contract"],
+      "query_variants": "hidden malformed alias",
+      "mustPaths": ["README.md"],
+      "maxCandidateRows": 18446744073709551615
+    },
+    {
+      "id": "invalid-eval-missing-query-and-assertions"
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": 42,
+      "request": [],
+      "mustPaths": "README.md",
+      "expectedComplete": "true",
+      "maxRecords": [],
+      "unexpectedGate": true
+    },
+    {
+      "id": "invalid-pack-request",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "invalid-pack-request",
+        "task": {
+          "objective": "invalid fixture",
+          "must": [
+            {"id": "required", "query": "fixture", "unknown": true}
+          ]
+        }
+      },
+      "mustPaths": ["README.md"],
+      "mustNotPaths": ["README.md", "../outside.md"],
+      "maxEvidenceBytes": 0,
+      "maxCompactBytes": 0
+    }
+  ]
+}

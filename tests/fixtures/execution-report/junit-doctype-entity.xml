@@ -1,0 +1,4 @@
+<!DOCTYPE testsuite [<!ENTITY outside SYSTEM "file:///never-read">]>
+<testsuite name="blocked" tests="1" failures="0" errors="0" skipped="0">
+  <testcase name="&outside;"/>
+</testsuite>

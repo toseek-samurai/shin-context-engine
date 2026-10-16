@@ -1,0 +1,10 @@
+{
+  "schema_version": "shin.semantic-selection-experiment.v1",
+  "per_document": 2,
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "order": "unchanged cosine order with stable input-order ties",
+  "selection": "Scan the existing complete per-project score order, taking at most two units for each source path until twenty are selected. No expected-path, query-kind or language branching. Do not merge evidence or synthesize provenance.",
+  "controls": "Reproduce the recorded raw top20 record identities before scoring selection. Apply the same cap to both frozen summary and body matrices. Keep the original raw failed gates, the same questions, expected paths, model, resources and top20/first5 thresholds. No document re-embedding or model sweep.",
+  "scope": "Separate development-only selection experiment. Passing this small cohort is not held-out quality, a production default, exact-symbol existence, currentness or Pack completion."
+}

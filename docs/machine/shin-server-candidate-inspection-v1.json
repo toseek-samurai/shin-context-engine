@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "shin.server-candidate-inspection.v1",
+  "document": "shin-server-candidate-inspection-v1",
+  "status": "active-contract",
+  "title": "Read-Only Candidate Inspection And Writer Lifetime",
+  "summary": "P3B distinguishes durable preparation history from an explicitly observed candidate, without activating, deleting, repairing or releasing reservations.",
+  "api": {
+    "method": "GET",
+    "path": "/api/v1/preparations/{id}/inspection",
+    "request": "No query parameters or client paths. Authentication and project-scoped DB lookup precede all route and artifact access. Missing and denied jobs both return 404.",
+    "response": "The normal shin.server-response.v1 envelope contains shin.preparation-inspection.v1. HTTP 200 means an observation was returned, not that the candidate is verified.",
+    "admission": "At most one prepared-candidate inspection per server process. A concurrent inspection receives 503/preparation-inspection-busy, not an unbounded wait or extra artifact load. Non-prepared rows return without filesystem access.",
+    "availability": "Inspection is available even when new preparation jobs are disabled. Execution fingerprint and existing private artifact namespace must still match."
+  },
+  "result": {
+    "job": "Unchanged public historical ledger row; no worker id, lease, principal id, request hash or artifact filesystem path.",
+    "observation": "scope=candidate-observation, started_at and finished_at in server UTC. This is an observation interval, not an atomic worktree snapshot, signed receipt, deployment proof or reusable currentness token.",
+    "checks": {
+      "route": "matched / changed / unavailable / not-assessed: configured execution fingerprint, registered project identity, profile bytes and private state identity.",
+      "writer": "quiescent / busy / unavailable / not-assessed: shared nonblocking lifetime lock excludes cooperating writers only while inspection owns it.",
+      "artifact": "verified / missing / invalid / not-assessed: exact generated layout, no symbolic/hard links or unknown entries, bounded immutable Core snapshot load and manifest integrity.",
+      "ledger": "matched / mismatch / unavailable / not-assessed: loaded snapshot id and payload bytes agree with the prepared row; the input row is rechecked at completion.",
+      "doctor": "passed / failed / unavailable / not-assessed: current invocation of the existing strict Core safety/consistency inspection. This is not eval or Pack acceptance.",
+      "source": "current / drifted / unavailable / not-assessed: exact Core regenerated-output comparison, not cached metadata or an Observer notification.",
+      "base": "matched / changed / unavailable / not-assessed: DB active-route revision and snapshot identity equal the enqueue precondition before and after verification. Identity alone does not certify the active artifact's integrity."
+    },
+    "candidate_verified": "True only when all seven checks pass in this request. Non-prepared jobs report candidate-not-prepared. A retention intent or released ledger returns candidate-retention-pending or candidate-released, without accessing the candidate. Historical prepared status never overrides this boundary.",
+    "negativeEvidence": "reason_codes retain bounded stable codes, not raw exceptions, secret-like content or local paths. A failed later check does not erase the explicitly scoped earlier observations.",
+    "notActivation": "activation_supported=true and activation_ready=false even on success. Ordinary inspection does not run quality suites, create a receipt or authorize publication; preparation plus Doctor is not all project quality gates.",
+    "nonMutation": "mutations_performed=false. No DB update/audit event, mkdir, lock creation, repair, expiry, cancellation, deletion, quota release, active publication or source write. Operating-system read access metadata is not a publication."
+  },
+  "writerLifetime": {
+    "layout": "Each claimed worker creates state_dir/.job-<id>-<artifact_key>.lock exclusively, mode 0600, and holds flock(LOCK_EX) through all candidate IO and the prepared DB transition. Namespace/key binding is persisted and separate from the internal Core publication/writer locks.",
+    "inspection": "Open the existing empty owner-private regular lock with O_NOFOLLOW, O_NONBLOCK and O_CLOEXEC; require one hard link and acquire flock(LOCK_SH|LOCK_NB). Verify the named inode against the held descriptor before and after observation.",
+    "retention": "Never unlink the lifetime lock in a destructor. A descriptor-owning process can survive lease expiry or database recovery; PostgreSQL state alone is not writer quiescence.",
+    "crash": "The kernel releases the descriptor lock after the process exits. The file remains as stable lock identity. Missing, replaced or unsafe lock state fails closed; inspection never creates a replacement.",
+    "deploymentBoundary": "Local filesystem and cooperating same-host server processes. Not a security sandbox against a malicious same-UID process, not distributed fencing, and not certified on NFS/SMB. Old candidate execution fingerprints are not silently reinterpreted by a new development version."
+  },
+  "resourceBounds": {
+    "payload": "One inspection may retain at most retrieval.max_generation_bytes in immutable candidate bytes, with per-file limits. This is additional to the retrieval cache and preparation worker; it is not a total process RSS cap.",
+    "work": "Fixed generated layout bounds directory inventory. Exact freshness still regenerates profile-bounded output; transient parsing/generation memory is separate from resident payload. No warm-currentness shortcut was introduced.",
+    "waiting": "Lifetime lock acquisition is nonblocking. Existing Core publication locks and source processing retain their documented cooperative waits; no hard inspection deadline is claimed."
+  },
+  "sources": [
+    {
+      "url": "https://man7.org/linux/man-pages/man2/flock.2.html",
+      "use": "Descriptor lifetime, independent opens, advisory and nonblocking semantics; remote filesystem limitations."
+    },
+    {
+      "url": "https://developer.apple.com/library/archive/documentation/System/Conceptual/ManPages_iPhoneOS/man2/flock.2.html",
+      "use": "Local Darwin shared/exclusive advisory file locking; it does not stop an uncooperative process."
+    }
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-server-preparation-v1.json",
+    "docs/machine/shin-server-retrieval-v1.json",
+    "docs/machine/shin-server-activation-v1.json",
+    "docs/machine/shin-server-development-v1.json",
+    "docs/machine/shin-server-plan-v1.json"
+  ]
+}

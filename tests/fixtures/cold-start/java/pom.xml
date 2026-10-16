@@ -1,0 +1,5 @@
+<project>
+  <modelVersion>4.0.0</modelVersion>
+  <groupId>example</groupId>
+  <artifactId>cold-start-java</artifactId>
+</project>

@@ -1,0 +1,784 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-core-self",
+  "status": "active",
+  "summary": "Core self profile for portable indexing, typed evidence, retrieval, profile ownership, and release contracts.",
+  "id": "shin",
+  "evalResourcePolicy": "advisory",
+  "sourceLabel": "Shin Context Engine public Core contracts and source",
+  "documentExcludePrefixes": [],
+  "rootFiles": [
+    "AGENTS.md",
+    "README.md",
+    "CMakeLists.txt",
+    "VERSION",
+    "docs/architecture.md",
+    "docs/agent-maintenance.md",
+    "profiles/shin.json",
+    "profiles/generic-cpp.json",
+    "profiles/generic-docs.json",
+    "profiles/generic-dotnet.json",
+    "profiles/generic-java.json",
+    "profiles/generic-kotlin.json",
+    "profiles/generic-node.json",
+    "profiles/generic-retool.json",
+    "profiles/generic-source.json",
+    "docs/machine/shin-component-profiles-v1.json",
+    "integrations/codex/skills/shin-context/SKILL.md",
+    "integrations/codex/skills/shin-context/references/execution-evidence.md",
+    "integrations/codex/skills/shin-context/references/impact.md",
+    "integrations/codex/skills/shin-context/references/pack-and-diagnostics.md",
+    "integrations/codex/skills/shin-context/references/publication-and-maintenance.md",
+    "integrations/codex/skills/shin-context/references/routing-and-comparisons.md",
+    "integrations/codex/skills/shin-context/references/session-resume.md",
+    "integrations/codex/skills/shin-context/references/setup-and-adoption.md",
+    "integrations/codex/skills/shin-context/references/trust-boundaries.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/retrieval-playbook.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/route-and-publication.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/session-and-execution.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/source-verification.md"
+  ],
+  "sourceExtensions": [
+    ".md",
+    ".json"
+  ],
+  "documentIncludePrefixes": [
+    "AGENTS.md",
+    "README.md",
+    "CMakeLists.txt",
+    "VERSION",
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "docs/machine/adoption-planner-v1.json",
+    "docs/machine/agent-context-pack-diff-v1.json",
+    "docs/machine/agent-context-pack-v1.json",
+    "docs/machine/agent-readiness-v1.json",
+    "docs/machine/aggregate-validation-v1.json",
+    "docs/machine/batch-retrieval-v1.json",
+    "docs/machine/change-aware-impact-pack-v1.json",
+    "docs/machine/cold-start-bootstrap-v1.json",
+    "docs/machine/evidence-provenance-v1.json",
+    "docs/machine/execution-evidence-v1.json",
+    "docs/machine/execution-receipt-v1.json",
+    "docs/machine/federated-brief-v1.json",
+    "docs/machine/federated-eval-v1.json",
+    "docs/machine/hermes-agent-integration-v1.json",
+    "docs/machine/identifier-evidence-v1.json",
+    "docs/machine/index-lifecycle-v1.json",
+    "docs/machine/kotlin-source-bootstrap-v1.json",
+    "docs/machine/lexical-retrieval-v1.json",
+    "docs/machine/portable-distribution-v1.json",
+    "docs/machine/profile-routing-v1.json",
+    "docs/machine/project-adoption-v1.json",
+    "docs/machine/retool-source-extractor-v1.json",
+    "docs/machine/retrieval-diagnose-v1.json",
+    "docs/machine/retrieval-evidence-v1.json",
+    "docs/machine/retrieval-observation-v1.json",
+    "docs/machine/session-checkpoint-v1.json",
+    "docs/machine/shin-component-profiles-v1.json",
+    "docs/machine/shin-context-engine-perf-budgets.json",
+    "docs/machine/shin-context-engine.manifest.json",
+    "docs/machine/shin-warm-snapshot-v1.json",
+    "docs/machine/snapshot-diff-v1.json",
+    "docs/machine/source-file-read-v1.json",
+    "docs/machine/source-member-ranges-v1.json",
+    "docs/machine/source-read-v1.json",
+    "docs/machine/static-analysis-v1.json",
+    "docs/machine/trust-boundary-hardening-v1.json",
+    "docs/machine/universality-boundary-v1.json",
+    "docs/machine/worktree-diff-v1.json",
+    "docs/architecture.md",
+    "docs/agent-maintenance.md",
+    "profiles/shin.json",
+    "profiles/generic-cpp.json",
+    "profiles/generic-docs.json",
+    "profiles/generic-dotnet.json",
+    "profiles/generic-java.json",
+    "profiles/generic-kotlin.json",
+    "profiles/generic-node.json",
+    "profiles/generic-retool.json",
+    "profiles/generic-source.json",
+    "integrations/codex/skills/shin-context/SKILL.md",
+    "integrations/codex/skills/shin-context/references/execution-evidence.md",
+    "integrations/codex/skills/shin-context/references/impact.md",
+    "integrations/codex/skills/shin-context/references/pack-and-diagnostics.md",
+    "integrations/codex/skills/shin-context/references/publication-and-maintenance.md",
+    "integrations/codex/skills/shin-context/references/routing-and-comparisons.md",
+    "integrations/codex/skills/shin-context/references/session-resume.md",
+    "integrations/codex/skills/shin-context/references/setup-and-adoption.md",
+    "integrations/codex/skills/shin-context/references/trust-boundaries.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/retrieval-playbook.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/route-and-publication.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/session-and-execution.md",
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/source-verification.md"
+  ],
+  "sourceFactRoots": [
+    "src",
+    "shared/windows-io/src",
+    "integrations/hermes/plugins/shin-context"
+  ],
+  "sourceFactExtensions": [
+    ".cpp",
+    ".py"
+  ],
+  "sourceFactMaxFiles": 200,
+  "sourceFactMaxFileBytes": 524288,
+  "agentStartPaths": [
+    "AGENTS.md",
+    "README.md",
+    "docs/machine/universality-boundary-v1.json",
+    "docs/machine/cold-start-bootstrap-v1.json",
+    "docs/machine/retrieval-evidence-v1.json",
+    "docs/machine/identifier-evidence-v1.json",
+    "docs/machine/evidence-provenance-v1.json",
+    "docs/machine/worktree-diff-v1.json",
+    "docs/machine/agent-readiness-v1.json",
+    "docs/machine/index-lifecycle-v1.json",
+    "docs/machine/agent-context-pack-diff-v1.json",
+    "docs/machine/federated-brief-v1.json",
+    "docs/machine/federated-eval-v1.json",
+    "docs/machine/adoption-planner-v1.json",
+    "docs/machine/project-adoption-v1.json",
+    "docs/machine/portable-distribution-v1.json",
+    "docs/machine/hermes-agent-integration-v1.json",
+    "docs/machine/static-analysis-v1.json",
+    "docs/machine/shin-context-engine.manifest.json",
+    "docs/kb/generated/manifest.json"
+  ],
+  "markdownMaxHeadingLevel": 4,
+  "markdownChunkLines": 24,
+  "markdownChunkMinLines": 12,
+  "markdownChunkChars": 1800,
+  "jsonKeySections": true,
+  "jsonKeyMaxDepth": 1,
+  "jsonKeyMaxSectionsPerFile": 200,
+  "jsonPathReferences": true,
+  "jsonSchemaTitle": true,
+  "jsonSummaryKeys": true,
+  "sortTopics": false,
+  "defaultTopic": "context-engine",
+  "aliases": [
+    {
+      "term": "kb",
+      "expands": [
+        "knowledge base",
+        "context engine",
+        "machine docs",
+        "typed index"
+      ]
+    },
+    {
+      "term": "vacuum",
+      "expands": [
+        "maintenance",
+        "canonical generated output",
+        "generated drift",
+        "orphan generated files"
+      ]
+    },
+    {
+      "term": "eval",
+      "expands": [
+        "golden queries",
+        "retrieval quality",
+        "quality gate",
+        "expected paths"
+      ]
+    }
+  ],
+  "evalCases": [
+    {
+      "id": "self-vacuum-maintenance",
+      "query": "vacuum generated maintenance",
+      "mustPaths": [
+        "docs/machine/shin-context-engine.manifest.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-context-engine.manifest.json"
+      ],
+      "mustTopN": 3,
+      "maxMatchedSections": 40,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-eval-quality-gate",
+      "query": "eval golden queries",
+      "mustPaths": [
+        "profiles/shin.json"
+      ],
+      "mustTopPaths": [
+        "profiles/shin.json"
+      ],
+      "mustTopN": 3,
+      "maxMatchedSections": 30,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-human-retrieval-quality-question",
+      "query": "how to run retrieval quality gates",
+      "queryVariants": [
+        "retrieval quality gate run",
+        "quality retrieval gates how do I run them"
+      ],
+      "mustPaths": [
+        "docs/machine/aggregate-validation-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/aggregate-validation-v1.json"
+      ],
+      "mustTopN": 4,
+      "maxMatchedSections": 40,
+      "maxCandidateRows": 80,
+      "minCoveredGroups": 3,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-retool-source-extractor",
+      "query": "Retool source extractor RSX workflow edge",
+      "mustPaths": [
+        "docs/machine/retool-source-extractor-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/retool-source-extractor-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxMatchedSections": 40,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-cold-start-bootstrap",
+      "query": "cold start source only bootstrap profiles",
+      "mustPaths": [
+        "docs/machine/cold-start-bootstrap-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/cold-start-bootstrap-v1.json"
+      ],
+      "mustTopN": 3,
+      "mustNotPaths": [
+        "profiles/shin-server.json"
+      ],
+      "maxMatchedSections": 230,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-retrieval-evidence-contract",
+      "query": "snapshot identity query coverage eval variants",
+      "queryVariants": [
+        "eval variants query coverage snapshot identity",
+        "snapshot identity and query coverage for eval variants"
+      ],
+      "mustPaths": [
+        "docs/machine/retrieval-evidence-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/retrieval-evidence-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxMatchedSections": 160,
+      "maxCandidateRows": 1000,
+      "minCoveredGroups": 6,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-identifier-evidence-contract",
+      "query": "identifier form equivalence scoped fact fallback window",
+      "queryVariants": [
+        "generated identifier terms lexical scope provenance",
+        "compact brief verification paths identifier contract"
+      ],
+      "mustPaths": [
+        "docs/machine/identifier-evidence-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/identifier-evidence-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 1300,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-evidence-provenance-contract",
+      "query": "evidence kind verification provenance authority orthogonal",
+      "mustPaths": [
+        "docs/machine/evidence-provenance-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/evidence-provenance-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 500,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-change-aware-impact-contract",
+      "query": "change-aware-impact-pack-v1",
+      "mustPaths": [
+        "docs/machine/change-aware-impact-pack-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/change-aware-impact-pack-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-source-member-ranges-contract",
+      "query": "source-member-ranges-v1",
+      "mustPaths": [
+        "docs/machine/source-member-ranges-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/source-member-ranges-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-worktree-diff-contract",
+      "query": "worktree diff unpublished source drift verified snapshot",
+      "mustPaths": [
+        "docs/machine/worktree-diff-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/worktree-diff-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 500,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-federated-quality-gate",
+      "query": "federated eval suite quality gate",
+      "mustPaths": [
+        "docs/machine/federated-eval-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/federated-eval-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxMatchedSections": 60,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-planned-multi-intent-context",
+      "query": "current capabilities architecture quality gates performance limitations future work agent integration",
+      "mustPaths": [
+        "docs/architecture.md"
+      ],
+      "mustTopPaths": [
+        "docs/architecture.md"
+      ],
+      "mustTopN": 4,
+      "mustNotPaths": [
+        "profiles/shin-server.json"
+      ],
+      "maxCandidateRows": 1750,
+      "minCoveredGroups": 11,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-snapshot-pinned-batch",
+      "query": "batch retrieval one shared session publication",
+      "mustPaths": [
+        "docs/machine/batch-retrieval-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/batch-retrieval-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 200,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-expected-path-diagnose",
+      "query": "expected path diagnose sparse probe reason codes",
+      "mustPaths": [
+        "docs/machine/retrieval-diagnose-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/retrieval-diagnose-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 300,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-verified-snapshot-diff",
+      "query": "snapshot diff integrity syntactic records lock order",
+      "mustPaths": [
+        "docs/machine/snapshot-diff-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/snapshot-diff-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 200,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-task-aware-pack-diff",
+      "query": "agent context pack diff task snapshot evidence regression",
+      "queryVariants": [
+        "compare task evidence across two verified snapshots",
+        "did this change alter the context pack for an agent"
+      ],
+      "mustPaths": [
+        "docs/machine/agent-context-pack-diff-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/agent-context-pack-diff-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 300,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-universality-boundary",
+      "query": "portable core release integration bundle profile ownership",
+      "queryVariants": [
+        "transfer Shin Context Engine to unrelated projects without consumer dependencies",
+        "separate core release gates from optional ecosystem acceptance"
+      ],
+      "mustPaths": [
+        "docs/machine/universality-boundary-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/universality-boundary-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 300,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-adoption-planner",
+      "query": "adoption plan marker authoring readiness promotion gaps",
+      "queryVariants": [
+        "adoption planner promotion gaps",
+        "read only adoption planner gaps commands"
+      ],
+      "mustPaths": [
+        "docs/machine/adoption-planner-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/adoption-planner-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 500,
+      "minCoveredGroups": 4,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-project-adoption",
+      "query": "project adoption marker permanent profile quality gates",
+      "queryVariants": [
+        "adopt Shin project marker permanent profile without absolute paths",
+        "validate project marker agent epoch permanent profile"
+      ],
+      "mustPaths": [
+        "docs/machine/project-adoption-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/project-adoption-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 1000,
+      "minCoveredGroups": 4,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-profile-routing",
+      "query": "suggest profile route ambiguous explicit signals no automatic switch",
+      "queryVariants": [
+        "recommend profile route without opening index",
+        "route task query to another project profile safely"
+      ],
+      "mustPaths": [
+        "docs/machine/profile-routing-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/profile-routing-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 500,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-portable-distribution",
+      "query": "portable install relocation generic profiles core contracts",
+      "queryVariants": [
+        "portable distribution relocated prefix generic profile registry",
+        "cmake install excludes integration profiles"
+      ],
+      "mustPaths": [
+        "docs/machine/portable-distribution-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/portable-distribution-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 640,
+      "minCoveredGroups": 4,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-agent-readiness",
+      "query": "agent readiness route adoption worktree validation before retrieval",
+      "queryVariants": [
+        "verify one explicit route is ready for brief or pack",
+        "ready route adoption index key worktree validation"
+      ],
+      "mustPaths": [
+        "docs/machine/agent-readiness-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/agent-readiness-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 600,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-index-lifecycle",
+      "query": "index list prune external cache keep key dry run verified snapshot",
+      "queryVariants": [
+        "verified incompatible generator snapshot prune",
+        "index lifecycle contract external cache no hidden discovery adoption marker authority"
+      ],
+      "mustPaths": [
+        "docs/machine/index-lifecycle-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/index-lifecycle-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 600,
+      "minCoveredGroups": 5,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-session-recovery",
+      "query": "Session Resume Overlay",
+      "queryVariants": [
+        "session-checkpoint-v1"
+      ],
+      "mustPaths": [
+        "docs/machine/session-checkpoint-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/session-checkpoint-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 100,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-execution-receipt",
+      "query": "execution-receipt-v1",
+      "mustPaths": [
+        "docs/machine/execution-receipt-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/execution-receipt-v1.json"
+      ],
+      "mustTopN": 3,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "self-hermes-agent-integration",
+      "query": "Hermes agent integration contract read only plugin tools",
+      "queryVariants": [
+        "Hermes integration contract conversation compression boundary",
+        "Hermes plugin adopted project fail closed readiness contract"
+      ],
+      "mustPaths": [
+        "docs/machine/hermes-agent-integration-v1.json",
+        "integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md"
+      ],
+      "mustTopPaths": [
+        "docs/machine/hermes-agent-integration-v1.json"
+      ],
+      "mustTopN": 3,
+      "maxCandidateRows": 700,
+      "minCoveredGroups": 6,
+      "limit": 10,
+      "perDocLimit": 2
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": "self-agent-operations-pack",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "self-agent-operations-pack",
+        "task": {
+          "objective": "Retrieve the implementation and contracts for Shin Agent Context Pack operations.",
+          "scope": [
+            {
+              "id": "pack-contract",
+              "query": "agent-context-pack-v1"
+            }
+          ],
+          "must": [
+            {
+              "id": "pack-selection",
+              "query": "pack_active_jobs"
+            },
+            {
+              "id": "pack-projection",
+              "query": "pack_telemetry_json"
+            },
+            {
+              "id": "pack-quality",
+              "query": "run_pack_eval"
+            }
+          ],
+          "should": [
+            {
+              "id": "pack-performance",
+              "query": "run_pack_bench"
+            },
+            {
+              "id": "release-gates",
+              "query": "Agent Context Pack release gates sanitizer skill contract"
+            }
+          ]
+        },
+        "budget": {
+          "max_evidence_bytes": 24576,
+          "max_records": 16,
+          "per_query_records": 6,
+          "per_document_records": 2
+        }
+      },
+      "mustPaths": [
+        "docs/machine/agent-context-pack-v1.json",
+        "src/agent_context_pack.cpp",
+        "src/agent_context_pack_render.cpp",
+        "src/pack_eval.cpp",
+        "src/pack_bench.cpp"
+      ],
+      "mustNotPaths": [
+        "profiles/shin-server.json"
+      ],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 24576,
+      "maxRecords": 16,
+      "maxCompactBytes": 38000,
+      "requireSerialParallelIdentity": true
+    }
+  ],
+  "topicRules": [
+    {
+      "id": "context-engine",
+      "description": "Standalone Context Engine product scope, schemas, and CLI contracts.",
+      "keywords": [
+        "context engine",
+        "shin",
+        "kb",
+        "brief",
+        "context-pack",
+        "machine docs"
+      ]
+    },
+    {
+      "id": "profiles",
+      "description": "Project profiles and cross-repository indexing strategy.",
+      "keywords": [
+        "profile",
+        "cold start",
+        "source-only",
+        "discover",
+        "ecosystem",
+        "super-plugin",
+        "consumer",
+        "cross-repo"
+      ]
+    },
+    {
+      "id": "typed-index",
+      "description": "Typed KB rows for agent-ready project memory.",
+      "keywords": [
+        "documents",
+        "sections",
+        "decisions",
+        "contracts",
+        "runbooks",
+        "facts",
+        "typed"
+      ]
+    },
+    {
+      "id": "agent-flow",
+      "description": "Agent usage flow for fast context loading and verification.",
+      "keywords": [
+        "agent",
+        "ai",
+        "workflow",
+        "bootstrap",
+        "verification",
+        "onboarding"
+      ]
+    },
+    {
+      "id": "performance",
+      "description": "Index streaming, bounded memory, and load evidence.",
+      "keywords": [
+        "performance",
+        "stream",
+        "bounded",
+        "memory",
+        "benchmark",
+        "load"
+      ]
+    },
+    {
+      "id": "migration",
+      "description": "Migration from project-local KB tools to one shared Context Engine.",
+      "keywords": [
+        "migration",
+        "replace",
+        "unified",
+        "legacy",
+        "tool"
+      ]
+    }
+  ]
+}

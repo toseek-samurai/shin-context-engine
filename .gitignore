@@ -47,7 +47,6 @@ build-*/
 CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
-Makefile
 install_manifest.txt
 compile_commands.json
 
@@ -66,3 +65,12 @@ vcpkg_installed/
 # test output & cache
 Testing/
 .cache/
+
+# Generated context belongs outside the public source tree.
+/docs/kb/generated/
+/docs/kb/.shin-context.lock
+
+# Local interpreter and OS artifacts
+__pycache__/
+*.py[cod]
+.DS_Store

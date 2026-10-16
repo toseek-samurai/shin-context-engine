@@ -1,0 +1,2 @@
+# Development experiment only; not a Core, Server or installed-client dependency.
+fastembed==0.8.1

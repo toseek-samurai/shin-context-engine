@@ -1,0 +1,82 @@
+{
+  "schema_version": "shin.file-first-pilot-policy.v1",
+  "status": "questions-frozen-before-file-first-implementation-not-run",
+  "scope": "Eight new prompt formulations on four source behaviors; evaluator only, not agent input. No claim that subsystem concepts were unseen in all earlier investigations.",
+  "corpus": {
+    "p0_freeze_sha256": "d4fd574db5930d39bbab5ffb71db8d913f5319888e8afb072f0d0139256dcf05",
+    "selection": "Same 97 product source files as P4; no docs, tests, reports or evaluator rubrics."
+  },
+  "acceptance_from": "code-context-pilot-policy.json",
+  "unchanged": "7/8 complete, >=3 per language, no baseline task/clause regressions or unsupported claims; writer4/4 per language; +1 complete task OR >=20% fewer bytes on shared complete tasks. All original timing, tool, round and 64 KiB limits retained.",
+  "controls": "P4 prompts and receipts are regression controls, never fresh holdout. Freeze candidate/runtime hashes before first run. No quality retry or question editing after observation.",
+  "topics": [
+    {
+      "id": "cache-reservation",
+      "english": "Before loading a new snapshot, how does the resident cache reserve memory, choose an eviction victim, and handle generations still held by active requests?",
+      "russian": "\u041a\u0430\u043a \u0440\u0435\u0437\u0438\u0434\u0435\u043d\u0442\u043d\u044b\u0439 \u043a\u044d\u0448 \u043f\u0435\u0440\u0435\u0434 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u043e\u0439 \u043d\u043e\u0432\u043e\u0433\u043e \u0441\u043d\u0438\u043c\u043a\u0430 \u0440\u0435\u0437\u0435\u0440\u0432\u0438\u0440\u0443\u0435\u0442 \u043f\u0430\u043c\u044f\u0442\u044c, \u0432\u044b\u0431\u0438\u0440\u0430\u0435\u0442 \u0436\u0435\u0440\u0442\u0432\u0443 \u0432\u044b\u0442\u0435\u0441\u043d\u0435\u043d\u0438\u044f \u0438 \u0443\u0447\u0438\u0442\u044b\u0432\u0430\u0435\u0442 \u043f\u043e\u043a\u043e\u043b\u0435\u043d\u0438\u044f, \u043a\u043e\u0442\u043e\u0440\u044b\u0435 \u0435\u0449\u0435 \u0438\u0441\u043f\u043e\u043b\u044c\u0437\u0443\u044e\u0442\u0441\u044f \u0437\u0430\u043f\u0440\u043e\u0441\u0430\u043c\u0438?",
+      "evidence": [
+        {
+          "path": "server/src/snapshot_cache.cpp",
+          "start": 18,
+          "end": 42
+        }
+      ],
+      "clauses": [
+        "reserves full generation cap before I/O, not just eventual size",
+        "only cache-exclusive use_count==1 owners can be evicted; least recently used eligible victim",
+        "active owners remain counted; no eligible victim causes snapshot-cache-busy rather than excess allocation"
+      ]
+    },
+    {
+      "id": "cache-load-failure",
+      "english": "When loading a snapshot fails or returns the wrong identity, how are the resident cache reservation and waiting requests released, and what bound applies while another load is in progress?",
+      "russian": "\u0415\u0441\u043b\u0438 \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0430 \u0441\u043d\u0438\u043c\u043a\u0430 \u0437\u0430\u0432\u0435\u0440\u0448\u0430\u0435\u0442\u0441\u044f \u043e\u0448\u0438\u0431\u043a\u043e\u0439 \u0438\u043b\u0438 \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442 \u0434\u0440\u0443\u0433\u0443\u044e \u0438\u0434\u0435\u043d\u0442\u0438\u0447\u043d\u043e\u0441\u0442\u044c, \u043a\u0430\u043a \u043a\u044d\u0448 \u043e\u0441\u0432\u043e\u0431\u043e\u0436\u0434\u0430\u0435\u0442 \u0440\u0435\u0437\u0435\u0440\u0432 \u0438 \u043e\u0436\u0438\u0434\u0430\u044e\u0449\u0438\u0435 \u0437\u0430\u043f\u0440\u043e\u0441\u044b, \u0438 \u0441\u043a\u043e\u043b\u044c\u043a\u043e \u043c\u043e\u0436\u043d\u043e \u0436\u0434\u0430\u0442\u044c \u0443\u0436\u0435 \u0432\u044b\u043f\u043e\u043b\u043d\u044f\u044e\u0449\u0443\u044e\u0441\u044f \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443?",
+      "evidence": [
+        {
+          "path": "server/src/snapshot_cache.cpp",
+          "start": 43,
+          "end": 89
+        }
+      ],
+      "clauses": [
+        "500ms wait deadline while a loader is active; busy refusal on timeout",
+        "reject null/oversized payload or different snapshot identity before insertion",
+        "destroy failed payload before clearing loading reservation; lock and notify waiters; rethrow failure"
+      ]
+    },
+    {
+      "id": "bootstrap-authorization",
+      "english": "Can an optional project in session bootstrap avoid authorization, or can an earlier project load evidence before all members have been authorized? Explain the ordering implemented in source.",
+      "russian": "\u041c\u043e\u0436\u0435\u0442 \u043b\u0438 \u043d\u0435\u043e\u0431\u044f\u0437\u0430\u0442\u0435\u043b\u044c\u043d\u044b\u0439 \u043f\u0440\u043e\u0435\u043a\u0442 \u0432 bootstrap \u0441\u0435\u0441\u0441\u0438\u0438 \u0438\u0437\u0431\u0435\u0436\u0430\u0442\u044c \u0430\u0432\u0442\u043e\u0440\u0438\u0437\u0430\u0446\u0438\u0438, \u0438\u043b\u0438 \u043f\u0435\u0440\u0432\u044b\u0439 \u043f\u0440\u043e\u0435\u043a\u0442 \u043d\u0430\u0447\u0430\u0442\u044c \u0437\u0430\u0433\u0440\u0443\u0437\u043a\u0443 \u0441\u0432\u0438\u0434\u0435\u0442\u0435\u043b\u044c\u0441\u0442\u0432 \u0434\u043e \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0438 \u0432\u0441\u0435\u0445 \u0443\u0447\u0430\u0441\u0442\u043d\u0438\u043a\u043e\u0432? \u041e\u0431\u044a\u044f\u0441\u043d\u0438 \u043f\u043e\u0440\u044f\u0434\u043e\u043a \u043f\u043e \u0438\u0441\u0445\u043e\u0434\u043d\u0438\u043a\u0430\u043c.",
+      "evidence": [
+        {
+          "path": "server/src/session_bootstrap.cpp",
+          "start": 48,
+          "end": 82
+        }
+      ],
+      "clauses": [
+        "at least one required member; stable required-first partition",
+        "all members including optional authorized before any retrieval",
+        "authorization failure aborts before any member evidence retrieval"
+      ]
+    },
+    {
+      "id": "bootstrap-health",
+      "english": "How does session bootstrap distinguish available context from cached health, and what happens when the health observation belongs to a different generation than the retrieved context?",
+      "russian": "\u041a\u0430\u043a bootstrap \u0441\u0435\u0441\u0441\u0438\u0438 \u0440\u0430\u0437\u043b\u0438\u0447\u0430\u0435\u0442 \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u043e\u0441\u0442\u044c \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442\u0430 \u0438 \u0441\u043e\u0445\u0440\u0430\u043d\u0435\u043d\u043d\u0443\u044e \u043e\u0446\u0435\u043d\u043a\u0443 \u0437\u0434\u043e\u0440\u043e\u0432\u044c\u044f, \u0438 \u0447\u0442\u043e \u043f\u0440\u043e\u0438\u0441\u0445\u043e\u0434\u0438\u0442, \u0435\u0441\u043b\u0438 \u0437\u0434\u043e\u0440\u043e\u0432\u044c\u0435 \u043e\u0442\u043d\u043e\u0441\u0438\u0442\u0441\u044f \u043a \u0434\u0440\u0443\u0433\u043e\u043c\u0443 \u043f\u043e\u043a\u043e\u043b\u0435\u043d\u0438\u044e, \u0447\u0435\u043c \u043f\u043e\u043b\u0443\u0447\u0435\u043d\u043d\u044b\u0439 \u043a\u043e\u043d\u0442\u0435\u043a\u0441\u0442?",
+      "evidence": [
+        {
+          "path": "server/src/session_bootstrap.cpp",
+          "start": 53,
+          "end": 143
+        }
+      ],
+      "clauses": [
+        "health agreement compares project route workspace host snapshot preparation revision and publication identity",
+        "healthy and selection_aligned plus matching generation are required; mismatch recorded as bootstrap-selection-changed",
+        "only required members determine combined context_ready and health_ready; independent observations are not atomic or checkpoint restoration"
+      ]
+    }
+  ]
+}

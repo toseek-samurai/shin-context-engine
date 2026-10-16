@@ -1,0 +1,6 @@
+{
+  "config": {"rootDir": "/redacted"},
+  "suites": [{"title": "fixture", "specs": [{"title": "passes", "tests": [{"expectedStatus": "passed", "status": "expected", "results": [{"status": "passed", "retry": 0, "duration": 1, "stdout": [{"text": "execution-evidence-test-secret"}]}]}]}]}],
+  "errors": [],
+  "stats": {"expected": 1, "unexpected": 0, "flaky": 0, "skipped": 0, "duration": 1}
+}

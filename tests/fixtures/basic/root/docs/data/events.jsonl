@@ -1,0 +1,4 @@
+{"id":"shared-event","type":"runtime-event","title":"Widget runtime event accepted","summary":"First duplicate source id remains path scoped."}
+{"id":"shared-event","type":"runtime-event","title":"Widget runtime event completed","summary":"Second duplicate source id remains uniquely indexed."}
+{"filePath":"WidgetRuntime/Dependency.json","rootId":"WidgetRuntime","deps":["Query23"]}
+{"id":"capped-event","type":"runtime-event","title":"Widget runtime event discarded","summary":"The profile row limit intentionally excludes this record."}

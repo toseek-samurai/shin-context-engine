@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "impact-hermetic-fixture",
+  "status": "active",
+  "id": "impact",
+  "sourceLabel": "Hermetic read-only impact fixture",
+  "rootFiles": ["README.md"],
+  "sourceExtensions": [".md"],
+  "sourceFactRoots": ["src", "tests", "apps"],
+  "sourceFactExtensions": [".ts", ".js", ".rsx", ".json"],
+  "sourceFactExtractors": ["language", "retool"],
+  "sourceFactMaxFiles": 64,
+  "sourceFactMaxFileBytes": 6291456,
+  "agentStartPaths": ["README.md"],
+  "evalCases": [
+    {
+      "id": "changed-member",
+      "query": "changedMember",
+      "mustPaths": ["src/PriceService.ts"],
+      "expectedRecordTypes": ["ts-method"]
+    }
+  ]
+}

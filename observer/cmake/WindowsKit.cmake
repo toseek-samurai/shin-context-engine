@@ -1,0 +1,38 @@
+# CPack owns the MSI file inventory/repair/removal. Runtime data remains outside
+# the payload, and this candidate does not claim the native macOS install receipt.
+if(SHIN_OBSERVER_SANITIZERS OR SHIN_OBSERVER_TSAN)
+    message(FATAL_ERROR "Instrumented runtimes must not be distributed as desktop kits")
+endif()
+set(CMAKE_INSTALL_SYSTEM_RUNTIME_DESTINATION bin)
+include(InstallRequiredSystemLibraries)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../docs/windows-desktop.md" DESTINATION share/shin-observer)
+install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../integrations/mcp/skills/shin-context"
+    DESTINATION share/shin-context/mcp/skills)
+file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" SHIN_KIT_CORE_VERSION LIMIT_COUNT 1)
+configure_file("${CMAKE_CURRENT_LIST_DIR}/ManifestLocalKit.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/ManifestWindowsKit.cmake" @ONLY)
+install(SCRIPT "${CMAKE_CURRENT_BINARY_DIR}/ManifestWindowsKit.cmake")
+set(CPACK_GENERATOR ZIP)
+set(CPACK_PACKAGE_NAME "Shin Desktop Preview")
+set(CPACK_PACKAGE_VENDOR "Shin Context Engine")
+string(REGEX MATCH "^[0-9]+[.][0-9]+[.][0-9]+" CPACK_PACKAGE_VERSION "${SHIN_OBSERVER_VERSION}")
+set(CPACK_PACKAGE_FILE_NAME "shin-desktop-${SHIN_OBSERVER_VERSION}-windows-${CMAKE_SYSTEM_PROCESSOR}")
+set(CPACK_PACKAGE_INSTALL_DIRECTORY "Shin Desktop Preview")
+set(CPACK_PACKAGE_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/packages")
+set(CPACK_PACKAGE_CHECKSUM SHA256)
+# The native fragment owns the all-users shortcut and its machine key path.
+# CPack's default shortcut component retains an HKCU key even for perMachine.
+set(CPACK_RESOURCE_FILE_LICENSE "${CMAKE_CURRENT_SOURCE_DIR}/installer/windows-notice.txt")
+set(CPACK_WIX_VERSION 4)
+set(CPACK_WIX_EXTENSIONS WixToolset.Util.wixext)
+set(CPACK_WIX_INSTALL_SCOPE perMachine)
+set(CPACK_WIX_UPGRADE_GUID "4D5D4627-1B39-4F4A-ABEE-17CE51649F28")
+set(CPACK_WIX_PROGRAM_MENU_FOLDER "Shin Desktop Preview")
+set(CPACK_WIX_UI_REF WixUI_Minimal)
+set(CPACK_WIX_COMPONENT_KEYS_REGISTRY_PATH "Software/Shin/DesktopPreview/Components")
+set(CPACK_WIX_PATCH_FILE "${CMAKE_CURRENT_SOURCE_DIR}/installer/windows-patch.xml")
+set(CPACK_WIX_EXTRA_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/installer/windows-location.wxs")
+set(CPACK_WIX_PROPERTY_ARPCOMMENTS "Native Windows development candidate; project data is preserved on removal.")
+set(CPACK_WIX_PROPERTY_MSIRESTARTMANAGERCONTROL DisableShutdown)
+set(CPACK_PROJECT_CONFIG_FILE "${CMAKE_CURRENT_SOURCE_DIR}/cmake/WindowsPackage.cmake")
+include(CPack)

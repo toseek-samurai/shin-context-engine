@@ -1,0 +1,42 @@
+{
+  "schemaVersion": "shin.source-file-read-contract.v1",
+  "document": "shin-source-file-read",
+  "status": "accepted-for-development-implementation",
+  "summary": "Additive local file-first source reading through the existing native reader; v1 record reading is unchanged.",
+  "interface": {
+    "command": "read --input FILE|-",
+    "request": {
+      "schema_version": "shin.source-read-request.v2",
+      "snapshot_id": "fnv1a64:<16 lowercase hex>",
+      "file_paths": [
+        "<canonical published source path>"
+      ]
+    },
+    "exactFields": [
+      "schema_version",
+      "snapshot_id",
+      "file_paths"
+    ],
+    "resultSchema": "shin.source-read.v2",
+    "addressing": "The snapshot_id plus path already emitted by Brief/agent query navigation/inspect is the locator. No new discovery token. A path must resolve to exactly one scanned source_fact_sources binding in this admitted snapshot. Membership is not proof that a particular caller performed discovery and is not authentication.",
+    "selection": "1-4 file selections, duplicate positions retained, no mixed record IDs, arbitrary paths, raw line ranges, roots or source scan. Use v1 record reading for a large file.",
+    "compatibility": "No generator change: persisted rows, extraction, ranking and snapshot format are unchanged. No requirement to rebuild a publication solely for this additive reader."
+  },
+  "safety": {
+    "inherit": "source-read-v1.json",
+    "currentness": "Mandatory exact current snapshot verification before and after materialization under existing publication ownership.",
+    "source": "Shared no-follow descriptor reader; whole source content hash and stable metadata; regular files only. Reject unindexed/excluded/not-scanned paths before materialization. All selected files must be admitted before any result is emitted.",
+    "secrets": "Scan the entire selected file, including content outside indexed declaration ranges and suppression comments. Redact whole file with text=null; never return a clipped body.",
+    "sizes": "Existing 128 KiB request/output, 1 MiB per source, 4 MiB materialization, 32 KiB serialized evidence. Explicit whole-file omissions, including JSON escaping cost, not clipping.",
+    "result": "evidence.files and evidence.bodies/omissions retain request indices, paths, physical ranges and source content hashes. Complete means all selected files delivered unredacted, never answer completeness, authentication or execution."
+  },
+  "negativeCases": [
+    "v1 file selector / v2 record selector / mixed fields / duplicate JSON keys",
+    "empty or >4 selections / non-string / control / noncanonical / absolute / traversal paths",
+    "unknown, document-only, skipped or excluded source binding",
+    "wrong snapshot / stale source / changed publication / symlink / special file / concurrent mutation",
+    "secret outside indexed declaration / late secret / suppression comment",
+    "source-file size / serialized evidence size / escaped byte cost / no partial output"
+  ],
+  "boundary": "Native Core and private source-owned client only. No Server endpoint, installed client, Stable change, model or new parser."
+}

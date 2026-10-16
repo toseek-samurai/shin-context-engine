@@ -1,0 +1,116 @@
+# Shin Context Engine
+
+[![Source qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml)
+
+**Keep project context current. Give coding agents evidence they can inspect.**
+
+Shin indexes your project's source and documentation, watches for changes, and
+returns focused context through a native CLI or MCP. Results carry a snapshot
+that the client can use to inspect and read the matching source.
+
+The local macOS kit includes the background service and **Shin Monitor**, a menu
+bar app for project health, request history, timings, storage, and optional model
+usage. Prefer a terminal? `shin-ce stats` opens an interactive monitor with the same
+project states and timing calculations. Local retrieval needs no account, model
+download, or cloud inference API.
+
+**Development preview:** the source is available for review and testing.
+There is no stable release yet. The separate Server component
+is under development; see [what remains for Server](docs/server-readiness.md).
+
+[Get started](#get-started-on-macos) · [CLI guide](docs/cli.md) ·
+[Connect an MCP client](docs/native-client-setup.md) ·
+[Build from source](docs/building.md) · [Architecture](docs/architecture.md)
+
+[Report a bug or suggest a feature](https://github.com/toseek-samurai/shin-context-engine/issues/new/choose) ·
+[Contribute](CONTRIBUTING.md)
+
+## See your project's state
+
+<p>
+  <img src="docs/images/monitor-projects.png" width="280" alt="Shin Monitor lists projects and their current search and observer status">
+  <img src="docs/images/monitor-project.png" width="280" alt="Project detail shows current context, the last check, updates and query history">
+  <img src="docs/images/monitor-timing.png" width="280" alt="Request timing separates search time from total service time and preparation">
+</p>
+
+Real Monitor screens rendered with synthetic sample data. Monitor supports
+English and Russian; these examples use English. Names, counts, and timings above are examples, not benchmark results.
+[Screenshot sources and reproduction](docs/images/README.md).
+
+- **See freshness and failures.** Monitor distinguishes current, preparing,
+  partial, and blocked project states, with a next step when action is needed.
+- **Ask for focused evidence.** Query from your terminal or coding agent, then
+  inspect and read using the returned snapshot.
+- **Keep state outside your repository.** The native kit stores indexes and
+  history in a separate private data directory. Adding a project does not add
+  configuration files to its source tree.
+- **Use the same local service from UI and CLI.** The TUI has overview, projects,
+  timing, storage, and model-usage tabs. Text and JSON status remain available. See the
+  [UI-to-CLI map](docs/cli.md#monitor-and-cli).
+
+## Also in your terminal
+
+<img src="docs/images/tui-projects.svg" width="864" alt="Shin TUI with Overview, Projects, Timing, Storage and Models tabs; two example projects are ready">
+
+`shin-ce stats` on two disposable example projects. This is a captured terminal
+view; colors and fonts follow your terminal. [Keyboard controls and usage
+setup](docs/cli.md#interactive-terminal-monitor).
+
+## Get started on macOS
+
+For now, [build the local kit](docs/local-kit.md#build-the-package) or use a
+[candidate from a successful CI run](docs/local-kit.md#download-a-ci-candidate).
+Extract the entire kit ZIP and open Terminal in the
+extracted kit directory. No `sudo` is needed.
+
+```sh
+./bin/shin-ce install
+export PATH="$HOME/.local/bin:$PATH"
+
+cd /path/to/your/project
+shin-ce init
+shin-ce status --text
+shin-ce query "Where are requests validated?"
+```
+
+`init` adds the current project and starts the local service. Initial preparation
+can take time; use `status --text` to see whether search is ready. The `PATH`
+change above applies to this terminal session; installation leaves your shell
+startup files unchanged.
+
+Open Monitor and click its menu bar icon:
+
+```sh
+open "$HOME/.local/opt/shin-local/Shin Monitor.app"
+```
+
+You can add further folders in Monitor or with
+`shin-ce project-add --root /path/to/another/project`. For terminal-only use, run
+`shin-ce stats` (or `shin-ce service-status --text` for a single status report).
+Use Tab or 1–5 to switch views, Enter for project details, and q to exit.
+To use Shin from a coding agent,
+[configure the included MCP adapter](docs/native-client-setup.md). Automatic
+startup at login is a separate opt-in step in the
+[installation guide](docs/local-kit.md#automatic-startup).
+
+## Choose the component you need
+
+| Component | What it does | Current distribution scope |
+| --- | --- | --- |
+| Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS candidate; ARM64 local package checks completed, public release pending |
+| Core | Indexing and bounded retrieval for tools and integrations | macOS and Linux source builds; [build instructions](docs/building.md) |
+| Server | Authenticated APIs and isolated personal workspaces backed by PostgreSQL | Development source; native remote login and setup remain unfinished |
+
+Linux desktop packaging, Windows distribution, and macOS Intel package
+qualification remain pending. Server and PostgreSQL are not required for the
+local kit. Configuring an AI client may send the context it retrieves to that
+client's chosen model provider.
+
+For contributors: [build and test](docs/building.md),
+[contribution guidance](CONTRIBUTING.md), and the
+[product manifest](docs/machine/shin-context-engine.manifest.json).
+The root `VERSION` records [Core](VERSION); [Observer](observer/VERSION) and
+[Server](server/VERSION) are versioned separately.
+
+Licensed under [Apache-2.0](LICENSE). [Third-party notices](THIRD_PARTY.md)
+and [private security reporting](SECURITY.md).

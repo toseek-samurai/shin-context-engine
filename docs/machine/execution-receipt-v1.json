@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "shin.execution-receipt-contract.v1",
+  "document": "execution-receipt-v1",
+  "status": "accepted",
+  "maturity": "implemented-verified",
+  "title": "Bounded External Execution Receipt",
+  "summary": "Carry short-lived scoped execution observations through session recovery while keeping external producer trust separate from static source evidence.",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "receipt": {
+    "schema": "shin.execution-receipt.v1",
+    "requiredFields": [
+      "schema_version",
+      "receipt_id",
+      "kind",
+      "producer",
+      "observed_at",
+      "ttl_seconds",
+      "result",
+      "scope",
+      "command_fingerprint"
+    ],
+    "optionalFields": [
+      "started_at",
+      "inputs",
+      "report"
+    ],
+    "kinds": [
+      "test",
+      "build",
+      "browser",
+      "service",
+      "migration",
+      "deployment",
+      "load-test"
+    ],
+    "results": [
+      "pass",
+      "fail",
+      "unknown",
+      "skipped"
+    ],
+    "identity": "receipt_id is a producer-owned opaque id, unique within the checkpoint.",
+    "scopeRequiredFields": [
+      "root",
+      "profile",
+      "profile_config_hash",
+      "task_id",
+      "thread_id",
+      "worktree_id",
+      "snapshot_id"
+    ],
+    "scopeMeaning": "Root, profile, profile_config_hash, task_id and thread_id always match exactly. Profile receipts also require worktree_id and snapshot_id. An explicitly producer-declared declared-complete input manifest may narrow invalidation to its non-overlapping file/tree selectors; drift outside those selectors is allowed, while changes to selected negative observations and tree additions or removals invalidate. Partial inputs remain conservative whole-profile applicability. Remote deployment equivalence is not inferred.",
+    "time": "observed_at is Unix seconds in 0..253402300799. Optional started_at is no later than observed_at; imported receipts also require inputs.captured_at <= started_at. ttl_seconds is 1..604800. Future and expired observations are never usable. TTL is an explicit freshness policy, not continuous runtime monitoring.",
+    "commandFingerprint": "Lowercase fnv1a64:<16 hex> or sha256:<64 hex> supplied by the producer over its canonical sanitized execution descriptor. Core preserves it but cannot independently prove which command ran. Do not include command text, environment, secrets, logs, screenshots, or provider payloads in the receipt."
+  },
+  "trust": {
+    "default": "producer-asserted",
+    "configuration": "resume, receipt-check and impact accept --trusted-producer ID, repeated for at most 16 distinct explicitly trusted local producers. A checkpoint or receipt bundle cannot carry this policy.",
+    "usable": "Producer is explicitly trusted, age is current, applicable scope fields and captured selectors match, and profile-owned source observation is complete. Only declared-complete inputs may ignore unrelated worktree/snapshot drift; every fixed binding field still matches.",
+    "executed": "A usable receipt with result pass or fail is labelled executed; failure remains failure. unknown/skipped never prove execution.",
+    "passedCurrent": "usable and result=pass; only this may satisfy an assertion receipt reference.",
+    "staticEvidence": "No document, code fragment, test source, Pack record, or assertion text is upgraded by importing a receipt. Receipt evidence is returned in a separate array.",
+    "authentication": "No signing or external authentication is implemented. Explicit producer trust assumes the host protected the local checkpoint and received the receipt from that producer. A receipt or imported artifact cannot grant its own trust. FNV is not a security hash.",
+    "executionBoundary": "Source isolation, execution environment, command correctness and receipt transport are producer/host responsibilities. Pre/post input hashes do not provide continuous execution attestation."
+  },
+  "resultFields": [
+    "receipt_id",
+    "producer",
+    "kind",
+    "result",
+    "observed_at",
+    "ttl_seconds",
+    "age",
+    "scope_current",
+    "scope_differences",
+    "all_scope_differences",
+    "producer_trusted",
+    "trust_source",
+    "verification_level",
+    "usable",
+    "passed_current",
+    "command_fingerprint",
+    "input_coverage",
+    "inputs_current",
+    "changed_selectors",
+    "narrowed_scope_used",
+    "next_action",
+    "command_independently_verified",
+    "continuous_execution_attestation"
+  ],
+  "optionalFieldSemantics": {
+    "started_at": "Producer-observed execution start. Optional for generic receipts; required with inputs/report on imported test receipts and must satisfy captured_at <= started_at <= observed_at.",
+    "inputs": "shin.execution-inputs.v1 captured by receipt-scope. Its declared-complete coverage is the only v1 narrowed-applicability mode; completeness is never inferred from Shin's import graph.",
+    "report": "Imported JUnit XML or Playwright JSON summary only: format, content_hash, bytes, payload_retained=false and normalized counters total, passed, failed, skipped, flaky, interrupted, expected_failures and global_errors. Names, logs, screenshots, attachments and report paths are not retained."
+  },
+  "producerResponsibilities": [
+    "run the declared check",
+    "record result and timestamp honestly",
+    "bind the exact source/worktree snapshot tested",
+    "choose a meaningful TTL",
+    "protect receipt transport and local persistence",
+    "omit sensitive payloads"
+  ],
+  "nonGoals": [
+    "test or service execution",
+    "background health polling",
+    "remote attestation",
+    "automatic promotion to project authority",
+    "automatic compaction hooks",
+    "new MCP endpoint"
+  ]
+}

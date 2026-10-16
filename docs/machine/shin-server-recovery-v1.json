@@ -1,0 +1,66 @@
+{
+  "schemaVersion": "shin.server-recovery-contract.v1",
+  "document": "shin-server-recovery-v1",
+  "status": "active-contract",
+  "title": "Explicit Recovery Identity And Deployment Fencing",
+  "summary": "P3E8 distinguishes ordinary restart from an operator-declared database restore or clone. A deployment pin, per-request identity header and offline identity transition prevent stale Observer traffic from silently joining the recovered history. This does not detect an out-of-band restore that bypasses the procedure.",
+  "deployment": {
+    "config": "The accepted service schema, complete template and check-config gate are owned by docs/machine/shin-companion-protocols-v1.json; do not author a configuration from the historical version stamps below. Exact database fields are connection_file, expected_name, runtime_role and server_id. server_id is an explicit 32-lowercase-hex deployment pin. Earlier service config schemas are rejected. The pin belongs to independent deployment configuration, not a file inside the restored PostgreSQL data directory. Process-local retrieval telemetry is not part of a database backup or recovery receipt.",
+    "freshDatabase": "Explicit migration of a fresh or valid empty migration history installs the configured pin as initial Server identity. Migration of an existing database preserves its identity and never adopts a different configured pin. The operator must inspect and pin the intended existing identity or use explicit recovery.",
+    "runtime": "Each new runtime connection acquires one shared session advisory lock on shin_server.lifecycle.v1 and holds it until connection close. Every acquired connection verifies the configured pin against server_identity.server_id after schema/role checks. P3E8 used observer_usage.server_id before migration011; that location is historical, not the current identity owner. A mismatch fails server-identity-mismatch before a Store operation. Database outage still differs from process liveness.",
+    "client": "Every authenticated HTTP route requires exactly one X-Shin-Server-ID equal to the deployment pin, except /health/ready and /api/v1/observer-identity. /health/live remains unauthenticated. Authentication is evaluated first. Missing or duplicate header is 400 server-id-required; wrong identity is 409 server-identity-mismatch. Clients must not silently replace a remembered identity from a readiness response.",
+    "handshake": "shin.observer-server-identity.v3 declares request_identity_header=X-Shin-Server-ID. Native Observer checks the exact handshake and attaches its configured identity to every request. It rejects earlier handshakes before packet export; no compatibility fallback. This also fences a service replacement between handshake and POST.",
+    "restart": "Ordinary restart with the same database and pin preserves identity, local delivery binding and retained replay. Reconnection after PostgreSQL interruption reacquires the shared session lock and rechecks the pin. No identity rotation on startup, health, sampling, delivery or migration of existing state."
+  },
+  "localQueueDisposition": "Observer dev20 provides bounded private outbox-export and outbox-verify without changing old state, destination or acknowledgements. Follow localArchive in shin-observer-delivery-v1 and the headless workflow before explicitly enrolling a fresh same-workspace state namespace. Old Server-side unconfirmed history and registry/tombstone capacity are not reclaimed by this local procedure; that R2 requirement remains open.",
+  "successor": "The version stamps and offlineRecovery plan/receipt v1 descriptions below retain P3E8 evidence. P3E9 moved deployment identity to server_identity in migration011 and introduced recovery plan/receipt v2 with bounded tombstone metadata; follow docs/machine/shin-observer-registry-v1.json for that successor. Current service configuration, database schema and identity protocol follow docs/machine/shin-companion-protocols-v1.json. Ordinary recovery preserves tombstones and invalidates old reclamation plans. Dev35 adds separate observer-retirement-plan/apply commands with explicit discard confirmation and whole-deployment pin rotation; see namespaceRetirement in the registry contract. No old-plan execution fallback is supported.",
+  "offlineRecovery": {
+    "config": "shin.server-recovery-config.v1 contains only schema_version and database with the same exact connection_file/expected_name/runtime_role/server_id fields. The connection must be the schema owner, not the limited runtime role. No source root, profile, artifact directory or GUI is required to inspect recovery metadata.",
+    "request": "Private bounded shin.server-recovery-request.v1 contains operation_id (32 lowercase hex), expected_server_id, reason_code (backup-restore or clone) and service_fenced=true. The latter is the operator declaration that old service instances have been stopped or fenced; a database lock cannot independently verify every process or network endpoint.",
+    "plan": "shin-server recovery-plan --config /absolute/private/recovery.json --input /absolute/private/request.json performs no DML. It requires exclusive try-acquisition of the same lifecycle lock, validates schema ownership and identity, and returns a deterministic plan over at most 1024 stream rows, retained usage, audit retention metadata and the previous recovery receipt. It is not a digest of the whole backup, source tree, audit log or all retained submission payloads.",
+    "successorIdentity": "new_server_id is the first 32 hex characters of SHA256('shin.server-recovery-identity.v1\\n' + expected_server_id + '\\n' + operation_id). Use a fresh cryptographically random operation_id. The successor is derived, not freely chosen; the implementation rejects equality to the parent. SHA-256 is an integrity/identity mechanism here, not peer authentication or a backup signature.",
+    "apply": "shin-server recovery-apply takes private exact {plan:<inspected plan>}. Under exclusive lifecycle transaction lock, recompute and compare the plan, revoke every currently active Observer stream, change Server identity and persist the latest plan/receipt in one transaction. It never deletes a stream, renumbers a cursor, rewrites an old acknowledgement, prunes audit or activates a snapshot.",
+    "receipt": "shin.server-recovery-receipt.v1 identifies operation/parent/successor, plan, revoked and retained stream counts, previous receipt hash and transaction observation time. service_fenced_declared=true; restored_backup_verified=false, history_complete=false, local_state_verified=false, source_verified=false and shared_publication_mutated=false remain explicit. This bounded separate maintenance receipt records the system transition; it does not fabricate one user audit event per stream.",
+    "replay": "Only the exact latest applied plan can return its saved receipt, and only while the database has its derived successor identity. Preserve the original request/plan and matching recovery configuration for uncertain-response retries. An older or changed plan conflicts. The singleton is not an unbounded operation ledger.",
+    "guard": "Plan, apply and migration refuse while runtime database sessions hold the shared lifecycle lock. Recovery takes no stream/job/filesystem locks after acquiring the exclusive lifecycle fence. Stop all service instances before a restore; this cooperative fence is not protection from a database administrator bypassing it or a separate old database still serving elsewhere.",
+    "status": "Administrator-only GET /api/v1/recovery returns the latest maintenance receipt with read_only=true and history_complete=false. It requires the current request identity header. Status never clears a recovery condition or changes a client binding."
+  },
+  "operatorSequence": [
+    "Stop and fence all old Server instances and their routes. Preserve Observer local state/outboxes, deployment pins and matching old binaries independently of database backup media.",
+    "Restore only a trusted selected backup using PostgreSQL tooling. Credentials, SQL dump ownership, filesystem artifacts, deployment configuration and WAL/PITR custody are separate operator responsibilities. Never run an untrusted SQL dump as an administrative restore.",
+    "Use the restored database's inspected parent identity and a new operation_id in the private recovery request. Run recovery-plan, review its bounded metadata and save it outside consumer repositories.",
+    "Run recovery-apply exactly once logically; repeat the identical latest plan after an uncertain response. The database identity and stream revocations commit together.",
+    "Explicitly update the deployment pin to the receipt's successor. Configuration publication and the PostgreSQL transaction are not one distributed transaction: until the pin is updated, the old runtime fails closed. Preserve original recovery input/config for retry evidence.",
+    "Review source roots, artifact inventory, restored active references, job state, credentials and client cursors before exposing the recovered service. Existing retrieval freshness, preparation and activation policies remain in force; identity transition alone does not certify them.",
+    "Old Observer delivery remains blocked with its durable pending state intact. Continue local sampling independently. Decide explicitly how to retain/export the old queue and enroll a fresh stream/state namespace for the recovered Server. Never silently repin an immutable outbox, discard pending packets or claim recovered delivery continuity.",
+    "Do not resume an old audit/receipt retention plan against the new identity. Inspect a fresh plan; historical payloads and receipts keep their original identities."
+  ],
+  "migration": "SQL 010 adds a singleton server_recovery with at most 16KiB of latest plan/receipt JSON. It preserves every existing identity, stream, acknowledgement, audit event and active route. Runtime can SELECT this table but cannot UPDATE it. Migration 001..009 checksums remain unchanged. There is no automatic database downgrade or v5 service-config reader.",
+  "limits": [
+    "Bypassing the restore procedure and restoring an older database with the same pin can remain undetectable; no independent durable per-transaction witness is implemented.",
+    "A lost receipt, revoked-stream row or retired watermark cannot be reconstructed if no party retained it. The new identity fences uncertainty; it does not assert exactly-once history across data loss.",
+    "This slice does not implement general backup scheduling, WAL archive management, physical PITR automation, HA/failover or a backup signature verifier.",
+    "Inactive stream records still consume registry capacity. Reclamation and bounded tombstone policy are a subsequent milestone, not an effect of recovery.",
+    "Retained publications and preparation jobs are not rewritten by this identity operation. Fencing all old processes and reviewing artifact/job state before restart remain mandatory operator steps.",
+    "Observer state v3/outbox v2 and submission/ack v1 are unchanged. No stable Core, global skill, consumer route, off-loopback transport or remote host deployment is changed."
+  ],
+  "implementation": [
+    "server/src/recovery_store.cpp",
+    "server/src/store.cpp",
+    "server/src/config.cpp",
+    "server/src/http.cpp",
+    "observer/src/delivery_transport.cpp",
+    "server/migrations/010_server_recovery.sql"
+  ],
+  "sources": [
+    "https://www.postgresql.org/docs/current/backup.html",
+    "https://www.postgresql.org/docs/current/continuous-archiving.html",
+    "https://www.postgresql.org/docs/current/app-pgrestore.html",
+    "https://www.postgresql.org/docs/current/explicit-locking.html"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-server-audit-history-v1.json",
+    "docs/machine/shin-observer-history-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

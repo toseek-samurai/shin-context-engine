@@ -1,0 +1,4 @@
+<testsuite name="sample" tests="2" failures="0" errors="0" skipped="2">
+  <testcase name="first"><skipped/></testcase>
+  <testcase name="second"><skipped/></testcase>
+</testsuite>

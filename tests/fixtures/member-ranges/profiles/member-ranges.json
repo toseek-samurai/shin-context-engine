@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "member-range-hermetic-fixture",
+  "status": "active",
+  "id": "member-ranges",
+  "sourceLabel": "Hermetic member range fixture",
+  "rootFiles": ["README.md"],
+  "sourceExtensions": [".md"],
+  "sourceFactRoots": ["src"],
+  "sourceFactExtensions": [".java", ".ts", ".tsx", ".cs", ".kt", ".cpp"],
+  "sourceFactExtractors": ["language"],
+  "sourceFactMaxFiles": 32,
+  "sourceFactMaxFileBytes": 2097152,
+  "agentStartPaths": ["README.md"],
+  "evalCases": [
+    {
+      "id": "syntax-member-range",
+      "query": "multilineMember",
+      "mustPaths": ["src/member-ranges.ts"],
+      "expectedRecordTypes": ["ts-method"]
+    }
+  ]
+}

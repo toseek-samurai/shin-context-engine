@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "shin.static-analysis-contract.v1",
+  "document": "shin-static-analysis-contract",
+  "status": "accepted",
+  "release": {
+    "productVersion": "2.0.4"
+  },
+  "purpose": "Provide a deterministic high-signal C++ static-analysis gate for defects and ownership mistakes without turning subjective style heuristics or vendored code into release blockers.",
+  "toolchain": {
+    "analyzer": "clang-tidy",
+    "configuration": ".clang-tidy",
+    "compileDatabase": "CMake compile_commands.json",
+    "parallelRunner": "LLVM run-clang-tidy",
+    "runner": "tests/run_clang_tidy.sh",
+    "executableDiscovery": "CMake resolves LLVM 23 version-suffixed executables before unversioned clang-tidy and run-clang-tidy executables. Explicit Make overrides remain supported; cached relative tool names are cleared before automatic discovery.",
+    "runnerCompatibility": "Optional run-clang-tidy presentation flags are capability-detected; unsupported options must never turn usage output into a successful no-analysis gate.",
+    "versionPolicy": "LLVM 23 is the required static-analysis baseline on ARM64 and AMD64. The configured clang-tidy must accept the complete policy through --verify-config before analysis starts; analyzer upgrades cannot silently enable a new bugprone or performance heuristic."
+  },
+  "scope": {
+    "included": [
+      "src/*.cpp",
+      "project headers reached from src translation units"
+    ],
+    "excluded": [
+      "third_party/**",
+      "generated build output",
+      "consumer repositories"
+    ],
+    "boundary": "Shin owns findings in its C++ Core. Upstream simdjson and nlohmann sources retain their own analyzer policy and are not silently treated as Shin findings."
+  },
+  "policy": {
+    "enabledAnalyzerFamily": "clang-analyzer-*",
+    "explicitPortableCheckCount": 104,
+    "explicitPortableCheckSet": "The exact bugprone, concurrency, performance, and portability checks are declared in .clang-tidy and verified with LLVM 23 on ARM64 and AMD64.",
+    "enabledPortabilityChecks": [
+      "portability-simd-intrinsics",
+      "portability-std-allocator-const"
+    ],
+    "excludedChecks": [
+      {
+        "id": "bugprone-easily-swappable-parameters",
+        "reason": "Large callback and parser APIs need domain review; positional similarity alone is too noisy for a fail-closed release gate."
+      },
+      {
+        "id": "bugprone-implicit-widening-of-multiplication-result",
+        "reason": "The reported bounded size arithmetic is already validated at ownership boundaries; blanket casts would reduce readability without adding proof."
+      },
+      {
+        "id": "bugprone-throwing-static-initialization",
+        "reason": "Immutable process-lifetime tables are constructed before command dispatch; replacing them requires an architectural decision rather than analyzer-driven churn."
+      },
+      {
+        "id": "performance-enum-size",
+        "reason": "Internal enums are not wire or packed-storage types and measured memory does not justify fixed underlying widths."
+      },
+      {
+        "id": "performance-inefficient-string-concatenation",
+        "reason": "The heuristic reports bounded command and diagnostic assembly outside measured hot paths; optimize only from benchmark evidence."
+      },
+      {
+        "id": "performance-no-automatic-move",
+        "reason": "The reported const return values preserve explicit immutable ownership; removing const solely for an optional move is not a correctness gate."
+      },
+      {
+        "id": "performance-unnecessary-value-param",
+        "reason": "Several value parameters intentionally express ownership transfer; API ownership changes require semantic review."
+      }
+    ],
+    "warningsAsErrors": true,
+    "automaticFixes": false,
+    "newWarningPolicy": "A new warning fails the gate. Fix the defect or add one reviewed named exclusion with a machine-readable rationale; do not use local NOLINT to hide broad debt."
+  },
+  "commands": {
+    "analyze": "make tidy",
+    "releaseGate": "make static-analysis-check",
+    "completePortableRelease": "make release-check"
+  },
+  "currentBaseline": {
+    "version": "23.1.0",
+    "explicitChecks": 104,
+    "renamedCheck": {
+      "removed": "performance-faster-string-find",
+      "replacement": "performance-prefer-single-char-overloads"
+    },
+    "addedChecks": [
+      "bugprone-assignment-in-selection-statement",
+      "bugprone-missing-end-comparison",
+      "bugprone-unsafe-to-allow-exceptions"
+    ]
+  },
+  "releaseBoundary": "Static analysis is a source-release gate. It does not alter Shin indexes, runtime output schemas, ranking, consumer adoption, or deployed runtime dependencies.",
+  "summary": "Public contract for static analysis v1."
+}

@@ -1,0 +1,5 @@
+<testsuite tests="3" failures="1" skipped="0" disabled="1">
+  <testcase name="passing" status="run"><properties/></testcase>
+  <testcase name="failing" status="fail"><failure message="Failed"/><properties/></testcase>
+  <testcase name="disabled" status="disabled"><properties/></testcase>
+</testsuite>

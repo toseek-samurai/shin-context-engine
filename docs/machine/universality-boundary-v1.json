@@ -1,0 +1,145 @@
+{
+  "schemaVersion": "shin.universality-boundary.v1",
+  "document": "shin-context-engine-universality-boundary",
+  "status": "accepted",
+  "release": "2.0.4",
+  "purpose": "Transfer Shin Context Engine to unrelated projects without consumer dependencies. Generic profiles and explicit configuration keep Core independently buildable and testable. Separate Core release gates from optional ecosystem acceptance, which remains project-owned evidence.",
+  "retrievalSummary": "Portable Core release, integration bundle classification, and exact profile ownership keep Shin transferable without consumer dependencies.",
+  "core": {
+    "sourceRoots": [
+      "src",
+      "shared/windows-io/src"
+    ],
+    "profileRegistry": "profiles",
+    "profiles": [
+      {
+        "id": "shin",
+        "path": "profiles/shin.json",
+        "kind": "self"
+      },
+      {
+        "id": "generic-cpp",
+        "path": "profiles/generic-cpp.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-docs",
+        "path": "profiles/generic-docs.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-dotnet",
+        "path": "profiles/generic-dotnet.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-java",
+        "path": "profiles/generic-java.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-kotlin",
+        "path": "profiles/generic-kotlin.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-node",
+        "path": "profiles/generic-node.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-retool",
+        "path": "profiles/generic-retool.json",
+        "kind": "bootstrap"
+      },
+      {
+        "id": "generic-source",
+        "path": "profiles/generic-source.json",
+        "kind": "bootstrap"
+      }
+    ],
+    "releaseTargets": [
+      "check",
+      "perf-check",
+      "safety",
+      "release-check"
+    ],
+    "allowedDomainModules": [
+      {
+        "id": "retool-source-format",
+        "source": "src/retool_extraction.cpp",
+        "reason": "Retool RSX, resource, and workflow files are an explicit source format supported by generic-retool; no consumer repository path or product policy is embedded."
+      }
+    ],
+    "portableDistribution": {
+      "contract": "docs/machine/portable-distribution-v1.json",
+      "adoptionContract": "docs/machine/project-adoption-v1.json",
+      "adoptionPlannerContract": "docs/machine/adoption-planner-v1.json",
+      "profileRoutingContract": "docs/machine/profile-routing-v1.json",
+      "agentReadinessContract": "docs/machine/agent-readiness-v1.json",
+      "indexLifecycleContract": "docs/machine/index-lifecycle-v1.json",
+      "installGate": "make portable-install-check",
+      "installedProfiles": [
+        "generic-cpp",
+        "generic-docs",
+        "generic-dotnet",
+        "generic-java",
+        "generic-kotlin",
+        "generic-node",
+        "generic-retool",
+        "generic-source"
+      ],
+      "selfProfileInstalled": false,
+      "integrationProfilesInstalled": false
+    }
+  },
+  "integrationBundles": [
+    "integrations/shin-development/shin-integration-bundle-v1.json"
+  ],
+  "classificationPolicy": {
+    "profileOwnership": "Every profiles/*.json file is owned exactly once by Core or one integration bundle.",
+    "flatRegistry": "The flat profiles directory is retained as the stable explicit --profile-dir registry; bundle ownership does not add fallback profile search or duplicate configuration.",
+    "sourceBoundary": "Generic source-format support may be implemented in Core; project paths, aliases, and workflows remain profile data.",
+    "releaseBoundary": "Portable Core release gates use hermetic fixtures and do not invoke optional integration or project-specific commands."
+  },
+  "releaseRoutes": {
+    "portable": {
+      "check": "make check",
+      "performance": "make perf-check",
+      "safety": "make safety",
+      "release": "make release-check"
+    },
+    "ecosystem": {
+      "owner": "consumer",
+      "coreReleaseDependency": false,
+      "commands": "Each consumer defines its acceptance commands in its own repository. This source tree has no consumer deployment gates."
+    }
+  },
+  "acceptance": {
+    "architectureGate": "tests/run_universality_tests.sh",
+    "sourceRetrievalTransferGate": "tests/test_context_transfer.py (optional source-provider builds): frozen synthetic mixed-format source/document/declared-link checks, not a held-out project or model-task claim; multilingual gaps remain separately visible.",
+    "coldStartGate": "tests/run_cold_start_tests.sh",
+    "adoptionGate": "tests/run_adoption_tests.sh",
+    "adoptionPlannerGate": "tests/run_adoption_plan_tests.sh",
+    "profileRoutingGate": "tests/run_profile_suggest_tests.sh",
+    "portableInstallGate": "tests/run_portable_install_tests.sh",
+    "portableProjectKinds": [
+      "C++",
+      "documentation-only",
+      ".NET",
+      "Java",
+      "Kotlin",
+      "Node/TypeScript",
+      "Retool source",
+      "mixed source"
+    ]
+  },
+  "nonGoals": [
+    "No consumer-specific ranking or workflow semantics in C++ Core.",
+    "No requirement that a portable release machine contains any neighboring repository.",
+    "No dynamic plugin ABI or runtime loading in this milestone.",
+    "No duplication or implicit discovery of integration profiles.",
+    "No package-manager-specific installer or global filesystem mutation in this milestone."
+  ],
+  "summary": "Public contract for universality boundary v1."
+}

@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "shin.federated-eval-suite.v1",
+  "id": "fixture-federation-failing-quality",
+  "federationId": "fixture-federation",
+  "requiredMemberIds": ["primary", "replica"],
+  "cases": [
+    {
+      "id": "fixture-missing-evidence",
+      "query": "capability contract",
+      "mustEvidence": [
+        {"member": "primary", "path": "docs/does-not-exist.md"}
+      ]
+    }
+  ]
+}

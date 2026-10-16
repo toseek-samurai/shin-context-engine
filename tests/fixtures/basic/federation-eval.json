@@ -1,0 +1,34 @@
+{
+  "schemaVersion": "shin.federated-eval-suite.v1",
+  "id": "fixture-federation-quality",
+  "federationId": "fixture-federation",
+  "requiredMemberIds": ["primary", "replica"],
+  "cases": [
+    {
+      "id": "fixture-cross-member-context",
+      "query": "overview capability contract rollback deployment widget workflow resource security",
+      "limit": 6,
+      "perDocLimit": 1,
+      "mustEvidence": [
+        {"member": "primary", "path": "docs/architecture.md", "evidenceType": "contract", "recordType": "contract"},
+        {"member": "replica", "path": "docs/operations.md", "evidenceType": "runbook", "recordType": "runbook"},
+        {"member": "primary", "path": "workflows/FixtureWorkflow/RetoolWorkflowLoad.yml", "evidenceType": "fact", "recordType": "retool-resource-binding"}
+      ],
+      "mustTopEvidence": [
+        {"member": "primary", "path": "docs/architecture.md"},
+        {"member": "replica", "path": "docs/operations.md"}
+      ],
+      "mustTopN": 2,
+      "mustNotEvidence": [
+        {"member": "primary", "path": "docs/missing.md"}
+      ],
+      "expectedEvidenceTypes": ["contract", "runbook", "fact"],
+      "memberBounds": [
+        {"id": "primary", "minReturnedRecords": 3, "maxReturnedRecords": 3},
+        {"id": "replica", "minReturnedRecords": 3, "maxReturnedRecords": 3}
+      ],
+      "maxCandidateRecords": 6,
+      "maxBudgetedOutRecords": 0
+    }
+  ]
+}

@@ -1,0 +1,16 @@
+{
+  "schema_version": "shin.observer-config.v2",
+  "observer_id": "local-observer",
+  "source_host_id": "local-example",
+  "project_id": "example-project",
+  "workspace_id": "primary",
+  "root": "${ROOT}/source",
+  "profile": "generic-docs",
+  "profile_dir": "${PREFIX}/share/shin-context/profiles",
+  "out_dir": "${ROOT}/index",
+  "state_dir": "${ROOT}/observer-state",
+  "poll_interval_ms": 1000,
+  "max_snapshot_bytes": 8388608,
+  "max_file_bytes": 1048576,
+  "outbox": {"enabled": false, "max_entries": 64, "max_bytes": 131072}
+}

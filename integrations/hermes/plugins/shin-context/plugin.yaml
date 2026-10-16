@@ -1,0 +1,12 @@
+name: shin-context
+version: "1.0.1"
+description: "Read-only, fail-closed access to adopted Shin project context for Hermes agents."
+author: "Shin Context Engine"
+provides_tools:
+  - shin_discover_project
+  - shin_ready_context
+  - shin_brief_context
+  - shin_pack_context
+  - shin_diagnose_context
+  - shin_worktree_diff
+  - shin_suggest_profile

@@ -1,0 +1,6 @@
+{
+  "schemaVersion": "authority-state-contract-v1",
+  "title": "State Contract",
+  "state": "rejected",
+  "summary": "The explicit state is lifecycle metadata."
+}

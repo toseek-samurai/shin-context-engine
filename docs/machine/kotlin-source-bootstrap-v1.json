@@ -1,0 +1,70 @@
+{
+  "schemaVersion": "shin.kotlin-source-bootstrap.v1",
+  "document": "kotlin-source-bootstrap",
+  "status": "active-contract",
+  "summary": "Discover bounded Kotlin declarations through the generic language profile for agent source navigation.",
+  "scope": {
+    "bootstrapProfile": "generic-kotlin",
+    "mixedProfile": "generic-source",
+    "languageSpecificationRequired": false,
+    "boundary": "Extract declarations and source locations; do not type-check, compile, or model the standard library."
+  },
+  "sourceFacts": {
+    "recordPrefix": "kotlin-",
+    "declarations": [
+      "package",
+      "class",
+      "interface",
+      "object",
+      "enum",
+      "annotation",
+      "value-class",
+      "typealias",
+      "function",
+      "test-case"
+    ],
+    "testAnnotations": [
+      "Test",
+      "ParameterizedTest",
+      "RepeatedTest",
+      "TestFactory"
+    ],
+    "supportedNames": [
+      "ordinary identifiers",
+      "extension functions",
+      "backtick test names"
+    ],
+    "excludedTrees": [
+      ".gradle",
+      "build",
+      "out",
+      "target",
+      "vendor",
+      "third_party",
+      "symlinked entries"
+    ]
+  },
+  "hermeticEvidence": {
+    "fixture": "synthetic Kotlin sources with nested declarations, extension functions, annotations, and excluded trees",
+    "releaseClaim": false
+  },
+  "releaseBoundary": "Missing grammar forms remain ordinary source text; no complete-language or held-out-project claim.",
+  "discovery": {
+    "extensions": [
+      ".kt",
+      ".kts"
+    ],
+    "buildMetadataOnlyKts": [
+      "build.gradle.kts",
+      "settings.gradle.kts"
+    ],
+    "projectKinds": [
+      "kotlin-gradle",
+      "kotlin-maven",
+      "kotlin-source"
+    ],
+    "extractor": "kotlin-source-facts",
+    "dominanceRule": "A language with at least 10 files and at least four times all other recognized source files is recommended before generic-source; genuinely mixed corpora retain generic-source first.",
+    "caseInsensitiveRootAliasPolicy": "Optional root aliases that resolve to the same filesystem entry are indexed once."
+  }
+}

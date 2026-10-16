@@ -1,0 +1,131 @@
+{
+  "schemaVersion": "shin.project-adoption-contract.v1",
+  "document": "shin-project-adoption-v1",
+  "status": "accepted",
+  "release": "2.0.4",
+  "summary": "A project can adopt Shin through one location-independent marker whose permanent profile, external index ownership, quality gates, and agent routing are validated by Core.",
+  "marker": {
+    "schemaVersion": "shin.project-adoption.v1",
+    "pathPolicy": "The marker is stored and reported as a canonical repository-relative regular file below --root. CLI input may be that relative path or an absolute/dot-segment spelling that resolves lexically below --root; Core normalizes it before profile and agent coherence checks. Outside-root and symlink paths are rejected.",
+    "topLevelFields": [
+      "schemaVersion",
+      "document",
+      "status",
+      "summary",
+      "project",
+      "engine",
+      "profile",
+      "index",
+      "qualityGates",
+      "agent",
+      "extensions"
+    ],
+    "unknownFieldPolicy": "Unknown standard fields are errors. Optional extensions use at least two dot-separated lowercase identifier components, contain object values, and remain opaque to Core."
+  },
+  "fields": {
+    "project": {
+      "id": "Stable lowercase project identifier.",
+      "contextEpoch": "Stable lowercase routing epoch referenced by the agent entry.",
+      "rootPolicy": "Must be cli-root; the marker never stores an absolute repository path."
+    },
+    "engine": {
+      "minimumVersion": "Canonical major.minor.patch release required by the project.",
+      "generatorIdentity": "Exact generated-index compatibility identity required by the project."
+    },
+    "profile": {
+      "id": "Permanent profile id resolved only from the explicit --profile-dir registry.",
+      "registry": "Must be explicit-profile-dir.",
+      "kind": "Must be permanent.",
+      "genericBootstrapAllowed": "Must be false after permanent adoption."
+    },
+    "index": {
+      "ownership": "Must be tool-external; generated context is not written into the consumer repository.",
+      "key": "Portable output key chosen by the adopter; it is not an absolute path. Every permanent build, retrieval command, and project helper appends this exact key to one reviewed external output base. The profile id or project id must not silently replace it.",
+      "consumerWritesAllowed": "Must be false.",
+      "requireCurrent": "Must be true."
+    },
+    "qualityGates": {
+      "profileCheckStrict": true,
+      "check": true,
+      "doctorStrict": true,
+      "evalStrict": true,
+      "packEvalStrict": true,
+      "profileEvidence": "The selected profile must be non-bootstrap, contain at least one evalCases and packEvalCases entry, and register both the adoption marker and declared agent entry in agentStartPaths."
+    },
+    "agent": {
+      "entryPath": "Canonical repository-relative regular file such as AGENTS.md.",
+      "contextEpochReferenceRequired": true,
+      "markerReferenceRequired": true,
+      "profileReferenceRequired": true,
+      "coherence": "The entry file must reference the exact epoch, marker path, and permanent profile id."
+    }
+  },
+  "command": {
+    "syntax": "shin-context --profile-dir PROFILE_DIR --root PROJECT adoption-check --marker FILE --strict",
+    "outputSchema": "shin.project-adoption-check.v1",
+    "profileSelection": "--profile is rejected because the marker owns the permanent profile id.",
+    "indexAccess": "adoption-check does not read or mutate a generated index.",
+    "exitPolicy": "Structural, compatibility, profile, path, or agent-routing errors return exit 1; CLI misuse returns exit 2 through shin.error.v1."
+  },
+  "planner": {
+    "contract": "docs/machine/adoption-planner-v1.json",
+    "role": "adoption-plan reports lifecycle readiness and exact quality-gate commands without creating the marker or validating its content.",
+    "authorityBoundary": "Only adoption-check --strict validates this marker contract and agent-entry coherence."
+  },
+  "integrationClosure": {
+    "canonicalOutput": "Resolve one external output base and append marker.index.key exactly once. All permanent build, check, doctor, eval, Pack-eval, and normal retrieval commands must use that same directory.",
+    "singleProjectGate": "An adopted project must expose one reviewed local helper that builds the canonical marker-derived output and runs validate --marker <marker> --strict, or a documented sequence containing adoption-check --strict, profile-check --strict, build, check, doctor --strict, eval --strict, and pack-eval --strict. Every index-reading gate must target the same output.",
+    "existingHelperAudit": "Promotion from a bootstrap or validation profile must update or retire older build and validation helpers that use a profile-derived output key or omit a required permanent-adoption gate.",
+    "completionRule": "A marker and passing standalone commands are insufficient by themselves. Adoption closes only after the project-owned route passes from the marker through one canonical generated snapshot without writing Shin output into the consumer repository.",
+    "failureExamples": [
+      "marker.index.key differs from the output directory used by the project validation helper",
+      "the declared validation helper omits Pack-eval or adoption-check",
+      "build and eval run against different generated output directories",
+      "an older generic or profile-id route remains the documented default after permanent cutover"
+    ]
+  },
+  "informationArchitecture": {
+    "scope": "Agent procedure for an explicit adoption or instruction-maintenance task, not new marker fields, a Core routing engine, or permission to reorganize an ordinary retrieval target.",
+    "ownership": {
+      "entry": "Keep AGENTS.md as a short index to the existing canonical rules, selected route and relevant procedures; avoid copying a release narrative or the whole rulebook into every session.",
+      "rules": "Give each normative rule one established source home with an explicit owner and applicability scope. Preserve the project's current Markdown, MDC or machine-contract convention rather than imposing an extension.",
+      "contracts": "Use existing structured contracts for exact identifiers, version constraints, relationships and executable checks. Prose explains them but does not create competing values.",
+      "procedures": "Skills and operational guides describe how to perform a task, link its governing rule, and expose conditional detail only when the task needs it.",
+      "projections": "MCP tools, client entry files and delivery copies point to or mechanically derive from their owners; independently maintained policy copies are not a new authority."
+    },
+    "knowledgeLifecycle": {
+      "workingScope": "The default profile enrolls current contracts, operative decision rationales and explicitly applicable plans. Completed implementation does not make its still-operative decision obsolete. A proposal is not implemented merely because it belongs to the working knowledge set.",
+      "historicalScope": "Owners explicitly classify superseded designs, concluded investigations and old milestone reports into a separate history profile and external key. Use existing documentIncludePrefixes/documentExcludePrefixes. A lower history score is not corpus isolation; history-only file edits should not invalidate the working snapshot.",
+      "mixedDocuments": "Keep current rules at their canonical paths. Move substantial obsolete sections to an archive and link them; preserve needed rationale and original observations. A short compatibility pointer may remain at an old path, excluded explicitly. Status metadata is not a semantic paragraph filter, and changing a profile never rewrites a record's recorded authority.",
+      "requiredChecks": "Working ready/validate retain configuration, currentness, integrity, safety, required paths, forbidden evidence, coverage, work/output budgets and explicit owner-navigation requirements. Historical profiles must pass their own checks for a historical task, not to authorize unrelated current work.",
+      "rankObservations": "Reviewed broad-discovery ordering may live in a separate consumer-owned golden suite. It still reports failures and uses explicit first-evidence or unique-path rank; it is not called by normal readiness. Keep required source presence and relevant budgets in the mandatory profile. Do not convert every mustTopPaths assertion automatically.",
+      "routing": "The adoption marker retains the one default working route. A complementary history route has an explicit profile, owner, root and distinct external key documented in the owner registry/helper. Select it only for an explicit historical task; never switch to it because another route is stale or red, and never merge its results silently into current authority.",
+      "maintenance": "Archive with an owner-reviewed disposition, not elapsed age or filename guessing alone. Keep earlier failures, schema migrations, compatibility evidence and still-operative rationale. Delete only separately reviewed redundant material; this procedure does not authorize purging history or changing neighboring projects.",
+      "compatibility": "This procedure uses existing Shin 1.27.2 profile and retrieval contracts. It adds no marker fields, Core score changes, automatic lifecycle inference, new generator format, or implicit index maintenance."
+    },
+    "workflow": [
+      "Inventory the existing entry files, rule homes, machine contracts, skills and helpers in the authorized scope. Record which file owns each decision before moving text.",
+      "Separate always-needed authority and route boundaries from task-specific procedures. Mark the latter with an understandable trigger or path scope and link them from the entry.",
+      "Resolve a conflict against accepted source and owner decisions, not whichever retrieved paragraph ranks first. Retain unresolved contradictions explicitly instead of inventing precedence.",
+      "Enroll the actual canonical files and workspace roots in the consumer-owned profile. Check the manifest inventory and scan limits; a zero capped-files count does not prove the profile selected every intended directory.",
+      "Keep eval definitions and diagnostic reports outside the retrieval corpus when they would let a query match its own expected answer. Preserve original queries, negative assertions and source bindings across a before/after comparison.",
+      "Verify reference reachability, path containment, missing rule enrollment, exact duplicated policy paragraphs and entry-size budgets. Review semantic duplicates and scope decisions separately; text checks cannot prove them.",
+      "Run the project-owned validation route and representative normal, scoped and ambiguous tasks. Report changed entry/read-set bytes separately from token costs, retrieval latency, answer quality and model obedience."
+    ],
+    "formatBoundary": "MDC is Markdown with client metadata. Shin's Markdown enrollment does not execute globs or alwaysApply, infer instruction priority from the suffix, or turn retrieved text into trusted agent instructions.",
+    "migrationBoundary": "Use a bounded pilot, preserve source owners and established authorization, and do not migrate all consumers, add a parallel rules DSL, relax gates or introduce embeddings as a side effect."
+  },
+  "security": [
+    "No absolute repository, binary, profile, or output path is stored in the standard marker fields.",
+    "Marker and agent entry symlink traversal is rejected.",
+    "Core does not execute, interpret, or trust extension data.",
+    "The marker does not grant source, network, process, or runtime authority."
+  ],
+  "nonGoals": [
+    "No implicit filesystem-wide Shin discovery.",
+    "No automatic permanent-profile generation.",
+    "No product semantics or integration paths in Core.",
+    "No implicit repair of consumer build helpers; the adopter must make their marker-derived route explicit and testable.",
+    "No replacement for profile-check, build, check, doctor, eval, or pack-eval."
+  ]
+}

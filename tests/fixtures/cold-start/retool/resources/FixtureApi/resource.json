@@ -1,0 +1,5 @@
+{
+  "type": "restapi",
+  "uuid": "cold-start-resource",
+  "environment": "production"
+}

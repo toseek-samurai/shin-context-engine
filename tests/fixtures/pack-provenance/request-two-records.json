@@ -1,0 +1,26 @@
+{
+  "schema_version": "shin.task-request.v1",
+  "request_id": "pack-provenance-two-records",
+  "task": {
+    "objective": "Keep document and section result-policy evidence distinct.",
+    "must": [
+      {
+        "id": "document-title",
+        "query": "document result policy",
+        "require_full_coverage": true
+      },
+      {
+        "id": "section-heading",
+        "query": "section document result policy",
+        "require_full_coverage": true
+      }
+    ]
+  },
+  "evidence_types": ["contract", "section"],
+  "budget": {
+    "max_evidence_bytes": 12000,
+    "max_records": 2,
+    "per_query_records": 1,
+    "per_document_records": 2
+  }
+}

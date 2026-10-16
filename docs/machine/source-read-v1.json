@@ -1,0 +1,72 @@
+{
+  "schemaVersion": "shin.source-read-contract.v1",
+  "document": "source-read-v1",
+  "status": "accepted",
+  "title": "Selected Source Body Reading",
+  "summary": "Native read-only materialization of selected published source-fact physical ranges with exact current-source admission and conservative secret suppression.",
+  "introducedIn": "Core2.0.0-dev.20; development only, not Stable1.27.3",
+  "compatibility": "Generator-v21 is unchanged: no persisted row, extraction, ranking or snapshot format changes. Old generator-v20 snapshots remain unsupported. This capability is independent of agent-workflow or semantic-quality acceptance.",
+  "interface": {
+    "cli": "read --input FILE|-",
+    "native": "RetrievalSession::read(std::string_view request)",
+    "requestSchema": "shin.source-read-request.v1",
+    "requestFields": [
+      "schema_version",
+      "snapshot_id",
+      "record_ids"
+    ],
+    "resultSchema": "shin.source-read.v1",
+    "currentness": "Always mandatory, without a flag to disable it. Hold an existing publication reader lock across selection/materialization. Independently verify exact currentness and the expected admitted snapshot both before and after materialization; recheck selected file metadata before return.",
+    "input": "Strict safe JSON, no duplicate fields, maximum nesting32. No caller paths, line ranges, model text, omitted snapshot binding or unknown fields. Record IDs refer only to this snapshot's facts store, not an arbitrary filesystem path.",
+    "unknownId": "Reject the entire batch. A document fact or fact without a source range is explicitly omitted as not-source-range; document-section IDs are not supported.",
+    "stdout": "One compact JSON result and terminal newline only after all checks pass; no partial body streaming. Refusals use the existing structured CLI error path and nonzero exit. Successful but incomplete materialization has ok=true, complete=false and exit0."
+  },
+  "limits": {
+    "requestBytes": 131072,
+    "outputBytesIncludingNewline": 131072,
+    "requestedRecordsIncludingDuplicates": 8,
+    "recordIdBytes": 1024,
+    "selectedSourceFiles": 4,
+    "sourceFileBytes": 1048576,
+    "materializationSourceBytes": 4194304,
+    "serializedEvidenceBytes": 32768,
+    "factStoreBytes": 67108864,
+    "accounting": "evidence_bytes is the compact serialized evidence object, including all record/body/omission metadata, text and JSON escaping. The envelope has its own full serialized bound. materialization_source_bytes counts complete selected files read once; pre/post exact-current verification and the independently bounded fact-store read are separate existing admission work, not hidden within a claimed total I/O cap.",
+    "budgetFailure": "Unknown/malformed requests, more than four files or an over-budget fact store refuse the batch. Over-limit source files and body/evidence records are omitted whole with a reason. No silent text tail clipping or changed historical retrieval budget."
+  },
+  "evidence": {
+    "records": "Distinct requested published records retain request_indices, ID, type, path, physical lines, original source, span hash, range origin, status, authority, evidence kind and verification level. body_index refers to a separately bounded body.",
+    "bodies": "One body per identical path/start_line/end_line, even for distinct same-line declarations. Source content and span hashes must match. Complete text preserves exact physical bytes, newline style and EOF; whole-line ranges can include neighboring declarations.",
+    "omissions": "One descriptor per omitted distinct record, preserving its request indices and an explicit reason. Later records can still fit after a prior whole-record omission.",
+    "completeness": "complete=true means every selected range was delivered unredacted, not that the selection answers the task or covers a compiler declaration, all callers or an entire implementation.",
+    "trust": "No authentication, validation, execution or deployment claim. Published provenance is transported, not upgraded. Source hashes are existing noncryptographic content identities."
+  },
+  "safety": {
+    "reader": "Reuse the descriptor-based no-follow reader: regular files only, no symlink components, byte caps and metadata stability. Match full selected file bytes and full physical span before any output.",
+    "redaction": "Reuse the exporter scanner on the whole selected range, physical lines and compacted text with source suppression disabled. Even a selected range that cannot fit the output is scanned first. A sensitive selected range also suppresses every directly overlapping selected range in the same file. Redacted bodies carry state=redacted and text=null; they are not complete code.",
+    "atomicity": "Build output in memory, then reverify current source/publication and selected file metadata. Any refusal discards all pending body output. This is bounded observation, not a lock preventing arbitrary external source edits after verification.",
+    "noSideEffects": [
+      "source write",
+      "reindex",
+      "publication",
+      "route switch",
+      "model inference",
+      "network",
+      "code execution",
+      "automatic retry",
+      "cache repair"
+    ],
+    "scope": "Local native operation only. No Server source-export endpoint, public remote source authority or installed-client integration is introduced."
+  },
+  "owners": [
+    "src/read.cpp",
+    "src/source_read.cpp",
+    "src/execution_io.cpp",
+    "src/retrieval_session.cpp"
+  ],
+  "verification": [
+    "tests/source_read_test.cpp",
+    "tests/test_source_read_cli.py",
+    "existing exporter and Impact controls"
+  ]
+}

@@ -1,0 +1,92 @@
+{
+  "schemaVersion": "shin.index-lifecycle-contract.v1",
+  "document": "shin-index-lifecycle-v1",
+  "status": "accepted",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority",
+    "indexCompatibility": "Only current generator-v17 snapshots are retrievable; rebuild earlier publications explicitly."
+  },
+  "summary": "Inspect and reclaim external Shin snapshot payloads under one explicit cache root without scanning consumer repositories or deleting unverified data.",
+  "commands": {
+    "list": {
+      "name": "index-list",
+      "syntax": "shin-context index-list --cache-dir PATH [--strict]",
+      "outputSchema": "shin.index-list.v1",
+      "mutationAllowed": false,
+      "strictPolicy": "Exit 1 when a verified incompatible snapshot, corrupt managed snapshot, or unsafe immediate entry remains. Unmanaged files and already-pruned empty shells are reported but do not make the cache dirty."
+    },
+    "prune": {
+      "name": "index-prune",
+      "syntax": "shin-context index-prune --cache-dir PATH [--keep-key KEY] [--prune-unreferenced] [--apply] [--strict]",
+      "outputSchema": "shin.index-prune.v1",
+      "dryRunDefault": true,
+      "applyRequiredForMutation": true,
+      "strictPolicy": "Dry-run strict fails while eligible candidates remain. Apply strict succeeds only when every selected prune completed and no corrupt, unsafe, missing-protection, or protected-incompatible condition remains."
+    }
+  },
+  "cacheBoundary": {
+    "selection": "--cache-dir is mandatory. Global --profile, --profile-dir, --root, --out-dir, --from-index, and --source-scan are rejected.",
+    "pathPolicy": "The root must already exist, must not itself be a symlink, is canonicalized before use, and must not resolve to the filesystem root.",
+    "enumeration": "Only at most 4096 immediate children are inspected. Core does not discover cache roots, consumer repositories, adoption markers, or active keys.",
+    "managedKey": "A candidate directory name must satisfy the portable index identifier contract. An index is managed only when docs/kb/generated/manifest.json exists.",
+    "unmanagedPolicy": "Non-index files, invalid keys, empty shells, and unsupported layouts are reported. They are never selected for deletion."
+  },
+  "inspection": {
+    "verification": "Every managed snapshot acquires its shared index lock and passes the complete VerifiedSnapshot manifest, integrity-table, physical-tree, path, hash, size, and row metadata checks before lifecycle classification.",
+    "states": [
+      "current",
+      "incompatible-generator",
+      "corrupt",
+      "empty-shell",
+      "unsafe-entry",
+      "unmanaged"
+    ],
+    "compatibility": "current means generator_version exactly equals the running binary generator. A different verified generator is incompatible-generator, not a readable fallback.",
+    "sizeAccounting": "snapshot_bytes is the verified manifest plus every integrity-table file. Control locks and empty directory shells are excluded."
+  },
+  "prunePolicy": {
+    "defaultCandidates": "Verified incompatible-generator snapshots not protected by --keep-key.",
+    "unreferencedCandidates": "--prune-unreferenced additionally selects verified current snapshots not protected by --keep-key and is rejected unless at least one keep key is supplied.",
+    "protection": "At most 256 unique portable --keep-key values may be supplied. A protected key is never pruned, including when its generator is incompatible.",
+    "missingProtection": "If any requested keep key is absent from the selected cache root, the command fails and performs no candidate selection or mutation regardless of --strict.",
+    "deletionScope": "Apply removes only the selected output root's docs/kb/generated payload and freshness cache. The output shell and lock files remain for a safe later rebuild.",
+    "neverDelete": [
+      "corrupt snapshots",
+      "unsafe or symlink entries",
+      "unmanaged files or directories",
+      "empty shells",
+      "protected keys"
+    ],
+    "toctouBoundary": "Apply reacquires writer, index, and freshness locks in the established order and compares the exact inspected manifest bytes before deleting the generated payload.",
+    "diagnostics": "Every candidate action records reason, snapshot identity, generator, bytes, apply request, applied status, and any failure. A partial multi-index operation retains all completed action evidence."
+  },
+  "ownership": {
+    "core": "Owns bounded enumeration, snapshot verification, compatibility classification, dry-run planning, locking, manifest identity recheck, and generated-payload removal.",
+    "agentOrOperator": "Owns the explicit cache root, active marker-derived keep keys, whether unreferenced pruning is intended, and the final --apply decision.",
+    "consumer": "Consumer repositories are neither scanned nor mutated. Adoption markers remain the authority for active index keys."
+  },
+  "nonGoals": [
+    "No age-based eviction, LRU policy, quota daemon, or hidden cache discovery.",
+    "No deletion of arbitrary directories or corrupt data.",
+    "No migration or conversion of pre-v15 snapshots.",
+    "No inference of active keys from running processes or neighboring repositories.",
+    "No removal of lock shells after payload reclamation."
+  ],
+  "acceptance": {
+    "runner": "tests/run_index_lifecycle_tests.sh",
+    "requiredEvidence": [
+      "deterministic inventory of current, incompatible, corrupt, empty, unsafe, and unmanaged entries",
+      "strict inventory failure without non-strict diagnostic failure",
+      "dry-run by default and explicit apply",
+      "legacy-only default selection",
+      "protected key preservation",
+      "missing protected keys block every apply action even without --strict",
+      "unreferenced pruning requires a keep-key safeguard",
+      "corrupt and symlink entries survive apply",
+      "only generated payload and freshness data are removed",
+      "cache-root symlink, filesystem root, and global route options fail closed",
+      "portable M4 and Linux AMD64 execution under ASan/UBSan"
+    ]
+  }
+}

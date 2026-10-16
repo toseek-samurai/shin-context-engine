@@ -1,0 +1,13 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "id": "invalid-source-fact-attribute-shape",
+  "sourceLabel": "Invalid source attribute shape fixture",
+  "rootFiles": ["README.md"],
+  "sourceFactRoots": ["src"],
+  "sourceFactExtensions": [".ts"],
+  "sourceFactExtractors": ["retool"],
+  "sourceFactAttributeKeys": "hidden",
+  "source_fact_attribute_keys": ["hidden"],
+  "agentStartPaths": ["README.md"],
+  "evalCases": []
+}

@@ -1,0 +1,48 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-node",
+  "status": "active",
+  "summary": "Bootstrap-only TypeScript and JavaScript source profile for projects without established machine documentation.",
+  "id": "generic-node",
+  "sourceLabel": "Node TypeScript JavaScript bootstrap source evidence",
+  "rootFiles": [],
+  "optionalRootFiles": [
+    "README.md",
+    "readme.md",
+    "AGENTS.md",
+    "package.json",
+    "tsconfig.json",
+    "jsconfig.json"
+  ],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": ["."],
+  "sourceFactExtensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
+  "sourceFactExtractors": ["language"],
+  "sourceFactMaxFiles": 10000,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonlMaxRowsPerFile": 2000,
+  "sortTopics": true,
+  "defaultTopic": "node-source",
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "node-source",
+      "description": "TypeScript and JavaScript exports, types, classes, functions, and components.",
+      "keywords": ["typescript", "javascript", "export", "type", "interface", "class", "function", "component"]
+    },
+    {
+      "id": "build",
+      "description": "Node package and compiler configuration.",
+      "keywords": ["package.json", "tsconfig", "node", "npm", "pnpm", "yarn"]
+    },
+    {
+      "id": "tests",
+      "description": "TypeScript and JavaScript test source evidence.",
+      "keywords": ["test", "spec", "vitest", "jest", "playwright"]
+    }
+  ]
+}

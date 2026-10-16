@@ -1,0 +1,10 @@
+{
+  "schemaVersion": 1,
+  "name": "tree-sitter-typescript",
+  "repository": "https://github.com/tree-sitter/tree-sitter-typescript",
+  "version": "v0.23.2",
+  "commit": "f975a621f4e7f532fe322e13c4f79495e0a7b2e7",
+  "license": "MIT",
+  "vendoredPaths": ["common/scanner.h", "typescript/src", "tsx/src"],
+  "localPatches": [{"id": "explicit-scanner-create-prototype", "paths": ["typescript/src/scanner.c", "tsx/src/scanner.c"], "change": "Declare the no-argument scanner create definitions with (void), matching the generated parser callbacks. LLVM 23 UBSan reports the old C11 empty-parameter-list function type when invoked through void *(*)(void). No scanner behavior or sanitizer suppression is changed."}]
+}

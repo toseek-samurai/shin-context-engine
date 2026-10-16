@@ -1,0 +1,11 @@
+{
+  "schema_version": "shin.semantic-code-anchor-experiment.v1",
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "per_document": 2,
+  "confirmed_scope": "Preserve Core-confirmed identifier/document-owner lexical order. Missing model is lexical-only; stale/corrupt admission fails. Do not infer scope from labels, language, expected paths or coverage percentage.",
+  "ordinary": "Start from semantic document-first selection. Reserve at most one leading row: the earliest mapped Core source-fact of implementation-source or test-source kind, source-observed verification, whose original Core evidence rank is within first5. This is a navigation reservation, not a relevance-confidence or authority inference. Then emit distinct semantic paths, lexical-only paths and extra ranges within top20/cap2.",
+  "preservation": "At most one new leading path; each semantic path first position is bounded by its document-first position plus one. Keep every semantic top20 path. If twenty distinct semantic paths fill the budget and the anchor is a new path, do not reserve it; report the budget conflict. First5 preservation is measured per case, not universally guaranteed.",
+  "acceptance": "Protect semantic language top20 and first5, document-first language first5, and lexical exact AND language first5 hits case by case. Preserve original language thresholds. No aggregate gain cancels a loss. Include a predeclared third cohort of new source-verified topics, including a documentation target. No post-score tuning.",
+  "scope": "One test-only code-source reservation on the same corrected parent corpus, pinned model and budgets. Existing 40 observed cases plus 20 new hand-authored questions, not an independent statistical benchmark. No new document embeddings, Core scoring, production default, Stable backport, runtime install, model sweep or multiple result panes counted as first5."
+}

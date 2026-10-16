@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "shin.integration-bundle.v1",
+  "id": "shin-server-development",
+  "status": "development-only",
+  "agentWorkflow": "integrations/shin-server/AGENT-WORKFLOW.md",
+  "workflowExamples": "integrations/shin-server/workflow-examples.json",
+  "coreRuntimeDependency": false,
+  "coreReleaseDependency": false,
+  "purpose": "Focused context policy for the optional companion Shin Server and local Observer under development. Both consume Core; portable Core and its installed profile set do not depend on either component, PostgreSQL or this bundle.",
+  "profiles": [{"id": "shin-server", "path": "profiles/shin-server.json"}, {"id": "shin-observer", "path": "profiles/shin-observer.json"}],
+  "consumerRootVariables": [],
+  "federations": [],
+  "evalSuites": ["profiles/shin-server.json", "profiles/shin-observer.json"],
+  "gates": []
+}

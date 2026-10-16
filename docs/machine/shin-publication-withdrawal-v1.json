@@ -1,0 +1,59 @@
+{
+  "schemaVersion": "shin.publication-withdrawal-contract.v1",
+  "document": "shin-publication-withdrawal-v1",
+  "status": "active-contract",
+  "summary": "Explicitly stop serving a shared publication without resetting its revision, silently falling back, or deleting source and artifacts.",
+  "agentOutcome": "An agent receives an explicit withdrawn state instead of obsolete shared context. It can inspect the state and request a new reviewed proposal; local Core/Observer and unrelated publications remain usable.",
+  "implementationPaths": [
+    "server/src/publication_withdrawal.cpp",
+    "server/src/publication_store.cpp",
+    "server/src/publication_store_internal.h",
+    "server/src/publication_service.cpp",
+    "server/src/retrieval_service.cpp",
+    "server/migrations/013_publication_withdrawals.sql"
+  ],
+  "api": {
+    "withdraw": "POST /api/v1/projects/{project}/publications/{publication}/withdrawal with exactly expected_revision. Administrator only; expected revision is a nonnegative integer below signed BIGINT maximum. No filesystem, source-currentness, quality gate or preparation job is required to revoke a selection.",
+    "startupBoundary": "This operation does not bypass Server startup configuration validation. A running Server can withdraw after source disappearance; a cold process still requires valid configured catalog paths. The missing-source cold-start test explicitly removes unavailable catalog entries from private runtime configuration while preserving durable publication history. No configuration repair or route fallback is automatic.",
+    "receipt": "Return {replayed,receipt}. Receipt schema shin.publication-withdrawal-receipt.v1 contains id, project_id, publication_id, expected_revision, revision, previous_proposal_id, previous_preparation_id, withdrawn_by and created_at. Revision advances by one. While the receipt remains retained, exact retries for a consumed revision return it even after republishing; it is historical acknowledgement, not current head state. Explicitly retired older withdrawal retries conflict with the preserved monotonic head rather than executing again.",
+    "head": "Read-only head returns state empty, active or withdrawn. Only never-published is empty/revision zero. Withdrawn has its persisted positive revision and null source/artifact selection. State does not claim source currentness.",
+    "retrieval": "New search/Brief/Pack admission against withdrawn selection fails HTTP 410 publication-withdrawn before source/catalog/artifact access. No fallback to the private route, cached generation or previous selection. A request admitted before withdrawal can finish against its explicitly reported old revision; withdrawal does not cancel in-flight readers.",
+    "base": "A subsequent proposal may use a known withdrawn revision with an empty base and a typed withdrawal identity. Historical accepted bases retain their existing artifact rules. Unknown or future base revisions remain conflicts. Accepting a new proposal uses the normal source, quality and head-CAS checks."
+  },
+  "storage": {
+    "ledger": "Migration 013 preserves 001..012 and adds immutable publication_withdrawals. Active heads remain active-selection rows; withdrawal deletes only that pointer. Latest accepted/withdrawn transitions reconstruct the monotonic logical head in one SQL observation, detecting missing/inconsistent pointers rather than resetting to zero.",
+    "identity": "Withdrawal references its exact previous accepted resolution. UNIQUE(previous_proposal_id) permits at most one withdrawal per accepted proposal, so history is structurally bounded by already admitted proposals. Withdrawal remains available when proposal admission is full.",
+    "proposalBase": "A new nullable base_withdrawal_id on proposals is permitted only for a positive withdrawn base with null base_preparation_id. Its composite foreign key binds project, publication and exact base revision. Existing initial/accepted bases are preserved.",
+    "audit": "The existing typed audit publication_proposal_id points to the previous accepted proposal for publication.withdrawn. Its unique withdrawal identity is reconstructible from that immutable association; no overloaded free-text identifier or new audit field is required.",
+    "transaction": "Project authorization, publication-writers transaction fence, exact revision check, head deletion, immutable withdrawal and audit commit together. Audit failure rolls everything back. No preparation row lock is acquired after the audit fence.",
+    "retention": "Removing a shared head releases only that head's artifact pin. Other active routes, heads, unresolved proposals and admitted native readers still protect their artifacts. Withdrawal performs no artifact deletion."
+  },
+  "acceptance": [
+    "Active -> withdrawn -> newly accepted transitions are monotonic and survive restart without Git.",
+    "All three retrieval operations refuse a withdrawn warm selection, including after source disappearance.",
+    "Exact retry, concurrent retries and an uncertain/lost reply produce one withdrawal and one audit event.",
+    "Concurrent accept and withdrawal consuming the same revision have one winner; stale actions never overwrite the winner.",
+    "Forbidden roles, invalid inputs, future revisions and empty/already-withdrawn transitions do not mutate state.",
+    "Withdrawal remains possible at proposal capacity; history is bounded by the accepted-proposal uniqueness constraint.",
+    "Audit-trigger failure rolls back both pointer and ledger; explicit artifact retention respects remaining pins and readers.",
+    "Schema upgrade preserves existing publications, all ordered checksums and runtime role restrictions."
+  ],
+  "nonGoals": [
+    "No automatic invalidation or source mutation",
+    "Withdrawal never prunes history; explicit pruning is owned by shin-publication-history-v1",
+    "No remote source export or semantic merge",
+    "No runtime receipt trust escalation",
+    "No stable/consumer/skill cutover",
+    "No Desktop/tray or MCP"
+  ],
+  "productClosure": "Later release closure must evaluate complete agent workflows, time to verified useful context, excess file reads, explicit refusal handling and recovery, not just isolated throughput. A source-backed whole-product gap review is still planned.",
+  "sources": [
+    "https://www.postgresql.org/docs/18/explicit-locking.html",
+    "https://www.postgresql.org/docs/18/ddl-constraints.html"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-publication-proposals-v1.json",
+    "docs/machine/shin-server-retention-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

@@ -1,0 +1,166 @@
+{
+  "schemaVersion": "shin.server-dev-workflow.v1",
+  "document": "server-development-workflow",
+  "status": "active-contract",
+  "summary": "Build, provision and verify the native development API without replacing stable Shin or touching consumer repositories.",
+  "scope": "Isolated development commands; current capabilities and remaining holds follow shin-server-development-v1 and shin-stable-carry-forward-v1. Consult executed slice evidence; no global service, skill, remote deployment, Desktop/dashboard or MCP adapter is installed.",
+  "verification": {
+    "sourceTests": "Hermetic component tests.",
+    "integrationTests": "Disposable dependencies and data.",
+    "profileChecks": "Strict, read-only route and evidence checks.",
+    "packageChecks": "Portable install and relocation are separate from a source build."
+  },
+  "journalLifecycle": {
+    "contract": "docs/machine/shin-retrieval-journal-epochs-v1.json",
+    "migration": "Journal epochs introduced schema016; P3E20 itself added no database migration. These are historical slice facts, not the current database schema. Resolve the required databaseSchema and configuration template from docs/machine/shin-companion-protocols-v1.json; private checkpoints subsequently require migration017. Use the explicit native migrate command with an absolute private migrator config accepted by check-config. Configuration review is separate and preserves credentials and identity. Do not run this against consumer databases.",
+    "maintenance": "Inspect producer inventory and explicitly retire all observed sequences before requesting GET /api/v1/telemetry/retrieval/journal/epochs/reclamation?through=N. Review every producer identity in the bounded plan. POST the exact plan with discard_future_confirmed=true only to deliberately fence those process lifetimes, including still-running ones. No automatic cleanup is implied.",
+    "capture": "A reclaimed current process reports journal-producer-reclaimed and does not reenroll. Normal retrieval remains available. An explicit process restart creates a fresh lifetime; no request invokes it automatically.",
+    "verification": "Publication integration includes journal_epoch_migration_checks and retrieval_journal_epoch_checks; the native Store probe checks active128 capacity, recovery beyond128 admissions and capture/reclamation interleaving. All run only under the dedicated stand guard."
+  },
+  "localObserver": {
+    "version": "See shin-companion-protocols-v1 for the shared Observer protocol identity."
+  },
+  "title": "Isolated Server Development Commands",
+  "currentProtocols": "docs/machine/shin-companion-protocols-v1.json",
+  "operationsContract": "docs/machine/shin-server-operations-v1.json",
+  "journalWriter": {
+    "contract": "docs/machine/shin-journal-writer-v1.json",
+    "configuration": "The journal_writer object in the current configuration schema defaults to disabled; currentProtocols owns the schema identity. Explicitly choose a configured administrator, interval_ms, max_retry_ms and flush_on_shutdown before enabling; observability retention must be nonzero. Query payload capture still requires its separate project allowlist.",
+    "status": "GET /api/v1/telemetry/retrieval/journal/writer is admin-only and read-only. Inspect pending batch, last-polled sequence progress, acknowledged_producer_epoch, retry delay and failure stage/code. Null acknowledged epoch does not prove missing database admission.",
+    "shutdown": "After HTTP drain the writer joins and logs journal-writer-stopped with bounded status. Optional final flush attempts at most two exports; shutdown_prefix_acknowledged includes known missing sequences and is not all-traffic completeness. Synchronous DB operations retain existing per-operation timeouts, not a hard total shutdown deadline.",
+    "verification": "Native journal_writer_test and journal_suffix_snapshot; journal_writer_checks in the publication suite; scoped ThreadSanitizer, full Release/instrumented companion gates and a bounded enabled/disabled HTTP sample. No automatic retention or identity rotation."
+  },
+  "storeCost": {
+    "build": [
+      "cmake",
+      "--build",
+      "build/server-p2",
+      "--target",
+      "shin-server-store-cost-probe",
+      "--parallel",
+      "8"
+    ],
+    "measure": [
+      "python3",
+      "server/tests/store_cost_benchmark.py",
+      "--probe",
+      "build/server-p2/shin-server-store-cost-probe",
+      "--state-root",
+      "build/server-dev",
+      "--config",
+      "build/server-dev/config/runtime.json",
+      "--iterations",
+      "100",
+      "--warmup",
+      "10",
+      "--repetitions",
+      "5"
+    ],
+    "rule": "Run only with the existing stand already migrated/current, no Server listener and no concurrent DB harness. This command never provisions/migrates/starts/stops PostgreSQL or Server. It compares full public Store readiness to a raw SELECT 1 transaction lower bound, not isolated schema CPU or product throughput. Reports stay private under the explicit build state."
+  },
+  "coreMacStaticAnalysis": {
+    "configure": [
+      "cmake",
+      "-S",
+      ".",
+      "-B",
+      "build/core-llvm-tidy",
+      "-DCMAKE_BUILD_TYPE=Release",
+      "-DCMAKE_EXPORT_COMPILE_COMMANDS=ON",
+      "-DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang",
+      "-DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++"
+    ],
+    "gate": [
+      "make",
+      "static-analysis-check",
+      "CMAKE_TIDY_BUILD_DIR=build/core-llvm-tidy"
+    ],
+    "releaseGateArgument": "CMAKE_TIDY_BUILD_DIR=build/core-llvm-tidy",
+    "rule": "Configure this separate directory before passing it to release-check. The compile database and clang-tidy must agree on the compiler/toolchain. The initial P3E17 default Apple compile database/Homebrew tidy pairing could not find standard headers and emitted invalid-AST diagnostic cascades. The consistent LLVM run passed unchanged code and policy; no suppression or destructor rewrite was appropriate. Other platforms use their configured compiler paths, not these Mac bindings."
+  },
+  "contextRoute": {
+    "profile": "shin-server",
+    "profileDirectory": "profiles",
+    "output": "build/context/shin-server-dev",
+    "rule": "Use build/cf-perf-core/shin-context with this development worktree as explicit root, after verifying --version and source binding as required by AGENTS.md. The older core-p2, cf2-core and cf34-core artifacts are historical controls, not the current candidate route. Build explicitly, then require check/doctor/eval and current Brief. The focused profile excludes its own golden query definitions from retrieved documents; it does not suppress failures of the broader shin self-profile.",
+    "pythonBoundary": "The selected Core does not extract Python declarations. Python inputs are freshness-tracked; use the test/tool paths in this workflow to verify their code directly, not an invented member-level fact."
+  },
+  "prerequisites": [
+    "C++20 compiler",
+    "CMake >=3.24",
+    "PostgreSQL libpq development package >=13",
+    "OpenSSL Crypto development package",
+    "Python >=3.11 for the development harness",
+    "Docker Compose for the isolated PostgreSQL stand"
+  ],
+  "nativeMacConfigure": [
+    "cmake",
+    "-S",
+    "server",
+    "-B",
+    "build/server",
+    "-DCMAKE_BUILD_TYPE=Release",
+    "-DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang",
+    "-DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++",
+    "-DPostgreSQL_ROOT=/opt/homebrew/opt/libpq",
+    "-DOPENSSL_ROOT_DIR=/opt/homebrew/opt/openssl@3"
+  ],
+  "nativeBuild": [
+    "cmake",
+    "--build",
+    "build/server",
+    "--parallel",
+    "8"
+  ],
+  "nativeMacSanitizerConfigure": [
+    "cmake",
+    "-S",
+    "server",
+    "-B",
+    "build/server-llvm-sanitize",
+    "-DCMAKE_BUILD_TYPE=Debug",
+    "-DCMAKE_C_COMPILER=/opt/homebrew/opt/llvm/bin/clang",
+    "-DCMAKE_CXX_COMPILER=/opt/homebrew/opt/llvm/bin/clang++",
+    "-DSHIN_SERVER_SANITIZERS=ON",
+    "-DPostgreSQL_ROOT=/opt/homebrew/opt/libpq",
+    "-DOPENSSL_ROOT_DIR=/opt/homebrew/opt/openssl@3"
+  ],
+  "configurePolicy": "CMake downloads checksum-pinned cpp-httplib and libpqxx. On other platforms provide normal CMake dependency discovery paths; the native Linux build has not yet been certified for this server slice.",
+  "database": {
+    "initialize": [
+      "python3",
+      "server/tools/dev.py",
+      "init"
+    ],
+    "start": [
+      "python3",
+      "server/tools/dev.py",
+      "up"
+    ],
+    "status": [
+      "python3",
+      "server/tools/dev.py",
+      "status"
+    ],
+    "stop": [
+      "python3",
+      "server/tools/dev.py",
+      "down"
+    ],
+    "composeProject": "shin-server-dev",
+    "image": "postgres:18.6",
+    "hostAddress": "127.0.0.1:15432",
+    "databaseName": "shin_server_dev",
+    "volume": "shin-server-dev-postgres-data",
+    "retention": "down retains the named volume. Deleting the volume or resetting the schema is an explicit destructive development action, not normal server startup.",
+    "secrets": "init generates private random tokens/passwords below build/server-dev, validates existing files and never replaces existing credentials. Do not print or commit the state directory.",
+    "authentication": "The dedicated loopback PostgreSQL uses SCRAM. Generated conninfo explicitly sets gssencmode=disable because this stand has no Kerberos realm; this does not change Core or force off GSS for other configurations. Remote database TLS and enterprise authentication remain separate unvalidated deployment work."
+  },
+  "relatedContracts": [
+    "docs/machine/shin-server-foundation-v1.json",
+    "docs/machine/shin-server-retrieval-v1.json",
+    "docs/machine/shin-server-activation-v1.json",
+    "docs/machine/shin-server-development-v1.json",
+    "docs/machine/shin-server-plan-v1.json"
+  ]
+}

@@ -1,0 +1,1061 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-server-self",
+  "status": "active",
+  "summary": "Focused self profile for the optional authenticated Server, workspace contracts, bounded candidate workflows, and shared protocol sources.",
+  "id": "shin-server",
+  "sourceLabel": "Shin Server public component contracts and source",
+  "rootFiles": [
+    "AGENTS.md",
+    "server/CMakeLists.txt",
+    "server/VERSION",
+    "profiles/shin-server.json",
+    "docs/machine/shin-component-profiles-v1.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json"
+  ],
+  "sourceExtensions": [
+    ".md",
+    ".json"
+  ],
+  "documentIncludePrefixes": [
+    "integrations/shin-server/AGENT-WORKFLOW.md",
+    "integrations/shin-server/workflow-examples.json",
+    "AGENTS.md",
+    "profiles/shin-server.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "docs/machine/shin-authenticated-receipts-v1.json",
+    "docs/machine/shin-companion-protocols-v1.json",
+    "docs/machine/shin-headless-workflow-v1.json",
+    "docs/machine/shin-identity-directory-v1.json",
+    "docs/machine/shin-journal-writer-v1.json",
+    "docs/machine/shin-observer-history-v1.json",
+    "docs/machine/shin-observer-ingestion-v1.json",
+    "docs/machine/shin-observer-registry-v1.json",
+    "docs/machine/shin-private-checkpoints-v1.json",
+    "docs/machine/shin-proactive-knowledge-v1.json",
+    "docs/machine/shin-publication-history-v1.json",
+    "docs/machine/shin-publication-proposals-v1.json",
+    "docs/machine/shin-publication-withdrawal-v1.json",
+    "docs/machine/shin-retrieval-journal-epochs-v1.json",
+    "docs/machine/shin-retrieval-journal-retention-v1.json",
+    "docs/machine/shin-retrieval-journal-v1.json",
+    "docs/machine/shin-retrieval-observability-v1.json",
+    "docs/machine/shin-server-activation-v1.json",
+    "docs/machine/shin-server-audit-history-v1.json",
+    "docs/machine/shin-server-candidate-inspection-v1.json",
+    "docs/machine/shin-server-candidate-preflight-v1.json",
+    "docs/machine/shin-server-dev-workflow-v1.json",
+    "docs/machine/shin-server-development-v1.json",
+    "docs/machine/shin-server-foundation-v1.json",
+    "docs/machine/shin-server-observer-v1.json",
+    "docs/machine/shin-server-operations-v1.json",
+    "docs/machine/shin-server-plan-v1.json",
+    "docs/machine/shin-server-preparation-v1.json",
+    "docs/machine/shin-server-recovery-v1.json",
+    "docs/machine/shin-server-release-closure-v1.json",
+    "docs/machine/shin-server-retention-v1.json",
+    "docs/machine/shin-server-retrieval-v1.json",
+    "docs/machine/shin-server-store-validation-v1.json",
+    "docs/machine/shin-server-workspaces-v1.json",
+    "docs/machine/shin-session-bootstrap-v2.json",
+    "docs/machine/shin-workspace-ownership-v1.json",
+    "server/CMakeLists.txt",
+    "server/VERSION",
+    "docs/machine/shin-component-profiles-v1.json"
+  ],
+  "sourceFactRoots": [
+    "server/src",
+    "server/include",
+    "server/tests",
+    "server/tools",
+    "shared/observer-protocol/src",
+    "shared/observer-protocol/include",
+    "shared/observer-protocol/tests"
+  ],
+  "sourceFactExtensions": [
+    ".cpp",
+    ".h",
+    ".py"
+  ],
+  "sourceFactExtractors": [
+    "language"
+  ],
+  "sourceFactMaxFiles": 256,
+  "sourceFactMaxFileBytes": 131072,
+  "agentStartPaths": [
+    "AGENTS.md",
+    "docs/machine/shin-companion-protocols-v1.json",
+    "docs/machine/shin-server-dev-workflow-v1.json"
+  ],
+  "jsonKeySections": true,
+  "jsonKeyMaxDepth": 1,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonPathReferences": true,
+  "jsonSchemaTitle": true,
+  "jsonSummaryKeys": true,
+  "defaultTopic": "server-foundation",
+  "evalCases": [
+    {
+      "id": "server-workspace-ownership",
+      "query": "shin-workspace-ownership-v1",
+      "mustTopPaths": [
+        "docs/machine/shin-workspace-ownership-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-identity-directory",
+      "query": "shin-identity-directory-v1",
+      "mustTopPaths": [
+        "docs/machine/shin-identity-directory-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-publication-history",
+      "query": "shin-publication-history-v1",
+      "mustPaths": [
+        "docs/machine/shin-publication-history-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-publication-history-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-headless-workflow",
+      "query": "shin-headless-workflow-v1",
+      "mustPaths": [
+        "docs/machine/shin-headless-workflow-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-headless-workflow-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-private-checkpoints",
+      "query": "shin-private-checkpoints-v1",
+      "mustPaths": [
+        "docs/machine/shin-private-checkpoints-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-private-checkpoints-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-authenticated-receipts",
+      "query": "shin-authenticated-receipts-v1",
+      "mustPaths": [
+        "docs/machine/shin-authenticated-receipts-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-authenticated-receipts-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-release-closure",
+      "query": "shin-server-release-closure-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-release-closure-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-release-closure-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 4
+    },
+    {
+      "id": "server-session-bootstrap-v2-contract",
+      "query": "shin-session-bootstrap-v2",
+      "mustPaths": [
+        "docs/machine/shin-session-bootstrap-v2.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-session-bootstrap-v2.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-source-generation-health",
+      "query": "knowledge_same_source_generation",
+      "mustPaths": [
+        "server/src/knowledge_health.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/knowledge_health.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-epochs-contract",
+      "query": "shin-retrieval-journal-epochs-v1",
+      "mustTopPaths": [
+        "docs/machine/shin-retrieval-journal-epochs-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-writer-contract",
+      "query": "shin-journal-writer-v1",
+      "mustTopPaths": [
+        "docs/machine/shin-journal-writer-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-writer-export",
+      "query": "JournalWriter::step",
+      "mustTopPaths": [
+        "server/src/journal_writer.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-writer-shutdown",
+      "query": "server/src/journal_writer.cpp shutdown",
+      "mustTopPaths": [
+        "server/src/journal_writer.cpp"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-producer-admission",
+      "query": "Store::register_journal_producer",
+      "mustPaths": [
+        "server/src/retrieval_journal_lifecycle.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retrieval_journal_lifecycle.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-producer-reclamation",
+      "query": "Store::apply_journal_reclamation",
+      "mustPaths": [
+        "server/src/retrieval_journal_lifecycle.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retrieval_journal_lifecycle.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-proactive-knowledge-contract",
+      "query": "shin-proactive-knowledge-v1",
+      "mustTopPaths": [
+        "docs/machine/shin-proactive-knowledge-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-knowledge-scheduler",
+      "query": "KnowledgeScheduler::work",
+      "mustTopPaths": [
+        "server/src/knowledge_scheduler.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "server-session-bootstrap",
+      "query": "session_bootstrap.cpp session_bootstrap",
+      "mustTopPaths": [
+        "server/src/session_bootstrap.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-retention-contract",
+      "query": "shin-retrieval-journal-retention-v1",
+      "mustPaths": [
+        "docs/machine/shin-retrieval-journal-retention-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-retrieval-journal-retention-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-journal-retention-apply",
+      "query": "apply_journal_retention",
+      "mustPaths": [
+        "server/src/retrieval_journal_retention.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retrieval_journal_retention.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-retrieval-journal-contract",
+      "query": "shin-retrieval-journal-v1",
+      "mustPaths": [
+        "docs/machine/shin-retrieval-journal-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-retrieval-journal-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-retrieval-journal-store",
+      "query": "capture_retrieval_journal",
+      "mustPaths": [
+        "server/src/retrieval_journal_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retrieval_journal_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-retrieval-observability-contract",
+      "query": "shin-retrieval-observability-v1",
+      "mustPaths": [
+        "docs/machine/shin-retrieval-observability-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-retrieval-observability-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-retrieval-telemetry-collector",
+      "query": "RetrievalTelemetry::finish",
+      "mustPaths": [
+        "server/src/retrieval_telemetry.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retrieval_telemetry.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-withdrawal-contract",
+      "query": "shin-publication-withdrawal-v1",
+      "mustPaths": [
+        "docs/machine/shin-publication-withdrawal-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-publication-withdrawal-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-withdrawal-operation",
+      "query": "withdraw_publication",
+      "mustPaths": [
+        "server/src/publication_withdrawal.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/publication_withdrawal.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-proposals-contract",
+      "query": "shin-publication-proposals-v1",
+      "mustPaths": [
+        "docs/machine/shin-publication-proposals-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-publication-proposals-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-resolution",
+      "query": "resolve_publication_proposal",
+      "mustPaths": [
+        "server/src/publication_resolution.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/publication_resolution.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-review",
+      "query": "server/src/publication_review.cpp review",
+      "mustPaths": [
+        "server/src/publication_review.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/publication_review.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-qualified-review",
+      "query": "PublicationService::review",
+      "mustPaths": [
+        "server/src/publication_review.cpp",
+        "server/include/shin/server/publication_service.h"
+      ],
+      "mustTopPaths": [
+        "server/src/publication_review.cpp",
+        "server/include/shin/server/publication_service.h"
+      ],
+      "mustTopN": 5,
+      "minCoveredGroups": 2,
+      "maxCandidateRows": 64,
+      "limit": 6
+    },
+    {
+      "id": "server-publication-retrieval",
+      "query": "retrieve_publication",
+      "mustPaths": [
+        "server/src/retrieval_service.cpp",
+        "server/include/shin/server/retrieval_service.h"
+      ],
+      "limit": 6
+    },
+    {
+      "id": "server-publication-retrieval-implementation",
+      "query": "server/src/retrieval_service.cpp retrieve_publication",
+      "mustPaths": [
+        "server/src/retrieval_service.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retrieval_service.cpp"
+      ],
+      "mustTopN": 1,
+      "minCoveredGroups": 2,
+      "limit": 4,
+      "perDocLimit": 1
+    },
+    {
+      "id": "server-operations-contract",
+      "query": "shin-server-operations-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-operations-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-operations-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-store-validation-contract",
+      "query": "shin-server-store-validation-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-store-validation-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-store-validation-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-store-schema-ownership",
+      "query": "verify_runtime_schema",
+      "mustPaths": [
+        "server/src/store_schema.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/store_schema.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-store-pool-ownership",
+      "query": "make_runtime_connection",
+      "mustPaths": [
+        "server/src/store_pool.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/store_pool.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-registry-contract",
+      "query": "shin-observer-registry-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-registry-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-registry-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-registry-transaction",
+      "query": "apply_observer_reclamation",
+      "mustPaths": [
+        "server/src/observer_registry_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/observer_registry_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-current-config-guidance",
+      "query": "current Server configuration v10 database identity pin",
+      "mustPaths": [
+        "docs/machine/shin-server-retrieval-v1.json",
+        "docs/machine/shin-companion-protocols-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-retrieval-v1.json",
+        "docs/machine/shin-companion-protocols-v1.json"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-current-protocol-inventory",
+      "query": "shin-companion-protocols-v1",
+      "mustPaths": [
+        "docs/machine/shin-companion-protocols-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-companion-protocols-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-recovery-contract",
+      "query": "shin-server-recovery-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-recovery-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-recovery-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-recovery-operation",
+      "query": "recovery_operation",
+      "mustPaths": [
+        "server/src/recovery_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/recovery_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-audit-history-contract",
+      "query": "shin-server-audit-history-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-audit-history-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-audit-history-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-audit-export",
+      "query": "export_audit",
+      "mustPaths": [
+        "server/src/audit_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/audit_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-audit-retention",
+      "query": "apply_audit_retention",
+      "mustPaths": [
+        "server/src/audit_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/audit_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-history-contract",
+      "query": "shin-observer-history-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-history-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-history-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-retention",
+      "query": "apply_observer_retention",
+      "mustPaths": [
+        "server/src/observer_history_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/observer_history_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-reconcile",
+      "query": "reconcile_observer",
+      "mustPaths": [
+        "server/src/observer_history_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/observer_history_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-identity-handshake",
+      "query": "observer_identity",
+      "mustPaths": [
+        "server/src/observer_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/observer_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-delivery-contract",
+      "query": "shin-server-observer-v1 explicit observer delivery",
+      "mustPaths": [
+        "docs/machine/shin-server-observer-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-observer-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-ingestion-contract",
+      "query": "shin-observer-ingestion-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-ingestion-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-ingestion-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-ingestion",
+      "query": "ingest_observation",
+      "mustPaths": [
+        "server/src/observer_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/observer_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-observer-protocol",
+      "query": "verify_submission",
+      "mustPaths": [
+        "shared/observer-protocol/src/observer_protocol.cpp"
+      ],
+      "mustTopPaths": [
+        "shared/observer-protocol/src/observer_protocol.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-workspace-contract",
+      "query": "shin-server-workspaces-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-workspaces-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-workspaces-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-workspace-registration",
+      "query": "register_workspace",
+      "mustPaths": [
+        "server/src/workspace_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/workspace_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-foundation-contract",
+      "query": "shin-server-foundation-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-foundation-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-foundation-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-registration-transaction",
+      "query": "register_project",
+      "mustPaths": [
+        "server/src/store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-authentication",
+      "query": "authenticate Config token",
+      "mustPaths": [
+        "server/src/config.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/config.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-authentication-broad-discovery",
+      "query": "authenticate",
+      "mustPaths": [
+        "server/include/shin/server/config.h"
+      ],
+      "limit": 6
+    },
+    {
+      "id": "server-readiness",
+      "query": "verify_runtime_connection",
+      "mustPaths": [
+        "server/src/store_session.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/store_session.cpp"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-test-workflow",
+      "query": "shin-server-dev-workflow-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-dev-workflow-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-dev-workflow-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-resident-cache",
+      "query": "SnapshotCache",
+      "mustPaths": [
+        "server/src/snapshot_cache.cpp"
+      ],
+      "mustTopPaths": [
+        "server/include/shin/server/snapshot_cache.h"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-resident-cache-acquire",
+      "query": "SnapshotCache::acquire",
+      "mustPaths": [
+        "server/src/snapshot_cache.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/snapshot_cache.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "server-retrieval-contract",
+      "query": "shin-server-retrieval-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-retrieval-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-retrieval-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-preparation-contract",
+      "query": "shin-server-preparation-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-preparation-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-preparation-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-preparation-ledger",
+      "query": "enqueue_preparation",
+      "mustPaths": [
+        "server/src/preparation_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/preparation_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-candidate-inspection-contract",
+      "query": "shin-server-candidate-inspection-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-candidate-inspection-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-candidate-inspection-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-candidate-lifetime",
+      "query": "CandidateArtifactLock",
+      "mustPaths": [
+        "server/src/candidate_artifact.cpp"
+      ],
+      "mustTopPaths": [
+        "server/include/shin/server/candidate_artifact.h"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-candidate-lifetime-verify",
+      "query": "CandidateArtifactLock::verify",
+      "mustPaths": [
+        "server/src/candidate_artifact.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/candidate_artifact.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "server-retention-contract",
+      "query": "shin-server-retention-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-retention-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-retention-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-retention-files",
+      "query": "remove_retention_tree",
+      "mustPaths": [
+        "server/src/retention_files.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/retention_files.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-candidate-preflight-contract",
+      "query": "shin-server-candidate-preflight-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-candidate-preflight-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-candidate-preflight-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-candidate-preflight-implementation",
+      "query": "observe_candidate",
+      "mustPaths": [
+        "server/src/preparation_inspection.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/preparation_inspection.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-activation-contract",
+      "query": "shin-server-activation-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-activation-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-activation-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "server-activation-transaction",
+      "query": "commit_activation",
+      "mustPaths": [
+        "server/src/activation_store.cpp"
+      ],
+      "mustTopPaths": [
+        "server/src/activation_store.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "server-offline-collaboration-plan",
+      "query": "server observer collaboration receipt boundary",
+      "mustPaths": [
+        "docs/machine/shin-server-observer-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-observer-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": "server-foundation-review",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "server-foundation-review",
+        "task": {
+          "objective": "Review the implemented development server registry, authorization and database readiness without treating planned services as available.",
+          "scope": [
+            {
+              "id": "foundation",
+              "query": "shin-server-foundation-v1"
+            }
+          ],
+          "must": [
+            {
+              "id": "registration",
+              "query": "register_project"
+            },
+            {
+              "id": "authorization",
+              "query": "server/src/config.cpp authenticate"
+            },
+            {
+              "id": "database-readiness",
+              "query": "verify_runtime_connection"
+            }
+          ],
+          "should": [
+            {
+              "id": "transport",
+              "query": "request_boundary"
+            },
+            {
+              "id": "verification-workflow",
+              "query": "shin-server-dev-workflow-v1"
+            }
+          ]
+        },
+        "budget": {
+          "max_evidence_bytes": 24576,
+          "max_records": 20,
+          "per_query_records": 6,
+          "per_document_records": 3
+        }
+      },
+      "mustPaths": [
+        "docs/machine/shin-server-foundation-v1.json",
+        "server/src/store.cpp",
+        "server/src/config.cpp"
+      ],
+      "mustNotPaths": [
+        "profiles/shin-server.json",
+        "src/retrieval.cpp"
+      ],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 24576,
+      "maxRecords": 20,
+      "maxCompactBytes": 50000,
+      "requireSerialParallelIdentity": true
+    }
+  ],
+  "topicRules": [
+    {
+      "id": "server-foundation",
+      "description": "Isolated development server API, storage and verification boundaries.",
+      "keywords": [
+        "server",
+        "postgresql",
+        "registry",
+        "authentication",
+        "audit",
+        "migration"
+      ]
+    }
+  ]
+}

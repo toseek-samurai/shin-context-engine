@@ -1,0 +1,91 @@
+{
+  "schemaVersion": "shin.observer-outbox-contract.v1",
+  "document": "observer-outbox",
+  "status": "active-contract",
+  "title": "Atomic Local Outbox And Operational Metrics",
+  "summary": "P3E3 stores optional bounded pending observation submissions in the same atomic state as the latest sample and operational counters. It preserves accepted entries through restart and reports capacity gaps without claiming transport, acknowledgement or shared publication.",
+  "schemas": {
+    "config": "shin.observer-config.v2",
+    "state": "shin.observer-state.v2",
+    "outbox": "shin.observer-outbox.v1",
+    "submission": "shin.observer-submission.v1",
+    "metrics": "shin.observer-metrics.v1",
+    "metricsResult": "shin.observer-metrics-result.v1"
+  },
+  "metrics": {
+    "command": [
+      "shin-observer",
+      "metrics",
+      "--config",
+      "/absolute/private/observer-v2.json"
+    ],
+    "scope": "retained-committed-samples, across restarts while this state directory survives. sample_count and fixed current/stale/unpublished/incomplete/error outcome counters agree with committed observation sequence.",
+    "durations": "scan_duration_ms last/total/max use local monotonic sampling durations. They exclude state serialization, fsync, idle sleep and client transport. They are not latency percentiles, rates or a historical time-series store.",
+    "queue": "Compact pending count/bytes, configured bounds, oldest retained capture, coalesced count, capacity rejections and resync requirement. server_acknowledged is false and delivery is not-implemented. A queue at capacity is separate from a fresh local source snapshot.",
+    "readOnly": "No source scan, publication, recovery, send or state mutation. Output also includes observation age and observed writer-lock presence, neither of which proves current source truth or process progress. Empty state returns unavailable metrics, not invented zero history.",
+    "futureUI": "Desktop Dashboard and tray are planned separately. This CLI envelope is a native operational foundation, not a selected IPC or GUI framework. CPU/RSS, phase timings, rates and bounded time-series retention need explicit sampling contracts."
+  },
+  "successor": "P3E5 dev.13 uses state v3/outbox v2 and explicit native delivery; shin-observer-delivery-v1 is the current contract. Fields and unavailable-delivery statements below describe the retained P3E3/P3E4 baseline, not the current command surface.",
+  "configuration": {
+    "exactFields": [
+      "schema_version",
+      "observer_id",
+      "source_host_id",
+      "project_id",
+      "workspace_id",
+      "root",
+      "profile",
+      "profile_dir",
+      "out_dir",
+      "state_dir",
+      "poll_interval_ms",
+      "max_snapshot_bytes",
+      "max_file_bytes",
+      "outbox"
+    ],
+    "retainedRules": "P3E2 path normalization, private modes, root identity, disjoint source/index/state, bounded polling/profile/source observation and duplicate/nesting checks remain unchanged; see the historical local-observer contract for those base rules.",
+    "outbox": {
+      "enabled": false,
+      "max_entries": 64,
+      "max_bytes": 131072
+    },
+    "policy": "Config v2 requires this exact outbox object with a boolean opt-in. max_entries is 1..128, max_bytes is 4096..196608. These policy fields are part of immutable local binding; changing them requires a separate explicitly chosen private state directory. No current production adopter is migrated.",
+    "upgrade": "No v1 config/state compatibility reader or automatic conversion. Preserve previous development state for inspection and choose a new private state directory plus config v2. Reusing an unsupported or foreign-binding state fails without rewriting it. A fresh state starts a new continuity stream; it does not prove prior history was delivered.",
+    "disclosure": "Opt-in queues only typed observation metadata locally. It is not export consent and performs no networking. Raw paths remain in private local binding only; submission payloads contain explicit logical ids, profile, opaque binding digest and bounded source observation fingerprints/counts. No source snippets, file lists, credentials or transcripts."
+  },
+  "durability": {
+    "stateFields": [
+      "schema_version",
+      "binding_key",
+      "binding",
+      "root_identity",
+      "sequence",
+      "epoch",
+      "lifecycle",
+      "previous_run_interrupted",
+      "observation",
+      "producer_version",
+      "core_version",
+      "outbox",
+      "metrics"
+    ],
+    "unit": "One state.json commit contains latest observation, retained sample metrics and the queue mutation together. Existing state.pending -> file fsync -> atomic rename -> directory fsync protocol and one writer fence are reused. No cross-file transaction or append-log recovery algorithm is introduced.",
+    "acceptance": "An entry is durably accepted locally only after the enclosing StateStore save succeeds. A process dying before its reply may leave a committed state; reopening reads that exact submission rather than creating a replacement id for already retained data.",
+    "recovery": "Valid committed state is authoritative. Safe uncommitted pending bytes may be discarded under the existing binding and writer guards, never promoted as accepted history. A partial pending write does not invalidate previously accepted entries. Corrupt committed state fails closed for operator review; it is not overwritten, truncated or reconstructed from Git.",
+    "scope": "Bounded retained metadata only, not every file save or a source backup. POSIX local cooperating-process semantics; hardware power loss, malicious same-UID replacement and network-filesystem guarantees are not certified."
+  },
+  "ordering": {
+    "stream": "Random 128-bit stream_id persists across Observer boot epochs. Accepted entries have contiguous 1-based submission sequence. submission_id is SHA256(stream_id + ':' + submission sequence); payload_sha256 covers the compact typed JSON payload. Digests detect content drift, not producer authentication.",
+    "capture": "Each entry retains original Observer epoch, monotonic local observation sequence and capture times. The queued submission sequence differs from the observation sequence because equal samples may coalesce or capacity may reject capture.",
+    "coalescing": "If selected observation content equals the last accepted entry, ignoring only start/end capture time and measured duration, increment coalesced_observations. Never rewrite the accepted entry or its capture time. Coalescing is not a heartbeat; a remote copy would age until an independently authorized fresh observation is delivered.",
+    "capacity": "Never remove or overwrite accepted entries on overflow. Increment rejected_observations, retain first/last rejected observation sequence, expose sticky resync_required. Latest local observation and metrics continue to commit, and existing Core CLI retrieval remains independent.",
+    "limits": "max_bytes bounds the sum of compact serialized entry envelopes, despite the internal payload_bytes field name. Effective capacity is min(max_bytes, 256KiB - exact serialized binding bytes - 8KiB reserved for bounded latest observation, metrics, counters and structural overhead); metrics exposes both configured and effective bounds. StateStore independently enforces the complete 256KiB state cap. Temporary atomic replacement needs another bounded state file; limits are not filesystem quota or process RSS caps.",
+    "validation": "Exact fields, local binding, submission digest/order, capture sequence, typed source provenance, total bytes and accounting identity accepted + coalesced + rejected = committed observations are checked on open and before commit. Invalid states are not repaired by a read command."
+  },
+  "relatedContracts": [
+    "docs/machine/shin-local-observer-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/shin-observer-desktop-plan-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

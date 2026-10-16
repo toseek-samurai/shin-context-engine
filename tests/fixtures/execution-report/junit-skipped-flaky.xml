@@ -1,0 +1,4 @@
+<testsuite name="mixed" tests="2" failures="0" errors="0" skipped="1">
+  <testcase name="skipped"><skipped/></testcase>
+  <testcase name="retried"><flakyFailure/></testcase>
+</testsuite>

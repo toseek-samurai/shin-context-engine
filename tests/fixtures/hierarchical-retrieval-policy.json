@@ -1,0 +1,20 @@
+{
+  "schema_version": "shin.hierarchical-retrieval-policy.v1",
+  "internal_files": 100,
+  "file_passages": 4,
+  "member_pool_per_file": 16,
+  "navigation_records": 20,
+  "collection_files": 5,
+  "collection_members_per_file": 3,
+  "output_bytes": 131072,
+  "max_run_seconds": 600,
+  "max_rss_bytes": 3221225472,
+  "embedding_model": "unchanged pinned E5",
+  "reranker_policy_sha256": "d8de0d53ffb0b66111378d586eb0859d605511c2da5da7c21876b8021e78040f",
+  "original_input_sha256": "e5d98ddd64d406486f588659d4b3397a2fd3e9af4b7b388337a89edd6afbccf0",
+  "pool": "Retain all baseline files/records inside a max100 file pool, then fill by best existing passage cosine. Within each file retain baseline records and fill to16 by cosine; first4 are file representatives.",
+  "file_selection": "Max library cross-encoder score over the four representatives per file. Tie: original file-pool rank. No aliases, role guesses, expected-answer input or weight sweep.",
+  "member_selection": "Score remaining admitted members in the best5 files, reuse already computed scores, return3 per file as separate navigation. Do not assert native Pack completion or change the historical navigation cap2.",
+  "exact": "Native owner/identifier-confirmed routes preserve the original result and do not rerank.",
+  "acceptance": "Preserve all64 protected first5/top20 hits, improve at least one old miss, find all four existing new-case targets in first5, improve source-hash-bound writer clause-range coverage without treating path hits as complete answers. No activation on failure."
+}

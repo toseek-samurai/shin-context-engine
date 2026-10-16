@@ -1,0 +1,10 @@
+{
+  "schemaVersion": "fixture.widget.v1",
+  "request": {
+    "capabilityId": "fixture.widget.load",
+    "method": "trigger"
+  },
+  "title": "Widget Capability",
+  "status": "active",
+  "summary": "Typed widget capability request used by the hermetic fixture."
+}

@@ -1,0 +1,96 @@
+name: Source qualification
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, macos-14]
+        component: [core, observer, server]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build jq python3 libsqlite3-dev libssl-dev libpq-dev libcurl4-openssl-dev libncurses-dev
+      - name: macOS prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          brew install cmake ninja jq openssl@3 libpq python@3.14
+          echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3):$(brew --prefix libpq)" >> "$GITHUB_ENV"
+      - name: Core build and tests
+        if: matrix.component == 'core'
+        run: |
+          cmake -S . -B "$RUNNER_TEMP/core" -DCMAKE_BUILD_TYPE=Release -DSHIN_CONTEXT_BUILD_SOURCE_DISCOVERY=ON -DSHIN_CONTEXT_BUILD_SEMANTIC_EXPORTER=ON
+          cmake --build "$RUNNER_TEMP/core" --parallel 4
+          ctest --test-dir "$RUNNER_TEMP/core" --output-on-failure --output-junit "$RUNNER_TEMP/core-tests.xml"
+      - name: Strict source profiles
+        if: matrix.component == 'core'
+        run: python3 tools/verify_source_profiles.py "$RUNNER_TEMP/core/shin-context" "$RUNNER_TEMP/profile-proof"
+      - name: Observer build and tests
+        if: matrix.component == 'observer'
+        run: |
+          kit_flags=()
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            kit_flags=(-DSHIN_OBSERVER_TRAY=ON -DSHIN_OBSERVER_LOCAL_KIT=ON)
+          fi
+          cmake -S observer -B "$RUNNER_TEMP/observer" -DCMAKE_BUILD_TYPE=Release -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON -DSHIN_OBSERVER_MCP=ON "${kit_flags[@]}"
+          cmake --build "$RUNNER_TEMP/observer" --parallel 4
+          ctest --test-dir "$RUNNER_TEMP/observer" --output-on-failure --output-junit "$RUNNER_TEMP/observer-tests.xml"
+      - name: Exact macOS kit qualification
+        id: qualify-kit
+        if: matrix.component == 'observer' && runner.os == 'macOS'
+        shell: bash
+        run: |
+          cpack --config "$RUNNER_TEMP/observer/CPackConfig.cmake" 2>&1 | tee "$RUNNER_TEMP/package-build.log"
+          archives=("$RUNNER_TEMP/observer/packages/"*.zip)
+          test "${#archives[@]}" -eq 1
+          python3 -B observer/installer/package_smoke.py --cmake "$(command -v cmake)" \
+            --build "$RUNNER_TEMP/observer" --archive "${archives[0]}" \
+            --test-results "$RUNNER_TEMP/observer-tests.xml" 2>&1 | tee "$RUNNER_TEMP/package-smoke.log"
+          cd "$RUNNER_TEMP/observer/packages"
+          shasum -a 256 -c "$(basename "${archives[0]}").sha256" | tee "$RUNNER_TEMP/package-checksum.log"
+      - name: Server build and tests
+        if: matrix.component == 'server'
+        run: |
+          cmake -S server -B "$RUNNER_TEMP/server" -DCMAKE_BUILD_TYPE=Release
+          cmake --build "$RUNNER_TEMP/server" --parallel 4
+          ctest --test-dir "$RUNNER_TEMP/server" --output-on-failure --output-junit "$RUNNER_TEMP/server-tests.xml"
+      - name: Upload qualified macOS kit
+        if: success() && steps.qualify-kit.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shin-local-macos-${{ runner.arch }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/observer/packages/*.zip
+            ${{ runner.temp }}/observer/packages/*.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-${{ matrix.os }}-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.component }}-tests.xml
+            ${{ runner.temp }}/${{ matrix.component }}/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/${{ matrix.component }}/Testing/Temporary/LastTestsFailed.log
+            ${{ runner.temp }}/package-build.log
+            ${{ runner.temp }}/package-smoke.log
+            ${{ runner.temp }}/package-checksum.log
+          if-no-files-found: warn
+          retention-days: 14

@@ -1,0 +1,149 @@
+{
+  "schemaVersion": "shin.session-checkpoint-contract.v1",
+  "document": "session-checkpoint-v1",
+  "status": "accepted",
+  "title": "Session Resume Overlay",
+  "summary": "Recover bounded agent task state against a verified published snapshot and the observed worktree without turning session assertions into project authority.",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority"
+  },
+  "commands": {
+    "checkpoint": "checkpoint --input FILE|- --task-id ID --thread-id ID [--observed-at UNIX_SECONDS] [--jobs N] [--require-current]",
+    "resume": "resume --checkpoint FILE --task-id ID --thread-id ID [--task TEXT] [--observed-at UNIX_SECONDS] [--trusted-producer ID] [--jobs N] [--require-current]",
+    "output": "checkpoint emits one canonical compact shin.session-checkpoint.v1 document on stdout. The host persists it atomically outside the consumer. resume emits shin.session-resume.v1 on stdout.",
+    "readOnly": true,
+    "indexRequired": true,
+    "consumerMutation": false,
+    "indexPublication": false,
+    "automaticActions": false
+  },
+  "draft": {
+    "schema": "shin.session-draft.v1",
+    "requiredFields": [
+      "schema_version",
+      "task_request",
+      "state",
+      "receipts",
+      "vcs",
+      "ttl_seconds"
+    ],
+    "taskRequest": "Existing shin.task-request.v1 with explicit reviewed evidence requirements. Session limits narrow its existing ceilings; no requirements are inferred from prose.",
+    "stateRequiredFields": [
+      "current_slice",
+      "assertions",
+      "changed_paths",
+      "identifiers",
+      "next_actions"
+    ],
+    "assertionRequiredFields": [
+      "id",
+      "kind",
+      "text",
+      "paths",
+      "receipt_ids"
+    ],
+    "assertionKinds": [
+      "decision",
+      "invariant",
+      "completed",
+      "pending",
+      "blocked"
+    ],
+    "blocked": "Only kind=blocked requires blocker_kind: vpn, credentials, user, or external-state.",
+    "nextActions": "Ordered objects containing id and text only. They are session-proposed and require review. Arbitrary argv is not an input field.",
+    "receipts": "At most 32 shin.execution-receipt.v1 objects, with unique ids; assertion receipt_ids must resolve within this array.",
+    "vcs": "Null or {branch, commit}. Commit is a full 40- or 64-character lowercase hex object id. Metadata is session-asserted; Core does not invoke Git.",
+    "ttlSeconds": "Required integer in 1..604800. A host may choose 86400 for normal session state. Runtime receipts carry independent shorter TTLs."
+  },
+  "checkpoint": {
+    "schema": "shin.session-checkpoint.v1",
+    "requiredFields": [
+      "schema_version",
+      "checkpoint_id",
+      "engine_version",
+      "generator_version",
+      "captured_at",
+      "ttl_seconds",
+      "binding",
+      "baseline",
+      "task_request",
+      "state",
+      "receipts",
+      "vcs",
+      "tracked_sources",
+      "pack_baseline"
+    ],
+    "binding": "Canonical physical project root, profile id, profile_config_hash, opaque task_id, and opaque thread_id. Root plus profile defines project identity; task and thread prevent accidental cross-session reuse. No Git repository is required.",
+    "baseline": "Verified snapshot_id, observed worktree_id, index_current, and observation_complete. worktree_id covers profile-owned inputs, not every file in the repository.",
+    "trackedSources": "Sorted union of changed_paths, assertion paths, and prior Pack verification paths. Each row has path, observation, content_hash, and bytes. observation is observed, missing, or unobserved. Only profile-selected hashed source bytes count as observed; outside-profile or skipped inputs never become evidence.",
+    "packBaseline": "Null when profile metadata prevents meaningful retrieval; otherwise receipt_id, request_fingerprint, evidence_set_fingerprint, and ordered evidence_ids. Full evidence text and chat history are not retained.",
+    "dirtyCapture": "Without --require-current, capture is allowed while the worktree is dirty. Its prior Pack identity refers to the published snapshot; tracked file hashes refer to capture-time worktree. These two baselines remain separate.",
+    "identity": "checkpoint_id is FNV-1a-64 of compact sorted-key JSON before adding checkpoint_id. It detects accidental drift and is not authentication."
+  },
+  "resume": {
+    "schema": "shin.session-resume.v1",
+    "bindingMismatch": "Different root, profile, task_id, or thread_id returns status=mismatched, exit 1, and no saved state or continuation Pack. Profile config drift remains inspectable within the same profile.",
+    "time": "captured_at and observed_at are Unix seconds. Without --observed-at Core reads system_clock after blocking input/index access, Pack retrieval, and worktree recheck, immediately before freshness assessment, and labels clock_source. Explicit time makes identical inputs deterministic. now < captured_at is future; now - captured_at >= ttl_seconds is expired.",
+    "axes": "checkpoint_age is current/expired/future. alignment is aligned/drifted. index_current and observation_complete are independent. status summarizes age before alignment; it does not replace the individual fields.",
+    "checkpointDrift": "Exact comparison of the bounded tracked source hashes against current observations. complete_historical_diff is always false. A changed whole-worktree fingerprint with no changed tracked path still requires review; Core cannot reconstruct missing historical inventory.",
+    "publishedDrift": "The same profile-owned comparison used by worktree-diff, with 32 details and exact omission counts, against the currently pinned published snapshot.",
+    "assertions": "Every saved assertion stays session-asserted and claim_verified=false. references_current means referenced bytes are unchanged; it does not prove that the bytes entail the text. receipts_current requires all named receipts to be explicitly trusted, current, correctly scoped, and passed.",
+    "continuationPack": "Generated only when snapshot/profile/worktree content is exactly current and source observation is complete. After input hashes match, the existing exact generated-output comparison independently verifies canonical publication, preserving normal --require-current semantics. Reuses Agent Context Pack compact projection with the saved explicit request; verification paths, completion, budgets, and provenance retain their existing semantics.",
+    "currentTask": "Optional --task labels the host current intent. Different wording sets task_wording_changed and disables continuation_ready. It never silently rewrites the saved objective or evidence requirements.",
+    "readiness": "continuation_ready requires a current index, current checkpoint age, complete Pack, no declared blocker, and unchanged task wording. review_required remains independent and may be true when drift was detected. This is task recovery readiness, not a replacement for adopted-project ready/validate gates.",
+    "actions": "Ordered Core policy actions precede saved session-proposed actions. A stale index includes non-executing next_command.argv for explicit build. No shell, next action, gate, receipt, or business operation is executed.",
+    "exit": "Successful assessment exits 0. --require-current exits 1 with the full resume envelope when the index is stale or incomplete. Expired state and declared blockers remain inspectable with continuation_ready=false. Invalid input, mismatched binding, or unavailable/corrupt snapshot fail closed."
+  },
+  "limits": {
+    "inputBytes": 262144,
+    "outputBytes": 524288,
+    "jsonDepth": 32,
+    "assertions": 64,
+    "assertionTextBytes": 2048,
+    "pathsPerAssertion": 16,
+    "receiptsPerAssertion": 16,
+    "changedPaths": 128,
+    "identifiers": 128,
+    "nextActions": 16,
+    "receipts": 32,
+    "trackedPaths": 256,
+    "taskRequirements": 12,
+    "taskRequestBytes": 16384,
+    "objectiveBytes": 4096,
+    "packEvidenceBytes": 32768,
+    "packRecords": 24,
+    "jobs": 8,
+    "trustedProducers": 16
+  },
+  "inputSafety": "Unknown fields, duplicate JSON keys, invalid enums/types, numeric overflow, path traversal, control characters in session strings, and built-in secret-like patterns are rejected. Keys, values, and session CLI text are checked; source suppressions such as gitleaks:allow have no effect on session input. Parser errors omit input excerpts. Files must be regular non-symlink files resolving outside the consumer; stdin is accepted only for drafts. This heuristic scanner is not proof that arbitrary free text is secret-free; the host must omit credentials and transcripts.",
+  "concurrency": "One RetrievalSession pins the published snapshot with a shared lock. Worktree inventories and metadata are rechecked after hashing and again before output. Source state is an observation, not a lock on concurrent external writers.",
+  "hostIntegration": {
+    "savePoints": [
+      "logical milestone",
+      "after long tool operation",
+      "before task handoff",
+      "before anticipated interruption"
+    ],
+    "storage": "Host-owned external state directory keyed by canonical project/worktree and task/thread. Persist stdout through temporary file plus rename, with restrictive local permissions. Save only successful checkpoint output. Do not put session files in generated KB or consumer docs.",
+    "resume": "Host or operator includes the checkpoint path and binding in bounded handoff state, invokes resume after recovery, and delivers its envelope to the agent. Skills document manual invocation; automatic compaction-triggered persistence and host hooks are outside this host-neutral contract and are not proposed here.",
+    "handoff": "A different receiving task/thread cannot consume the old checkpoint as current. Review the old state and create a new draft bound to the receiving task. No automatic rebind flag exists."
+  },
+  "verification": {
+    "runner": "tests/run_session_resume_tests.sh",
+    "ctest": "shin-context-session-resume",
+    "lockWaitRegression": "tests/run_session_lock_tests.py",
+    "appleLeaks": "tests/run_leaks.sh includes checkpoint and resume child-process probes"
+  },
+  "nonGoals": [
+    "chat storage",
+    "session authority in permanent KB",
+    "semantic conflict proof",
+    "complete historical or Git diff",
+    "call graph or impact analysis",
+    "incremental publication",
+    "watch or daemon",
+    "automatic host compaction hooks",
+    "consumer-specific rules"
+  ]
+}

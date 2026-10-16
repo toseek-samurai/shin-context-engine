@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "shin.observer-delivery-contract.v1",
+  "document": "observer-delivery",
+  "status": "active-contract",
+  "title": "Explicit Native Observer Delivery And Durable Receipt Application",
+  "summary": "P3E5 adds an opt-in loopback native sender, separate from local observation, with one immutable in-flight packet, bounded attempts, verified receipt application and restart replay. Local Core retrieval and sampling do not depend on Server availability.",
+  "transport": {
+    "library": "Reuse checksum-pinned cpp-httplib 0.54.1 through shared/cmake/Http.cmake, not a new HTTP implementation. No PostgreSQL dependency is added to Observer. TLS and compression are disabled in this loopback-only development slice. Observer disables the library's optional asynchronous hostname resolver and explicitly maps loopback to its numeric IP path (AI_NUMERICHOST); no DNS lookup or CFHost resolver is needed for the permitted endpoint. Server's resolver configuration is unchanged.",
+    "handshake": "Before each POST, GET /api/v1/observer-identity under Bearer authentication. Require exact Server/principal identities, submission/ack schema and service-observed provenance. This read-only endpoint returns only those bounded values and never source data. Do not export a submission after identity mismatch.",
+    "boundaries": "No redirects, ambient proxy routing, DNS hostname or response decompression. Limit response body to 16KiB and reuse duplicate-key/depth JSON guards. HTTP success without an exact supported envelope and matching receipt is not acknowledgement.",
+    "authLimit": "HTTP Bearer authenticates the client to Server. Explicit endpoint plus persisted Server ID is an identity-mixup guard within the trusted local OS boundary, not cryptographic peer authentication. A hostile loopback listener or compromised same-UID process is not defended by the ID alone. Off-loopback deployment requires authenticated encrypted transport and a separate verification milestone."
+  },
+  "successor": "P3E6 adds confirmation/reconciliation and Server history plan/apply. P3E8 Server/Observer dev.16 uses identity handshake v3 and pins every request with X-Shin-Server-ID; read shin-server-recovery-v1. Versions and v1 handshake below record the P3E5 baseline, not a compatibility fallback. Local state v3/outbox v2 and submission/ack v1 remain unchanged.",
+  "schemas": {
+    "observerConfig": "shin.observer-config.v2",
+    "state": "shin.observer-state.v3",
+    "outbox": "shin.observer-outbox.v2",
+    "deliveryConfig": "shin.observer-delivery-config.v1",
+    "submission": "shin.observer-submission.v1",
+    "receipt": "shin.observer-ack.v1",
+    "serverIdentity": "shin.observer-server-identity.v1"
+  },
+  "upgrade": "Observer source config remains v2. State v3/outbox v2 intentionally reject older committed state. Preserve old development state and its matching binary for inspection; choose a new private state directory and explicitly enroll the new stream. No silent conversion, inherited acknowledgement or production consumer migration is performed.",
+  "commands": {
+    "deliver": [
+      "shin-observer",
+      "deliver",
+      "--config",
+      "/absolute/private/observer.json",
+      "--delivery-config",
+      "/absolute/private/delivery.json",
+      "--max-submissions",
+      "128"
+    ],
+    "watch": [
+      "shin-observer",
+      "watch",
+      "--config",
+      "/absolute/private/observer.json",
+      "--delivery-config",
+      "/absolute/private/delivery.json"
+    ],
+    "sample": "sample accepts the same optional --delivery-config. It performs one local sample and completes only an already launched attempt; it is not an unbounded drain command.",
+    "batch": "deliver requires existing valid local state, exports at most 1..128 retained packets (default 128), stops after the first unsuccessful attempt and never samples source. A successful command envelope means the bounded operation completed; inspect delivery_failed, pending_drained and acknowledged_sequence separately.",
+    "readOnly": "status and metrics do not accept a delivery config and never send, import, recover or mutate state. sample/watch without --delivery-config remain network-free even when state remembers a prior destination."
+  },
+  "configuration": {
+    "example": {
+      "schema_version": "shin.observer-delivery-config.v1",
+      "host": "127.0.0.1",
+      "port": 19125,
+      "server_id": "0123456789abcdef0123456789abcdef",
+      "principal_id": "dev-reader",
+      "token_file": "/absolute/private/reader.token",
+      "request_timeout_ms": 2000
+    },
+    "policy": "Exact private config, explicit loopback IPv4 literal and port 1024..65535, lowercase 128-bit Server identity, configured principal slug. Request deadline is 100..10000ms for handshake plus submission together. Token is read once per process from a private non-symlink owner-only regular file, 32..256 safe ASCII characters with an optional final newline.",
+    "isolation": "Delivery config and token paths must be absolute, normalized, non-symlink and outside source, index and profile trees. Runtime errors never echo token, credential path or remote response body. No token is serialized in Observer state, receipt or submission.",
+    "binding": "Before any network operation, an explicit mutating delivery operation persists immutable destination {host,port,server_id,principal_id} in the same private state as the queue. Read-only reconcile requires that existing pin and rejects unbound state before network access; it never creates a pin itself. A different destination is rejected without contacting it; credential rotation for the same principal/endpoint does not change this binding and requires a deliberate process restart. No automatic discovery, enrollment, endpoint switching or export consent is inferred from outbox.enabled."
+  },
+  "concurrency": {
+    "owner": "One StateStore writer owns sampling, outbox, capture metrics and receipt commits. A second process fails writer-busy. One std::async worker owns a copied immutable packet and delivery configuration; it does no local state writes or source scanning.",
+    "progress": "watch polls the single result during its ordinary 20ms idle slices; source sampling continues while a request stalls or Server is unavailable. No mutex is held over HTTP. Large local Core scans still delay result application; this is cooperative scheduling, not a realtime OS guarantee.",
+    "stop": "On normal exit complete the already launched bounded attempt without starting another. Worker destruction joins before the state writer fence is released. SIGKILL may leave a recorded in-flight attempt and an ambiguous remote commit; the durable packet is retained for exact replay."
+  },
+  "retry": {
+    "transient": "Transport uncertainty and HTTP 408/429/5xx retain the head. watch retries it with monotonic exponential backoff from 250ms to 30s, one request in flight. Retry cadence is process-local; an explicit restart begins a new schedule, not a new operation identity.",
+    "blocked": "401/403, other rejected statuses, identity/schema/receipt mismatch and internal worker failure block further sends for that invocation. They do not block local sampling or reset the queue. Explicit rerun permits a new attempt after operator correction.",
+    "ordering": "The submission POST is the authoritative replay/order check. Never skip or delete local entries based merely on a remote cursor, clock, local file or CLI-supplied acknowledgement. No receipt-import escape hatch exists."
+  },
+  "durability": {
+    "cursors": "accepted_sequence counts all locally accepted submissions, not current queue length. acknowledged_sequence counts the contiguous confirmed prefix; entries.size equals accepted minus acknowledged. New entries retain monotonic identities after draining. Capture sequence remains separate because samples may coalesce or be rejected at capacity.",
+    "commit": "Validate exact receipt shape, calendar-valid UTC time, Server identity and head stream/sequence/id/payload/project/workspace linkage. In one next-state save, retain the last receipt and acknowledged observation cursor, advance acknowledged_sequence and remove exactly the head. Only after file fsync, atomic rename and directory fsync succeeds replace the in-memory state. No queue deletion is driven by HTTP status alone.",
+    "recovery": "Crash before local receipt commit replays the same retained packet and receives the original Server receipt. Crash after commit reopens the advanced cursor. Existing guarded pending-file recovery remains unchanged; corrupt committed state fails closed.",
+    "capacity": "Acknowledgement frees local pending capacity but does not clear sticky rejected-observation gaps. Coalescing compares only the last pending packet; an empty queue permits a new observation with a new identity. Server history still has its separate finite retention caps and may require operator action; delivery does not prune Server receipts."
+  },
+  "metrics": {
+    "retained": "attempts, failures, last_outcome, last_attempt_at_ms, last_result_at_ms and last_duration_ms are committed locally. An interrupted in-flight attempt is not a fabricated failure or success. Duration includes identity handshake and POST, excluding local fsync and scan time.",
+    "facets": "Expose pending count/bytes, accepted and acknowledged cursors, destination, last receipt and sticky resync_required separately. server_acknowledged means at least one receipt was committed, not that the entire queue or project is current. pending_drained proves only zero retained packets; source freshness, omitted observations and publication readiness remain separate."
+  },
+  "authority": [
+    "Metadata-only export: no source text, raw filesystem paths, changed-file lists, credentials or transcripts in submissions.",
+    "Receipt proves acceptance by the configured service within the transport trust boundary, not source truth, executed tests, complete history or a shared publication.",
+    "No active route, source file, index, command, proposal or downstream business action is changed by delivery."
+  ],
+  "sources": [
+    "https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.54.1/README.md"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-observer-ingestion-v1.json",
+    "docs/machine/shin-observer-outbox-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/shin-server-dev-workflow-v1.json"
+  ]
+}

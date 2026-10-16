@@ -1,0 +1,204 @@
+{
+  "schemaVersion": "shin.hermes-agent-integration.v1",
+  "document": "hermes-agent-integration",
+  "status": "active-contract",
+  "summary": "Historical Python plugin contract. Current Hermes integration uses native Shin2.0 MCP and its workflow skill; Core stays agent-neutral and consumer AGENTS.md and adoption contracts retain authority.",
+  "ownership": {
+    "shin": "Deterministic project discovery, route validation, freshness, retrieval, diagnostics, and Agent Context Pack semantics.",
+    "hermes": "Agent session, model routing, tool invocation, skills, delegation, and optional automation.",
+    "consumer": "Product source, tests, accepted decisions, machine contracts, adoption marker, and AGENTS.md authority.",
+    "runtimeCoupling": false
+  },
+  "toolset": {
+    "id": "plugin_shin_context",
+    "tools": [
+      {
+        "name": "shin_discover_project",
+        "role": "Read-only cold-start discovery for an unknown repository."
+      },
+      {
+        "name": "shin_ready_context",
+        "role": "Strict adopted-route, publication, worktree, and quality readiness."
+      },
+      {
+        "name": "shin_brief_context",
+        "role": "Readiness-gated compact single-question retrieval."
+      },
+      {
+        "name": "shin_pack_context",
+        "role": "Readiness-gated compact multi-requirement Agent Context Pack."
+      },
+      {
+        "name": "shin_diagnose_context",
+        "role": "Expected-path retrieval diagnosis after strict readiness."
+      },
+      {
+        "name": "shin_worktree_diff",
+        "role": "Read-only unpublished profile-owned worktree drift."
+      },
+      {
+        "name": "shin_suggest_profile",
+        "role": "Explicit reviewed routing-contract recommendation without automatic switching."
+      }
+    ],
+    "resultSchema": "shin.hermes-result.v1",
+    "corePayloadRule": "The adapter preserves each Shin JSON result under result and adds route, process, readiness, remediation, and adapter version fields without changing Core schemas."
+  },
+  "safety": {
+    "consumerMutation": false,
+    "indexMutation": false,
+    "networkAuthority": false,
+    "productionAuthority": false,
+    "builtInToolOverrideAllowed": false,
+    "preRetrievalReadiness": true,
+    "pathTraversalRejected": true,
+    "shellInjectionRejectedByArgumentVector": true,
+    "packBudgetCeilings": {
+      "maxEvidenceBytes": 65536,
+      "maxRecords": 32,
+      "perQueryRecords": 12,
+      "perDocumentRecords": 4,
+      "maxJobs": 16
+    },
+    "mutationCommandsExcluded": [
+      "build",
+      "vacuum --apply",
+      "index-prune --apply",
+      "documentation generation",
+      "consumer source edits"
+    ]
+  },
+  "nonGoals": [
+    "No second ranking implementation in the adapter.",
+    "No implicit model inference, source execution, or telemetry upload.",
+    "No claim that tool output alone completes a task."
+  ],
+  "currentIntegration": {
+    "runtime": "native shin-mcp with shin_status, shin_query, shin_inspect and shin_read",
+    "guidance": "docs/native-client-setup.md",
+    "boundary": "Hermes owns conversation and compression; Shin owns verified project evidence, not chat memory.",
+    "plugin": "The Python plugin below is retained compatibility source, not the default client route."
+  },
+  "upstreamReferences": {
+    "verifiedOn": "2026-08-11",
+    "pluginApi": "https://github.com/NousResearch/hermes-agent/blob/main/website/docs/developer-guide/plugins/index.md",
+    "skills": "https://hermes-agent.nousresearch.com/docs/user-guide/features/skills",
+    "contextCompression": "https://hermes-agent.nousresearch.com/docs/developer-guide/context-compression-and-caching/"
+  },
+  "source": {
+    "plugin": "integrations/hermes/plugins/shin-context",
+    "workflowSkill": "integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md",
+    "contractTests": "tests/run_hermes_plugin_tests.py"
+  },
+  "installation": {
+    "command": "make install-hermes-integration",
+    "pluginTarget": "${HERMES_HOME:-$HOME/.hermes}/plugins/shin-context",
+    "skillTarget": "${HERMES_HOME:-$HOME/.hermes}/skills/software-development/shin-context",
+    "enableCommand": "hermes plugins enable --no-allow-tool-override shin-context",
+    "portableSourceSegments": [
+      "share",
+      "shin-context",
+      "hermes",
+      "plugins",
+      "shin-context"
+    ],
+    "contractResolution": "Workflow instructions resolve machine contracts from the Core binary layout: <shin-home>/docs/machine for source checkouts or <prefix>/share/shin-context/contracts for installed distributions. They do not traverse relative paths into a sibling Codex skill or assume this skill's global installation depth.",
+    "mutationPolicy": "The installed local skill is replaceable delivery output; the plugin-bundled workflow remains the canonical read-only source."
+  },
+  "routeResolution": {
+    "binaryOrder": [
+      "SHIN_CONTEXT_BIN",
+      "SHIN_CONTEXT_HOME source or installed layout",
+      "$HOME/IdeaProjects/Shin-Context-Engine",
+      "$HOME/work/Shin-Context-Engine",
+      "shin-context on PATH"
+    ],
+    "profileRegistryOrder": [
+      "consumer-owned profile registry when the adopted project provides one",
+      "SHIN_CONTEXT_PROFILE_DIR",
+      "resolved Shin distribution profile directory"
+    ],
+    "markerCandidateSegments": [
+      [
+        "docs",
+        "machine",
+        "shin-project-adoption-v1.json"
+      ],
+      [
+        "docs",
+        "machine",
+        "shin-context-engine-adoption-v1.json"
+      ],
+      [
+        "docs",
+        "shin-context-engine-adoption.json"
+      ],
+      [
+        "docs",
+        "architecture",
+        "shin-context-engine-adoption.json"
+      ]
+    ],
+    "indexRule": "Use explicit out_dir or SHIN_CONTEXT_CACHE_DIR. Otherwise select exactly one published index matching marker index.key from XDG cache or a resolved Shin source build/context tree.",
+    "ambiguityPolicy": "Multiple markers or multiple published indexes fail closed and require an explicit path.",
+    "consumerIndexAllowed": false
+  },
+  "transport": {
+    "implementation": "Python standard library subprocess adapter",
+    "shell": false,
+    "stdin": "disabled",
+    "stdout": "one JSON document",
+    "stderr": "one independently byte-bounded diagnostic stream; raw child stderr is never exposed",
+    "resultValidation": {
+      "descriptorSource": "Each adapter call site supplies the expected Core command and schema; transport never infers either from argv.",
+      "jsonDecoding": "Both streams use strict JSON decoding: duplicate object keys and non-finite numbers are rejected. stdout and stderr are independently checked against maxOutputBytes before JSON parsing.",
+      "successEnvelope": "A result is accepted only when schema_version, tool, command, and a real JSON boolean ok match the supplied descriptor. Missing fields, wrong types, mismatched identity, and a successful result with a nonzero process exit fail closed.",
+      "stderrErrorEnvelope": "When stdout is empty, transport accepts stderr only as one shin.error.v1 document whose tool, command, ok=false, documented error fields, and exit_code match the supplied descriptor and process exit. Its documented error metadata is preserved; raw child stderr is not exposed as an adapter log channel.",
+      "failurePolicy": "Malformed or mismatched stdout and stderr envelopes return INVALID_SHIN_OUTPUT without reflecting arbitrary child payloads."
+    },
+    "maxOutputBytes": 2097152,
+    "maxTaskRequestBytes": 131072,
+    "timeoutsSeconds": {
+      "suggestProfile": 30,
+      "discover": 60,
+      "brief": 60,
+      "pack": 120,
+      "ready": 120,
+      "worktreeDiff": 120
+    }
+  },
+  "projectIntegration": {
+    "sessionRecovery": "The workflow skill invokes checkpoint/resume through the resolved Core CLI route. No new plugin tool or automatic compaction hook is claimed. Session state stays in external host-owned storage; see session-checkpoint-v1.json.",
+    "newHermesContextFileRequired": false,
+    "reason": "Hermes already loads the existing AGENTS.md hierarchy; adding .hermes.md would create a competing higher-priority project instruction route.",
+    "consumerMarkerChangesRequired": false,
+    "consumerIndexRebuildRequired": false,
+    "recommendedFirstMode": "Read-only readiness, Brief, Pack, diagnostics, and review."
+  },
+  "acceptance": {
+    "portableGate": "make hermes-integration-check",
+    "ctest": "shin-context-hermes-plugin",
+    "cases": [
+      "Hermes tool and workflow registration",
+      "relocated workflow has no broken or escaping local Markdown links and identifies both Core contract layouts",
+      "structured cold-start discovery",
+      "automatic permanent marker, profile, and external index resolution",
+      "readiness before Brief, Pack, and diagnose",
+      "retrieval stops on failed readiness",
+      "malformed success, non-boolean ok, command mismatch, and schema mismatch fail closed",
+      "empty stdout preserves a validated Core shin.error.v1; malformed stderr errors fail closed",
+      "duplicate JSON keys and non-finite numbers fail closed on stdout and stderr before envelope use",
+      "oversized stderr fails before structured-error parsing",
+      "malformed ready output cannot continue to retrieval",
+      "shell metacharacters remain one inert query argument",
+      "bounded in-memory Pack request transport",
+      "oversized Pack budget rejection",
+      "marker traversal rejection",
+      "portable marker profile and index identifiers before path construction",
+      "consumer-local generated index rejection",
+      "published index symlink into the consumer rejection",
+      "ambiguous marker rejection",
+      "explicit reviewed profile suggestion"
+    ]
+  }
+}

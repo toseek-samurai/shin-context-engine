@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0"><dict>
+<key>CFBundleName</key><string>Shin Monitor</string>
+<key>CFBundleDisplayName</key><string>Shin Monitor</string>
+<key>CFBundleExecutable</key>
+<string>Shin Monitor</string>
+<key>CFBundleIdentifier</key><string>org.shin.context.monitor</string>
+<key>CFBundleVersion</key><string>32</string>
+<key>CFBundleShortVersionString</key><string>@SHIN_MONITOR_SHORT_VERSION@</string>
+<key>CFBundlePackageType</key><string>APPL</string>
+<key>LSUIElement</key><true/>
+<key>NSHighResolutionCapable</key><true/>
+</dict></plist>

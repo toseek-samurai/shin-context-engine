@@ -1,0 +1,28 @@
+{
+  "schema_version": "shin.answer-grounding-regression-policy.v1",
+  "status": "declared-before-execution",
+  "classification": "ordinary-guide known-case regression, not a fresh holdout or P6b regrade",
+  "cases": [
+    "bootstrap-authorization-russian",
+    "bootstrap-health-russian",
+    "writer-russian"
+  ],
+  "variant": "candidate",
+  "attempts_per_case": 1,
+  "answer_contract": "legacy-v1",
+  "guide_sha256": "a4ff9838c94c5e9613e1de3511bd7717538dcb0929ec200b2ba64846580c877b",
+  "acceptance": [
+    "All three tasks return the unchanged ordinary answer shape with no protocol failure.",
+    "Original mandatory clauses remain covered: authorization3, health3, writer4.",
+    "No unsupported assertions in either summary or claims under main-session source review.",
+    "Line citations name complete bodies actually delivered in the task and support the claim, not merely the same file.",
+    "All original source, snapshot, tool, byte and time limits hold."
+  ],
+  "boundaries": [
+    "No quote requirement or changed acceptance for the original quoted-v2 experiment.",
+    "No Core, guide, parser, ranking, embedding, provider or installed client changes during this probe.",
+    "Use only the original questions; no expected paths, answers or rubric in agent input.",
+    "One attempt each; do not retry failed answers or repeat a full paid cohort.",
+    "Success closes this known-case ordinary-guide regression only, not general workflow or release qualification."
+  ]
+}

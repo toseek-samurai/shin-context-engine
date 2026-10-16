@@ -1,0 +1,134 @@
+{
+  "schemaVersion": "shin.retool-source-extractor.v1",
+  "document": "retool-source-extractor",
+  "status": "active-contract",
+  "summary": "Profile-selected Retool source model for deterministic agent retrieval over RSX apps, payloads, resources, workflow blocks and their incoming edges.",
+  "scope": {
+    "recognizedRoots": [
+      "apps",
+      "resources",
+      "workflows"
+    ],
+    "sourceExtensions": [
+      ".rsx",
+      ".js",
+      ".sql",
+      ".query",
+      ".css",
+      ".html",
+      ".json",
+      ".yml",
+      ".yaml"
+    ],
+    "externalGeneratedOutput": true,
+    "consumerWritesAllowed": false
+  },
+  "semanticModel": {
+    "recordTypes": [
+      "retool-app",
+      "retool-app-metadata",
+      "retool-layout",
+      "retool-screen",
+      "retool-query",
+      "retool-state",
+      "retool-function",
+      "retool-folder",
+      "retool-module",
+      "retool-component",
+      "retool-include",
+      "retool-event",
+      "retool-payload-owner",
+      "retool-payload",
+      "retool-call",
+      "retool-reference",
+      "retool-resource-binding",
+      "retool-resource",
+      "retool-workflow",
+      "retool-workflow-block",
+      "retool-workflow-edge"
+    ],
+    "relationships": [
+      "RSX physical ownership and symbol kind",
+      "Include and include-backed payload ownership",
+      "Event owner, event, action, and plugin target",
+      "Inline RSX and payload runtime calls or data references",
+      "Query or workflow block to external resource binding",
+      "Workflow incoming UUID edges resolved to human block ids"
+    ],
+    "authority": {
+      "apps/admin resources workflows": "source-fact",
+      "apps/archive-apps": "history",
+      "apps/templates": "advisory",
+      "docs/skills/retool-source-agent": "interpretation contract",
+      "docs/apps": "app contract and migration evidence",
+      "docs/machine": "adoption contract"
+    }
+  },
+  "parserContract": {
+    "deterministic": true,
+    "bounded": true,
+    "malformed": "Preserve ordinary file evidence and report extraction failure.",
+    "secrets": "Redact configured secret-valued fields before clipping or rendering."
+  },
+  "compoundRetrievalContract": {
+    "activation": "The profile opts brief queries with at least eight term groups into first-term-must/rest-should scope retrieval. An explicit extensionless directory path activates the same policy below that threshold.",
+    "scope": "The first query group identifies an app, workflow, or exact indexed directory scope; every returned row must also match at least one remaining semantic group.",
+    "directoryBoundary": "Exact directory scope is derived from manifest source paths, canonicalizes each complete path component independently, excludes both component-shift and prefix-colliding siblings, and fails closed instead of falling through outside the requested directory.",
+    "ranking": "Bounded per-document semantic coverage is combined with profile-declared exact entry stems, structural stem suffixes, anchor-derived stems, and path proximity.",
+    "preferredStems": [
+      "main",
+      "functions",
+      "sidebar"
+    ],
+    "preferredStemSuffixes": [
+      "sidebar"
+    ],
+    "scopeStemSuffixes": [
+      "",
+      "pageguard",
+      "searchtrigger"
+    ],
+    "universality": "The C++ Core contains no application, helpdesk, connector, or product vocabulary; concrete paths and business terms exist only in profiles, test corpus, and consumer-owned observations.",
+    "diagnostics": [
+      "scope_fallback_used",
+      "scope_group_index",
+      "matching_policy",
+      "candidate_rows",
+      "candidate_index_used"
+    ]
+  },
+  "hermeticEvidence": {
+    "fixture": "Synthetic app, resource, workflow, query, and malformed-source examples.",
+    "releaseClaim": false
+  },
+  "boundaries": [
+    "Retool is an optional source format and is not a Core runtime dependency.",
+    "No application deployment or connector access.",
+    "No private application corpus or account configuration.",
+    "No runtime execution or proof that a UI event reaches a backend."
+  ],
+  "architecture": {
+    "coreRule": "Shin remains domain-neutral; source semantics are selected through sourceFactExtractors in a profile.",
+    "registry": {
+      "profileKey": "sourceFactExtractors",
+      "attributeProfileKey": "sourceFactAttributeKeys",
+      "attributeBounds": {
+        "maximumKeys": 64,
+        "maximumKeyBytes": 128
+      },
+      "default": [
+        "language"
+      ],
+      "available": [
+        "language",
+        "retool"
+      ],
+      "validation": "profile-check rejects unknown, duplicate, and explicitly empty extractor selections when sourceFactRoots are configured. sourceFactAttributeKeys must use one supported alias, must be an array of strings, is limited to 64 unique attribute tokens of at most 128 bytes, and requires the retool extractor."
+    },
+    "implementation": "src/retool_extraction.cpp",
+    "compoundRetrievalImplementation": "src/scoped_retrieval.cpp",
+    "profile": "profiles/generic-retool.json",
+    "coldStartProfile": "profiles/generic-retool.json",
+    "noRuntimeDependencies": true
+  }
+}

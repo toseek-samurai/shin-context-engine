@@ -1,0 +1,15 @@
+{
+  "schemaVersion": "shin.federated-eval-suite.v1",
+  "id": "fixture-federation-unknown-member",
+  "federationId": "fixture-federation",
+  "requiredMemberIds": ["primary", "replica"],
+  "cases": [
+    {
+      "id": "fixture-unknown-member",
+      "query": "capability contract",
+      "mustEvidence": [
+        {"member": "absent", "path": "docs/architecture.md"}
+      ]
+    }
+  ]
+}

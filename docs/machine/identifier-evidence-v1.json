@@ -1,0 +1,141 @@
+{
+  "schemaVersion": "shin.identifier-evidence-contract.v1",
+  "document": "identifier-evidence-v1",
+  "status": "accepted",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v17-explicit-authority",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "purpose": "Make exact source identifiers retrievable without project vocabulary, broad source scans, or one generated row per identifier occurrence.",
+  "confirmedBriefIdentifier": {
+    "introducedIn": "1.26.0",
+    "policy": "confirmed-identifier-scope-v1",
+    "mode": "identifier-scoped",
+    "scope": "Indexed Brief and its Eval, Diagnose, Pack and federation consumers. Explicit document/directory ownership is resolved first. Raw Search, Context and source-scan remain ordinary group matching, not implicit identifier-scoped retrieval.",
+    "admission": "For2..8 meaningful query tokens with at most8 ASCII identifier segments and128 normalized bytes, probe the existing exact compound postings. Explicit profile aliases prevent inference. At most256 candidate rows may be decoded for this optional probe; an unavailable or larger indexed shortlist falls through without truncating recall.",
+    "confirmation": "An indexed source-fact identifier_terms entry must normalize to the same complete segment sequence, including camel/acronym and underscore boundaries. Mere prose, a compact collision with different boundaries, separate words or a prefix do not confirm intent. This is lexical source evidence, not compiler symbol identity.",
+    "selection": "A confirmed exact compound shortlist is scored once with the ordinary field scorer, preserving the original query-group count and matched-group indices. Existing allowed evidence types, ranking, authority and per-document limits apply. With no allowed result or no confirmation, ordinary strict/relaxed/planned retrieval remains available.",
+    "diagnostics": "retrieval_mode=identifier-scoped and matching_policy=confirmed-identifier-scope-v1 identify the selected interpretation. identifier_scope_key is its normalized phrase. identifier_probe_rows is optional discovery work; candidate_rows remains the admitted shortlist measure and is not a sum over all phases. Accepted probes reuse their shortlist. Rejected probes are reported separately without claiming zero work.",
+    "boundary": "A bounded index-proven interpretation, not a rule for a product name or proof that all natural-language intents have been understood. Generation and generator-v17 format are unchanged. Use raw search/context to request the broader word conjunction deliberately."
+  },
+  "queryNormalization": {
+    "policy": "identifier-form-equivalence-v1",
+    "forms": [
+      "camelCase",
+      "PascalCase",
+      "snake_case",
+      "kebab-case",
+      "space separated",
+      "qualified C++ identifiers (development Core dev.10)"
+    ],
+    "qualifiedIdentifiers": "Development Core dev.10 splits a lexically valid namespace::Class::member token into required lexical groups before alias expansion. Identifier components named like natural-language stop words are preserved. Leading global qualification and trailing call punctuation follow ordinary token trimming. Single colons, URLs, malformed interior qualification and template expressions are not decomposed. Ordinary strict/relaxed retrieval rules still apply: matched groups prove co-occurrence, not C++ name resolution, overload identity or a call graph. No index format or generator change.",
+    "groupRule": "One lexical query token remains one required query group. For a bounded 2-8 segment query, the compound compact, hyphen, underscore, and spaced identifier variants are added to every existing group, preserving strict group count while allowing one exact compound identifier to satisfy the segmented spelling.",
+    "examples": {
+      "assistantDefault": [
+        "assistant-default",
+        "assistant_default",
+        "assistant default",
+        "assistantdefault"
+      ],
+      "HTTPServer": [
+        "http-server",
+        "http_server",
+        "http server",
+        "httpserver"
+      ]
+    }
+  },
+  "sparseShortlistCompletion": {
+    "purpose": "Recover identifier-prefix evidence that the field scorer can match but an exact sparse posting lookup would otherwise omit.",
+    "activation": "Only a relaxed query with at least eight groups and no more exact candidate rows than its required-group threshold activates completion. Strict, short, owner-scoped, directory-scoped, and already healthy candidate routes remain unchanged.",
+    "lookup": "The sorted term-offset lexicon is read once under a fixed byte bound, then binary-searched for each prefix range. Alphanumeric compact query forms of at least four bytes select bounded prefix-compatible terms such as requestId for request and ActorWorkerFrame for actor-worker.",
+    "selection": "Expanded terms remain inside their original alias group. The existing required-group threshold and final field-aware scorer remain authoritative; constituent words are not globally unioned.",
+    "bounds": {
+      "minimumQueryGroups": 8,
+      "minimumPrefixBytes": 4,
+      "maximumCompletedLexiconTerms": 2048,
+      "maximumCompletedPostingBytes": 67108864,
+      "maximumInMemoryOffsetIndexBytes": 67108864,
+      "fallback": "If a completion term, posting byte, or lexicon byte bound is exceeded, the candidate index is marked incomplete and the existing bounded generated-row scan is used instead of truncating recall."
+    },
+    "compatibility": "No generated field, generator identity, profile vocabulary, result schema, or consumer repository changes."
+  },
+  "sourceExtraction": {
+    "memberContract": "docs/machine/source-member-ranges-v1.json",
+    "languages": [
+      "C",
+      "C++",
+      "C#",
+      "Java",
+      "Kotlin",
+      "JavaScript",
+      "TypeScript"
+    ],
+    "lexicalPolicy": "Comments and quoted string bodies are excluded before ASCII identifier extraction. Language keywords are excluded; identifiers remain in original source spelling.",
+    "scopePolicy": "Each identifier occurrence is attached to the smallest observed declaration scope. Java and JavaScript/TypeScript use valid concrete-syntax declarations; other languages retain explicit lexical fallback. Same-range ties prefer callable, property, type, then generic declaration evidence.",
+    "fallbackPolicy": "Identifiers outside a detected declaration scope are grouped into deterministic 24-line windows with at most 96 unique identifiers per row.",
+    "bounds": {
+      "identifierBytes": 128,
+      "identifiersPerScopedFact": 256,
+      "fallbackWindowLines": 24,
+      "identifiersPerFallbackFact": 96
+    },
+    "nonGoals": [
+      "No compiler front end, symbol resolver, type checker, call graph, or language specification is embedded in Core.",
+      "No consumer-specific identifier or framework vocabulary is compiled into Core.",
+      "Identifier presence is retrieval evidence, not proof of symbol resolution or runtime reachability."
+    ]
+  },
+  "generatedFacts": {
+    "fields": [
+      "start_line",
+      "end_line",
+      "identifier_terms",
+      "range_origin",
+      "symbol_name",
+      "span_hash"
+    ],
+    "rangeRule": "Valid Java and TypeScript/JavaScript declarations carry syntax ranges including multiline signatures and decorators. Other languages retain labeled lexical ranges. Retool tag facts cover the opening tag; payload facts cover the physical payload file. Identifier windows remain bounded. span_hash identifies whole raw source-line bytes, not behavior.",
+    "postingRule": "identifier_terms contribute sparse postings and a primary identifier_references scoring field; source declaration summaries remain excluded from broad source-fact postings.",
+    "provenance": "Identifier facts retain implementation-source or test-source with source-observed verification. Extraction cannot elevate evidence to validated or executed."
+  },
+  "compactVerification": {
+    "briefField": "verification_paths",
+    "shape": {
+      "path": "repository-relative",
+      "ranges": [
+        {
+          "start_line": 1,
+          "end_line": 1
+        }
+      ],
+      "evidence_ids": [
+        "stable-id"
+      ]
+    },
+    "ordering": "First selected evidence path order, deterministic range ordering, and selected evidence identity order.",
+    "relation": "Compact Brief now exposes the same verification-path concept as Agent Context Pack without copying full source text into the transport envelope."
+  },
+  "acceptance": {
+    "runner": "tests/run_fixture_tests.sh",
+    "goldenIdentifier": "assistantDefault",
+    "goldenCompoundIdentifier": "ActorWorkerBridge",
+    "requiredVariants": [
+      "assistantDefault",
+      "assistant_default",
+      "assistant-default",
+      "assistant default"
+    ],
+    "requiredEvidence": [
+      "all variants select the same TypeScript callable path without relaxed fallback",
+      "an exact source identifier ranks above a competing prose mention",
+      "the returned source fact carries its exact callable range",
+      "compact Brief returns a deduplicated verification path and range",
+      "static source evidence remains source-observed",
+      "a sparse ten-group query recovers a source identifier row through bounded completion while search, context, brief, and eval keep the candidate index active",
+      "the pre-fix binary misses the same hermetic expected path, proving that the case exercises the corrected shortlist boundary"
+    ]
+  },
+  "summary": "Public contract for identifier evidence v1."
+}

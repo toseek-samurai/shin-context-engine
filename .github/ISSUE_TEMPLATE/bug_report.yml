@@ -1,0 +1,35 @@
+name: Bug report
+description: Report reproducible incorrect behavior.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For a suspected vulnerability, use the [private reporting instructions](https://github.com/toseek-samurai/shin-context-engine/security/policy).
+        Use synthetic examples and remove credentials, private source, and personal paths from diagnostics.
+  - type: input
+    id: environment
+    attributes:
+      label: Version and environment
+      description: Shin version or commit, operating system, CPU architecture, and affected component.
+    validations:
+      required: true
+  - type: textarea
+    id: behavior
+    attributes:
+      label: Expected and actual behavior
+      description: What should happen, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Steps to reproduce
+      description: Include the smallest example or commands needed to reproduce the problem.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Relevant diagnostics
+      description: Optional redacted error output or screenshots.

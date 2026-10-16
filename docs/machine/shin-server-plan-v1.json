@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "shin.server-product-plan.v1",
+  "document": "server-product-plan",
+  "status": "active-contract",
+  "title": "Headless Server Product Boundary",
+  "summary": "Define a bounded headless service surface around explicit identities, workspaces, immutable candidate data, and read-only retrieval.",
+  "productOutcome": "A service consumer can authenticate, address an authorized workspace, inspect a candidate, and request bounded evidence with stable provenance.",
+  "responsibilities": {
+    "core": "Own indexing and retrieval semantics.",
+    "observer": "Observe local source and submit explicit protocol messages.",
+    "server": "Authenticate service requests, authorize workspace access, persist service state, and enforce request limits."
+  },
+  "security": [
+    "Authenticate before workspace lookup.",
+    "Authorize every workspace operation for the requesting identity.",
+    "Validate request shape, size, and enum values before expensive work.",
+    "Keep tenant and workspace data isolated.",
+    "Do not expose filesystem paths, credentials, or parser diagnostics in external errors."
+  ],
+  "storage": [
+    "Keep candidate and active identities immutable.",
+    "Use explicit activation and rollback operations.",
+    "Retain history according to declared bounds and preserve references still in use.",
+    "Do not use a missing record as authority to recreate or trust data."
+  ],
+  "serviceLimits": {
+    "requestBytes": "Finite and enforced before parsing.",
+    "concurrency": "Bounded admission with explicit overload responses.",
+    "timeouts": "Finite end-to-end deadlines and cancellation.",
+    "response": "Bounded evidence and stable typed errors."
+  },
+  "nonGoals": [
+    "No automatic code execution.",
+    "No implicit project enrollment or publication.",
+    "No cross-workspace evidence merge.",
+    "No claim of distributed availability or throughput without dedicated measurement."
+  ]
+}

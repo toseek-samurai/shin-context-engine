@@ -1,0 +1,23 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "source-relations-hermetic-fixture",
+  "status": "active",
+  "id": "source-relations",
+  "sourceLabel": "Hermetic structural source relations",
+  "rootFiles": ["README.md"],
+  "sourceExtensions": [".md"],
+  "sourceFactRoots": ["apps", "workflows"],
+  "sourceFactExtensions": [".rsx", ".js", ".sql", ".json", ".yml"],
+  "sourceFactExtractors": ["retool"],
+  "sourceFactMaxFiles": 64,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": ["README.md"],
+  "evalCases": [
+    {
+      "id": "structural-sql-payload",
+      "query": "LoadReport",
+      "mustPaths": ["apps/admin/Alpha/queries.rsx"],
+      "expectedRecordTypes": ["retool-query"]
+    }
+  ]
+}

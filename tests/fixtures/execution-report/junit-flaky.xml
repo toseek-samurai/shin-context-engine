@@ -1,0 +1,3 @@
+<testsuite name="sample" tests="1" failures="0" errors="0" skipped="0">
+  <testcase name="retried"><flakyFailure/></testcase>
+</testsuite>

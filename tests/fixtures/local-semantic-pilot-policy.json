@@ -1,0 +1,35 @@
+{
+  "schema_version": "shin.local-semantic-pilot-policy.v1",
+  "model": "intfloat/multilingual-e5-small",
+  "revision": "614241f622f53c4eeff9890bdc4f31cfecc418b3",
+  "model_sha256": "ca456c06b3a9505ddfd9131408916dd79290368331e7d76bb621f1cba6bc8665",
+  "license": "MIT",
+  "runtime": "fastembed==0.8.1 / ONNX CPUExecutionProvider",
+  "dimensions": 384,
+  "pooling": "mean-normalized",
+  "query_prefix": "query: ",
+  "passage_prefix": "passage: ",
+  "max_tokens": 512,
+  "threads": 4,
+  "batch_size": 4,
+  "max_units": 130000,
+  "max_input_bytes": 314572800,
+  "max_model_bytes": 629145600,
+  "max_peak_rss_bytes": 3221225472,
+  "max_run_seconds": 1800,
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "quality": {
+    "english_min_expected_paths_at_20": 3,
+    "russian_min_expected_paths_at_20": 3,
+    "cohort_size_per_language": 5,
+    "selection": "Report top-five separately; do not reinterpret candidate recall as final Brief selection or answer quality.",
+    "controls": "Report exact and absent identifiers without using case.kind to choose a retrieval policy. Existing lexical retrieval remains unchanged. Semantic candidates never assert symbol existence, currentness or completion."
+  },
+  "projection": "All facts and sections from the five explicitly rebuilt comparison routes, excluding evaluation metadata by the existing comparison predicate. Merge only identical project/path/start/end units; retain all original record IDs. Embed path plus unique published title/heading and summary/indexed_text/preview. Never read raw source bodies into model input or tune selection using expected paths. FastEmbed tokenizer truncation at 512 tokens is counted explicitly.",
+  "scope": "One candidate-discovery experiment, one model, no reranker, Core replacement, external inference, automatic download during inference, runtime dependency, stable backport or release claim. Freeze policy and input hashes before observing model results. Resource overruns stop the experiment, not silently increase limits.",
+  "sources": [
+    "https://huggingface.co/intfloat/multilingual-e5-small/blob/614241f622f53c4eeff9890bdc4f31cfecc418b3/README.md",
+    "https://github.com/qdrant/fastembed/blob/v0.8.1/fastembed/text/text_embedding.py"
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "schema_version": "shin.semantic-source-hop-experiment.v1",
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "per_document": 2,
+  "base": "Unchanged code-anchor policy: at most one original-Core-first5 source fact, then semantic document navigation. Exact/owner and absent-model paths remain lexical-only.",
+  "hop": "Only the selected code anchor's physical source range, verified source-reference/source-payload rows, exactly one distinct resolved enrolled same-project target. Any unresolved/unsafe/unowned target, self-reference, more than20 matching links or multiple targets suppresses the hop. No recursion or inference from names/URLs; already selected targets are not moved.",
+  "placement": "Resolve the single selected reference in place: replace its primary candidate row with one target range, retaining the full unchanged origin candidate under source_reference.origin. Choose highest existing query similarity within the target's enrolled parent rows, tie by frozen row order. Preserve every non-origin primary row and the same row count/cap2. Origin remains provenance, not a primary target hit. No new lexical coverage or authority is transferred.",
+  "acceptance": "Freeze before scoring all60 observed queries. Preserve the code-anchor control's every positive top20/first5 hit as well as the existing semantic/document-first/lexical gate. Report raw misses separately from structural navigation. Never relax expected paths or count a follow-up hint as an unchanged raw candidate hit. Compare unchanged actual primary-path ranks, never count nested origin provenance as a top20/first5 hit. Retain the earlier additive/path-preserving control that found the correct edge but could not admit a twenty-first distinct path.",
+  "scope": "One test-only source-bound hop over the same frozen parent vectors and verified Core links, no consumer-specific parser, source modification, graph recursion, cross-project traversal, model/weight sweep, raised budgets, production default or Stable change.",
+  "placement_mode": "resolve-origin"
+}

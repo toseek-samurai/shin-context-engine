@@ -1,0 +1,4 @@
+interface:
+  display_name: "Shin Context"
+  short_description: "Bootstrap verified context for unknown repositories"
+  default_prompt: "Use $shin-context to discover this repository and load bounded verified context before broad scanning."

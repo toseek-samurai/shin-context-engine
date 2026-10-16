@@ -1,0 +1,43 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-docs",
+  "status": "active",
+  "summary": "Bootstrap-only profile for repositories that contain documentation but no recognized language source family.",
+  "id": "generic-docs",
+  "sourceLabel": "Generic project documentation",
+  "rootFiles": [],
+  "optionalRootFiles": ["README.md", "readme.md", "AGENTS.md"],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": [],
+  "sourceFactExtensions": [],
+  "sourceFactExtractors": ["language"],
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "markdownMaxHeadingLevel": 4,
+  "markdownChunkLines": 24,
+  "markdownChunkMinLines": 12,
+  "markdownChunkChars": 1800,
+  "jsonKeyMaxDepth": 3,
+  "jsonKeyMaxSectionsPerFile": 120,
+  "jsonlMaxRowsPerFile": 5000,
+  "sortTopics": true,
+  "defaultTopic": "documentation",
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "documentation",
+      "description": "General project documentation and machine-readable context.",
+      "keywords": ["documentation", "readme", "guide", "reference", "project"]
+    },
+    {
+      "id": "architecture",
+      "description": "Architecture, contracts, and decisions.",
+      "keywords": ["architecture", "contract", "decision", "adr", "design"]
+    },
+    {
+      "id": "operations",
+      "description": "Operations, deployment, and runbooks.",
+      "keywords": ["operations", "deployment", "runbook", "rollback", "incident"]
+    }
+  ]
+}

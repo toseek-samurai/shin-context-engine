@@ -1,0 +1,24 @@
+{
+  "schemaVersion": "shin.observer-desktop-plan.v1",
+  "document": "shin-observer-desktop-plan-v1",
+  "status": "active-contract",
+  "title": "Optional Observer Desktop Integration",
+  "summary": "Keep desktop controls and query views as optional adapters around the local Observer and Core contracts.",
+  "ownership": {
+    "core": "Owns profile selection, indexing, retrieval, and evidence schemas.",
+    "observer": "Owns local source observation, state, and explicit delivery.",
+    "desktop": "Owns user-facing status, command dispatch, and display of typed results."
+  },
+  "interaction": {
+    "statusView": "Show selected route, observation age, queue state, and typed errors.",
+    "queryView": "Submit an explicit bounded query and render evidence with source references.",
+    "actions": "Build, delivery, retention, and profile changes require explicit user actions."
+  },
+  "safety": [
+    "Closing a window does not imply source mutation or queue acknowledgement.",
+    "A displayed result preserves its freshness and verification labels.",
+    "Desktop code does not implement a second ranking or authorization policy.",
+    "The desktop adapter remains optional to portable Core."
+  ],
+  "verificationBoundary": "UI fixtures verify control behavior and rendering only; they do not qualify a deployed service or real project corpus."
+}

@@ -1,0 +1,101 @@
+{
+  "schemaVersion": "shin.retrieval-diagnose-contract.v1",
+  "document": "retrieval-diagnose-v1",
+  "status": "accepted",
+  "title": "Expected-Path Retrieval Diagnose Contract",
+  "summary": "Explain why one canonical repository-relative path was returned, ranked out, excluded, unpublished, unmatched, or absent without scanning the full generated corpus.",
+  "release": {
+    "productVersion": "1.25.0",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "command": {
+    "name": "diagnose",
+    "arguments": "QUERY --expected-path PATH [--limit N] [--per-doc N] [--require-current] [--strict]",
+    "outputSchema": "shin.diagnose.v1",
+    "generatedIndexRequired": true,
+    "sourceScanSupported": false
+  },
+  "expectedPath": {
+    "maximumBytes": 4096,
+    "rules": [
+      "PATH is non-empty repository-relative text",
+      "absolute paths, dot segments, parent traversal, and non-canonical spelling are rejected",
+      "the raw spelling is validated before any root join",
+      "the path is interpreted only within the configured profile and repository root"
+    ]
+  },
+  "execution": {
+    "session": "One RetrievalSession pins the generated publication, freshness proof, and manifest for the complete command.",
+    "primaryRetrieval": "The normal brief request determines whether the expected path is returned and its global unique-path rank.",
+    "budgetProbe": {
+      "limit": 100,
+      "perDocumentLimit": 8,
+      "purpose": "Observe whether a path appears with expanded output budgets. This is not proof that the original route admitted it or that only global ranking excluded it.",
+      "execution": "executed=false and null probe result fields mean the normal request already returned the path; no expanded request was run.",
+      "route": "Report expanded retrieval_mode, candidate_rows and required_group_matches. route_changed compares the reported route names; false is not proof of identical candidate sets or planner decisions."
+    },
+    "sparsePathProbe": {
+      "stores": [
+        "sections",
+        "facts",
+        "decisions",
+        "contracts",
+        "runbooks"
+      ],
+      "algorithm": "Binary-search each path-sorted row-offset index, then inspect only the contiguous rows for the expected path.",
+      "maximumRowsPerStore": 512,
+      "failureRule": "Malformed, non-contiguous, oversized, or incomplete generated row indexes fail closed as index-corrupt."
+    },
+    "publicationState": "Document and source-fact publication state is read from the pinned active manifest, not inferred from current source enumeration.",
+    "outputBoundary": "The result is built under the shared lock and emitted after the retrieval session is destroyed."
+  },
+  "ranking": {
+    "policy": "global-evidence-order-unique-path-v1",
+    "returnedPathRank": "One-based unique path rank in the normal requested brief result, or null.",
+    "rankTable": "retrieval.ranked_paths is the same ordered path table emitted by brief and eval for identical profile, snapshot, query, and limits."
+  },
+  "reasonCodes": [
+    "returned",
+    "source-missing",
+    "excluded-by-profile",
+    "source-fact-skipped-large",
+    "not-in-published-snapshot",
+    "no-indexed-records",
+    "probe-limit-exceeded",
+    "no-query-groups-matched",
+    "below-required-threshold",
+    "returned-with-expanded-budget",
+    "retrieval-route-changed",
+    "not-selected-by-planner",
+    "matched-but-not-returned"
+  ],
+  "resultSemantics": {
+    "ok": "True only when the expected path is present in the normal requested result.",
+    "soft": "Without --strict an unmet expectation returns exit 0 with ok=false for inspection.",
+    "strict": "With --strict an unmet expectation returns exit 1 with the same shin.diagnose.v1 document.",
+    "source": "Reports current regular-file existence, document policy, source-fact configuration, and pinned publication state.",
+    "indexed_rows": "Reports typed row counts, sparse probe completeness, and actual rows examined.",
+    "matching": "Reports the best path-local group match, score, line, record type, evidence kind, verification level, fields, and group indices.",
+    "retrieval": "Reports strict, relaxed, or planned mode, candidate work, coverage, rank table, and planner selection."
+  },
+  "verification": [
+    "returned document and source-fact paths",
+    "expanded-budget return with unchanged route",
+    "expanded request changes relaxed retrieval to document planning without claiming global rank-out",
+    "already returned path does not claim an executed expanded probe",
+    "published but unmatched path",
+    "profile-excluded existing path",
+    "missing and unpublished path",
+    "soft and strict exit behavior",
+    "traversal and non-canonical path rejection",
+    "brief and diagnose rank-table equality",
+    "corrupt sparse row-index rejection"
+  ],
+  "authorityBoundary": "Diagnose explains deterministic retrieval mechanics. It does not declare a source correct, current in product meaning, or more authoritative than its repository contract.",
+  "nonGoals": [
+    "no scoring mutation or automatic profile tuning",
+    "no full-corpus explanation scan",
+    "no semantic or LLM judgment",
+    "no consumer-specific reason codes"
+  ]
+}

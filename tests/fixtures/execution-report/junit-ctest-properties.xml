@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuite name="CTest" tests="1" failures="0" skipped="0" disabled="0">
+  <testcase name="receipt" classname="receipt" time="0.1" status="run">
+    <properties><property name="label" value="core"/></properties>
+    <system-out>SECRET_EXECUTION_PAYLOAD</system-out>
+  </testcase>
+</testsuite>

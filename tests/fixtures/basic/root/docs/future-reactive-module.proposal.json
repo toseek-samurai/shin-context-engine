@@ -1,0 +1,7 @@
+{
+  "schemaVersion": "future-reactive-module-proposal-v1",
+  "status": "proposal-not-implemented",
+  "summary": "A future reactive module proposal that is not current runtime authority.",
+  "proposedModel": "The reactive module may combine bounded evaluation work in a future release.",
+  "entryCriteria": "Current integration readiness must remain independently verifiable."
+}

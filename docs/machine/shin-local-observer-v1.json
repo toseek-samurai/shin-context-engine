@@ -1,0 +1,126 @@
+{
+  "schemaVersion": "shin.local-observer-contract.v1",
+  "document": "local-observer",
+  "status": "active-contract",
+  "title": "Standalone Local Observer And Historical Status",
+  "summary": "P3E2 adds an opt-in local C++ Observer using existing Core content comparison. It works without Git, Server or PostgreSQL and never publishes an index or exports source implicitly.",
+  "nonGoals": [
+    "OS event subscription",
+    "distributed conflict resolver",
+    "network transport",
+    "durable outbox",
+    "multi-binding scheduler",
+    "automatic publication",
+    "arbitrary process execution",
+    "global skill/service installation",
+    "stable Server 2.0 release"
+  ],
+  "currentContract": "docs/machine/shin-observer-outbox-v1.json",
+  "delivery": "Separate observer/CMakeLists.txt and observer/VERSION. Links native Core and OpenSSL Crypto, not Server, libpqxx, HTTP or a scripting wrapper. Existing Core CLI remains the local retrieval/publication tool; no second ranker or CLI subprocess is embedded.",
+  "configuration": {
+    "schema": "shin.observer-config.v1",
+    "exactFields": [
+      "schema_version",
+      "observer_id",
+      "source_host_id",
+      "project_id",
+      "workspace_id",
+      "root",
+      "profile",
+      "profile_dir",
+      "out_dir",
+      "state_dir",
+      "poll_interval_ms",
+      "max_snapshot_bytes",
+      "max_file_bytes"
+    ],
+    "identifiers": "Explicit bounded ids use the Server workspace grammar. Config does not enroll the Observer with Server or prove remote producer identity.",
+    "paths": "Config and all paths are absolute and normalized without symlink components. State directory must already exist, be owner-only 0700, and be disjoint from source, index output and profile directory. Source and out-dir cannot overlap. Config is an owner-only 0600 single-link regular file outside source/out-dir. Initial source directory must exist; later loss/replacement is observed as error, not automatic reattachment.",
+    "ownership": "Local OS-user ownership protects metadata, not a sandbox against the same UID, privileged replacement, NFS/SMB or a malicious administrator.",
+    "binding": "Persisted binding includes project/workspace/observer/source-host ids, root/profile/profile-directory/output/state paths and state-directory dev:ino. SHA256 binding key plus initial source-directory dev:ino prevent accidental state reuse or source-root replacement. Operational polling/byte limits may change on restart without changing logical binding.",
+    "updates": "Config is loaded once per command/process; reconfiguration requires explicit restart. Profile bytes are freshly loaded and verified before/after every sample, so changing profile policy cannot retain a false current observation.",
+    "limits": "poll_interval_ms 100..60000, max_snapshot_bytes 1..1GiB, max_file_bytes 1..max_snapshot_bytes. JSON state is capped at 256KiB and nesting at 32; no unbounded history list. Profile-owned source limits remain Core policy. Snapshot/metadata byte caps are not total RSS or hard scan deadlines."
+  },
+  "commands": {
+    "version": [
+      "shin-observer",
+      "--version"
+    ],
+    "sample": [
+      "shin-observer",
+      "sample",
+      "--config",
+      "/absolute/private/observer.json"
+    ],
+    "watch": [
+      "shin-observer",
+      "watch",
+      "--config",
+      "/absolute/private/observer.json"
+    ],
+    "boundedWatch": [
+      "shin-observer",
+      "watch",
+      "--config",
+      "/absolute/private/observer.json",
+      "--samples",
+      "50"
+    ],
+    "status": [
+      "shin-observer",
+      "status",
+      "--config",
+      "/absolute/private/observer.json"
+    ],
+    "responses": "shin.observer-response.v1, explicit Observer/Core versions and development stability. sample and watch return the committed state; status returns a metadata-only wrapper. Failures are bounded JSON on stderr, exit 1. Successful sample may contain an error/stale/incomplete observation: process success means state was recorded, not source readiness.",
+    "watchBehavior": "One binding and one non-overlapping sample per process. Periodic exact rescan, then the configured wait; no per-sample stdout stream or background installation. Optional --samples is 1..1000; omitted watch runs until SIGINT/SIGTERM. Lock-free signal flag is checked between samples and during short waits. An ongoing Core scan is not forcibly interrupted.",
+    "localRetrieval": "Use the existing Core CLI with exactly the same profile/root/profile-dir/out-dir for search, Brief, Pack, Impact, ready and explicit build. No Server or Git round trip. Observer has no native retrieval socket, warm query cache, MCP or automatically executed next command in this slice."
+  },
+  "observation": {
+    "states": [
+      "current",
+      "stale",
+      "unpublished",
+      "incomplete",
+      "error"
+    ],
+    "meaning": "current means the selected local source inventory matches one integrity-verified snapshot during this sampling interval. It does not mean Doctor/Eval/Pack/adoption checks passed, tests executed, code deployed or the shared Server publication is current. readiness_assessed is always false.",
+    "implementation": "Reuse Core observe_worktree, compare_worktree and load_verified_snapshot. Hold the existing Core shared publication lock only through one snapshot comparison. Verify source-root identity and profile stability after comparison; inherited Core inventory stability guards remain active. No lock survives into the idle wait.",
+    "fields": "Status and reason, capture start/end epoch milliseconds, measured monotonic duration, snapshot/worktree/profile fingerprints, source file inventory counts, aggregate change counts and omitted-detail count. Persistent state excludes per-file paths, source snippets, queries, credentials and chat transcripts; configured binding paths remain local private metadata.",
+    "completeness": "Capped or skipped source-fact files produce incomplete, never current. Missing publication produces unpublished; malformed/oversized/in-progress publication or unsafe source/profile input produces error. Error observations clear all derived fingerprints/counts rather than retaining apparently valid partial evidence.",
+    "sourceChangeClock": "Content/profile fingerprints, not Git commits or wall-clock ordering. Ordinary edits without commits are detected; equal content in different workspaces never merges their persistent identities.",
+    "coverage": "Periodic samples are not a journal of every save. Transient edits between samples may not appear; facts outside the selected profile remain outside scope. A current observation never freezes the filesystem after sampling."
+  },
+  "localState": {
+    "schema": "shin.observer-state.v1",
+    "files": [
+      "observer.lock",
+      "state.json",
+      "state.pending"
+    ],
+    "sequence": "Monotonic sequence in the retained committed state, new random 128-bit epoch for each writer run. These are local continuity metadata, not Server acknowledgement or a durable outbound cursor.",
+    "lifecycle": "assessing, waiting and stopped. A valid prior non-stopped state sets previous_run_interrupted on the new run; saved assertions are not reused as current source proof.",
+    "writes": "A descriptor-relative nonblocking exclusive flock fences the writer. Validate binding before recovery. Write private state.pending, fsync it, atomically rename to state.json, fsync directory, and recheck directory/lock identity. Read-only status never creates files or repairs state. Only fixed owned staging names may be recovered.",
+    "recovery": "With valid committed state, safe leftover state.pending is uncommitted scratch and may be discarded under the writer lock. Without state.json, only a complete same-binding initial pending state with sequence=0 and null observation can be discarded. Partial/mismatched pending state or a pending observation without its committed predecessor fails closed for explicit operator review; staging bytes are never promoted into accepted history.",
+    "corruption": "Malformed, foreign-binding or internally inconsistent state is rejected without rewriting it. Loss of all local state means continuity is unavailable, not reconstructed from Git or a guessed prior sequence.",
+    "notOutbox": "Latest-only metadata, not a durable event log, immutable receipt history, unacknowledged queue or source backup. No outbox losslessness or network replay guarantee is claimed. Those need a separate implementation and protocol."
+  },
+  "statusCommand": {
+    "readOnly": true,
+    "liveSourceVerified": false,
+    "age": "within-ttl, expired, time-uncertain or unavailable. TTL is max(3*poll_interval_ms,1000ms). An observation in the future relative to this host clock is time-uncertain. Age is historical metadata, never source freshness; exact-current Core checks remain required before retrieval.",
+    "liveness": "writer_lock_held reports an observed cooperating writer lock, not a remote heartbeat or a proof that the process is progressing. No PID is trusted or killed by status.",
+    "synchronization": "not-implemented, not an invented online/offline Server assessment."
+  },
+  "relatedContracts": [
+    "docs/machine/shin-server-observer-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/shin-server-workspaces-v1.json",
+    "docs/machine/worktree-diff-v1.json"
+  ],
+  "sources": [
+    "https://man7.org/linux/man-pages/man2/rename.2.html",
+    "https://man7.org/linux/man-pages/man2/fsync.2.html",
+    "https://man7.org/linux/man-pages/man2/flock.2.html"
+  ]
+}

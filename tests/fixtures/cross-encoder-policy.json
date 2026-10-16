@@ -1,0 +1,28 @@
+{
+  "schema_version": "shin.cross-encoder-reference-policy.v1",
+  "model": "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1",
+  "revision": "1427fd652930e4ba29e8149678df786c240d8825",
+  "license": "apache-2.0",
+  "model_sha256": "3e9a03ed1e966f7c5288dd4230e3d6a9bf5e3a170a06f1f4241c5bca12c6487c",
+  "files": {
+    "model.onnx": "3e9a03ed1e966f7c5288dd4230e3d6a9bf5e3a170a06f1f4241c5bca12c6487c",
+    "tokenizer.json": "62c24cdc13d4c9952d63718d6c9fa4c287974249e16b7ade6d5a85e7bbb75626",
+    "config.json": "cc2cfe51aa3fd759d21d21acf5dfd6994aa67a3c9210636d22e143699d336c77",
+    "tokenizer_config.json": "e7fbfbfa6347b4e414c1cee50d142e2c2f9a895dad68b068ae83a8b564c3837e",
+    "special_tokens_map.json": "378eb3bf733eb16e65792d7e3fda5b8a4631387ca04d2015199c4d4f22ae554d"
+  },
+  "runtime": {"fastembed": "0.8.1", "onnxruntime": "1.30.0", "tokenizers": "0.23.2", "numpy": "2.4.6"},
+  "max_model_bytes": 629145600,
+  "max_tokens": 512,
+  "threads": 4,
+  "batch_size": 2,
+  "max_candidates": 20,
+  "per_document": 2,
+  "max_text_bytes": 65536,
+  "max_run_seconds": 600,
+  "max_peak_rss_bytes": 3221225472,
+  "input": "Unchanged selected top20 and pinned redacted parent text. No added candidates, prefixes, source reads or query rewriting.",
+  "ordering": "Descending library cross-encoder logit, original rank as tie break. Preserve existing distinct-path-first display and then extra ranges. No score threshold, weighting or expected-path input.",
+  "bypass": "Only native identifier-scoped or owner-scoped routes bypass reranking, independent of evaluation labels.",
+  "acceptance": "No protected first5 or top20 hit lost; at least one old first5 miss improves; predeclared four new Shin questions all find the implementation in first5 without losing a baseline hit. Preserve candidate identities/provenance and negative no-authority/no-existence boundaries. Success is not automatic activation or answer completeness."
+}

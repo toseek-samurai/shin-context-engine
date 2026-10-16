@@ -1,0 +1,22 @@
+{
+  "schemaVersion": "shin.observer-state-read-contract.v1",
+  "document": "observer-state-read",
+  "status": "active-contract",
+  "summary": "Bounded read-only Observer state reads during atomic publication, without relaxing private-file safety or inventing source freshness.",
+  "origin": "The P3E13 sanitizer aggregate found state-unsafe in the unchanged Observer dev.18 watch/status test. A normal atomic rename can leave an already opened old file with link count zero. Checking descriptor permissions before classifying metadata change misidentifies that publication race as unsafe input.",
+  "policy": {
+    "read": "Validate the named file first, then compare its full stamp with the opened descriptor before interpreting changed descriptor permissions/link count. A changed stamp is state-changed, never proof that the replacement is safe.",
+    "retry": "StateStore::load performs at most three complete read attempts, and only retries state-changed/file-changed. Each attempt rechecks directory identity, named file privacy, descriptor identity, bounded content, final stamps and JSON validity. Exhaustion returns state-changed; no unbounded loop or sleep.",
+    "unsafe": "A stable symlink, hard link, wrong owner/mode, oversized or malformed file still fails. The reader never accepts an unsafe replacement, returns partial JSON, repairs pending state, writes a file, obtains the writer lock or validates live project sources.",
+    "scope": "No new configuration or persisted-state format. Server, Core and global stable delivery are unchanged by this Observer correction."
+  },
+  "implementationPaths": [
+    "observer/src/io.cpp"
+  ],
+  "sources": [
+    {
+      "url": "https://pubs.opengroup.org/onlinepubs/9799919799/functions/rename.html",
+      "use": "POSIX rename removes the replaced link while open file references can remain alive; zero-link descriptors are a possible publication interleaving."
+    }
+  ]
+}

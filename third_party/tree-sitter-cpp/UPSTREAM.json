@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "tree-sitter-cpp",
+  "repository": "https://github.com/tree-sitter/tree-sitter-cpp",
+  "version": "v0.23.4",
+  "commit": "f41e1a044c8a84ea9fa8577fdd2eab92ec96de02",
+  "license": "MIT",
+  "vendoredPaths": ["src/parser.c", "src/scanner.c", "src/tree_sitter"],
+  "localPatches": ["Explicit void parameter in the C11 scanner factory prototype"],
+  "upstreamArchiveSha256": "ad4b9b56602e9b14082637988f0042521006819960ed8c308bc24ded9ceb9331"
+}

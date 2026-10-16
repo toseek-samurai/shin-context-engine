@@ -1,0 +1,51 @@
+{
+  "schemaVersion": "shin.retrieval-journal-epochs-contract.v1",
+  "document": "shin-retrieval-journal-epochs-v1",
+  "status": "active-contract",
+  "summary": "P3E19 database-issued producer epochs and explicit bounded reclamation of a fully retired prefix, without unbounded producer tombstones or implicit reenrollment.",
+  "currentExtension": "This is the verified P3E19 epoch lifecycle baseline. P3E20 in docs/machine/shin-journal-writer-v1.json adds optional background capture while preserving these fences; consult that contract and evidence for current configuration and verification status. Automatic retention/reclamation are still not implemented.",
+  "scope": "Journal lifecycle only. Retrieval, publication, source authority, Observer protocols and stable1.26 delivery are unchanged. Asynchronous capture and automatic retention are not part of this slice.",
+  "admission": {
+    "native": "Store::register_journal_producer takes exact instance_id/source_host_id/server_version/core_version provenance. Under the common journal writer transaction lock it returns the existing exact registration or allocates the next producer_epoch and row atomically. This native operation is not an arbitrary public event-import endpoint.",
+    "lifetime": "RetrievalService registers lazily on the first authorized capture, using a separate registration mutex. Once acknowledged, the epoch is retained for that service lifetime even if capture later fails or the producer is reclaimed. No capture operation may silently register again. A deliberate process restart establishes a new random instance identity.",
+    "atomicity": "Registration and fact capture are separate transactions. Failed initial capture may leave an admitted empty producer; it never commits partial facts or sequence progress. Registration acknowledgement loss before any capture may be retried idempotently. The lifetime cache is set before any capture can occur, preventing captured observations from being automatically rebound after reclamation.",
+    "allocator": "The singleton allocated_through counter is incremented only in the committed producer-registration transaction. It is not a PostgreSQL sequence, timestamp, client-supplied epoch or durable count inferred from random process IDs. INT64 exhaustion fails closed. Reclamation frees row capacity, not the monotonic identity space."
+  },
+  "capture": "Every native batch and persisted fact carries producer_epoch. Capture never creates a producer: epochs at or below reclaimed_through fail journal-producer-reclaimed409, unknown or mismatched bindings fail journal-producer-conflict409. Existing sequence retry, missing/backfill and per-producer retirement rules apply above that fence. The existing v1 record_hash covers the payload without producer_epoch; the registered epoch is independently checked and enforced by the composite database foreign key. Migration does not rewrite historical payload hashes.",
+  "api": {
+    "plan": "GET /api/v1/telemetry/retrieval/journal/epochs/reclamation?through=N; admin only. Read-only preview of at most32 epochs above the durable reclaimed prefix. Every selected producer must have retired_through=observed_through, matching retired/lifetime counts and no retained facts. No liveness claim is inferred from inactivity or a timestamp.",
+    "apply": "POST the same path with exact {plan:OBJECT,discard_future_confirmed:true}; admin only, no query parameters. Recompute and compare the plan under the journal writer lock, then delete producer rows, advance the epoch fence, transfer historical totals and save the latest receipt in one transaction. New epochs above through do not invalidate a plan; changed selected producer progress does.",
+    "consequence": "Confirmation deliberately permits refusing all future captures from selected producer lifetimes, including a still-running process. Its normal retrieval continues; journal capture reports the reclaimed binding and never rotates it implicitly. Callers must inspect producer identities before applying; this is global epoch-prefix scope, not one project's operation.",
+    "retry": "The latest exact plan repeats the saved receipt without another write, after first checking Server identity. Older or modified plans fail stale after a subsequent operation. A recovered deployment does not accept old-server plans."
+  },
+  "plan": "shin.retrieval-journal-reclamation-plan.v1 identifies server_id, all-producers-in-epoch-prefix scope, previous reclaimed_through, through, producer_count, captured_count, missing_count, a bounded producers array, its canonical prefix_sha256, previous_receipt_sha256 and plan_id. Producer entries expose instance/epoch, source host, Server/Core versions and observed/captured/missing counts. No queries, source snippets or credentials are included.",
+  "receipt": "shin.retrieval-journal-reclamation-receipt.v1 contains the exact plan identity, previous/current epoch fences, removed producer/count totals, principal and database timestamp, explicit discard_future_confirmed, external_archive_verified=false, source_mutated=false and publication_mutated=false. Only the latest {plan,receipt} is retained, with a defensive65536 JSONB byte limit; this is not an unlimited audit archive.",
+  "retention": "New per-producer retention plans include producer_epoch so an old plan cannot target a later registration of the same instance identifier. Receipt shape is unchanged and its plan_id binds the reviewed plan. Historical stored retention receipts remain byte-identical on migration; old unbound pending plans require a fresh preview.",
+  "reporting": "Existing captured_count remains retained facts. Lifetime captured, retired facts and known/retired missing totals now include reclaimed producer totals from the singleton. producer_count counts current rows; allocated_producer_epochs, reclaimed_through_epoch and reclaimed_producer_count expose lifecycle position. Reports still do not describe all traffic or agent usefulness. Removed producer detail is unavailable; cumulative totals remain, without fabricated per-project attribution.",
+  "limits": {
+    "activeProducers": 128,
+    "facts": 8192,
+    "reclamationProducers": 32,
+    "retentionFacts": 256,
+    "automaticReclamation": false,
+    "automaticCapture": false
+  },
+  "prefixBoundary": "An earlier producer with unretired observations blocks reclamation of every later epoch. The operator must first review and retire that prefix; the server never skips it, infers death from inactivity, or silently fences a live producer to reclaim capacity. Bounded prefix reclamation is not arbitrary per-producer garbage collection.",
+  "errors": "journal-reclamation-range409 for empty/backward/future prefixes; journal-reclamation-too-large409 above32 producers; journal-producers-not-retired409 before all selected observed sequences are retired; journal-reclamation-stale409 for changed plans; journal-capacity507 at active producer/fact capacity; journal-epoch-exhausted507 at allocator exhaustion; malformed bounds/confirmation400 and forbidden403. SQL failure rolls the mutation back.",
+  "migration": "016 appends epoch columns, unique/composite provenance constraints, the lifecycle singleton and identifier-scoped mode acceptance. Existing producers receive committed epochs in deterministic created_at/instance order; existing facts bind to their producer. All001..015 migration bytes, fact hashes, observation timestamps and retention receipts are preserved. Runtime may update lifecycle but cannot insert/delete its singleton; migration/recovery retain separate authority.",
+  "sources": [
+    {
+      "url": "https://www.postgresql.org/docs/18/functions-sequence.html",
+      "use": "Sequences allocate distinct values but are not gapless or transactionally rolled back; the committed prefix allocator therefore uses a locked singleton row."
+    },
+    {
+      "url": "https://opentelemetry.io/docs/specs/otel/logs/sdk/",
+      "use": "Bounded telemetry, serialized export and explicit shutdown/flush semantics inform the later asynchronous writer, which is not implemented here."
+    }
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-retrieval-journal-v1.json",
+    "docs/machine/shin-retrieval-journal-retention-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

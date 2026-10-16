@@ -1,0 +1,95 @@
+{
+  "schemaVersion": "shin.worktree-diff-contract.v1",
+  "document": "worktree-diff-v1",
+  "status": "accepted",
+  "title": "Verified Snapshot To Worktree Diff Contract",
+  "summary": "Report profile-owned unpublished source drift against one integrity-verified Shin snapshot without Git, rebuilding the index, or interpreting product semantics.",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "command": {
+    "name": "worktree-diff",
+    "arguments": "[--limit N] [--strict]",
+    "outputSchema": "shin.worktree-diff.v1",
+    "profileRequired": true,
+    "generatedIndexRequired": true,
+    "sourceMutationAllowed": false,
+    "indexMutationAllowed": false,
+    "gitRequired": false
+  },
+  "baseline": {
+    "source": "The active out-dir manifest and its declared generated files.",
+    "integrity": "load_verified_snapshot validates layout, publication state, manifest metadata, output declarations, file hashes, byte counts, and undeclared generated entries before comparison.",
+    "profileRule": "The baseline profile id must equal the active profile id. A mismatch fails as configuration error rather than producing an ambiguous diff.",
+    "recordedInputs": [
+      "manifest sources",
+      "manifest source_fact_sources",
+      "source_fact_counts candidate_files and capped_files",
+      "manifest generator_version",
+      "manifest profile_config_hash"
+    ]
+  },
+  "worktree": {
+    "scope": "Only paths selected by the active profile document and source-fact policies are enumerated. Relevant untracked files are included; excluded paths remain outside the result.",
+    "documents": "Current document inputs are compared by canonical relative path, exact content hash, and byte count.",
+    "sourceFacts": "Current source-fact inputs are compared by canonical relative path, scan status, exact content hash when scanned, and byte count.",
+    "identity": "worktree_id is a deterministic FNV-1a-64 identity over profile id, profile config hash, bounded source-fact inventory counts, and the sorted current input inventory. It is not cryptographic authentication.",
+    "concurrency": "After hashing, both configured inventories and every observed file metadata tuple are checked again. Concurrent mutation fails closed instead of publishing a mixed observation."
+  },
+  "comparison": {
+    "policy": "profile-owned-source-content-v1",
+    "changeKinds": [
+      "added",
+      "removed",
+      "changed"
+    ],
+    "categories": [
+      "metadata",
+      "document",
+      "source-fact"
+    ],
+    "metadata": [
+      "generator_version",
+      "profile_config_hash",
+      "source_fact_inventory"
+    ],
+    "semanticChangeClaim": false,
+    "rule": "The command reports exact input drift. A move may appear as remove plus add, and textual drift is not interpreted as a behavioral or architectural change."
+  },
+  "result": {
+    "ok": "Equals current.",
+    "current": "True only when metadata, document inputs, source-fact inputs, and bounded source-fact inventory counts match the verified baseline.",
+    "soft": "Without --strict, verified drift returns exit 0 with ok=false and current=false.",
+    "strict": "With --strict, verified drift returns exit 1 with the same complete result document.",
+    "details": "One deterministic global detail budget covers every category. Each source detail exposes baseline and worktree hash, bytes, and source-fact status when applicable.",
+    "detailsOmitted": "Exact counted changes not emitted after the global detail limit."
+  },
+  "limits": {
+    "detailLimitDefault": 100,
+    "detailLimitMaximum": 1000,
+    "snapshotLimits": "The existing verified-snapshot byte, file-count, and integrity-table limits apply.",
+    "sourceLimits": "The active profile source-fact file-count and file-size bounds apply unchanged."
+  },
+  "agentUse": {
+    "normal": "Run after opening a verified index when active implementation work may have changed the repository since publication.",
+    "interpretation": "Use details as a bounded list of unpublished paths, then open those source files directly. Do not treat worktree_id as a replacement snapshot or retrieval receipt.",
+    "rebuildBoundary": "Use build and normal strict gates when the changed worktree itself must become retrievable. worktree-diff never patches or overlays generated rows."
+  },
+  "verification": [
+    "unchanged worktree produces byte-identical current results",
+    "document edit, source-fact edit, addition, and removal",
+    "profile and generator metadata drift",
+    "bounded detail omission accounting",
+    "soft and strict exit behavior",
+    "profile mismatch and unsupported option rejection"
+  ],
+  "nonGoals": [
+    "no Git status, commit, branch, or ignore-file interpretation",
+    "no incremental generated index or query overlay",
+    "no semantic diff or conflict report",
+    "no daemon, filesystem watcher, MCP transport, or background process",
+    "no source mutation, repair, or publication"
+  ]
+}

@@ -1,0 +1,81 @@
+{
+  "schemaVersion": "shin.warm-snapshot.v1",
+  "document": "shin-warm-snapshot-v1",
+  "status": "active-contract",
+  "title": "Immutable Generated Snapshot And Request Admission",
+  "summary": "P2 Core foundation separates owned immutable artifact bytes from publication locks and per-request source freshness; retrieval algorithms remain shared with the CLI.",
+  "generator": "shin-generator-v17-explicit-authority",
+  "implementationStatus": "implemented-native-foundation",
+  "buildInterface": {
+    "target": "shin-context-core",
+    "kind": "CMake STATIC library",
+    "embed": "Set SHIN_CONTEXT_BUILD_CLI=OFF before adding this source tree as a CMake subdirectory; link the caller to shin-context-core. HTTP, PostgreSQL and Server policy are not Core dependencies.",
+    "api": [
+      "GeneratedSnapshot::load(options, limits)",
+      "RetrievalSession(snapshot, require_current)",
+      "RetrievalSession::search/context/brief",
+      "execute_agent_context_pack with the same admitted session"
+    ]
+  },
+  "scope": [
+    "Reusable native Core library",
+    "Immutable loaded generated artifacts",
+    "Independent per-query stream cursors",
+    "Snapshot-only and exact-current request admission",
+    "CLI/in-memory search, context, Brief and Pack parity"
+  ],
+  "notYetAvailable": [
+    "Observer invalidation",
+    "Durable publication jobs",
+    "UI",
+    "MCP"
+  ],
+  "serverIntegration": "Authorized search/Brief/Pack routes and bounded global residency are described in shin-server-retrieval-v1. The earlier native-foundation benchmark remains historical dev.2 evidence, not HTTP capacity.",
+  "ownership": {
+    "snapshot": "GeneratedSnapshot owns verified manifest and immutable artifact bytes in a private unlinked file mapping, plus the selected root/output/profile route. Streaming capture verifies the existing hashes before mapping; source truncation or replacement cannot mutate the retained inode. It owns no IndexLock, thread, source files, freshness claim or lazy mutable query cache.",
+    "request": "RetrievalSession owns request admission metadata and a shared immutable generation. Each GeneratedInput has its own cursor. Concurrent requests never seek one shared stream.",
+    "cli": "Short-lived CLI sessions may retain their existing reader lock and read filesystem artifacts. The same row decoders, candidate discovery, ranking, evidence projection and Pack selection operate on both backings.",
+    "server": "Server owns route authorization, active-generation choice, aggregate resident budgets and eviction. A Core per-generation load cap is not a server-wide cache or RSS cap."
+  },
+  "load": {
+    "locking": "Hold an existing shared publication lock only while verifying and capturing one complete generation. Release it before returning the immutable owner.",
+    "validation": "Require matching profile id/config fingerprint and generator, exact manifest/output integrity and safe generated layout. Validate byte budgets before hashing each artifact, then hash the captured bytes against the same manifest.",
+    "limits": {
+      "defaultPayloadBytes": 268435456,
+      "defaultFileBytes": 67108864,
+      "hardMaximumPayloadBytes": 1073741824
+    },
+    "memoryAccounting": "Payload bytes count manifest and stored artifact text, not resident RAM. The private backing inode consumes temporary disk space until its last mapping closes, including process termination. Read-only mapped pages are faulted on demand. C++ metadata, temporary buffers and request allocations are additional; RSS and macOS physical footprint are measured separately.",
+    "format": "Generator identity is unchanged because this is an in-process representation, not a new persisted index format or compatibility reader."
+  },
+  "freshness": {
+    "snapshotOnly": "A loaded-session constructor with require_current=false reports verified-generated-snapshot, not-assessed source freshness and the captured snapshot id. It can continue reading historical bytes after publication changes or artifact removal.",
+    "requireCurrent": "Acquire a short shared publication lock, perform the existing exact-current assessment and require its manifest id to equal the captured generation. Release the lock before retrieval. A changed active generation is rejected; the caller must explicitly select and admit a new generation.",
+    "continuityEvaluation": "Core dev13 adds the existing verified_snapshot/verified_current open modes for a resident RetrievalSession. These modes retain the shared lock for one bounded checkpoint/resume/Impact evaluation that compares source and publication. They do not change the original bool constructor or give the long-lived GeneratedSnapshot a lock. The native evaluator rejects an inconsistent supplied root/output/profile binding.",
+    "observationBoundary": "Freshness is assessed at request admission, not a promise that external files cannot change afterward. RAM residency never prolongs the proof. A later request must assess again.",
+    "noFallback": "A missing artifact in a loaded view is an error, never permission to read that artifact from the current filesystem publication or mix generations.",
+    "noSideEffects": "Admission and query do not rebuild, repair, publish, adopt, execute commands or mutate source."
+  },
+  "verification": {
+    "required": [
+      "Native disk/memory evidence parity",
+      "Serial/parallel Pack identity",
+      "Independent concurrent cursors",
+      "Publication completes while an old loaded session remains alive",
+      "Old and new generations remain distinct",
+      "Retrieval survives removal of generated files after load",
+      "Current admission detects source drift and changed publication",
+      "Byte bounds and corruption rejection",
+      "ASan/UBSan/LSan",
+      "Scoped static analysis",
+      "Measured load/query baseline"
+    ]
+  },
+  "relatedContracts": [
+    "docs/machine/shin-server-plan-v1.json",
+    "docs/machine/retrieval-evidence-v1.json",
+    "docs/machine/agent-context-pack-v1.json",
+    "docs/machine/batch-retrieval-v1.json",
+    "docs/machine/trust-boundary-hardening-v1.json"
+  ]
+}

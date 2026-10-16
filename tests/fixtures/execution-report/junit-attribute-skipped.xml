@@ -1,0 +1,4 @@
+<testsuite name="attributes" tests="2" failures="0" errors="0" skipped="2">
+  <testcase name="notrun" status="notrun"/>
+  <testcase name="disabled" disabled="true"/>
+</testsuite>

@@ -1,0 +1,119 @@
+{
+  "schemaVersion": "shin.agent-readiness-contract.v1",
+  "document": "shin-agent-readiness-v1",
+  "status": "accepted",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority",
+    "indexCompatibility": "Only current generator-v17 snapshots are retrievable; rebuild earlier publications explicitly."
+  },
+  "summary": "Verify whether one explicit profile route is ready for an agent to request Brief or Pack context, then return one compact fail-closed readiness envelope.",
+  "command": {
+    "name": "ready",
+    "syntax": "shin-context --profile PROFILE --profile-dir PROFILE_DIR --root PROJECT --out-dir INDEX ready [--marker FILE] [--routing-config FILE --task QUERY] [--limit N] [--strict] [--verbose]",
+    "outputSchema": "shin.agent-readiness.v1",
+    "requireCurrent": true,
+    "buildIncluded": false,
+    "profileSwitchAllowed": false,
+    "snapshotMutationAllowed": false,
+    "consumerMutationAllowed": false,
+    "exitPolicy": "Exit 0 only when every required route/adoption identity is aligned, worktree-diff is current, and compact aggregate validation passes. Otherwise emit the complete readiness envelope and exit 1."
+  },
+  "steps": [
+    {
+      "id": "suggest-profile",
+      "requiredWhen": "--routing-config and --task are supplied together",
+      "command": "suggest-profile --from-root <root>",
+      "passCondition": "state=current-route and recommendation profile, canonical profile registry, canonical root, and optional marker match the explicit invocation"
+    },
+    {
+      "id": "adoption-check",
+      "requiredWhen": "--marker is supplied",
+      "command": "adoption-check",
+      "passCondition": "marker passes its normal semantic contract, marker.profile.id equals --profile, and marker.index.key equals the --out-dir basename"
+    },
+    {
+      "id": "worktree-diff",
+      "requiredWhen": "route and adoption prerequisites are aligned",
+      "command": "worktree-diff",
+      "passCondition": "the verified publication is exact-current against profile-owned worktree inputs"
+    },
+    {
+      "id": "validate",
+      "requiredWhen": "route and adoption prerequisites are aligned",
+      "command": "validate --summary --require-current",
+      "passCondition": "all six profile, index-integrity, and retrieval-quality gates pass; adoption remains a separate readiness step"
+    }
+  ],
+  "execution": {
+    "prerequisitePolicy": "Routing is evaluated before adoption. A route mismatch opens no output index. Adoption is evaluated before index access. An adoption mismatch skips worktree and validation.",
+    "snapshotBoundary": "After prerequisites pass, ready opens the existing shared index lock across worktree-diff and validate so both observe one publication boundary. Missing lock or snapshot returns rebuild-index without creating any files or directories. Readiness never repairs the optional freshness cache.",
+    "nestedCommandPolicy": "Existing command implementations execute in-process and emit one captured JSON result. No shell, subprocess, alternate validator, retrieval path, or ranker is introduced.",
+    "diagnosticPolicy": "Default output uses shin.validation-summary.v2 and projects successful and failed steps to compact bounded identity, summary, failed-gate, and reason-code fields. diagnostic_ids identify each failed step. --verbose invokes full shin.validation.v1 and retains complete nested step results.",
+    "remediationPolicy": "When a deterministic safe follow-up exists, next_command returns a JSON argv array plus explicit mutation flags. It is never a shell string and is never executed automatically.",
+    "failFast": "Independent validation gates remain non-fail-fast. Route and adoption are explicit safety prerequisites rather than hidden fallbacks."
+  },
+  "options": {
+    "marker": "Accepts the same safe absolute or dotted path normalization below --root as adoption-check and validate.",
+    "routing": "--routing-config and --task must be supplied together. Ambiguous, no-match, and cross-route recommendations make the current invocation not ready; ready never follows the recommendation automatically.",
+    "limit": "Bounds worktree-diff details to 1-100; default 20.",
+    "strict": "Forwards strict policy to adoption-check, worktree-diff, and aggregate validation. Readiness always requires current worktree and current eval/Pack evidence."
+  },
+  "output": {
+    "identityFields": [
+      "schema_version",
+      "tool",
+      "command",
+      "ok",
+      "ready",
+      "profile",
+      "root",
+      "out_root",
+      "marker",
+      "strict",
+      "require_current"
+    ],
+    "alignment": "Reports routing and adoption requirement/alignment booleans independently from nested command execution status.",
+    "summary": "Reports attempted, passed, failed, skipped, readiness requirement failures, worktree current status, and validation status.",
+    "nextActions": [
+      "resolve-profile-route",
+      "repair-adoption-invocation",
+      "rebuild-index",
+      "inspect-validation-failures",
+      "brief-or-pack"
+    ],
+    "stepStatuses": [
+      "passed",
+      "failed",
+      "skipped"
+    ]
+  },
+  "ownership": {
+    "core": "Owns option parsing, prerequisite ordering, exact invocation alignment, shared snapshot lock, nested command capture, compact result projection, and next-action classification.",
+    "routingConfig": "Owns product and ecosystem routing signals, project roots, profiles, registries, and marker paths.",
+    "adoptionMarker": "Owns permanent profile id, external index key, context epoch, and required project quality gates.",
+    "agent": "Owns the task query, whether a known route needs routing verification, rebuilding stale output, and the later Brief or Pack request."
+  },
+  "nonGoals": [
+    "No build, repair, vacuum apply, profile switch, federation, or context retrieval.",
+    "No automatic marker or routing-config discovery.",
+    "No daemon, watcher, MCP server, IDE process control, or background mutation.",
+    "No replacement for release, sanitizer, performance, or ecosystem gates."
+  ],
+  "acceptance": {
+    "runner": "tests/run_ready_tests.sh",
+    "requiredEvidence": [
+      "known-route readiness without adoption",
+      "strict adopted readiness with canonical absolute marker normalization",
+      "byte-identical repeated ready result",
+      "marker profile and index-key alignment",
+      "cross-route and no-match results skip index access",
+      "adoption mismatch skips index access",
+      "unpublished worktree drift returns rebuild-index",
+      "rebuild-index returns a non-executed build argv with index mutation true and consumer mutation false",
+      "default failures omit nested validation gates while --verbose retains them",
+      "invalid routing option pairs and unknown options fail with typed usage errors",
+      "relocated portable install includes and executes ready"
+    ]
+  }
+}

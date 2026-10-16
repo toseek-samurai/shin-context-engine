@@ -1,0 +1,566 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-hermetic-fixture",
+  "status": "active",
+  "summary": "Hermetic integration profile for Shin Context Engine tests.",
+  "id": "fixture",
+  "sourceLabel": "Hermetic fixture docs",
+  "rootFiles": [
+    "README.md"
+  ],
+  "optionalRootFiles": [
+    "docs/kb/.shin-context-freshness.json",
+    "docs/kb/.SHIN-CONTEXT-FIXTURE.JSON"
+  ],
+  "sourceExtensions": [
+    ".md",
+    ".json",
+    ".jsonl"
+  ],
+  "documentExcludePrefixes": [
+    "docs/excluded"
+  ],
+  "secretScanExcludePrefixes": [
+    "docs/operations.md"
+  ],
+  "sourceFactRoots": [
+    "src",
+    "apps",
+    "resources",
+    "workflows",
+    "docs/kb"
+  ],
+  "sourceFactExtensions": [
+    ".cs",
+    ".ts",
+    ".rsx",
+    ".js",
+    ".sql",
+    ".json",
+    ".yml"
+  ],
+  "sourceFactExtractors": [
+    "language",
+    "retool"
+  ],
+  "sourceFactAttributeKeys": [
+    "disabled",
+    "hidden",
+    "readonlyMode",
+    "label",
+    "formDataKey"
+  ],
+  "sourceFactMaxFiles": 30,
+  "sourceFactMaxFileBytes": 65536,
+  "agentStartPaths": [
+    "README.md",
+    "docs/architecture.md"
+  ],
+  "markdownMaxHeadingLevel": 4,
+  "markdownChunkLines": 3,
+  "markdownChunkMinLines": 4,
+  "markdownChunkChars": 240,
+  "jsonKeySections": true,
+  "jsonKeyIncludePrefixes": [
+    "docs/widget-schema.json"
+  ],
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 4,
+  "jsonlMaxRowsPerFile": 3,
+  "jsonPathReferences": true,
+  "jsonSchemaTitle": true,
+  "jsonSummaryKeys": true,
+  "sortTopics": true,
+  "defaultTopic": "platform",
+  "compoundQueryFirstTermScope": true,
+  "compoundQueryPreferredStems": ["main", "functions", "sidebar"],
+  "compoundQueryPreferredStemSuffixes": ["sidebar"],
+  "compoundQueryScopeStemSuffixes": ["", "pageguard", "searchtrigger"],
+  "aliases": [
+    {
+      "term": "host-call",
+      "expands": [
+        "host call",
+        "capability request"
+      ]
+    },
+    {
+      "term": "application",
+      "expands": ["retool app", "app-root", "multi-page", "single-page", "main.rsx"]
+    },
+    {
+      "term": "page",
+      "expands": ["screen", "openpage", "sidebar", "multi-page"]
+    },
+    {
+      "term": "section",
+      "expands": ["include", "frame", "container", "functions.rsx"]
+    },
+    {
+      "term": "resource",
+      "expands": ["resource binding", "resourceDisplayName", "resourceName", "connector"]
+    },
+    {
+      "term": "sql",
+      "expands": ["sqlqueryunified", ".sql", "database"]
+    },
+    {
+      "term": "query",
+      "expands": ["datasource", "javascriptquery", "sqlqueryunified", "openapiquery", "restquery"]
+    },
+    {
+      "term": "javascript",
+      "expands": ["javascriptquery", ".js", "payload"]
+    },
+    {
+      "term": "write",
+      "expands": ["trigger", "searchtrigger", "mutation", "update", "save", "post"]
+    }
+  ],
+  "evalCases": [
+    {
+      "id": "fixture-capability-contract",
+      "query": "capability result contract",
+      "queryVariants": [
+        "result contract capability",
+        "how to find capability result contracts"
+      ],
+      "mustPaths": [
+        "docs/architecture.md"
+      ],
+      "mustTopPaths": [
+        "docs/architecture.md"
+      ],
+      "mustTopN": 2,
+      "expectedRecordTypes": [
+        "contract"
+      ],
+      "maxMatchedSections": 20,
+      "maxCandidateRows": 50,
+      "minCoveredGroups": 3,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-rollback-runbook",
+      "query": "rollback runbook",
+      "mustPaths": [
+        "docs/operations.md"
+      ],
+      "mustTopPaths": [
+        "docs/operations.md"
+      ],
+      "mustTopN": 2,
+      "expectedRecordTypes": [
+        "runbook"
+      ],
+      "maxMatchedSections": 12,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-authority-rank",
+      "query": "result contract",
+      "mustPaths": [
+        "docs/architecture.md"
+      ],
+      "mustRankBefore": [
+        {
+          "higher": "docs/architecture.md",
+          "lower": "docs/mixed-authority.md"
+        }
+      ],
+      "mustTopN": 3,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-section-authority-rank",
+      "query": "current readiness integration reactive module",
+      "mustPaths": [
+        "docs/current-runtime-contract.json"
+      ],
+      "mustRankBefore": [
+        {
+          "higher": "docs/current-runtime-contract.json",
+          "lower": "docs/future-reactive-module.proposal.json"
+        }
+      ],
+      "mustTopN": 4,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-widget-source-fact",
+      "query": "triggerWidget arrow-function",
+      "mustPaths": [
+        "src/widget.ts"
+      ],
+      "mustTopPaths": [
+        "src/widget.ts"
+      ],
+      "mustTopN": 3,
+      "expectedRecordTypes": [
+        "ts-arrow-function"
+      ],
+      "maxMatchedFacts": 8,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-internal-identifier-reference",
+      "query": "assistantDefault",
+      "queryVariants": [
+        "assistant_default",
+        "assistant-default",
+        "assistant default"
+      ],
+      "mustPaths": [
+        "src/widget.ts"
+      ],
+      "mustTopPaths": [
+        "src/widget.ts"
+      ],
+      "mustTopN": 1,
+      "expectedRecordTypes": [
+        "ts-arrow-function"
+      ],
+      "maxMatchedFacts": 4,
+      "limit": 4,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-compound-identifier-shortlist-completion",
+      "query": "engine bridge actor-worker host-call request result affinity routing command validation",
+      "mustPaths": [
+        "src/ActorWorkerBridge.ts"
+      ],
+      "expectedRecordTypes": [
+        "ts-arrow-function"
+      ],
+      "maxCandidateRows": 64,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-csharp-source-fact",
+      "query": "LoadWidget method",
+      "mustPaths": [
+        "src/WidgetCatalog.cs"
+      ],
+      "mustTopPaths": [
+        "src/WidgetCatalog.cs"
+      ],
+      "mustTopN": 3,
+      "expectedRecordTypes": [
+        "csharp-method"
+      ],
+      "maxMatchedFacts": 8,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-jsonl-duplicate-source-id",
+      "query": "widget runtime event completed",
+      "mustPaths": [
+        "docs/data/events.jsonl"
+      ],
+      "mustTopPaths": [
+        "docs/data/events.jsonl"
+      ],
+      "mustTopN": 3,
+      "expectedRecordTypes": [
+        "runtime-event"
+      ],
+      "maxMatchedFacts": 4,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-jsonl-composed-context",
+      "query": "Query23 WidgetRuntime dependency",
+      "mustPaths": [
+        "docs/data/events.jsonl"
+      ],
+      "mustTopPaths": [
+        "docs/data/events.jsonl"
+      ],
+      "mustTopN": 3,
+      "expectedRecordTypes": [
+        "events"
+      ],
+      "maxMatchedFacts": 4,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-event",
+      "query": "RetoolLoadWidget success trigger RetoolSaveWidget",
+      "mustPaths": ["apps/admin/Fixture/src/Home.rsx"],
+      "mustTopPaths": ["apps/admin/Fixture/src/Home.rsx"],
+      "mustTopN": 3,
+      "expectedRecordTypes": ["retool-event"],
+      "maxMatchedFacts": 12,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-runtime-call",
+      "query": "RetoolSaveWidget trigger RetoolLoadWidget",
+      "mustPaths": ["apps/admin/Fixture/lib/RetoolSaveWidget.js"],
+      "mustTopPaths": ["apps/admin/Fixture/lib/RetoolSaveWidget.js"],
+      "mustTopN": 3,
+      "expectedRecordTypes": ["retool-call"],
+      "maxMatchedFacts": 12,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-inline-call",
+      "query": "RetoolLoadWidget trigger RetoolRefresh",
+      "mustPaths": ["apps/admin/Fixture/src/Home.rsx"],
+      "mustTopPaths": ["apps/admin/Fixture/src/Home.rsx"],
+      "mustTopN": 3,
+      "expectedRecordTypes": ["retool-call"],
+      "maxMatchedFacts": 12,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-resource",
+      "query": "FixtureApi restapi resource",
+      "mustPaths": ["resources/FixtureApi/resource.json"],
+      "mustTopPaths": ["resources/FixtureApi/resource.json"],
+      "mustTopN": 3,
+      "expectedRecordTypes": ["retool-resource"],
+      "maxMatchedFacts": 8,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-workflow",
+      "query": "FixtureWorkflow RetoolWorkflowLoad RESTQuery workflow block",
+      "mustPaths": ["workflows/FixtureWorkflow/RetoolWorkflowLoad.yml"],
+      "mustTopPaths": ["workflows/FixtureWorkflow/RetoolWorkflowLoad.yml"],
+      "mustTopN": 3,
+      "expectedRecordTypes": ["retool-workflow-block"],
+      "maxMatchedFacts": 12,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-workflow-edge",
+      "query": "RetoolWorkflowStart to RetoolWorkflowLoad workflow edge",
+      "mustPaths": ["workflows/FixtureWorkflow/RetoolWorkflowLoad.yml"],
+      "mustTopPaths": ["workflows/FixtureWorkflow/RetoolWorkflowLoad.yml"],
+      "mustTopN": 3,
+      "expectedRecordTypes": ["retool-workflow-edge"],
+      "maxMatchedFacts": 8,
+      "limit": 6,
+      "perDocLimit": 2
+    },
+    {
+      "id": "fixture-retool-app-scoped-context",
+      "query": "apps/admin/Fixture application pages navigation sections roles feature flags resources SQL queries JavaScript writes approvals",
+      "mustPaths": [
+        "apps/admin/Fixture/main.rsx",
+        "apps/admin/Fixture/src/FixtureSideBar.rsx",
+        "apps/admin/Fixture/src/Home.rsx",
+        "apps/admin/Fixture/lib/RetoolSaveWidget.js",
+        "apps/admin/Fixture/lib/RetoolFindWidget.sql"
+      ],
+      "mustTopPaths": [
+        "apps/admin/Fixture/main.rsx",
+        "apps/admin/Fixture/src/FixtureSideBar.rsx",
+        "apps/admin/Fixture/src/Home.rsx",
+        "apps/admin/Fixture/lib/RetoolSaveWidget.js",
+        "apps/admin/Fixture/lib/RetoolFindWidget.sql"
+      ],
+      "mustTopN": 8,
+      "maxMatchedFacts": 46,
+      "limit": 8,
+      "perDocLimit": 1
+    },
+    {
+      "id": "fixture-document-owner-scope",
+      "query": "current-handoff exact owner policy integration readiness release evidence",
+      "mustPaths": [
+        "docs/current-handoff.md"
+      ],
+      "mustTopPaths": [
+        "docs/current-handoff.md"
+      ],
+      "mustRankBefore": [
+        {
+          "higher": "docs/current-handoff.md",
+          "lower": "docs/handoff-index.md"
+        }
+      ],
+      "mustTopN": 1,
+      "limit": 4,
+      "perDocLimit": 1
+    },
+    {
+      "id": "fixture-document-owner-separator-identity",
+      "query": "a-bc exact owner policy current verification evidence",
+      "mustPaths": ["docs/a-bc.md"],
+      "mustTopPaths": ["docs/a-bc.md"],
+      "mustRankBefore": [
+        {"higher": "docs/a-bc.md", "lower": "docs/ab-c.md"}
+      ],
+      "mustTopN": 1,
+      "limit": 4,
+      "perDocLimit": 1
+    },
+    {
+      "id": "fixture-document-owner-space-identity",
+      "query": "docs/space owner.md exact owner policy current verification evidence",
+      "mustPaths": ["docs/space owner.md"],
+      "mustTopPaths": ["docs/space owner.md"],
+      "mustTopN": 1,
+      "limit": 4,
+      "perDocLimit": 1
+    },
+    {
+      "id": "fixture-document-owner-distributed-coverage",
+      "query": "show distributedowner alpha beta coverage",
+      "mustPaths": ["docs/distributedowner.md"],
+      "mustTopPaths": ["docs/distributedowner.md"],
+      "mustTopN": 1,
+      "limit": 4,
+      "perDocLimit": 1
+    },
+    {
+      "id": "fixture-humanized-owner-distant-semantic-query",
+      "query": "Deferred Review authorization confirmation workflow evidence before Panel decision",
+      "mustPaths": ["docs/0042-deferred-review-decision.md"],
+      "mustTopPaths": ["docs/0042-deferred-review-decision.md"],
+      "mustTopN": 3,
+      "maxCandidateRows": 64,
+      "minCoveredGroups": 5,
+      "limit": 6,
+      "perDocLimit": 2
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": "fixture-agent-context-pack",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "fixture-agent-context-pack",
+        "task": {
+          "objective": "Load fixture contracts, operations, and source facts.",
+          "scope": [
+            {"id": "capability", "query": "capability contract"}
+          ],
+          "must": [
+            {"id": "result", "query": "result contract"},
+            {"id": "rollback", "query": "rollback runbook"}
+          ],
+          "should": [
+            {"id": "widget", "query": "triggerWidget arrow-function"}
+          ]
+        },
+        "budget": {
+          "max_evidence_bytes": 24000,
+          "max_records": 12,
+          "per_query_records": 6,
+          "per_document_records": 2
+        }
+      },
+      "mustPaths": [
+        "docs/architecture.md",
+        "docs/operations.md"
+      ],
+      "mustNotPaths": [
+        "docs/excluded/ignored.md"
+      ],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 24000,
+      "maxRecords": 12,
+      "maxCompactBytes": 30000,
+      "requireSerialParallelIdentity": true
+    },
+    {
+      "id": "fixture-section-only-owner-fallback",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "fixture-section-only-owner-fallback",
+        "task": {
+          "objective": "Keep type filtering inside retrieval branch selection.",
+          "must": [
+            {"id": "events", "query": "events widget runtime completed result"}
+          ]
+        },
+        "evidence_types": ["section"],
+        "budget": {
+          "max_evidence_bytes": 8000,
+          "max_records": 2,
+          "per_query_records": 4,
+          "per_document_records": 1
+        }
+      },
+      "mustPaths": ["docs/events-proxy.md"],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 8000,
+      "maxRecords": 2,
+      "maxCompactBytes": 12000,
+      "requireSerialParallelIdentity": true
+    },
+    {
+      "id": "fixture-required-coverage-seed",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "fixture-required-coverage-seed",
+        "task": {
+          "objective": "Select one shared record for two required queries.",
+          "must": [
+            {"id": "alpha", "query": "starvation alpha"},
+            {"id": "beta", "query": "starvation beta"}
+          ]
+        },
+        "evidence_types": ["section"],
+        "budget": {
+          "max_evidence_bytes": 8000,
+          "max_records": 1,
+          "per_query_records": 4,
+          "per_document_records": 1
+        }
+      },
+      "mustPaths": ["docs/starvation.md"],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 8000,
+      "maxRecords": 1,
+      "maxCompactBytes": 12000,
+      "requireSerialParallelIdentity": true
+    }
+  ],
+  "topicRules": [
+    {
+      "id": "architecture",
+      "description": "Capability architecture and execution contracts.",
+      "keywords": [
+        "capability",
+        "contract",
+        "host policy"
+      ]
+    },
+    {
+      "id": "operations",
+      "description": "Deployment, health, and rollback procedures.",
+      "keywords": [
+        "runbook",
+        "rollback",
+        "deployment"
+      ]
+    },
+    {
+      "id": "platform",
+      "description": "General fixture platform context.",
+      "keywords": [
+        "fixture",
+        "widget"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,103 @@
+{
+  "schemaVersion": "shin.lexical-retrieval-contract.v1",
+  "document": "lexical-retrieval",
+  "status": "active-contract",
+  "purpose": "Keep candidate admission, field scoring and diagnostic evidence consistent while recovering document-level context across section boundaries.",
+  "matching": {
+    "normalization": "Unicode-aware normalized terms with stable token boundaries.",
+    "exact": "Exact terms and identifiers retain higher evidence than broad partial matches.",
+    "prefix": "Prefix completion is bounded and used only where the query form permits it."
+  },
+  "compoundBriefRetention": {
+    "activation": "During fallback for queries with at least eight term groups, a bounded row matching every query group retains priority over partial rows when candidates compete for retention or selection. Matches using a Markdown indexed_text body keep ordinary scoring, so incidental prose cannot suppress focused headings.",
+    "scope": "Ordinary generated-index and source-scan Brief, including document-planner evidence; explicit owner and first-term scope routes keep their existing policies.",
+    "boundary": "Explicit lifecycle/authority penalties prevent this priority. Field scores, candidate admission, row provenance, type diversity, per-document limits and output budgets remain unchanged. Additional partial evidence remains eligible; a full match is lexical support, not proof of a complete answer."
+  },
+  "jsonKeyPolicy": {
+    "scanner": "JsonKeySpan is an O(n), line-oriented lexical-balanced scanner. A key span includes its own scalar value line or balanced container subtree and ends on the matching close line; subsequent sibling lines are not appended.",
+    "strings": "Quoted braces and escaped quotes are ignored while balancing delimiters, so braces inside JSON strings cannot close a container early.",
+    "boundary": "The span extractor is line-oriented range extraction, not full JSON validation or column-precise AST ownership. Multiple members sharing a line remain line-granular. It makes no malformed-JSON validation claim."
+  },
+  "sectionPublication": {
+    "implementation": "src/extraction.cpp: populate_markdown_indexed_text",
+    "registeredFormats": "Explicitly enrolled .mdc documents use the existing Markdown pipeline, case-insensitively, with original paths and ranges. Profiles own enrollment; hidden directories are not discovered implicitly. globs and alwaysApply remain client metadata, not executed policy or authority. Rebuild earlier .mdc publications explicitly; generator-v20 format is unchanged.",
+    "shape": "Existing Markdown section, chunk and document rows retain their original ranges. indexed_text is the normalized, redacted body, separate from the compact preview; no new paragraph rows are introduced.",
+    "matching": "Nonempty indexed_text replaces preview in the shared publication/scoring projection at weight 16. Empty fields retain preview matching. Selection policy is documented separately in documentCandidates.",
+    "maximumRowBytes": 16384,
+    "maximumDocumentBytes": 131072,
+    "allocation": "Allocate in existing source row order, including overlapping sections/chunks. Redact the complete body before whitespace-boundary clipping, preserving UTF-8 and whole tokens.",
+    "omission": "indexed_text_omitted_bytes counts normalized redacted bytes omitted from this field, saturated at INT_MAX. It is not a raw-source byte count or coverage by other records. JSON sections publish empty text and zero omissions.",
+    "identity": "Search-only text and omissions participate in typed equality, independent retrieval-unit keys, deterministic ordering and full canonical Pack identity before display projection. Resident and disk readers use the same strict decoder.",
+    "verification": [
+      "tests/fixtures/query-parity/test_query_parity.py",
+      "tests/warm_snapshot_test.cpp",
+      "server/tests/retrieval_integration_test.py"
+    ]
+  },
+  "retrievalUnits": {
+    "policy": "published-document-or-independent-record-v1",
+    "declaration": "The verified manifest sources array declares document kind. Only markdown and json documents permit whole-document corroboration. JSONL rows and source-fact records are independent units; extension guessing or consumer vocabulary is not used.",
+    "identity": "Whole-document units are separated by path, evidence_kind, verification_level, authority_level and status. Independent units additionally retain exact decoded record content, origin and ranges, including SectionRow indexed_text and indexed_text_omitted_bytes. Equal previews never authorize merging distinct independent searchable records. Source facts remain independent even when their physical path is also enrolled as a document.",
+    "factDeduplication": "FactRow uses C++20 defaulted field-by-field comparison for exact deduplication, without serializing lookup keys. Exact decoded copies can merge; differing paths, ranges, origins, statuses, authority or contents cannot. A generic fact with an explicit source and its lossy typed projection are not exact copies and remain distinct candidates. Final output budgets still apply.",
+    "admission": "Document posting preselection may combine section/typed-record groups for declared whole documents, never independent facts or JSONL records. Exact decoded scoring and unit checks follow this conservative preselection.",
+    "selection": "Sparse planning selects bounded units and respects per-document limits. A source unit contributes only its own matched groups. Planner acceptance is checked against final selected coverage, not coverage of discarded records.",
+    "corroboration": "A document unit may contribute corroborating group paths only when a representative of that exact provenance/status/authority unit survives final selection. Another record at the same physical path does not authorize it.",
+    "boundary": "This is an explicit structural retrieval scope, not a compiler call graph or semantic relevance guarantee. No field weights, consumer policies or generated snapshot format change in this correction."
+  },
+  "diagnostics": {
+    "matching": "Includes policy, independent-expected-path-probe-not-selection scope and document_matched_groups. A path-local score is not a declaration of candidate admission or selection.",
+    "ordinary_row_candidate_probe": "Reports strict and relaxed posting-stage candidate counts, expected-path admitted row counts and sparse path-probe completeness. When the ordinary clause uses a generated-row scan, admitted rows are unknown/null, not zero. This probe is separate from owner, identifier and document-planner selection.",
+    "supplementRejections": [
+      "document-postings-incomplete",
+      "no-additional-document-candidates",
+      "document-candidate-budget-exceeded"
+    ]
+  },
+  "verification": {
+    "negativeControls": [
+      "identifier aliases",
+      "same-text distinct typed records",
+      "sparse retained records",
+      "candidate cap",
+      "redaction before clipping"
+    ],
+    "boundary": "These contracts do not promise semantic understanding, runtime truth, or ranking quality on an unmeasured corpus."
+  },
+  "compactLexicalCandidate": {
+    "version": "2.0.5-dev.1",
+    "generator": "shin-generator-v22-compact-lexical",
+    "format": "shin.lexical.v1",
+    "legacyReader": "shin-generator-v21-cpp-syntax only; no automatic migration",
+    "evidenceRowsChanged": false,
+    "installed": false,
+    "formatImplementation": "src/generation.cpp"
+  },
+  "prefixCompletion": {
+    "activation": "Disabled for ordinary public query construction. Query length never changes exact lexical terms into prefix matches.",
+    "boundary": "Internal opt-in prefix matching helpers remain bounded; no public autocomplete mode is introduced by this candidate."
+  },
+  "fastPrefilter": {
+    "policy": "A necessary ASCII subsequence check and positive lexical word-boundary shortcut may avoid vocabulary allocation. They do not change the canonical lexical match predicate.",
+    "nativePropertyTest": "Core 2.0 assert_lexical_word_match_equivalence compares field matching to indexed vocabulary, including camel boundaries, punctuation and numeric terms. The obsolete atomic-source matcher was removed."
+  },
+  "previewRedaction": {
+    "policy": "Redact complete normalized lines before joining, and complete collected preview/summary values before truncation. JSON, JSONL and source declarations follow the same order.",
+    "boundary": "This preserves the existing heuristic detector, not a claim that every secret is recognized. It prevents clipping a recognizable credential into a sensitive unrecognizable prefix and keeps assignment detection within its original line boundary.",
+    "verification": "Synthetic credential controls cover 280/420/900-byte cutoffs, assignment line boundaries, JSON/JSONL summaries and source declarations."
+  },
+  "coverage": {
+    "rows": "matched_group_indices describe that exact returned row, including explicitly marked prefix support; rows never inherit other sections' matches.",
+    "documents": "selected_document_paths may describe corroborating rows within the same returned whole-document unit. Paths from discarded units, independent source members, JSONL records or different provenance/status/authority are not credited merely because the physical path survives.",
+    "boundary": "Document coverage is lexical retrieval evidence, not semantic completeness, correctness, execution proof or a compiler-resolved dependency."
+  },
+  "designReferences": [
+    "https://nlp.stanford.edu/IR-book/html/htmledition/processing-boolean-queries-1.html",
+    "https://nlp.stanford.edu/IR-book/html/htmledition/positional-postings-and-phrase-queries-1.html"
+  ],
+  "sourceCorpus": {
+    "implementation": "src/generation.cpp: build_source_scan_corpus reuses build_generated_rows without serialization or publication.",
+    "projection": "src/extraction.cpp: query_fact_row projects decisions and typed references into the same fields as generated-row decoding.",
+    "invariant": "On the same corpus and row threshold, indexed Context and source-scan Context return identical scored sections/facts, source ranges, provenance, match groups and match counts.",
+    "boundary": "This invariant does not equate Brief owner/planner routing with source-scan Brief or legacy raw-line source-scan Search. Those modes are explicit and never an implicit fallback from a corrupt or stale snapshot."
+  }
+}

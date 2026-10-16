@@ -1,0 +1,11 @@
+{
+  "schemaVersion": 1,
+  "name": "pugixml",
+  "repository": "https://github.com/zeux/pugixml",
+  "release": "v1.16",
+  "commit": "c8033ce9d039e7f9d134877c363397b3cfe20816",
+  "archive": "https://github.com/zeux/pugixml/releases/download/v1.16/pugixml-1.16.tar.gz",
+  "archiveSha256": "4cee1ca4aad395170f4c7a07824f3bdd41f28316c6e1e1090a1425b278ec0b4b",
+  "license": "MIT",
+  "vendoredPaths": ["pugixml.cpp", "pugixml.hpp", "pugiconfig.hpp", "LICENSE.MIT"]
+}

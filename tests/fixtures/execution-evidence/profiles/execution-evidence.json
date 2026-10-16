@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "execution-evidence-hermetic-fixture",
+  "status": "active",
+  "id": "execution-evidence",
+  "sourceLabel": "Hermetic execution evidence fixture",
+  "rootFiles": ["README.md"],
+  "sourceExtensions": [".md"],
+  "sourceFactRoots": ["src", "tests"],
+  "sourceFactExtensions": [".ts"],
+  "sourceFactExtractors": ["language"],
+  "sourceFactMaxFiles": 64,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": ["README.md", "docs/architecture.md"],
+  "packEvalCases": [
+    {
+      "id": "execution-evidence-pack",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "execution-evidence-pack",
+        "task": {
+          "objective": "Verify execution evidence against the selected source.",
+          "must": [{"id": "architecture", "query": "execution evidence architecture"}]
+        },
+        "budget": {
+          "max_evidence_bytes": 8000,
+          "max_records": 4,
+          "per_query_records": 4,
+          "per_document_records": 2
+        }
+      },
+      "mustPaths": ["docs/architecture.md"],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 8000,
+      "maxRecords": 4,
+      "maxCompactBytes": 12000,
+      "requireSerialParallelIdentity": true
+    }
+  ]
+}

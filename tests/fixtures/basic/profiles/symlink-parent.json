@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "id": "symlink-parent",
+  "sourceLabel": "Symlink parent validation fixture",
+  "rootFiles": [
+    "README.md"
+  ],
+  "optionalRootFiles": [
+    "linked/README.md"
+  ],
+  "sourceFactRoots": [
+    "linked/src"
+  ],
+  "sourceFactExtensions": [
+    ".ts"
+  ],
+  "agentStartPaths": [
+    "linked/README.md"
+  ],
+  "evalCases": []
+}

@@ -1,0 +1,19 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "authority-hermetic-fixture",
+  "status": "active",
+  "id": "authority",
+  "sourceLabel": "Authority lifecycle hermetic fixture",
+  "rootFiles": [
+    "README.md",
+    "docs/archive/metadata-contract.json",
+    "docs/archive/decisions/0001-accepted-decision.md",
+    "docs/archive/declared-decisions.jsonl"
+  ],
+  "sourceExtensions": [".md", ".json", ".jsonl"],
+  "agentStartPaths": ["README.md", "docs/current-contract.md"],
+  "markdownMaxHeadingLevel": 4,
+  "markdownChunkLines": 2,
+  "markdownChunkMinLines": 2,
+  "evalCases": []
+}

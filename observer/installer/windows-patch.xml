@@ -1,0 +1,53 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<CPackWiXPatch>
+  <CPackWiXFragment Id="#PRODUCT">
+    <Property Id="MsiLogging" Value="voicewarmup"/>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Shin Monitor"/>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1"/>
+    <Property Id="WixUnelevatedShellExecTarget" Value="[#CM_FP_bin.shin_tray.exe]"/>
+    <CustomAction Id="ShinLaunchMonitor" BinaryRef="Wix4UtilCA_X64" DllEntry="WixUnelevatedShellExec" Execute="immediate" Return="check"/>
+    <UI>
+      <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="ShinLaunchMonitor" Order="1"
+        Condition="WIXUI_EXITDIALOGOPTIONALCHECKBOX = 1 AND NOT Installed AND NOT REMOVE~=&quot;ALL&quot;"/>
+    </UI>
+    <Property Id="SHIN_PREVIOUS_INSTALL_ROOT" Secure="yes">
+      <RegistrySearch Id="ShinPreviousInstallRoot" Root="HKLM"
+        Key="Software\Shin\DesktopPreview" Name="InstallRoot" Type="raw"/>
+    </Property>
+    <SetProperty Id="INSTALL_ROOT" Value="[ProgramFiles64Folder]Shin Desktop Preview"
+      Before="CostFinalize" Sequence="both"/>
+    <Property Id="SHIN_LEGACY_USER_ROOT">
+      <RegistrySearch Id="ShinLegacyUserRoot" Root="HKCU"
+        Key="Software\Shin\DesktopPreview" Name="InstallRoot" Type="raw"/>
+    </Property>
+    <Launch Condition="NOT SHIN_LEGACY_USER_ROOT"
+      Message="Remove the previous per-user Shin Desktop Preview before installing the SCM edition. Project data is preserved."/>
+    <SetProperty Id="ShinScmRestore" Value="&quot;[#CM_FP_bin.shin_ce.exe]&quot; _scm-install" Before="ShinScmRestore" Sequence="execute"/>
+    <SetProperty Id="ShinScmStop" Value="&quot;[#CM_FP_bin.shin_ce.exe]&quot; _scm-stop" Before="ShinScmStop" Sequence="execute"/>
+    <SetProperty Id="ShinScmRemove" Value="&quot;[#CM_FP_bin.shin_ce.exe]&quot; _scm-uninstall" Before="ShinScmRemove" Sequence="execute"/>
+    <SetProperty Id="ShinScmUndoInstall" Value="&quot;[#CM_FP_bin.shin_ce.exe]&quot; _scm-uninstall" Before="ShinScmUndoInstall" Sequence="execute"/>
+    <SetProperty Id="ShinScmInstall" Value="&quot;[#CM_FP_bin.shin_ce.exe]&quot; _scm-install" Before="ShinScmInstall" Sequence="execute"/>
+    <CustomAction Id="ShinScmRestore" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+      Execute="rollback" Impersonate="no" Return="check"/>
+    <CustomAction Id="ShinScmStop" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+      Execute="deferred" Impersonate="no" Return="check"/>
+    <CustomAction Id="ShinScmRemove" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+      Execute="deferred" Impersonate="no" Return="check"/>
+    <CustomAction Id="ShinScmUndoInstall" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+      Execute="rollback" Impersonate="no" Return="check"/>
+    <CustomAction Id="ShinScmInstall" BinaryRef="Wix4UtilCA_X64" DllEntry="WixQuietExec"
+      Execute="deferred" Impersonate="no" Return="check"/>
+    <InstallExecuteSequence>
+      <Custom Action="ShinScmRestore" Before="ShinScmStop" Condition="Installed"/>
+      <Custom Action="ShinScmStop" Before="RemoveFiles" Condition="Installed"/>
+      <Custom Action="ShinScmRemove" After="ShinScmStop" Condition="REMOVE~=&quot;ALL&quot;"/>
+      <Custom Action="ShinScmUndoInstall" Before="ShinScmInstall" Condition="NOT Installed AND NOT REMOVE~=&quot;ALL&quot;"/>
+      <Custom Action="ShinScmInstall" After="InstallFiles" Condition="NOT REMOVE~=&quot;ALL&quot;"/>
+    </InstallExecuteSequence>
+  </CPackWiXFragment>
+  <CPackWiXFragment Id="#PRODUCTFEATURE">
+    <ComponentRef Id="ShinInstallRoot"/>
+    <ComponentRef Id="ShinMonitorStartup"/>
+    <ComponentRef Id="ShinMonitorShortcut"/>
+  </CPackWiXFragment>
+</CPackWiXPatch>

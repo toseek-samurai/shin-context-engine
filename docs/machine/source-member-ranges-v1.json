@@ -1,0 +1,217 @@
+{
+  "schemaVersion": "shin.source-member-ranges-contract.v1",
+  "document": "source-member-ranges-v1",
+  "status": "accepted",
+  "title": "Source Member Ranges And Structural Relations Contract",
+  "summary": "Bounded source declaration ranges, content identities, and fail-closed structural relations used by change-aware rereads.",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v17-explicit-authority",
+    "maturity": "implemented",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "ownership": {
+    "core": "Owns bounded syntax observation, lexical fallback, raw-line span identity, relation candidate validation, deterministic sorting/deduplication, and generated links.jsonl parsing.",
+    "profiles": "Own source roots, allowed source extensions, extractor selection, and source inventory. A profile does not change the parser's language grammar or relation resolution rules.",
+    "agents": "Own interpretation of bounded evidence and whether a review is sufficient. Agents must not upgrade source observations into compiler, runtime, or execution proof."
+  },
+  "sourceSyntax": {
+    "nativeCppDevelopment": {
+      "introducedIn": "Core2.0.0-dev.19; shin-generator-v21-cpp-syntax; not Stable1.27.3",
+      "grammar": "tree-sitter-cpp v0.23.4, f41e1a044c8a84ea9fa8577fdd2eab92ec96de02, MIT, vendored C11 with one explicit-void scanner prototype patch",
+      "scope": "Existing C++-classified extensions except .c. Observes named function declarations/definitions, constructors, destructors, operators and class/struct/enum/namespace definitions. Forward type references without bodies, anonymous/lambda names and unsupported declarators are not promoted into named definitions. No preprocessing, type checking, compile database or call resolution.",
+      "identity": "C++ syntax fact IDs append the observed name byte offset, retaining distinct same-line overloads. Physical-line ranges and their existing hashes may contain neighboring declarations. Readable headers preserve source signatures; short ASCII syntactic qualified names may supplement existing identifier terms without a new row schema.",
+      "bounds": "The common parser byte/node/progress caps remain. Declarator/owner traversal is bounded64 levels; observed name/header and qualification remain source data, not compiler identity. Valid nodes can survive an incomplete tree; capped/cancelled parsing without declarations retains explicitly lexical fallback. Conditional definitions are observations of source, not active build branches.",
+      "compatibility": "Explicit development rebuild is required. Old generator-v20 snapshots and frozen semantic controls remain owned by their pinned dev18 or Stable binary. No implicit reader, vector rebinding or consumer delivery."
+    },
+    "treeSitter": {
+      "core": {
+        "name": "tree-sitter",
+        "version": "v0.27.0",
+        "license": "MIT"
+      },
+      "java": {
+        "name": "tree-sitter-java",
+        "version": "v0.23.5",
+        "license": "MIT"
+      },
+      "typescript": {
+        "name": "tree-sitter-typescript",
+        "version": "v0.23.2",
+        "license": "MIT"
+      },
+      "vendorBoundary": "The grammars and runtime are vendored under third_party and built into the syntax library. Tree-sitter Unicode data carries the ICU/Unicode data license and notices in third_party/tree-sitter/src/unicode/LICENSE.",
+      "noNetwork": true
+    },
+    "extensions": {
+      "java": [
+        ".java"
+      ],
+      "typescriptGrammar": [
+        ".ts",
+        ".cts",
+        ".mts",
+        ".js",
+        ".cjs",
+        ".mjs"
+      ],
+      "tsxGrammar": [
+        ".tsx",
+        ".jsx"
+      ],
+      "nativeCpp": [
+        ".cpp",
+        ".cc",
+        ".cxx",
+        ".h",
+        ".hh",
+        ".hpp",
+        ".hxx",
+        ".ipp",
+        ".inl"
+      ],
+      "unsupportedBySyntaxParser": "All other extensions, including .c, use the existing source-fact path or are outside this syntax contract. Native C++ scope is qualified separately above."
+    },
+    "validDeclarations": {
+      "java": [
+        "class",
+        "interface",
+        "enum",
+        "record",
+        "method",
+        "constructor"
+      ],
+      "typescriptJavaScriptTsxJsx": [
+        "class",
+        "interface",
+        "enum",
+        "type",
+        "function",
+        "method",
+        "arrow-function"
+      ],
+      "nameNodeTypes": [
+        "identifier",
+        "type_identifier",
+        "property_identifier",
+        "private_property_identifier"
+      ],
+      "validity": "A declaration is emitted only when its recognized Tree-sitter node has a safe name, a valid byte range, and no node error. TypeScript method definitions, method signatures, and abstract method signatures map to method; variable declarators map to arrow-function only when their value is an arrow_function.",
+      "decorators": "For TypeScript, JavaScript, TSX, and JSX, a contiguous preceding decorator chain extends the declaration start line. Java declaration ranges start at the recognized declaration node.",
+      "javaTopLevel": "top_level is true only when a Java declaration node is directly under program. It controls qualified-type relation bindings; it does not mean that all emitted Java methods or constructors are top-level.",
+      "malformedOrCapped": "complete=false means parsing or bounded cursor traversal did not observe a complete tree. Valid observed declarations may still be emitted, plus a syntax-incomplete fact; completeness is not inferred from an absence of error nodes alone.",
+      "overcapOrCancelledWithoutErrors": "When traversal is over cap or cancelled without error nodes and no declarations were observed, existing TypeScript/JavaScript legacy header facts retain range_origin=lexical and syntax-incomplete is emitted; no fake precise syntax range is created.",
+      "actualSyntaxErrors": "When malformed syntax produces error nodes, valid declarations from the observed error-free CST portions are preserved only, while invalid nodes are not emitted as precise declarations."
+    },
+    "headersAndImports": {
+      "javaPackage": "The first valid package declaration yields a package fact and package_line.",
+      "javaImports": "Only explicit Java imports are observed. Static and wildcard imports are excluded from this exact relation path.",
+      "relativeModuleSyntax": "TypeScript/JavaScript/TSX/JSX syntax relations accept only plain quoted relative literals beginning with ./ or ../, without escapes or embedded line breaks, from import_statement or export_statement nodes.",
+      "externalModules": "Non-relative module specifiers are not resolved by this bounded source relation adapter and are skipped without a relation row.",
+      "unsupportedImportSyntax": "Imports that are not recognized plain quoted relative literals are skipped entirely. A recognized relative literal with no indexed candidate is unresolved; unsupported syntax is not converted into an unresolved row."
+    },
+    "fallback": {
+      "languages": [
+        "C",
+        "C#",
+        "Kotlin"
+      ],
+      "mode": "existing lexical source-fact extraction",
+      "guarantee": "These languages do not receive Tree-sitter exact declaration ranges from this contract. Their lexical ranges remain source observations and can be incomplete or broader than a compiler declaration. The development-only C++ extension is owned by nativeCppDevelopment; older release baselines remain historical."
+    }
+  },
+  "parserLimits": {
+    "sourceBytesMaximum": 1048576,
+    "syntaxNodesMaximum": 200000,
+    "progressCallbacksMaximum": 100000,
+    "inputChunkBytes": 4096,
+    "overflowPolicy": "A source or traversal that reaches a bound does not receive an invented complete tree. The result remains incomplete and bounded; no unbounded parser retry is implied."
+  },
+  "spanIdentity": {
+    "range": "start_line and end_line identify the physical raw-line interval selected by the source fact. The interval starts at the first byte of start_line and ends after the end_line newline when present, or at EOF for the final physical line.",
+    "hash": "span_hash is FNV-1a-64 over the complete raw bytes of that whole physical-line interval, rendered as fnv1a64:<16 lowercase hexadecimal digits>.",
+    "sharedRanges": "Rows with the same path, start_line, and end_line share the same computed span hash.",
+    "origins": [
+      "syntax",
+      "syntax-header",
+      "lexical",
+      "lexical-window",
+      "payload-file"
+    ],
+    "identityBoundary": "The hash identifies observed source bytes. It is not cryptographic authentication, a semantic identity, a compiler AST identity, behavioral equivalence, or proof that only the named member changed.",
+    "provenance": "Syntax ranges are source-fact observations. Range-bearing fact or section records preserve their original status, authority_level, evidence_kind, and verification_level. Current worktree rereads may be labeled observed-worktree only after content and stability checks; published rows retain their snapshot provenance."
+  },
+  "relations": {
+    "store": "Structural relations are emitted into the existing docs/kb/generated/links.jsonl store and retain LinkRow fields path, line, kind, text, target, status, and resolved_path.",
+    "allowedKinds": [
+      "source-include",
+      "source-payload",
+      "source-reference",
+      "source-import"
+    ],
+    "retool": {
+      "include": "Static Retool Include src observations emit source-include.",
+      "payload": "Static include(...) observations in supported Retool runtime expressions emit source-payload.",
+      "runtimeNameReferences": "Lexically observed Retool runtime names, Event pluginId references, and scope bindings emit source-reference candidates. They are structural observations, not calls proven to execute.",
+      "scope": "Retool bindings and references resolve only within their recorded source scope."
+    },
+    "java": {
+      "binding": "Only exact top-level Java declaration bindings are added, keyed by package-qualified type name when a package exists.",
+      "import": "An explicit non-static, non-wildcard qualified Java import references that exact type name. It resolves only when exactly one indexed binding exists in the matching scope and the target path is indexed."
+    },
+    "typescript": {
+      "candidatePolicy": "Relative module candidates are bounded and repository-relative. Extensionless targets try .ts, index.ts, .tsx, index.tsx, .js, index.js, .jsx, index.jsx, .mts, index.mts, .cts, index.cts, .mjs, index.mjs, .cjs, and index.cjs. Explicit .js targets also try .ts and .tsx; explicit .mjs and .cjs targets also try .mts and .cts respectively.",
+      "resolution": "A candidate resolves only when exactly one valid indexed path matches. No extension preference is used.",
+      "scope": "Resolution is bounded to the importing source path's lexical parent and the indexed relative path policy."
+    },
+    "failClosed": {
+      "duplicate": "Exact duplicate LinkRows are removed after deterministic sorting; distinct status, target, or resolved_path values remain distinct.",
+      "ambiguous": "More than one binding or module candidate yields status=ambiguous and an empty resolved_path. A non-unique candidate never becomes a guessed edge.",
+      "unresolved": "Recognized relation inputs with missing, unindexed, invalid, escaped, or malformed targets yield status=unresolved and an empty resolved_path. Unsupported syntax imports are skipped and yield no row.",
+      "graphTraversal": "Impact traversal follows source relations with status=resolved and explicit declared document links with status=ok. Unresolved and ambiguous rows remain visible as provenance and omission evidence."
+    },
+    "graphReadLimits": {
+      "jsonlBytesMaximum": 67108864,
+      "relationRowsMaximum": 200000,
+      "structuralSourceFieldsBytesMaximum": 4096,
+      "lineMinimum": 1,
+      "producerValidation": "The producer rejects publication before writing a valid snapshot when a structural source relation field exceeds 4096 bytes, preventing a later valid publication with an unreadable structural graph.",
+      "documentLinkBoundary": "The 4096-byte bound applies only to structural source relation fields. Preexisting declared document links may carry externally long fields and are not newly classified as corrupt solely by this source-field bound.",
+      "unsafePolicy": "Missing, symlinked, oversized, corrupt, or over-budget structural graph state fails closed; it is not partially accepted as a complete structural graph."
+    },
+    "traversableStatuses": [
+      "resolved",
+      "ok"
+    ],
+    "documentLinks": "Existing declared document links are traversable when status=ok; their explicit link semantics are retained and are not reclassified as source-import relations.",
+    "evidenceKinds": {
+      "declaredDocumentLinks": "declared",
+      "structuralSourceRelations": "source-observed"
+    },
+    "provenance": "Relations are generated evidence from the published snapshot. Declared document links retain declared provenance; structural source-* relations retain source-observed provenance. Neither proves compiler resolution, runtime reachability, or executed behavior."
+  },
+  "selectionAndUse": {
+    "snapshot": "Generated-index consumers read one verified published snapshot. Source-scan is not a substitute for this relation graph in the change-aware impact command.",
+    "worktree": "A current worktree reread is separately bounded and reverified. It does not mutate, overlay, or republish the snapshot.",
+    "scoring": "The scoring algorithm and retrieval policy remain unchanged, but new source facts and finer granularity can change observed candidate counts, ordering, selected evidence, and receipts.",
+    "execution": "No source code, tests, build, deployment, business operation, or relation target is executed by extraction or impact selection.",
+    "publication": "No generated index, snapshot, or relation graph is published automatically by these contracts.",
+    "compaction": "No automatic compaction, checkpoint, persistence, or host lifecycle hook is implied."
+  },
+  "documentAmbiguities": [
+    "Exact syntax declarations are limited to the recognized node kinds and safe name fields listed here; this contract does not define every declaration form in any language.",
+    "A complete=true syntax observation means the bounded parser traversal reported no error or traversal cap. It is not a compiler validation or a guarantee that the grammar models every language extension.",
+    "Java top-level type binding and Java declaration extraction are different scopes: nested methods and constructors may have exact syntax ranges but cannot become top-level type bindings.",
+    "TypeScript module resolution is intentionally candidate-based. Unsupported import syntax produces no row; an emitted ambiguous or unresolved row is not evidence that the target does not exist, only that this bounded resolver could not choose one path.",
+    "A changed whole-line span hash may include formatting, comments, neighboring declarations, or line-ending changes. It identifies bytes, not behavior or a minimal member edit."
+  ],
+  "nonGoals": [
+    "no compiler, type checker, linker, build graph, or semantic call graph",
+    "no semantic source diff or behavioral equivalence inference",
+    "no runtime reachability, deployment, production, or executed proof",
+    "no complete declaration grammar claim for Java, TypeScript, JavaScript, TSX, JSX, C++, C#, or Kotlin",
+    "no automatic execution, mutation, publication, index repair, or compaction",
+    "no scoring, ranking, query coverage, or retrieval policy change",
+    "no cryptographic authenticity claim"
+  ]
+}

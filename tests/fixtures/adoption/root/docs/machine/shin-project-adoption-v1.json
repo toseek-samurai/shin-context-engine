@@ -1,0 +1,45 @@
+{
+  "schemaVersion": "shin.project-adoption.v1",
+  "document": "fixture-shin-project-adoption",
+  "status": "active",
+  "summary": "Fixture project adopts one externally registered permanent Shin profile.",
+  "project": {
+    "id": "fixture-project",
+    "contextEpoch": "fixture-shin-v1.12-2026-07-19",
+    "rootPolicy": "cli-root"
+  },
+  "engine": {
+    "minimumVersion": "1.14.0",
+    "generatorIdentity": "shin-generator-v22-compact-lexical"
+  },
+  "profile": {
+    "id": "fixture",
+    "registry": "explicit-profile-dir",
+    "kind": "permanent",
+    "genericBootstrapAllowed": false
+  },
+  "index": {
+    "ownership": "tool-external",
+    "key": "fixture",
+    "consumerWritesAllowed": false,
+    "requireCurrent": true
+  },
+  "qualityGates": {
+    "profileCheckStrict": true,
+    "check": true,
+    "doctorStrict": true,
+    "evalStrict": true,
+    "packEvalStrict": true
+  },
+  "agent": {
+    "entryPath": "AGENTS.md",
+    "contextEpochReferenceRequired": true,
+    "markerReferenceRequired": true,
+    "profileReferenceRequired": true
+  },
+  "extensions": {
+    "fixture.test": {
+      "purpose": "Prove opaque namespaced integration metadata is accepted without entering Core policy."
+    }
+  }
+}

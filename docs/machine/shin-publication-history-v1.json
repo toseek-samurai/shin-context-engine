@@ -1,0 +1,71 @@
+{
+  "schemaVersion": "shin.publication-history-contract.v1",
+  "document": "shin-publication-history-v1",
+  "status": "active-contract",
+  "title": "Explicit Publication History Retirement",
+  "summary": "Bounded administrative plan/apply reclaims resolved proposal history without resetting shared revisions, losing captured base provenance or readmitting retired requests. No TTL deletion or implicit repair.",
+  "api": {
+    "inventory": "GET /api/v1/publication-history, administrator only. Returns shin.publication-history.v1 with deployment identity, global history_epoch, retired_proposals, retained/unresolved/anchored/audit_pinned/eligible counts and the last maintenance receipt. Protection counts overlap; do not add them as disjoint populations.",
+    "plan": "GET /api/v1/publication-history/retention?limit=N, administrator only, default64 and range1..256. Returns shin.publication-history-plan.v1 over the oldest eligible proposal IDs, with exact record hash, withdrawal count, affected project counts, previous receipt hash and plan_id. An empty plan is inspectable but cannot apply. No filesystem reads, source checks, archive writes or data changes.",
+    "apply": "POST the same path with exactly {plan:OBJECT,discard_confirmed:true}. Administrator only, no query parameters. Recompute under the publication writer fence and audit reader fence; refuse a changed plan. Delete only selected withdrawals/resolutions/proposals, advance the admission epoch and persist one bounded maintenance receipt atomically.",
+    "receipt": "shin.publication-history-receipt.v1 records parent/new epoch, plan identity, deleted proposal/withdrawal counts, principal, time and previous receipt hash. external_archive_verified=false, source_mutated=false and publication_head_mutated=false. Latest exact retry returns the original receipt; an older plan after later retirement conflicts.",
+    "errors": "forbidden403; malformed input400; publication-history-empty409; publication-history-stale409 for altered/currently mismatched plans; publication-history-changed409 for an unretained submission from an old epoch; publication-history-budget413 for an oversized plan; publication-review-busy503 while this service has an admitted artifact review. Old removed detail/resolution IDs remain not-found, never reassigned.",
+    "readers": "The supported single Server service serializes apply with its existing review admission mutex, refusing rather than blocking an admitted review. Shared publication heads and their artifact bindings are never removed. Existing native artifact/index lifetime locks remain unchanged. A paginated history reader does not pin rows; pages are live observations, not an atomic export."
+  },
+  "protectedState": [
+    "Every unresolved proposal, including conflicted proposals, remains retained with its candidate and captured-base artifact pins.",
+    "The active head, latest accepted transition and latest withdrawal's previous accepted proposal remain retained. The original kHeadCte reconstructs logical revision/state without resetting a withdrawn publication to zero.",
+    "Any proposal still referenced by retained audit_events is protected. Use the separate existing audit export and confirmed retention workflow first; this endpoint never deletes audit rows or asserts external archive durability.",
+    "Resolved proposals not protected by these rules may retire. Associated non-latest withdrawals and resolutions retire with them. Preparations, artifacts, source, checkpoints and shared head pointers are not deleted."
+  ],
+  "requestFence": {
+    "submission": "Publication submission accepts optional history_epoch, a nonnegative integer below signed BIGINT maximum. Omission means epoch0, not the current epoch. Public head adds history_epoch; internal snapshot selection does not include this volatile admission coordinate.",
+    "compatibility": "Migration initializes epoch0 and preserves legacy request hashes. Existing clients can submit until the first explicit retirement. After that, a new logical request must explicitly carry the reviewed current epoch. No client or service silently retries an old request with a new epoch.",
+    "replay": "Retained principal/key requests are checked first and replay only with their original payload/hash/epoch, even after source or capacity changes. If the key is no longer retained, its old epoch is rejected before filesystem or new admission. A deliberately new request in a newer epoch may reuse an already retired key; this is not a replay of the old request.",
+    "scope": "Legacy unscoped requests retain the global epoch, now explicitly scope=legacy-publications. Schema023 stores separate project/workspace epochs for new scoped submissions. Principal/key uniqueness still crosses domains and is checked before replay; domain is immutable per proposal. Retirement affects only admission in its history domain. It does not change shared revisions or invalidate current retrieval/checkpoints.",
+    "finiteState": "One singleton for legacy history and one ledger per explicitly scoped workspace replace unbounded per-key tombstones. Live proposals remain limited to8192 globally and1024 per project. Fully protected capacity cannot be forcibly reclaimed; an operator must resolve outstanding work or archive audit, not raise limits automatically.",
+    "pagination": "Maintenance proposal pages include all retained records; history_epoch is the legacy admission clock. history_complete is conservatively false after legacy retirement or any scoped retirement in that project, including an empty scoped ledger. Native scoped pages omit global clocks/completeness. Scoped history inventory reports completeness only for its explicit domain. A retained detail is captured history plus an observed current head, not a claim that all previous decisions remain available."
+  },
+  "provenance": {
+    "capture": "Migration019 copies accepted-base source route/workspace/host/profile/fingerprint into each existing proposal. New submissions capture the same fields inside their writer transaction. Missing legacy accepted-base provenance aborts and rolls back migration rather than inventing it.",
+    "retiredParent": "Existing base_preparation_id still binds the preparation record, whose immutable snapshot metadata supports historical review. base_withdrawal_id becomes a captured historical identity rather than a foreign key pinning the old withdrawal forever. Its type/shape checks remain; native admission still verifies the exact known revision and withdrawal identity.",
+    "read": "Proposal detail/review use these immutable fields, not a chain of parent proposals. Retiring a parent cannot erase a retained child's source provenance. Artifact verification and source freshness remain independent; metadata is not proof of current bytes or semantic equivalence.",
+    "newBase": "New submissions still require an actually retained accepted/withdrawn base for a positive revision. Unknown or retired bases conflict; the caller must review a retained head. Already retained unresolved proposals keep their captured base and may be resolved against an explicitly reviewed current head."
+  },
+  "transactions": {
+    "locks": "Plan uses shared publication then shared audit transaction fences. Apply uses exclusive publication then shared audit. Submit/resolve/withdraw already serialize on the publication fence and take the audit writer fence last. Do not reverse this order or add filesystem work while holding these locks.",
+    "planChanges": "Plans bind global counts and exact selected immutable records as well as epoch, deployment identity and previous receipt. Even an append may make a plan stale; inspect again. This conservative rule is not a snapshot token usable indefinitely.",
+    "audit": "Retirement has a separate bounded maintenance receipt, like existing journal retention. It does not add a synthetic project audit event per deletion, rewrite archived events or remove their remaining foreign-key protections.",
+    "limits": "At most256 proposals per apply; plan JSON at most32768 bytes, saved latest plan/receipt at most65536 database JSON bytes. There is no background cleanup, archive exporter or automatic schedule."
+  },
+  "operatorSequence": [
+    "For upgrade, stop old Server processes and preserve the schema018 database backup, private configuration and matching dev32 binary. Run explicit migrate with schema-owner credentials using dev33; configuration v10 and Server identity pin do not change.",
+    "Inspect inventory and a bounded plan. Review affected projects and protected counts. Archive and explicitly retire relevant audit prefixes using the existing audit workflow if they prevent the intended proposal retirement.",
+    "Decide explicitly to discard the selected publication history. Save the inspected plan outside consumer source, then apply the exact plan with discard_confirmed=true. Keep the response or retry the same latest plan after an uncertain reply.",
+    "Read the current head and epoch before authoring a new submission. Keep an old request unchanged for replay; do not relabel it with the new epoch automatically.",
+    "Verify selected rows and quota were retired while heads, unresolved proposals, source and artifacts remain. Keep earlier audit archives and maintenance evidence under operator custody."
+  ],
+  "rollback": "Old binaries reject schema019. Restore the preserved matching schema018 backup and binary through the explicit recovery/identity procedure; do not drop columns or discard origin metadata in a live service as a downgrade.",
+  "boundaries": [
+    "No Core or Stable1.27.2 change",
+    "No consumer/global skill rollout",
+    "No Observer outbox retirement",
+    "No shared-head deletion or revision reset",
+    "No production multi-Server or remote topology certification",
+    "No secure-erasure, physical file-shrink, PITR or external archive authenticity claim"
+  ],
+  "implementation": [
+    "server/src/publication_history.cpp",
+    "server/src/publication_store.cpp",
+    "server/src/publication_schema.cpp",
+    "server/src/publication_service.cpp",
+    "server/migrations/019_publication_history.sql"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-publication-proposals-v1.json",
+    "docs/machine/shin-publication-withdrawal-v1.json",
+    "docs/machine/shin-server-audit-history-v1.json",
+    "docs/machine/shin-server-recovery-v1.json",
+    "docs/machine/shin-retrieval-journal-retention-v1.json"
+  ]
+}

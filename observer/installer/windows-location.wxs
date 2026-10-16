@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
+  <Fragment>
+    <StandardDirectory Id="ProgramMenuFolder">
+      <Directory Id="ShinStartMenu" Name="Shin Desktop Preview">
+        <Component Id="ShinMonitorShortcut" Guid="*">
+          <Shortcut Id="ShinMonitorMenu" Name="Shin Monitor" Target="[#CM_FP_bin.shin_tray.exe]" WorkingDirectory="INSTALL_ROOT"/>
+          <RemoveFolder Id="ShinRemoveStartMenu" On="uninstall"/>
+          <RegistryValue Root="HKLM" Key="Software\Shin\DesktopPreview" Name="StartMenu" Type="integer" Value="1" KeyPath="yes"/>
+        </Component>
+      </Directory>
+    </StandardDirectory>
+    <DirectoryRef Id="INSTALL_ROOT">
+      <Component Id="ShinInstallRoot" Guid="*">
+        <RegistryValue Root="HKLM" Key="Software\Shin\DesktopPreview"
+          Name="InstallRoot" Type="string" Value="[INSTALL_ROOT]" KeyPath="yes"/>
+      </Component>
+      <Component Id="ShinMonitorStartup" Guid="*">
+        <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run"
+          Name="ShinMonitor" Type="string" Value="&quot;[#CM_FP_bin.shin_tray.exe]&quot;" KeyPath="yes"/>
+      </Component>
+    </DirectoryRef>
+  </Fragment>
+</Wix>

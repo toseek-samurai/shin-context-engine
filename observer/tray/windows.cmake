@@ -1,0 +1,27 @@
+enable_language(RC)
+add_library(shin-imgui STATIC
+    ${shin_imgui_SOURCE_DIR}/imgui.cpp ${shin_imgui_SOURCE_DIR}/imgui_draw.cpp
+    ${shin_imgui_SOURCE_DIR}/imgui_tables.cpp ${shin_imgui_SOURCE_DIR}/imgui_widgets.cpp
+    ${shin_imgui_SOURCE_DIR}/backends/imgui_impl_win32.cpp
+    ${shin_imgui_SOURCE_DIR}/backends/imgui_impl_dx11.cpp)
+target_include_directories(shin-imgui SYSTEM PUBLIC ${shin_imgui_SOURCE_DIR} ${shin_imgui_SOURCE_DIR}/backends)
+target_link_libraries(shin-imgui PUBLIC d3d11 dxgi dwmapi)
+add_executable(shin-tray WIN32 windows_main.cpp windows_resources.rc)
+target_compile_definitions(shin-tray PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00 UNICODE _UNICODE)
+target_compile_options(shin-tray PRIVATE /W4 /WX /permissive- /utf-8)
+target_link_libraries(shin-tray PRIVATE shin-observer-native shin-imgui shell32 ole32 windowscodecs comctl32)
+install(TARGETS shin-tray RUNTIME DESTINATION bin)
+install(FILES ${shin_imgui_SOURCE_DIR}/LICENSE.txt DESTINATION share/shin-observer/licenses/imgui)
+if(BUILD_TESTING)
+    enable_testing()
+    add_executable(shin-tray-diagnostics-tests project_diagnostics_test.cpp)
+    target_compile_options(shin-tray-diagnostics-tests PRIVATE /UNDEBUG /utf-8)
+    target_link_libraries(shin-tray-diagnostics-tests PRIVATE shin-observer-native)
+    add_test(NAME shin-tray-diagnostics COMMAND shin-tray-diagnostics-tests)
+    add_executable(shin-tray-request-timing-tests request_timing_test.cpp)
+    target_compile_options(shin-tray-request-timing-tests PRIVATE /UNDEBUG /utf-8)
+    target_link_libraries(shin-tray-request-timing-tests PRIVATE shin-observer-native)
+    add_test(NAME shin-tray-request-timing COMMAND shin-tray-request-timing-tests)
+    add_test(NAME shin-tray-windows-render COMMAND shin-tray --render-test "${CMAKE_CURRENT_BINARY_DIR}/render-check")
+    set_tests_properties(shin-tray-windows-render PROPERTIES TIMEOUT 60)
+endif()

@@ -1,0 +1,20 @@
+Shin Desktop Preview
+
+This package is a development candidate, not a Windows Stable release.
+It installs the native Core, Observer, command-line and MCP clients, and Monitor
+for Windows. It does not require WSL, Python, Node, or a model server.
+Installation requires administrator approval (UAC). Observer runs separately
+under each signed-in user's account, not LocalSystem. Windows SCM owns recovery.
+
+Close this kit's Monitor and command-line clients before maintenance or removal.
+The installer stops its SCM Observer instances before replacing files.
+Project files, private indexes, history and credentials are not installation
+payload and are not deleted by this package.
+
+Windows creates each user's service instance at sign-in. After first installation
+sign out and sign in again. Monitor starts separately; closing it does not stop
+Observer. Graphical project onboarding is not yet enabled by this preview.
+Client configuration is not rewritten. No project is enrolled by installation.
+
+Third-party notices are included under share/shin-observer/licenses and
+share/shin-context/licenses. This notice does not change their licenses.

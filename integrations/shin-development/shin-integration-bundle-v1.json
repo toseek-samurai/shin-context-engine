@@ -1,0 +1,16 @@
+{
+  "schemaVersion": "shin.integration-bundle.v1",
+  "id": "shin-development",
+  "status": "development",
+  "coreRuntimeDependency": false,
+  "coreReleaseDependency": false,
+  "purpose": "Optional self-development context for the Observer and Server companion components. Both consume Core; portable Core does not require either component or this bundle.",
+  "profiles": [
+    { "id": "shin-observer", "path": "profiles/shin-observer.json" },
+    { "id": "shin-server", "path": "profiles/shin-server.json" }
+  ],
+  "consumerRootVariables": [],
+  "federations": [],
+  "evalSuites": ["profiles/shin-observer.json", "profiles/shin-server.json"],
+  "gates": []
+}

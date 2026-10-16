@@ -1,0 +1,90 @@
+{
+  "schemaVersion": "shin.agent-context-pack-diff-contract.v1",
+  "document": "agent-context-pack-diff-v1",
+  "status": "accepted",
+  "title": "Agent Context Pack Diff Contract",
+  "summary": "Compare task evidence across two verified immutable snapshots and determine whether a repository change alters the Agent Context Pack visible to an agent.",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v17-explicit-authority",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "command": {
+    "name": "pack-diff",
+    "arguments": "--from OUT_DIR --to OUT_DIR --input FILE [--jobs N] [--limit N] [--require-current] [--strict]",
+    "outputSchema": "shin.agent-context-pack-diff.v1",
+    "activeProfileRequired": true,
+    "sourceRootRequired": true,
+    "outDirAccepted": false,
+    "mutationAllowed": false
+  },
+  "execution": {
+    "request": "One validated shin.task-request.v1 document is parsed before either snapshot opens and is reused unchanged for both Pack executions.",
+    "profile": "Both snapshots must declare the active profile id and the current generator identity. One active profile policy is intentionally used for both sides; each endpoint reports whether its published profile_config_hash matches that active policy.",
+    "locks": "Verified RetrievalSession instances acquire shared snapshot locks in canonical path order. Equal roots use one session and one Pack execution.",
+    "from": "The historical snapshot receives complete generated-file integrity verification. Source freshness is not assessed because the historical source tree may no longer exist.",
+    "to": "The target snapshot always receives complete generated-file integrity verification. --require-current additionally proves exact target source freshness.",
+    "selection": "Both sides reuse Agent Context Pack retrieval, required-first selection, evidence budgeting, canonical record deduplication, and receipt construction without a second ranking implementation."
+  },
+  "comparison": {
+    "snapshot": [
+      "snapshot identity",
+      "profile config identity",
+      "receipt identity",
+      "evidence-set identity"
+    ],
+    "requirements": [
+      "satisfaction regression or improvement",
+      "selected evidence count",
+      "covered and total query groups"
+    ],
+    "evidence": {
+      "identity": "The Pack evidence_id identifies an exact evidence type plus canonical record, including evidence_kind and verification_level.",
+      "changes": [
+        "added exact evidence",
+        "removed exact evidence",
+        "rank movement for retained evidence",
+        "requirement match-edge movement for retained evidence"
+      ],
+      "details": "A single deterministic detail limit applies after change details are sorted by category, path, line, and evidence id.",
+      "semanticChangeClaim": false
+    },
+    "taskIsolation": "snapshot_changed may be true while agent_context_changed is false. This is the expected result when repository changes do not affect the reviewed task Pack."
+  },
+  "resultSemantics": {
+    "ok": "True when the target Pack is complete and no required requirement regressed.",
+    "soft": "Without --strict, an unacceptable target still emits the complete diff and exits zero.",
+    "strict": "With --strict, an incomplete target Pack or required requirement regression exits one with the same result document.",
+    "nonFailingChanges": "Evidence replacement, rank movement, optional requirement regression, receipt change, and unrelated snapshot change remain visible but do not fail strict mode while required task coverage remains complete.",
+    "outputLimitBytes": 16777216
+  },
+  "limits": {
+    "jobsMaximum": 8,
+    "detailLimitDefault": 100,
+    "detailLimitMaximum": 1000,
+    "taskAndEvidenceLimits": "Inherited unchanged from docs/machine/agent-context-pack-v1.json."
+  },
+  "verification": [
+    "independent identical snapshots produce byte-identical zero diffs",
+    "one snapshot may change while the task evidence, ranks, matches, and requirement coverage remain unchanged",
+    "a task-relevant source change reports bounded evidence replacement details",
+    "strict mode rejects an incomplete target Pack",
+    "corrupt generated payload is rejected before retrieval",
+    "the historical source tree is not required",
+    "target exact freshness is optional and explicitly scoped"
+  ],
+  "agentWorkflow": {
+    "beforeChange": "Publish or retain the current verified output root.",
+    "afterChange": "Publish the candidate output root with the same profile and run pack-diff using the implementation task request.",
+    "review": "Inspect requirement regressions first, then removed or added evidence, retained-evidence rank changes, verification paths in the referenced Pack results, and source files named by the diff.",
+    "gate": "Use --require-current --strict for a candidate that is expected to remain task-complete."
+  },
+  "nonGoals": [
+    "no semantic source equivalence inference",
+    "no product-specific impact policy",
+    "no git invocation or working-tree mutation",
+    "no historical profile reconstruction",
+    "no LLM judgment",
+    "no cryptographic authenticity claim"
+  ]
+}

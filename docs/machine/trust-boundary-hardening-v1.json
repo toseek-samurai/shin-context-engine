@@ -1,0 +1,38 @@
+{
+  "schemaVersion": "shin.trust-boundary-hardening.v1",
+  "document": "trust-boundary-hardening-v1",
+  "status": "accepted",
+  "title": "Evidence Transport And Read-Only Verification Hardening",
+  "summary": "A correctness milestone: retrieval optimization cannot strengthen a claim, discard its supporting metadata, or introduce implicit writes.",
+  "version": "2.0.4",
+  "generator": "shin-generator-v21-cpp-syntax",
+  "scope": [
+    "Canonical-record-only Pack deduplication; every match remains bound to the full transported record and exact verification range.",
+    "Explicit lifecycle metadata with independent path/type authority ranking; incidental prose does not infer supersession, rejection or acceptance.",
+    "Numbered ADR files use any nonempty numeric prefix followed by a hyphen inside a decisions directory, not a hardcoded digit count.",
+    "One bounded physical snapshot layout check for freshness and verified-snapshot reads.",
+    "Existing-only read locks; optional freshness cache is prepared by explicit publication, never repaired by retrieval.",
+    "Hermes validates the expected Core result schema and preserves structured errors without accepting malformed success.",
+    "Entrypoint documentation references the canonical version instead of maintaining competing release declarations."
+  ],
+  "compatibility": "Generator-v16 publications must be rebuilt explicitly. No compatibility reader or implicit migration is added. Consumer profile ids, roots, index keys and runtime contracts do not change.",
+  "invariants": [
+    "Same text does not imply the same evidence record or lifecycle.",
+    "Coverage means transported retrieval support, not truth or product authority.",
+    "Lifecycle status, repository authority, evidence kind and verification level remain separate.",
+    "No read-only command creates or repairs index, lock or cache files.",
+    "Missing or malformed cache state causes read-only hash verification, not trust escalation.",
+    "An existing incomplete publication fails closed; live source scanning requires explicit --source-scan in that case.",
+    "No automatic command execution, consumer-specific rule or automatic compaction hook."
+  ],
+  "verification": {
+    "status": "requires-public-source-qualification",
+    "required": [
+      "Neutral authority and Pack provenance regressions, including negative controls against the prior binary.",
+      "Read-only filesystem identity and fast/exact/verified snapshot rejection agreement.",
+      "Hermes malformed envelopes and structured Core diagnostics.",
+      "Portable Release and sanitizer tests, clang-tidy and relocated installation.",
+      "ARM64 and AMD64 execution plus unchanged performance budgets on available real corpora."
+    ]
+  }
+}

@@ -1,0 +1,28 @@
+set(kit "$ENV{DESTDIR}${CMAKE_INSTALL_PREFIX}")
+set(BU_CHMOD_BUNDLE_ITEMS ON)
+include(BundleUtilities)
+function(gp_item_default_embedded_path_override item path)
+    if(NOT fixing_monitor)
+        set(${path} "@executable_path" PARENT_SCOPE)
+    endif()
+endfunction()
+set(programs shin-context shin-observer shin-ce shin-mcp shin-usage)
+# BundleUtilities visits every executable in the containing bin directory.
+fixup_bundle("${kit}/bin/shin-ce" "" "@OPENSSL_INCLUDE_DIR@/../lib")
+set(fixing_monitor ON)
+fixup_bundle("${kit}/Shin Monitor.app" "" "@OPENSSL_INCLUDE_DIR@/../lib")
+# install_name_tool invalidates signatures, including dependencies copied from
+# the build host. Sign inside-out only after all load commands are final.
+file(GLOB_RECURSE libraries "${kit}/*.dylib")
+foreach(library IN LISTS libraries)
+    execute_process(COMMAND "@SHIN_CODESIGN@" --force --sign - "${library}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endforeach()
+foreach(program IN LISTS programs)
+    execute_process(COMMAND "@SHIN_CODESIGN@" --force --sign - "${kit}/bin/${program}"
+        COMMAND_ERROR_IS_FATAL ANY)
+endforeach()
+execute_process(COMMAND "@SHIN_CODESIGN@" --force --sign - "${kit}/Shin Monitor.app"
+    COMMAND_ERROR_IS_FATAL ANY)
+execute_process(COMMAND "@SHIN_CODESIGN@" --verify --deep --strict "${kit}/Shin Monitor.app"
+    COMMAND_ERROR_IS_FATAL ANY)

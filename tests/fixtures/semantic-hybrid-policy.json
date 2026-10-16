@@ -1,0 +1,13 @@
+{
+  "schema_version": "shin.semantic-hybrid-experiment.v1",
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "per_document": 2,
+  "rank_constant": 60,
+  "confirmed_identifier": "Preserve eligible Core Brief order without semantic supplementation when Core confirms identifier-scoped retrieval. No case-label or query-language routing.",
+  "ordinary": "Equal reciprocal rank contributions, 1/(60+rank), from eligible Core Brief and parent-only semantic top20. Tie: best channel rank, lexical rank, then frozen unit order. Apply one final cap2/path and top20 budget. No weight sweep.",
+  "enrollment": "Same frozen publication. Map Core fact/section evidence to enrolled parent units by physical range and original fact ID. Reject unbound ranges/IDs. Exclude metadata and unrepresented typed records explicitly, without refilling Core's raw twenty slots. Preserve exact lexical evidence separately; never merge matched groups or grant semantic evidence authority.",
+  "unavailable": "Missing model is an explicit lexical-only fallback; a present but corrupt model or vector binding is an error. A stale require-current admission rejects the entire operation. Snapshot-only experiment results never claim currentness.",
+  "acceptance": "Both observed cohorts preserve every parent-semantic top20 and first5 language hit and every eligible lexical exact target in first5. Improvements elsewhere do not cancel a lost case. Negative neighbors never assert existence or completion. Passing is candidate-only, not release or answer correctness.",
+  "scope": "One test-only combination experiment, existing pinned model and parent vectors, no chunks, production channel, source edits, model sweep, raised resource ceiling or Stable change."
+}

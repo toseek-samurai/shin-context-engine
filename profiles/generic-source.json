@@ -1,0 +1,58 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-source",
+  "status": "active",
+  "summary": "Bootstrap-only mixed-language source and configuration profile; compiler semantics are not implied for fallback text formats.",
+  "id": "generic-source",
+  "sourceLabel": "Mixed-language bootstrap source evidence",
+  "rootFiles": [],
+  "optionalRootFiles": [
+    "README.md",
+    "readme.md",
+    "AGENTS.md",
+    "package.json",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "CMakeLists.txt",
+    "Makefile",
+    "global.json",
+    "Directory.Build.props"
+  ],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": ["."],
+  "sourceFactExtensions": [
+    ".java", ".kt", ".kts", ".cs",
+    ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs",
+    ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl",
+    ".py", ".go", ".rs", ".sql", ".rsx", ".json", ".yaml", ".yml"
+  ],
+  "sourceFactExtractors": ["language", "retool"],
+  "sourceFactMaxFiles": 15000,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonlMaxRowsPerFile": 2000,
+  "sortTopics": true,
+  "defaultTopic": "source",
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "source",
+      "description": "Mixed-language declarations and project topology.",
+      "keywords": ["package", "namespace", "class", "interface", "record", "struct", "function", "method", "type", "kotlin"]
+    },
+    {
+      "id": "build",
+      "description": "Cross-language build and package metadata.",
+      "keywords": ["maven", "gradle", "package.json", "cmake", "makefile", "dotnet", "csproj"]
+    },
+    {
+      "id": "tests",
+      "description": "Cross-language test source evidence.",
+      "keywords": ["test", "spec", "junit", "xunit", "gtest", "vitest", "jest"]
+    }
+  ]
+}

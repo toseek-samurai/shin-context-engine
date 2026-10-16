@@ -1,0 +1,220 @@
+{
+  "schemaVersion": "shin.cold-start-bootstrap.v1",
+  "document": "shin-context-engine-cold-start-bootstrap",
+  "status": "active",
+  "summary": "Agent-visible bootstrap contract for loading bounded Shin context from undocumented, source-only, mixed-language, documentation-only, or empty repositories without mutating the consumer.",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v17-explicit-authority"
+  },
+  "goal": "An agent entering an unfamiliar repository can discover Shin globally, classify available evidence, build an external deterministic index, and request a bounded brief before broad scanning.",
+  "architectureBoundary": {
+    "languageSpecificationsRequired": false,
+    "reason": "Bootstrap profiles reuse bounded language declaration extraction and point agents to primary source files; Shin is not a compiler, type checker, LSP, or full call-graph engine.",
+    "sourceAuthority": "Generated context is retrieval evidence. Source documents, code, tests, and accepted decisions remain authoritative.",
+    "consumerMutation": false,
+    "llmOrRagDependency": false
+  },
+  "discoveryContract": {
+    "command": "shin-context --root <consumer-root> discover",
+    "schema": "shin.discovery.v1",
+    "bootstrapFields": [
+      "state",
+      "indexable",
+      "source_only_supported",
+      "project_mutation_required",
+      "primary_profile",
+      "profile_mode",
+      "next_steps"
+    ],
+    "states": {
+      "empty": "No recognized source family or indexable project documentation exists; build metadata alone remains a structural signal and does not promise retrievable context.",
+      "source-only": "Supported source or build metadata exists without product documentation; documentation is not required for bootstrap.",
+      "documented": "Project documentation or a root README exists and can be combined with recognized source facts."
+    },
+    "emptyBehavior": {
+      "indexable": false,
+      "primaryProfile": null,
+      "nextAction": "Add source code or machine documentation, then rerun discover."
+    }
+  },
+  "bootstrapProfiles": [
+    {
+      "id": "generic-java",
+      "evidence": "Java source plus optional Maven and Gradle root metadata"
+    },
+    {
+      "id": "generic-kotlin",
+      "evidence": "Kotlin source plus optional Maven, Gradle, and Kotlin DSL root metadata"
+    },
+    {
+      "id": "generic-node",
+      "evidence": "TypeScript and JavaScript source plus optional package and compiler metadata"
+    },
+    {
+      "id": "generic-cpp",
+      "evidence": "C and C++ source plus optional CMake and Make metadata"
+    },
+    {
+      "id": "generic-dotnet",
+      "evidence": "C# source plus optional .NET root metadata"
+    },
+    {
+      "id": "generic-retool",
+      "evidence": "Retool apps, resources, workflows, RSX, payloads, bindings, and workflow edges"
+    },
+    {
+      "id": "generic-source",
+      "evidence": "Mixed Java, Kotlin, C#, TypeScript, JavaScript, C, and C++ source trees"
+    },
+    {
+      "id": "generic-docs",
+      "evidence": "README, AGENTS, and docs tree when no supported source family is recognized"
+    }
+  ],
+  "profileContract": {
+    "rootFiles": "Required project-specific entry files; may be empty when other inputs are configured.",
+    "optionalRootFiles": "Conventional root metadata included only when present; missing candidates are not errors.",
+    "sourceFactRoots": "May independently back a fact-only index without source documents; missing conventional roots are informational for bootstrapOnly profiles while permanent profiles retain strict warnings.",
+    "bootstrapOnly": "Marks a generic discovery profile that intentionally has no project-specific golden eval cases.",
+    "strictProfileCheck": "Bootstrap profiles pass strict profile-check with an informational bootstrap-profile-without-eval issue.",
+    "bootstrapLinkPolicy": "bootstrapOnly profiles publish broken local links as diagnostics so an imperfect unfamiliar repository remains retrievable; permanent profiles reject the same candidate snapshot.",
+    "doctorPolicy": "Bootstrap uses non-strict doctor and requires zero errors while surfacing warnings. doctor --strict intentionally fails when diagnostic warnings remain and is mandatory after permanent adoption.",
+    "evalBoundary": "Do not run eval --strict for bootstrap-only profiles. Permanent adoption requires a consumer profile with golden evalCases."
+  },
+  "safeTraversal": {
+    "genericSourceRoot": ".",
+    "excludedDirectoryNames": [
+      ".cache",
+      ".git",
+      ".gradle",
+      ".idea",
+      ".mvn",
+      ".next",
+      ".nuxt",
+      ".output",
+      ".venv",
+      ".vs",
+      "artifacts",
+      "bin",
+      "build",
+      "coverage",
+      "dist",
+      "external",
+      "node_modules",
+      "obj",
+      "out",
+      "packages",
+      "target",
+      "third_party",
+      "vendor",
+      "venv"
+    ],
+    "symlinkPolicy": "Profile inputs, optional roots, source roots, agent start paths, recursive source files, and discovery signals fail closed or are skipped when the entry or any relative ancestor is a symlink; lexical parent traversal is rejected.",
+    "caps": "Profiles bound candidate file count and per-file bytes; strict doctor reports caps or unsupported empty input."
+  },
+  "agentWorkflow": [
+    "Locate Shin through the global shin-context Codex skill.",
+    "Check only conventional AGENTS and Shin adoption marker paths; an adopted consumer profile takes precedence over generic bootstrap.",
+    "Run make in the Shin repository so the binary matches source and VERSION.",
+    "Run discover against the consumer root and trust bootstrap.primary_profile.",
+    "Stop when bootstrap.indexable is false.",
+    "Run profile-check --strict with the selected generic profile.",
+    "Build into a Shin-owned build/context/bootstrap/<consumer-name> out directory.",
+    "Run check and non-strict doctor; require zero errors and surface every warning.",
+    "Run brief <task-query> --projection compact --require-current before broad source scans.",
+    "Open only returned primary source paths needed to verify important claims."
+  ],
+  "codexSkill": {
+    "canonicalSource": "integrations/codex/skills/shin-context",
+    "installTarget": "${CODEX_HOME:-$HOME/.codex}/skills/shin-context",
+    "installCommand": "make install-codex-skill",
+    "contractGate": "make skill-check",
+    "officialValidation": "Codex skill-creator quick_validate.py passed against canonical and installed copies on M4.",
+    "implicitTrigger": "Unknown, undocumented, source-only, newly created, or documentation-heavy repository before broad scanning."
+  },
+  "promotionContract": {
+    "bootstrapProfileIsPermanentAuthority": false,
+    "planner": {
+      "command": "shin-context --profile <candidate-permanent-profile> --profile-dir <profile-dir> --root <consumer-root> adoption-plan [--marker <relative-file>] [--agent-entry <relative-file>]",
+      "schema": "shin.adoption-plan.v1",
+      "mutation": false,
+      "authority": "Lifecycle readiness only; adoption-check --strict remains the marker validator."
+    },
+    "promotionRequirements": [
+      "consumer-specific profile id",
+      "reviewed document and source roots",
+      "bounded file limits",
+      "project topic and alias rules",
+      "agentStartPaths when stable entry documents exist",
+      "golden evalCases and packEvalCases",
+      "zero strict-doctor warnings",
+      "project-local shin.project-adoption.v1 marker only when explicitly adopted"
+    ]
+  },
+  "adoptionPrecedence": {
+    "rule": "An explicit project-local Shin adoption marker takes precedence over discovery bootstrap profiles.",
+    "conventionalEntries": [
+      {
+        "base": "consumer-root",
+        "path": "AGENTS.md"
+      },
+      {
+        "base": "consumer-docs",
+        "path": "machine/shin-context-engine-adoption-v1.json"
+      },
+      {
+        "base": "consumer-docs",
+        "path": "shin-context-engine-adoption.json"
+      },
+      {
+        "base": "consumer-docs",
+        "path": "architecture/shin-context-engine-adoption.json"
+      }
+    ],
+    "adoptedProfileEvalRequired": true
+  },
+  "hermeticEvidence": {
+    "runner": "tests/run_cold_start_tests.sh",
+    "skillRunner": "tests/run_skill_contract_tests.sh",
+    "corpora": [
+      "java",
+      "kotlin",
+      "node",
+      "cpp",
+      "dotnet",
+      "retool",
+      "mixed",
+      "docs",
+      "empty",
+      "metadata-only"
+    ],
+    "coveredCommands": [
+      "discover",
+      "profile-check",
+      "build",
+      "check",
+      "doctor",
+      "brief"
+    ],
+    "ignoredDependencyEvidence": [
+      "target",
+      ".gradle",
+      "node_modules",
+      "third_party",
+      "obj",
+      "external source symlink",
+      "symlinked path ancestor",
+      "symlinked package metadata"
+    ],
+    "partialLayoutEvidence": "A Retool repository containing apps without resources or workflows passes strict profile bootstrap and reports missing conventional roots as informational.",
+    "imperfectDocumentationEvidence": "A bootstrap docs corpus with a broken local link publishes a current diagnostic snapshot, passes non-strict doctor with zero errors, fails strict doctor on the warning, and remains queryable with --require-current.",
+    "result": "passed"
+  },
+  "nonGoals": [
+    "No complete language grammar or standard-library model.",
+    "No type checking, compilation, runtime execution, or complete call graph.",
+    "No automatic documentation generation or consumer mutation during bootstrap.",
+    "No claim of project-specific retrieval quality until a promoted profile defines evalCases."
+  ]
+}

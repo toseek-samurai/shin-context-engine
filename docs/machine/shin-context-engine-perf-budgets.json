@@ -1,0 +1,61 @@
+{
+  "schemaVersion": "shin.perf-budgets.v1",
+  "document": "portable-performance-budgets",
+  "status": "active",
+  "scope": "Local regression ceilings and hard resource bounds for explicitly declared workloads; they are not hardware-independent service objectives.",
+  "policy": {
+    "metric": "p50 latency in milliseconds",
+    "semantics": "Ceilings detect material local regressions; they are not external SLOs or hardware-independent product promises.",
+    "reviewRule": "Investigate implementation regressions first. Raise a ceiling only when an intentional corpus or workload change is measured and documented.",
+    "excludedPlatforms": [
+      "unmeasured architectures",
+      "shared or throttled CI runners",
+      "external user machines"
+    ]
+  },
+  "agentContextPack": {
+    "profile": "shin",
+    "requestId": "self-agent-operations-pack",
+    "projection": "compact",
+    "minimumIterations": 10,
+    "minimumWarmup": 2,
+    "maxP50Ms": {
+      "session_open": 325.0,
+      "retrieval": 100.0,
+      "selection": 20.0,
+      "projection": 10.0,
+      "serialization": 10.0,
+      "total": 400.0
+    },
+    "maxEvidenceBytes": 24576,
+    "maxOutputBytes": 38000,
+    "maxPeakRssBytes": 218103808,
+    "referenceP50Ms": null
+  },
+  "profiles": {
+    "shin": {
+      "query": "source facts",
+      "minimumIterations": 10,
+      "minimumBuildIterations": 3,
+      "maxP50Ms": {
+        "build_no_write": 450.0,
+        "search_generated_index": 100.0,
+        "context_generated_index": 60.0,
+        "brief_generated_index": 60.0
+      },
+      "referenceP50Ms": null
+    }
+  },
+  "measurementPolicy": {
+    "required": [
+      "hardware and operating system",
+      "compiler and build mode",
+      "profile and corpus identity",
+      "cold or warm state",
+      "memory and disk cost",
+      "refresh and generated-output cost"
+    ],
+    "rule": "Keep correctness, work counters, byte ceilings, record ceilings, and safety checks active when a latency ceiling is reviewed.",
+    "claimBoundary": "An unmeasured workload or platform is not qualified by these local budgets."
+  }
+}

@@ -1,0 +1,50 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-java",
+  "status": "active",
+  "summary": "Bootstrap-only Java source profile for projects that do not yet have machine documentation.",
+  "id": "generic-java",
+  "sourceLabel": "Java bootstrap source evidence",
+  "rootFiles": [],
+  "optionalRootFiles": [
+    "README.md",
+    "readme.md",
+    "AGENTS.md",
+    "pom.xml",
+    "build.gradle",
+    "build.gradle.kts",
+    "settings.gradle",
+    "settings.gradle.kts"
+  ],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": ["."],
+  "sourceFactExtensions": [".java"],
+  "sourceFactExtractors": ["language"],
+  "sourceFactMaxFiles": 10000,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonlMaxRowsPerFile": 2000,
+  "sortTopics": true,
+  "defaultTopic": "java-source",
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "java-source",
+      "description": "Java packages, classes, interfaces, records, enums, and methods.",
+      "keywords": ["java", "package", "class", "interface", "record", "enum", "method"]
+    },
+    {
+      "id": "build",
+      "description": "Maven and Gradle project structure.",
+      "keywords": ["maven", "gradle", "pom.xml", "build.gradle"]
+    },
+    {
+      "id": "tests",
+      "description": "Java test source evidence.",
+      "keywords": ["test", "junit", "src/test"]
+    }
+  ]
+}

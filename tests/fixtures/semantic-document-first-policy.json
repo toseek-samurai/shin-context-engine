@@ -1,0 +1,12 @@
+{
+  "schema_version": "shin.semantic-document-first-experiment.v1",
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "per_document": 2,
+  "confirmed_scope": "Core identifier-scoped or document owner-scoped retrieval preserves eligible lexical order, without semantic supplementation. No language, query labels, expected paths or score thresholds choose the route.",
+  "ordinary": "Take the first range of every distinct semantic top20 path in semantic rank order, then the first range of lexical-only paths in lexical order. Fill remaining slots with extra semantic then lexical ranges in their channel order, removing identical rows and retaining cap2/path and top20. No candidate refill beyond either channel's existing twenty rows.",
+  "preservation": "For ordinary navigation every semantic top20 path remains represented and its first appearance cannot move later. This preserves document navigation, not all ranges, answer quality or proof coverage. A full twenty-distinct-path semantic set leaves no slots for new lexical paths; report that tradeoff, never expand the budget.",
+  "unavailable": "Missing model stays lexical-only in original order. Corrupt assets/bindings and stale require-current admission fail, never become semantic-only fallback.",
+  "acceptance": "Keep the existing per-case semantic language top20/first5 and lexical exact first5 regression gate. Existing language thresholds remain unchanged. Compare fresh same-matrix baselines on both previously observed cohorts; no new holdout or cross-corpus ranking-fix claim.",
+  "scope": "Test-only parent document navigation selection, same pinned model and resource caps. No Core scoring, authority, currentness or Pack completion change, production enablement, Stable backport or model sweep."
+}

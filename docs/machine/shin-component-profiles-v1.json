@@ -1,0 +1,60 @@
+{
+  "schemaVersion": "shin.component-profiles.v1",
+  "document": "component-profiles",
+  "status": "active-contract",
+  "summary": "Declare component profile ownership and keep Core, Observer, and Server self-evaluation scopes independent.",
+  "ownershipContract": {
+    "oneOwnerPerProfile": true,
+    "rootFiles": "Explicit selected documents, not recursive traversal.",
+    "sourceFacts": "Each profile declares its own source roots and file/byte ceilings.",
+    "sharedCode": "A shared library can be referenced by multiple profiles only when each scope is explicit."
+  },
+  "core": {
+    "profile": "profiles/shin.json",
+    "sourceRoots": [
+      "src",
+      "shared/windows-io/src"
+    ],
+    "optionalReferences": [
+      "observer",
+      "server"
+    ],
+    "aggregateAcceptance": false
+  },
+  "observer": {
+    "profile": "profiles/shin-observer.json",
+    "sourceRoots": [
+      "observer/src",
+      "observer/include",
+      "observer/tests",
+      "shared/observer-protocol/src",
+      "shared/observer-protocol/include",
+      "shared/observer-protocol/tests"
+    ],
+    "serverDependency": false
+  },
+  "server": {
+    "profile": "profiles/shin-server.json",
+    "sourceRoots": [
+      "server/src",
+      "server/include",
+      "server/tests",
+      "server/tools",
+      "shared/observer-protocol/src",
+      "shared/observer-protocol/include",
+      "shared/observer-protocol/tests"
+    ],
+    "coreConsumer": true
+  },
+  "routeUse": {
+    "explicitProfileRequired": true,
+    "mergeIndexesAutomatically": false,
+    "releaseGatesIndependent": true
+  },
+  "regression": [
+    "Each profile uses only paths present in the package.",
+    "Each profile has a neutral self-eval with required paths scoped to its component.",
+    "Removing one optional component does not silently change another profile owner."
+  ],
+  "companionBundle": "integrations/shin-development/shin-integration-bundle-v1.json"
+}

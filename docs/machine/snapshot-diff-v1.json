@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "shin.snapshot-diff-contract.v1",
+  "document": "snapshot-diff-v1",
+  "status": "accepted",
+  "title": "Verified Generated Snapshot Diff Contract",
+  "summary": "Deterministically compare two already published Shin output roots after validating each manifest, output declaration, file integrity table, and generated file payload.",
+  "release": {
+    "productVersion": "1.7.0",
+    "compatibility": "Additive standalone CLI command and result schema."
+  },
+  "command": {
+    "name": "snapshot-diff",
+    "arguments": "--from OUT_DIR --to OUT_DIR [--limit N] [--strict]",
+    "outputSchema": "shin.snapshot-diff.v1",
+    "profileOptionsAccepted": false,
+    "sourceRootAccepted": false,
+    "mutationAllowed": false
+  },
+  "snapshotOpen": {
+    "roots": "Both existing output roots are canonicalized before lock deduplication. Root and generated snapshot directories must not be symlinks.",
+    "locks": "Shared locks are acquired in canonical path order. Equal roots use one lock. This prevents A-to-B and B-to-A deadlock.",
+    "publication": "An active publication marker rejects comparison as publication-incomplete.",
+    "manifest": {
+      "maximumBytes": 67108864,
+      "schema": "shin.context.kb-enterprise.v1",
+      "tool": "shin-context",
+      "requiredMetadata": [
+        "profile",
+        "profile_config_hash",
+        "generator_version",
+        "row_counts",
+        "sources",
+        "source_fact_sources",
+        "outputs",
+        "generated_file_integrity"
+      ]
+    },
+    "integrity": "Every declared non-manifest output has exactly one integrity entry and every integrity entry has exactly one declared output. The physical generated tree contains exactly those outputs plus the manifest; every declared regular non-symlink data file is hashed and byte-counted before comparison.",
+    "outputBoundary": "Both snapshots remain locked through validation and diff construction. JSON emission occurs after both locks are released."
+  },
+  "limits": {
+    "generatedFiles": 1024,
+    "declaredOutputsIncludingManifest": 1025,
+    "generatedFilesystemEntries": 2048,
+    "recordStoreBytes": 536870912,
+    "recordRowsPerStore": 2000000,
+    "detailLimitDefault": 100,
+    "detailLimitMaximum": 1000
+  },
+  "identity": {
+    "snapshotId": "FNV-1a-64 identity of the exact manifest bytes.",
+    "identical": "True only when the exact manifest bytes are equal after both snapshots pass integrity verification.",
+    "sameSnapshotId": "Reports snapshot identity equality independently from exact-byte equality.",
+    "compatible": "True when schema_version, generator_version, and profile match; profile_config_hash differences remain visible as metadata changes."
+  },
+  "diffLevels": [
+    "manifest metadata",
+    "row counts",
+    "document source entries",
+    "source-fact source entries",
+    "generated files including the manifest",
+    "syntactic generated records by store"
+  ],
+  "syntacticRecordPolicy": {
+    "policy": "generated-row-identity-v1",
+    "semanticChangeClaim": false,
+    "rule": "Record deltas compare stable generated ids or bounded structural row identities and exact row hashes.",
+    "caveat": "A line, anchor, move, or generated-id change may appear as remove plus add. The command does not infer semantic equivalence."
+  },
+  "resultSemantics": {
+    "ok": "Equals identical.",
+    "soft": "Without --strict a verified difference returns exit 0 with ok=false.",
+    "strict": "With --strict a verified difference returns exit 1 with the same shin.snapshot-diff.v1 document.",
+    "details": "One deterministic global detail budget is shared by metadata, row-count, source, source-fact, generated-file, and syntactic-record categories.",
+    "detailsOmitted": "The exact number of counted detail events not emitted after the global limit."
+  },
+  "verification": [
+    "independent deterministic builds compare identical",
+    "repeated output is byte-identical",
+    "same-root lexical aliases deduplicate locks",
+    "source edit, addition, and removal are counted",
+    "soft and strict difference behavior",
+    "global detail truncation accounting",
+    "generated file corruption failure",
+    "unsupported manifest schema failure",
+    "missing integrity and duplicate output declaration failure",
+    "undeclared generated file failure",
+    "generated-directory symlink rejection",
+    "concurrent A-to-B and B-to-A comparisons complete without deadlock"
+  ],
+  "nonGoals": [
+    "no semantic source diff",
+    "no source working-tree comparison",
+    "no snapshot repair or publication",
+    "no remote or distributed lock",
+    "no cryptographic authenticity claim"
+  ]
+}

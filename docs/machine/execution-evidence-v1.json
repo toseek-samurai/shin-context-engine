@@ -1,0 +1,198 @@
+{
+  "schemaVersion": "shin.execution-evidence.v1",
+  "document": "execution-evidence-v1",
+  "status": "accepted",
+  "maturity": "implemented-verified",
+  "title": "Portable External Execution Evidence",
+  "summary": "Optional, read-only import of bounded external test evidence for receipt-check, Resume and Impact without executing actions or upgrading static evidence.",
+  "release": {
+    "productVersion": "2.0.4",
+    "generator": "shin-generator-v17-explicit-authority",
+    "generatorCompatibility": "Current generator-v17 publication identity; this contract does not add a compatibility reader or migration branch."
+  },
+  "workflow": [
+    {
+      "step": 1,
+      "command": "receipt-scope --input REQUEST --task-id ID --thread-id ID [--observed-at UNIX] [--require-current]",
+      "meaning": "Capture one external shin.execution-inputs.v1 manifest before the run and persist it outside the consumer and generated index."
+    },
+    {
+      "step": 2,
+      "owner": "host and producer",
+      "meaning": "The host independently executes the explicitly authorized test or check and the producer emits a complete declaration, sanitized command fingerprint, result metadata and one local report. Shin never starts the action."
+    },
+    {
+      "step": 3,
+      "commands": [
+        "receipt-import --input REQUEST --task-id ID --thread-id ID [--observed-at UNIX] [--require-current]",
+        "receipt-check --input BUNDLE --task-id ID --thread-id ID [--observed-at UNIX] [--trusted-producer ID] [--require-current] [--strict]"
+      ],
+      "meaning": "Import and assess the receipt, then embed the bounded receipt and its next_actions into an external checkpoint or Impact result when those host workflows request it."
+    }
+  ],
+  "inputRequest": {
+    "schema_version": "shin.execution-input-request.v1",
+    "coverage": [
+      "profile",
+      "declared-complete",
+      "partial"
+    ],
+    "selectors": "At most 32 distinct non-overlapping canonical repository-relative {path,kind} selectors, where kind is file or tree. Profile coverage has no selectors; declared-complete and partial require at least one. Selectors cannot name root, .git or private host state, escape the root, or traverse symlinks."
+  },
+  "inputManifest": {
+    "schema_version": "shin.execution-inputs.v1",
+    "fields": [
+      "schema_version",
+      "inputs_id",
+      "captured_at",
+      "coverage",
+      "binding",
+      "selectors",
+      "observations"
+    ],
+    "binding": "Root, profile, profile_config_hash, task_id, thread_id, worktree_id and snapshot_id are captured exactly. Root, profile, profile configuration, task and thread are fixed for every reuse decision.",
+    "observations": "One observation per selector stores only state, a content hash, file and directory counts, and byte count. A missing explicitly selected path is an explicit negative observation; Git tracking is not required and later creation changes it. Tree hashes include sorted relative paths, file byte hashes and directory membership, so additions and removals invalidate the selector."
+  },
+  "limits": {
+    "selectors": 32,
+    "entries": 8192,
+    "file_bytes": 16777216,
+    "total_bytes": 67108864,
+    "depth": 32,
+    "report_bytes": 4194304,
+    "receipt_bundle_bytes": 262144
+  },
+  "import": {
+    "request_schema": "shin.receipt-import-request.v1",
+    "required_fields": [
+      {
+        "name": "schema_version",
+        "type": "string",
+        "value": "shin.receipt-import-request.v1"
+      },
+      {
+        "name": "format",
+        "type": "string",
+        "values": [
+          "junit",
+          "playwright"
+        ]
+      },
+      {
+        "name": "report_path",
+        "type": "string",
+        "constraint": "Non-empty local path, max 4096 bytes; Core reads one regular non-symlink file only."
+      },
+      {
+        "name": "inputs_path",
+        "type": "string",
+        "constraint": "Non-empty path to one shin.execution-inputs.v1 manifest, max 4096 bytes."
+      },
+      {
+        "name": "receipt_id",
+        "type": "string",
+        "constraint": "Non-empty producer-owned opaque id, max 128 bytes."
+      },
+      {
+        "name": "producer",
+        "type": "string",
+        "constraint": "Non-empty producer id, max 128 bytes; trust is not granted by this field."
+      },
+      {
+        "name": "started_at",
+        "type": "integer",
+        "constraint": "Unix seconds in 0..253402300799; inputs.captured_at <= started_at <= observed_at."
+      },
+      {
+        "name": "observed_at",
+        "type": "integer",
+        "constraint": "Unix seconds in 0..253402300799 and no later than the importer clock."
+      },
+      {
+        "name": "ttl_seconds",
+        "type": "integer",
+        "constraint": "1..604800 seconds."
+      },
+      {
+        "name": "command_fingerprint",
+        "type": "string",
+        "constraint": "Lowercase fnv1a64:<16 hex> or sha256:<64 hex>; sanitized descriptor only."
+      },
+      {
+        "name": "complete",
+        "type": "boolean",
+        "value": true,
+        "constraint": "Must be explicitly true; false or omission rejects the import."
+      }
+    ],
+    "formats": [
+      "junit",
+      "playwright"
+    ],
+    "one_report_per_import": true,
+    "junit_dialects": "Conservative UTF-8 testcase hierarchy with suite/testcase properties, run/fail/disabled status, separate disabled/skipped counters when both are present, standard failure/error/skipped nodes and bounded flaky/rerun markers. CTest pass/fail/disabled output and Playwright JSON reporter probes are exercised; other dialects can be rejected rather than guessed.",
+    "complete": "The producer must explicitly set complete=true. Well-formed XML or JSON bytes, an import graph, or a source/test file cannot declare completion or completeness.",
+    "time": "captured_at <= started_at <= observed_at <= importer clock. started_at, inputs and report are required on imported receipts but remain optional on generic receipts.",
+    "counting": "Only normalized report counters, format, byte count, content hash and producer metadata are retained. Test names, errors, properties, stdout, stderr, report paths, attachments and screenshots are never retained.",
+    "summary_fields": [
+      "total",
+      "passed",
+      "failed",
+      "skipped",
+      "flaky",
+      "interrupted",
+      "expected_failures",
+      "global_errors"
+    ],
+    "dialect": {
+      "junit": "UTF-8 XML only, with no DOCTYPE or ENTITY. The conservative allowlist is one testsuite or testsuites root, nested testsuite/testcase elements, recognized testcase attributes, and properties/system-out/system-err/failure/error/skipped/flakyFailure/flakyError/rerunFailure/rerunError metadata. Unknown elements, attributes, duplicate attributes or contradictory counters reject. A non-empty summary-only report with non-zero counters rejects; an empty zero summary is allowed and is unknown.",
+      "playwright": "UTF-8 JSON with unique keys and the required errors array, stats.expected/unexpected/flaky/skipped, suites/specs/tests, expectedStatus, status, results and contiguous retry values. Declared stats must match the observed suite cases; malformed or contradictory data rejects.",
+      "browser": "This imports counters only. It is not semantic browser validation and does not treat screenshots as correctness proof."
+    },
+    "file_policy": "Read one explicitly named regular non-symlink local report. Input request, manifest and bundle stay outside the consumer; a report may be in or outside a test-output directory."
+  },
+  "applicability": {
+    "profile": "All fixed binding fields, worktree_id and snapshot_id must match. No file-scoped or remote equivalence is inferred.",
+    "declared-complete": "If every explicitly captured selector still matches, worktree_id or snapshot_id drift outside those inputs does not invalidate the receipt. A selector change, including an explicitly selected missing-to-present change or tree addition/removal, invalidates it. This is accepted only from an explicit producer declaration and explicit file/tree selectors; Git tracking is not required.",
+    "partial": "Partial input coverage never narrows invalidation; use conservative whole-profile applicability.",
+    "currentness": "For profile coverage, inputs_current checks the entire current binding. For partial selectors, inputs_current checks only selected inputs and does not alone imply scope_current; fixed binding and whole-profile worktree/snapshot applicability still decide scope_current. declared-complete may narrow only the worktree_id/snapshot_id differences outside its explicit selectors.",
+    "unknown": "Untrusted, future, expired, mismatched, failed, skipped and unknown receipts remain explicit. A receipt never turns a source or test record into executed evidence by itself.",
+    "fallback": "Profile selection and fallback behavior are unchanged. This optional workflow does not infer a profile or merge indexes."
+  },
+  "trust": {
+    "producer": "Source isolation, execution environment, command correctness and receipt transport are producer/host responsibilities. A pre/post hash is not continuous execution attestation.",
+    "trusted_producer": "Only an explicit --trusted-producer host policy can make a producer trusted. A receipt, imported artifact or producer self-declaration cannot grant its own trust. No signing or remote authentication is implemented.",
+    "command": "command_fingerprint is a sanitized producer descriptor fingerprint. Core preserves it but cannot prove which command ran or whether it is the command desired now."
+  },
+  "assessment": {
+    "clock": "Every receipt in one assessment uses a single clock observation after captured-input scans. receipt-check and Resume publish it as observed_at; Impact with receipts publishes receipts_observed_at. TTL classification is as of that observation, not continuous freshness. Explicit --observed-at is an as-of assessment override, never a way to renew expired runtime evidence.",
+    "receipt_check": "Strict requires a nonempty receipts array and every assessed receipt to have passed_current=true. --require-current is a separate Knowledge Base freshness requirement and does not mean the receipts passed. receipt-scope and receipt-import also accept optional --require-current.",
+    "failed_receipts": "Receipt failures and next_actions are reported separately; failure remains failure and is never converted to static completeness.",
+    "impact": "Impact strict remains static inspection completeness. Receipt evidence is an additional separate array and never changes tests_to_review, source verification levels or static inspection completeness.",
+    "resume": "Resume and receipt-check use the same receipt assessment. Checkpoints may carry the same bounded optional inputs and report metadata; no second compatibility path is created."
+  },
+  "nonGoals": [
+    "automatic execution",
+    "automatic compaction hooks",
+    "watch or daemon",
+    "new MCP endpoint",
+    "candidate retrieval overlay",
+    "incremental publication",
+    "semantic call graph",
+    "screenshots as automatic UI correctness proof",
+    "consumer-specific Core policy"
+  ],
+  "verification": {
+    "status": "requires-public-source-qualification",
+    "boundary": "Run the listed checks against the public source candidate; historical internal receipts do not qualify it.",
+    "required": [
+      "format and hostile-report fixtures",
+      "pre/post and later selector drift",
+      "scope and trust isolation",
+      "no writes or payload retention",
+      "Resume and Impact agreement",
+      "ARM64/AMD64 release gates",
+      "real local report and performance probes"
+    ]
+  }
+}

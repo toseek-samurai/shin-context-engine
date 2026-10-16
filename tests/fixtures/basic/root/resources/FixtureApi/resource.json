@@ -1,0 +1,9 @@
+{
+  "type": "restapi",
+  "environment": "production",
+  "uuid": "fixture-resource",
+  "dynamicallyQueryable": false,
+  "options": {
+    "baseURL": "https://fixture.invalid"
+  }
+}

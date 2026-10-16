@@ -1,0 +1,300 @@
+{
+  "schemaVersion": "shin.agent-context-pack-contract.v1",
+  "document": "agent-context-pack-v1",
+  "status": "accepted",
+  "title": "Agent Context Pack Contract",
+  "summary": "Build one deterministic, snapshot-pinned, byte-bounded evidence package from explicit task requirements without introducing an LLM, a second ranking engine, or consumer semantics into Core.",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v20-preview-redaction",
+    "compatibility": "The historical Shin v1.25 authority cutover requires an explicit generator-v17 rebuild. Native CF2 additionally requires an explicit generator-v20 rebuild for section publication and redaction. No compatibility reader or implicit migration is retained."
+  },
+  "command": {
+    "name": "pack",
+    "arguments": "--input FILE|--input - [--jobs N] [--projection full|compact] [--telemetry] [--require-current] [--strict]",
+    "inputSchema": "shin.task-request.v1",
+    "outputSchema": "shin.agent-context-pack.v1",
+    "compactOutputSchema": "shin.agent-context-pack-compact.v1",
+    "telemetrySchema": "shin.pack-telemetry.v1",
+    "receiptSchema": "shin.context-pack-receipt.v1",
+    "generatedIndexRequired": true,
+    "sourceScanSupported": false,
+    "mutationAllowed": false
+  },
+  "taskRequest": {
+    "rootFields": [
+      "schema_version",
+      "request_id",
+      "task",
+      "evidence_types",
+      "budget"
+    ],
+    "unknownFieldsRejected": true,
+    "requestId": {
+      "required": true,
+      "minimumBytes": 1,
+      "maximumBytes": 128,
+      "controlBytesAllowed": false
+    },
+    "task": {
+      "objective": "Required trimmed task description retained for audit and fingerprinting. It is not silently converted into a retrieval query.",
+      "scope": "Ordered independent retrieval requirements that locate the task subsystem. Scope is evidence intent, not a repository path filter and not a term prefix added to other queries.",
+      "must": "Ordered independent retrieval requirements that must each retain selected evidence satisfying their explicit coverage policy. At least one must requirement is required.",
+      "should": "Ordered independent optional enrichment requirements. Missing optional evidence never makes the pack incomplete.",
+      "requirementShape": {
+        "id": "Unique stable 1 to 128 byte non-control identifier across scope, must, and should.",
+        "query": "Non-empty normal Shin query prepared with the selected profile aliases and the same bounds as local retrieval.",
+        "require_full_coverage": "Optional boolean. When true, selected Pack match edges must cover every normalized query group before the requirement is satisfied.",
+        "min_covered_groups": "Optional integer from 1 through the normalized query-group count. Selected Pack match edges must cover at least this many groups before the requirement is satisfied.",
+        "coveragePolicyExclusivity": "require_full_coverage and min_covered_groups are mutually exclusive. Omitting both preserves any-evidence completion."
+      }
+    },
+    "evidenceTypes": {
+      "field": "evidence_types",
+      "supported": [
+        "contract",
+        "decision",
+        "runbook",
+        "fact",
+        "section"
+      ],
+      "default": [
+        "contract",
+        "decision",
+        "runbook",
+        "fact",
+        "section"
+      ],
+      "normalization": "Input order is ignored and output uses canonical type order. Unknown and duplicate values are rejected."
+    },
+    "canonicalization": "The effective request includes explicit defaults, canonical evidence type order, trimmed objective and queries, stable requirement arrays, and only explicitly selected coverage policies. JSON object field order and input whitespace do not affect request_fingerprint; requests that omit coverage policy retain their previous canonical form."
+  },
+  "limits": {
+    "inputBytes": 1048576,
+    "objectiveBytes": 16384,
+    "requirements": 32,
+    "queryBytesPerRequirement": 16384,
+    "aggregateQueryBytes": 262144,
+    "queryGroupsPerRequirement": 64,
+    "aggregateQueryGroups": 512,
+    "expandedTermsPerRequirement": 512,
+    "aggregateExpandedTerms": 4096,
+    "jobs": 8,
+    "maxEvidenceBytes": 4194304,
+    "maxRecords": 128,
+    "perQueryRecords": 64,
+    "perDocumentRecords": 8,
+    "serializedOutputBytes": 16777216
+  },
+  "budget": {
+    "field": "budget",
+    "defaults": {
+      "max_evidence_bytes": 32768,
+      "max_records": 24,
+      "per_query_records": 8,
+      "per_document_records": 2
+    },
+    "bytePolicy": "compact-json-evidence-array-bytes-v1",
+    "exactMeasurement": "evidence_bytes is the UTF-8 byte count of compact canonical JSON serialization of the complete evidence array, including brackets, commas, evidence metadata, records, and requirement matches.",
+    "minimumByteBudget": 2,
+    "emptyEvidenceBytes": 2,
+    "recordFidelity": "Evidence records are never text-truncated to fit. An entry that cannot fit is omitted and reported through requirement and budget diagnostics.",
+    "outputBoundary": "The evidence byte budget does not claim that the complete result envelope has the same size; requirements, freshness, receipt, verification metadata, and pressure diagnostics remain outside that budget and the whole output has a separate 16 MiB cap.",
+    "pressure": {
+      "policy": "fixed-utilization-thresholds-v1",
+      "levels": {
+        "normal": "Both byte and record utilization are below 85% and selection was not constrained.",
+        "warning": "The dominant utilization is at least 85% and below 95% without a constrained selection.",
+        "critical": "The dominant utilization is at least 95% or either selection budget rejected eligible evidence."
+      },
+      "thresholdsBasisPoints": {
+        "warning": 8500,
+        "critical": 9500
+      },
+      "headroom": "Bytes and records report used, limit, remaining, and integer utilization_basis_points without floating-point variability.",
+      "dominantDimension": "bytes, records, or bytes-and-records identifies the highest utilization ratio.",
+      "contributors": "Up to five selected records and five source documents are sorted by serialized evidence bytes and stable identity. They report contribution only; they never influence selection.",
+      "strictBoundary": "Pressure is advisory. warning or critical alone never changes ok, completion, receipt, or --strict exit behavior."
+    }
+  },
+  "execution": {
+    "session": "The CLI RetrievalSession owns one shared reader lock, one exact active manifest identity, and one freshness assessment for every requirement.",
+    "candidateEmbeddedSession": "The 2.0 development loaded-generation constructor instead owns immutable snapshot bytes and a request-admission proof; it retains no publication lock. Pack algorithms and evidence semantics are shared. See docs/machine/shin-warm-snapshot-v1.json. This is not a server Pack endpoint or permission to reuse one freshness proof indefinitely.",
+    "parallelism": "Requirements may run through up to eight bounded C++20 workers. Results remain in canonical requirement order and worker count cannot change evidence or receipt.",
+    "retrieval": "Every requirement reuses RetrievalSession::brief_execution and therefore the profile aliases, sparse candidate indexes, strict/scoped/relaxed/planned fallback, typed evidence ordering, and query coverage already owned by normal brief.",
+    "projectionBoundary": "Internal evidence assembly owns deduplication, selection, completion, verification ranges, and receipt identity before output projection. Full and compact envelopes render the same immutable model and cannot introduce another ranker or selection path.",
+    "publication": "Input is parsed and bounded before opening the generated index. No partial pack is emitted when a worker or index read fails.",
+    "snapshotPinned": true
+  },
+  "projections": {
+    "default": "full",
+    "full": {
+      "schema": "shin.agent-context-pack.v1",
+      "compatibility": "The v1.8 envelope and default CLI behavior are preserved.",
+      "diagnostics": "Every requirement retains complete retrieval, planner, coverage, candidate, and budget diagnostics."
+    },
+    "compact": {
+      "schema": "shin.agent-context-pack-compact.v1",
+      "selectionIdentity": "receipt_id, request_fingerprint, evidence_set_fingerprint, evidence ids, evidence records, verification paths, completion, and budget accounting are identical to full projection for the same request and snapshot.",
+      "retained": [
+        "completion and exact budget accounting",
+        "one bounded requirement summary per scope, must, and should item",
+        "full requirement diagnostics only for unsatisfied items under gaps",
+        "verification paths and complete selected evidence records",
+        "compact deterministic receipt identity"
+      ],
+      "omitted": [
+        "repeated successful query diagnostics",
+        "derivable per-requirement evidence_satisfied and coverage_complete booleans",
+        "selected-coverage schema, policy narration, and covered-group index lists; aggregate counts plus uncovered indices remain",
+        "full receipt replay fields already bound into receipt_id",
+        "full execution-policy narration"
+      ],
+      "coverageSummary": "Successful requirement summaries retain policy mode, any non-zero minimum, selected total/covered/uncovered counts, and every uncovered group index. Complete selected-coverage objects remain available in the full projection and in compact gaps for unsatisfied requirements.",
+      "authorityBoundary": "Compact is an agent transport projection, not a weaker retrieval or verification mode."
+    }
+  },
+  "telemetry": {
+    "enabledBy": "pack --telemetry",
+    "schema": "shin.pack-telemetry.v1",
+    "defaultEmission": false,
+    "determinismBoundary": "Ordinary Pack output remains byte-deterministic. Telemetry is opt-in because latency and process RSS are observational and non-deterministic.",
+    "clock": "steady-clock",
+    "phasesMs": [
+      "request_parse",
+      "session_open",
+      "retrieval",
+      "selection",
+      "projection",
+      "serialization",
+      "total_before_emit"
+    ],
+    "memory": "process_peak_rss_bytes uses getrusage on POSIX, normalizes Linux KiB to bytes, uses native bytes on Apple platforms, and is null when unavailable.",
+    "payload": "projected_payload_bytes measures pretty serialized output before telemetry is appended."
+  },
+  "evidence": {
+    "schema": {
+      "evidence_id": "FNV-1a-64 identity of evidence type plus the complete canonical stable record JSON, including section indexed_text. Full keys are compared and hash collisions fail closed before display projection.",
+      "evidence_type": "One canonical supported evidence type.",
+      "location": "Repository-relative path and exact start/end line range for source verification.",
+      "record": "Fixed display projection without query scores or section indexed_text. indexed_text_bytes and indexed_text_omitted_bytes retain the publication bounds; preview remains the display excerpt. Evidence kind and verification level are preserved.",
+      "matches": "Every task requirement that retrieved the record, including requirement kind, per-query rank, score, matched fields, and matched query-group indices."
+    },
+    "deduplicationPolicy": "canonical-record-v1",
+    "deduplicationScope": "One pack. Exact canonical records are shared across requirements before display projection. Search-only indexed_text remains part of the full key even though Pack omits it. Every retained edge keeps that record's query-specific rank, score, matched fields and matched query-group indices.",
+    "deduplicationBoundary": "Rows with different full stable records remain separate, including rows on the same path with overlapping ranges or equal normalized summary or preview when their type, range, status, authority, provenance, or other stable fields differ. No embedding, fuzzy similarity, source-overlap collapse, or consumer rule participates.",
+    "selectionPolicy": "replacement-aware-requirement-seed-ranked-fill-v4",
+    "selectionPasses": [
+      "Filter Brief evidence types before a disallowed type can select a retrieval branch or consume an output slot.",
+      "Collect each requirement's bounded candidate reservoir with per_query_records; per_document_records is applied only once by the Pack-wide selector.",
+      "Sort each requirement's candidates by that query's rank, score, evidence type, authority, path, line, and evidence identity.",
+      "Seed the best fitting record for each scope and must requirement in request order; an already selected weaker match does not suppress an unselected stronger match.",
+      "Seed the best fitting record for each should requirement in request order under the same rule.",
+      "When a required seed is blocked by a full document slot, deterministically replace a selected record from that document only when the replacement preserves every already-seeded required coverage policy and satisfies the current requirement.",
+      "Fill remaining record and byte capacity using requirement priority, requirement order, per-query rank, score, evidence type, path, line, and evidence identity as stable tie breakers.",
+      "Apply per_document_records once across every selected evidence type and every requirement so one source cannot bypass the diversity budget through typed duplicates."
+    ],
+    "perDocumentBudget": "per_document_records is one global selected-record ceiling per repository path across contracts, decisions, runbooks, facts, sections, and requirement overlap. Candidate discovery uses the separate bounded per_query_records reservoir so an earlier requirement cannot hide a later shared record. per_document_budget_constrained reports rejected eligible evidence but does not by itself mean the byte or record envelope is saturated.",
+    "verificationPaths": "verification_paths deduplicates selected repository paths, exact line ranges, and evidence ids in first selected path order. Agents still open those source ranges before treating a claim as product authority."
+  },
+  "completion": {
+    "evidenceSatisfied": "evidence_satisfied is true when at least one eligible record retrieved for that requirement remains selected after global type, record, and byte budgets.",
+    "satisfiedRequirement": "satisfied requires evidence_satisfied and the optional selected-evidence coverage policy. The default any-evidence policy preserves prior completion behavior.",
+    "complete": "Every required scope and must requirement is satisfied under its selected policy. Optional should requirements do not affect completeness.",
+    "coverageComplete": "completion.coverage_complete is independently true only when selected Pack match edges cover every normalized group for every required requirement. It may be false while completion.complete is true under default or minimum-group policy.",
+    "selectedCoverage": "selected_query_coverage uses only matched_group_indices retained on selected Pack evidence edges. It cannot claim planner-only or budget-excluded support.",
+    "queryCoverageBoundary": "The existing query_coverage object describes retrieval and planner support before global Pack selection. selected_query_coverage and coverage_complete describe only evidence actually transported in the Pack.",
+    "nonStrict": "An incomplete non-strict pack remains an operationally successful result with ok=true and completion.complete=false.",
+    "strict": "--strict emits the complete diagnostic result with ok=false and exits 1 when any required requirement is unsatisfied.",
+    "freshness": "--require-current independently requires exact current generated output before retrieval; strict does not imply current."
+  },
+  "receipt": {
+    "schemaVersion": "shin.context-pack-receipt.v1",
+    "requestFingerprint": "FNV-1a-64 of the canonical effective shin.task-request.v1 document.",
+    "evidenceSetFingerprint": "FNV-1a-64 of the exact compact evidence array.",
+    "receiptId": "FNV-1a-64 over receipt schema, engine version, generator identity, profile, snapshot id, request fingerprint, evidence-set fingerprint, and ordered evidence ids.",
+    "replayInputs": [
+      "engine_version",
+      "generator_version",
+      "profile",
+      "snapshot_id",
+      "request_fingerprint",
+      "evidence_set_fingerprint",
+      "ordered evidence_ids"
+    ],
+    "deterministic": true,
+    "cryptographicAuthentication": false,
+    "trustBoundary": "FNV identities detect accidental drift and prove deterministic replay identity inside Shin's local publication model. They do not authenticate an adversarial producer or source tree."
+  },
+  "profileQuality": {
+    "field": "packEvalCases",
+    "command": "pack-eval [--require-current] [--strict]",
+    "schema": "shin.pack-eval.v1",
+    "failureProjection": "shin.pack-eval-failures.v1 via --failed-only; failed cases use a 16 KiB whole-record budget and retain requirement queries plus non-executing diagnose argv.",
+    "maximumCases": 32,
+    "caseFields": [
+      "id",
+      "request",
+      "mustPaths",
+      "mustNotPaths",
+      "expectedComplete",
+      "requireSerialParallelIdentity",
+      "maxEvidenceBytes",
+      "maxRecords",
+      "maxCompactBytes"
+    ],
+    "execution": "Every inline task request is parsed and bounded before index open. One RetrievalSession pins the complete suite to one publication. Each case runs serially and with bounded parallel jobs.",
+    "identity": "Serial and parallel runs must preserve receipt, request and evidence fingerprints, ordered evidence ids and records, requirement diagnostics, verification paths, completion, eligible-record counts, byte accounting, and budget constraint flags when required by the case.",
+    "strictFreshness": "pack-eval --strict requires a fully current exact snapshot, matching the existing eval quality-gate convention.",
+    "ownership": "Expected and forbidden paths, task wording, and budgets stay in profiles. Consumer product semantics do not enter C++ Core."
+  },
+  "benchmark": {
+    "command": "pack-bench --input FILE [--projection full|compact] [--jobs N] [--iterations N] [--warmup N] [--require-current] [--strict]",
+    "schema": "shin.pack-bench.v1",
+    "defaults": {
+      "projection": "compact",
+      "iterations": 20,
+      "warmup": 2
+    },
+    "bounds": {
+      "iterations": 1000,
+      "warmup": 100,
+      "jobs": 8
+    },
+    "sampleBoundary": "Each sample opens a new RetrievalSession and reports session-open, retrieval, selection, projection, serialization, and total distributions.",
+    "stability": "The result fails when receipt, evidence fingerprint, snapshot identity, or completion changes across measured samples; --strict additionally requires complete=true.",
+    "completion": "complete is the measured completion value and completion_stable reports equality across every measured sample independently of strict mode.",
+    "resourceEvidence": "The result reports compact/full output bytes, selected evidence bytes and records, active jobs, and process peak RSS."
+  },
+  "indexBackend": {
+    "current": "Immutable whole-snapshot JSONL stores with sorted terms.index.tsv term offsets and sorted row-offset TSV indexes. Sparse retrieval uses binary seek and direct row reads; broad candidates use the bounded scan fallback.",
+    "btreeDecision": "Deferred. A mutable B-tree would add page management, crash recovery, format migration, and update semantics without addressing a measured v1.9 retrieval bottleneck because Shin publishes complete immutable snapshots.",
+    "migrationTriggers": [
+      "measured offset-index seek or read amplification dominates pack latency on real corpora",
+      "whole-snapshot publication becomes unacceptable and incremental durable updates become a product requirement",
+      "range or prefix operations not served by sorted offset indexes become a verified dominant workload"
+    ],
+    "abstractionBoundary": "Agent Context Pack consumes RetrievalSession and BriefExecution only. It has no dependency on TSV layout, so the index reader can be replaced after evidence justifies a new backend."
+  },
+  "qualityGates": [
+    "schema and unknown-field rejection before index open",
+    "snapshot identity equality with the pinned RetrievalSession",
+    "serial/parallel and canonical-request evidence plus receipt equality",
+    "exact canonical-record deduplication with retained requirement match edges and ranges",
+    "best-per-requirement seeding under overlapping candidates and a saturated global record budget",
+    "default any-evidence, all-group, and minimum-group completion semantics",
+    "selected Pack coverage remains distinct from pre-selection retrieval and planner coverage",
+    "exact compact evidence byte accounting",
+    "record and byte budget diagnostics",
+    "strict and non-strict incomplete behavior",
+    "evidence type filtering",
+    "exact verification path ranges",
+    "full and compact projection evidence plus receipt identity",
+    "compact successful summaries and full unsatisfied requirement diagnostics",
+    "opt-in phase, payload, and peak-RSS telemetry without default-output drift",
+    "profile-owned Pack completion, path, size, and serial/parallel identity eval",
+    "Pack p50, output-size, evidence-size, receipt-stability, and peak-RSS performance budgets",
+    "oversized input and duplicate requirement rejection",
+    "ASan/UBSan and cross-platform release gates"
+  ]
+}

@@ -1,0 +1,5 @@
+id: WorkflowStart
+type: datasource
+subtype: JavascriptQuery
+blockData:
+  uuid: fixture-start

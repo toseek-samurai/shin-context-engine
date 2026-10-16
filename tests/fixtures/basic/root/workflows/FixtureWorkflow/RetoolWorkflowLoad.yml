@@ -1,0 +1,13 @@
+id: RetoolWorkflowLoad
+type: datasource
+subtype: RESTQuery
+resourceName: fixture-resource
+resourceDisplayName: FixtureApi
+query: /widgets
+blockData:
+  uuid: fixture-workflow-load
+  pluginId: RetoolWorkflowLoad
+  blockType: default
+  incomingPorts:
+    - portId: fixture-port
+      blockId: fixture-start

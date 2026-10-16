@@ -1,0 +1,156 @@
+{
+  "schemaVersion": "shin.change-aware-impact-pack-contract.v1",
+  "document": "change-aware-impact-pack-v1",
+  "status": "accepted",
+  "title": "Change-Aware Impact Pack Contract",
+  "summary": "Deterministic, read-only impact reread over one verified published snapshot and the current bounded worktree.",
+  "release": {
+    "productVersion": "1.25.0",
+    "generator": "shin-generator-v17-explicit-authority",
+    "maturity": "implemented",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "command": {
+    "name": "impact",
+    "arguments": "[--limit N] [--depth N] [--max-evidence-bytes N] [--require-current] [--strict]",
+    "outputSchema": "shin.impact-pack.v1",
+    "profileRequired": true,
+    "sourceRootRequired": true,
+    "verifiedPublishedSnapshotRequired": true,
+    "sourceScanAccepted": false,
+    "sourceMutationAllowed": false,
+    "indexMutationAllowed": false,
+    "executionAllowed": false,
+    "publicationAllowed": false,
+    "compactionAllowed": false,
+    "gitRequired": false
+  },
+  "inputs": {
+    "snapshot": "impact opens a verified RetrievalSession with a call-scoped shared_existing publication lock. The session owns disk verification or a bound immutable GeneratedSnapshot. Missing index or lock state is not created as a side effect. Its manifest supplies profile-owned source and source-fact paths, content hashes, generator identity, and snapshot_id.",
+    "worktree": "observe_worktree enumerates the active profile-owned document and source-fact inputs and compare_worktree compares their metadata, bytes, hashes, and bounded inventory to the snapshot.",
+    "graph": "links.jsonl is read from the same published snapshot. Only graph paths that are owned by the snapshot or the observed profile inventory can become impact candidates.",
+    "sourceReread": "For eligible current source-fact files, impact rereads bytes only after metadata and content-hash checks and verifies the file again before emission. A concurrent change fails closed."
+  },
+  "nativeEvaluation": {
+    "introducedIn": "2.0.0-dev.13",
+    "status": "verified-native-development",
+    "header": "src/impact.h",
+    "entrypoint": "evaluate_impact(RuntimeOptions, ImpactEvaluationOptions, optional<string_view> receipt_bundle)",
+    "semantics": "Typed bounds and optional bounded in-memory receipt input use the same evaluation as CLI. No argv, file-input adapter, stdout capture or publication in the evaluator. Current source inspection remains explicit read-only I/O. load_source_graph shares row parsing and validation across disk and immutable GeneratedInput cursors; no second graph parser.",
+    "diagnosticChange": "A missing publication lock now uses index-unavailable/category index instead of the former generic execution-failed. Missing index still exits1, and neither condition creates files. Impact output overflow retains impact-output-too-large.",
+    "boundary": "Native evaluation does not implement Server storage, remote source observation, producer authentication or complete semantic impact."
+  },
+  "freshness": {
+    "coverageDiagnosis": "coverage.unresolved_snapshot_relations is a global count over the published graph; it is not itself an input to evidence_complete. selection_complete concerns selected path coverage. evidence_complete checks the selected reread records: baseline_scope_probe_complete, current_reread_omitted, syntax_observation_complete, relations_omitted and scopes_omitted. Inspect those fields on each reread path to locate what must be reviewed. Neither global graph observations nor complete bounded selection prove complete semantic impact.",
+    "default": "Stale snapshot or worktree state is allowed for a bounded review envelope. Freshness is reported in index_current, worktree, changes, and coverage; stale evidence is not relabeled as current.",
+    "requireCurrent": "--require-current returns failure when the published snapshot and bounded worktree observation do not establish index_current=true. It does not rebuild or repair the index.",
+    "strict": "--strict requires inspection_complete=true: selection_complete must hold and every selected record must also have complete bounded evidence with no required baseline, reread, syntax, scope, or relation omission.",
+    "combined": "--require-current --strict requires both freshness and inspection_complete. --strict alone does not turn stale evidence into a currentness failure; it rejects an incomplete inspection.",
+    "profileDrift": "Profile configuration drift suppresses all reread evidence and relation traversal and makes selection_complete=false; the output reports profile_configuration_current=false."
+  },
+  "limits": {
+    "limitDefault": 24,
+    "limitMaximum": 128,
+    "depthDefault": 1,
+    "depthMaximum": 2,
+    "maxEvidenceBytesDefault": 32768,
+    "maxEvidenceBytesMinimum": 2,
+    "maxEvidenceBytesMaximum": 131072,
+    "compareWorktreeDetailCap": "min(1000, limit * 2 + 8)",
+    "relationsPerCandidate": 8,
+    "scopesPerPath": 6,
+    "generatedScopeProbePerStore": {
+      "sections": 256,
+      "facts": 256,
+      "decisions": 256,
+      "contracts": 256,
+      "runbooks": 256
+    },
+    "currentSourceBytesPerPath": 2097152,
+    "currentSourceBytesTotal": 16777216,
+    "serializedOutputMaximumBytes": 524288,
+    "overflowPolicy": "Limit, depth, evidence bytes, source rereads, relation references, scopes, and serialized output fail or stop selection at their explicit boundary; the command never emits an unbounded replacement."
+  },
+  "changeModel": {
+    "states": [
+      "added",
+      "removed",
+      "changed",
+      "unchanged",
+      "unobserved"
+    ],
+    "candidateRoots": "Every non-empty compare_worktree detail is a depth-zero changed-profile-input. Relations traverse both incoming and outgoing resolved edges breadth-first up to depth when profile configuration is current.",
+    "ordering": "Candidates are ordered by ascending graph depth and then repository-relative path. Relations are retained in deterministic generated-link order and capped per candidate.",
+    "sourceState": "A path is changed when its current content_hash differs from the manifest hash, added or removed when present on only one side, unchanged when hashes match, and unobserved when the current hash is unavailable.",
+    "scopeCoverage": "Scope records are bounded recommendations, not a complete text diff. A changed span is identified by record type, symbol name, and span_hash when that identity is available; an empty span hash cannot prove unchanged behavior."
+  },
+  "provenance": {
+    "snapshot": "snapshot_id is copied from the verified published session. Baseline hashes and generated relation rows are historical published-snapshot evidence, not a newly published snapshot.",
+    "worktree": "Current hashes and current scope reads are observed-worktree evidence only after bounded reread and stability checks. source_state and index_current remain separate axes.",
+    "relations": "Impact relation records expose from, to, kind, line, basis=published-snapshot, source_state, verification_level=declared for document links or verification_level=source-observed for structural source-* relations, and runtime_reachability_proven=false. Relation kind is not an evidence_kind enum.",
+    "scopes": "Scope records preserve status, authority_level, evidence_kind, and verification_level from the originating fact or section; declared-document scope retains its originating provenance. range_origin, start_line/end_line, and span_hash remain explicit when present. historical-snapshot and current-published-source basis values remain explicit when current source bytes are not reread.",
+    "tests": "tests_to_review is a statically related review list. Every emitted item records execution=not-run and requires_review=true; it is not a test receipt or a pass/fail claim.",
+    "identity": "FNV-1a source and span identities are content identities only. They are not cryptographic authenticity, compiler identity, behavioral equivalence, or runtime reachability proof."
+  },
+  "output": {
+    "requiredTopLevelFields": [
+      "schema_version",
+      "command",
+      "ok",
+      "profile",
+      "root",
+      "out_root",
+      "snapshot_id",
+      "worktree",
+      "index_current",
+      "changes",
+      "policy",
+      "reread",
+      "tests_to_review",
+      "coverage",
+      "next_actions",
+      "require_current",
+      "strict"
+    ],
+    "policy": {
+      "read_only": true,
+      "publication": false,
+      "actions_executed": false,
+      "graph_basis": "published-snapshot",
+      "runtime_reachability_proven": false,
+      "complete_semantic_impact": false
+    },
+    "rereadRecord": "Each selected path may expose relations_omitted, current_reread_omitted, syntax_observation_complete, baseline_scope_probe_complete, scopes_omitted, and unlocalized_source_change. Historical fallback sets syntax_observation_complete=false when a prior fact has a *-syntax-incomplete record. Omission counts are per-path bounded evidence, not inferred zeroes.",
+    "coverage": "Reports selection_complete, evidence_complete, inspection_complete, candidate_paths, returned_paths, omitted_paths, evidence_bytes, max_evidence_bytes, byte_budget_constrained, profile_configuration_current, and unresolved_snapshot_relations.",
+    "evidenceComplete": "True only when every selected record reports baseline_scope_probe_complete=true, current_reread_omitted=0, syntax_observation_complete=true where syntax applies, relations_omitted=0, and scopes_omitted=0. It is independent from file freshness.",
+    "inspectionComplete": "inspection_complete = selection_complete && evidence_complete.",
+    "nextActions": "All next_actions carry automatic_execution=false. They are review instructions, never a command queue."
+  },
+  "sourceRelationBoundary": {
+    "contract": "docs/machine/source-member-ranges-v1.json",
+    "kinds": [
+      "source-include",
+      "source-payload",
+      "source-reference",
+      "source-import"
+    ],
+    "resolution": "Source graph edges with status=resolved and explicit declared document links with status=ok are traversable. unresolved and ambiguous rows remain provenance and omission evidence; they do not become guessed edges."
+  },
+  "nonGoals": [
+    "no compiler call graph, type checking, build graph, or semantic source diff",
+    "no claim of complete semantic impact or behavioral equivalence",
+    "no runtime reachability, deployment, production, or business-effect proof",
+    "no executed test proof, complete test-suite claim, or automatic test execution",
+    "no source mutation, generated-index rebuild, repair, publication, or snapshot replacement",
+    "no automatic action execution, command queue, session compaction, or compaction-triggered persistence",
+    "no Git status, commit, branch, or ignore-file interpretation",
+    "no scoring algorithm, query coverage, or retrieval fallback policy change; added facts and finer granularity may change observed candidate counts, ordering, evidence selection, and receipts",
+    "no cryptographic authenticity claim"
+  ],
+  "documentAmbiguities": [
+    "A current source file can have a changed file hash while no bounded declaration span is new; the result then reports unlocalized_source_change rather than inventing a member-level cause.",
+    "A stale snapshot can still produce a useful bounded review envelope under default mode, but its freshness and omissions must remain visible. Profile drift suppresses all reread evidence.",
+    "A related test source is a review recommendation only. Static relation evidence does not establish that the test covers the changed behavior or that it executed.",
+    "Ambiguous and unresolved source relations are intentionally fail-closed and can make impact incomplete; no alternative resolver or product-specific interpretation is implied."
+  ]
+}

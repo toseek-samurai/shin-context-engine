@@ -1,0 +1,49 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-generic-dotnet",
+  "status": "active",
+  "summary": "Bootstrap-only C# and .NET source profile for projects without established machine documentation.",
+  "id": "generic-dotnet",
+  "sourceLabel": "C# and .NET bootstrap source evidence",
+  "rootFiles": [],
+  "optionalRootFiles": [
+    "README.md",
+    "readme.md",
+    "AGENTS.md",
+    "global.json",
+    "Directory.Build.props",
+    "Directory.Build.targets",
+    "Directory.Packages.props"
+  ],
+  "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
+  "sourceFactRoots": ["."],
+  "sourceFactExtensions": [".cs"],
+  "sourceFactExtractors": ["language"],
+  "sourceFactMaxFiles": 10000,
+  "sourceFactMaxFileBytes": 1048576,
+  "agentStartPaths": [],
+  "bootstrapOnly": true,
+  "jsonKeyMaxDepth": 2,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonlMaxRowsPerFile": 2000,
+  "sortTopics": true,
+  "defaultTopic": "dotnet-source",
+  "evalCases": [],
+  "topicRules": [
+    {
+      "id": "dotnet-source",
+      "description": "C# namespaces, classes, records, interfaces, enums, and methods.",
+      "keywords": ["csharp", "dotnet", "namespace", "class", "record", "interface", "enum", "method"]
+    },
+    {
+      "id": "build",
+      "description": ".NET solution and project structure.",
+      "keywords": ["dotnet", "csproj", "solution", "msbuild", "nuget"]
+    },
+    {
+      "id": "tests",
+      "description": ".NET test source evidence.",
+      "keywords": ["test", "xunit", "nunit", "mstest"]
+    }
+  ]
+}

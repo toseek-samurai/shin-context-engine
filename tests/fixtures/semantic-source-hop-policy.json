@@ -1,0 +1,11 @@
+{
+  "schema_version": "shin.semantic-source-hop-experiment.v1",
+  "candidate_limit": 20,
+  "report_limit": 5,
+  "per_document": 2,
+  "base": "Unchanged code-anchor policy: at most one original-Core-first5 source fact, then semantic document navigation. Exact/owner and absent-model paths remain lexical-only.",
+  "hop": "Only the selected code anchor's physical source range, verified source-reference/source-payload rows, exactly one distinct resolved enrolled same-project target. Any unresolved/unsafe/unowned target, self-reference, more than20 matching links or multiple targets suppresses the hop. No recursion or inference from names/URLs; already selected targets are not moved.",
+  "placement": "Insert one target range after the anchor. Choose highest existing query similarity within the target's enrolled parent rows, tie by frozen row order. Keep all previously selected paths; at a full20 budget remove only a later duplicate range outside first5, otherwise suppress the hop. Preserve cap2/path, original signals and source hashes. Relationship and similarity grant no lexical coverage, authority, currentness, existence or Pack completion.",
+  "acceptance": "Freeze before scoring all60 observed queries. Preserve the code-anchor control's every positive top20/first5 hit as well as the existing semantic/document-first/lexical gate. Report raw misses separately from structural navigation. Never relax expected paths or count a follow-up hint as an unchanged raw candidate hit.",
+  "scope": "One test-only source-bound hop over the same frozen parent vectors and verified Core links, no consumer-specific parser, source modification, graph recursion, cross-project traversal, model/weight sweep, raised budgets, production default or Stable change."
+}

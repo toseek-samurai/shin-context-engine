@@ -1,0 +1,11 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "id": "capped-source-scan",
+  "sourceLabel": "Incomplete live source scan fixture",
+  "rootFiles": ["README.md"],
+  "sourceFactRoots": ["apps"],
+  "sourceFactExtensions": [".rsx"],
+  "sourceFactExtractors": ["retool"],
+  "sourceFactMaxFiles": 1,
+  "sourceFactMaxFileBytes": 65536
+}

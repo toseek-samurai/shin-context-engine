@@ -1,0 +1,370 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-observer-self",
+  "status": "active",
+  "summary": "Focused self profile for local Observer source, bounded state, explicit delivery, and shared protocol contracts.",
+  "id": "shin-observer",
+  "sourceLabel": "Shin Observer public component contracts and source",
+  "rootFiles": [
+    "AGENTS.md",
+    "observer/CMakeLists.txt",
+    "observer/VERSION",
+    "profiles/shin-observer.json",
+    "docs/machine/shin-component-profiles-v1.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json"
+  ],
+  "sourceExtensions": [
+    ".md",
+    ".json"
+  ],
+  "documentIncludePrefixes": [
+    "AGENTS.md",
+    "profiles/shin-observer.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "docs/machine/shin-local-observer-v1.json",
+    "docs/machine/shin-observer-delivery-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/shin-observer-outbox-v1.json",
+    "docs/machine/shin-observer-state-read-v1.json",
+    "docs/machine/shin-observer-desktop-plan-v1.json",
+    "observer/CMakeLists.txt",
+    "observer/VERSION",
+    "docs/machine/shin-component-profiles-v1.json",
+    "docs/machine/shin-companion-protocols-v1.json",
+    "docs/machine/shin-server-recovery-v1.json"
+  ],
+  "sourceFactRoots": [
+    "observer/src",
+    "observer/include",
+    "observer/tests",
+    "shared/observer-protocol/src",
+    "shared/observer-protocol/include",
+    "shared/observer-protocol/tests"
+  ],
+  "sourceFactExtensions": [
+    ".cpp",
+    ".h",
+    ".py"
+  ],
+  "sourceFactExtractors": [
+    "language"
+  ],
+  "sourceFactMaxFiles": 128,
+  "sourceFactMaxFileBytes": 131072,
+  "agentStartPaths": [
+    "AGENTS.md",
+    "docs/machine/shin-observer-history-v1.json"
+  ],
+  "jsonKeySections": true,
+  "jsonKeyMaxDepth": 1,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonPathReferences": true,
+  "jsonSchemaTitle": true,
+  "jsonSummaryKeys": true,
+  "defaultTopic": "local-observer",
+  "evalCases": [
+    {
+      "id": "observer-local-archive-contract",
+      "query": "shin-observer-delivery-v1 localArchive",
+      "mustPaths": [
+        "docs/machine/shin-observer-delivery-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-delivery-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-local-archive-owner",
+      "query": "archive_outbox",
+      "mustPaths": [
+        "observer/src/observer.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/observer.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-atomic-state-read-contract",
+      "query": "shin-observer-state-read-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-state-read-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-state-read-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-current-protocol-inventory",
+      "query": "shin-companion-protocols-v1",
+      "mustPaths": [
+        "docs/machine/shin-companion-protocols-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-companion-protocols-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-recovery-boundary",
+      "query": "shin-server-recovery-v1",
+      "mustPaths": [
+        "docs/machine/shin-server-recovery-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-server-recovery-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-read-only-reconciliation",
+      "query": "reconcile_outbox",
+      "mustPaths": [
+        "observer/src/observer.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/observer.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-reconciliation-result-contract",
+      "query": "verify_reconciliation_result",
+      "mustPaths": [
+        "shared/observer-protocol/src/observer_protocol.cpp"
+      ],
+      "mustTopPaths": [
+        "shared/observer-protocol/src/observer_protocol.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-delivery-contract",
+      "query": "shin-observer-delivery-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-delivery-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-delivery-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-delivery-transport",
+      "query": "send_observation",
+      "mustPaths": [
+        "observer/src/delivery_transport.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/delivery_transport.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-acknowledgement-application",
+      "query": "acknowledge_outbox",
+      "mustPaths": [
+        "observer/src/outbox.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/outbox.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-shared-wire-contract",
+      "query": "verify_submission",
+      "mustPaths": [
+        "shared/observer-protocol/src/observer_protocol.cpp"
+      ],
+      "mustTopPaths": [
+        "shared/observer-protocol/src/observer_protocol.cpp"
+      ],
+      "mustTopN": 3,
+      "limit": 6
+    },
+    {
+      "id": "observer-outbox-contract",
+      "query": "shin-observer-outbox-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-outbox-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-outbox-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-outbox-capture",
+      "query": "capture_outbox",
+      "mustPaths": [
+        "observer/src/outbox.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/outbox.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-operational-metrics",
+      "query": "record_metrics",
+      "mustPaths": [
+        "observer/src/metrics.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/metrics.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-contract",
+      "query": "shin-local-observer-v1",
+      "mustPaths": [
+        "docs/machine/shin-local-observer-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-local-observer-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-sampling",
+      "query": "sample_worktree",
+      "mustPaths": [
+        "observer/src/observation.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/observation.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-state-lifecycle",
+      "query": "run_observer",
+      "mustPaths": [
+        "observer/src/observer.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/observer.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-file-safety",
+      "query": "read_named_file",
+      "mustPaths": [
+        "observer/src/io.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/src/io.cpp"
+      ],
+      "mustTopN": 2,
+      "limit": 6
+    },
+    {
+      "id": "observer-offline-boundary",
+      "query": "shin-observer-offline-collaboration-v1",
+      "mustPaths": [
+        "docs/machine/shin-observer-offline-collaboration-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-offline-collaboration-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "observer-desktop-direction",
+      "query": "shin-observer-desktop-plan-v1 optional desktop integration",
+      "mustPaths": [
+        "docs/machine/shin-observer-desktop-plan-v1.json"
+      ],
+      "mustTopPaths": [
+        "docs/machine/shin-observer-desktop-plan-v1.json"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": "observer-local-proof",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "observer-local-proof",
+        "task": {
+          "objective": "Inspect local-only Observer source freshness, atomic outbox and state continuity without claiming network synchronization.",
+          "must": [
+            {
+              "id": "contract",
+              "query": "shin-observer-outbox-v1"
+            },
+            {
+              "id": "sampling",
+              "query": "sample_worktree"
+            },
+            {
+              "id": "lifecycle",
+              "query": "run_observer"
+            },
+            {
+              "id": "outbox",
+              "query": "capture_outbox"
+            }
+          ]
+        },
+        "budget": {
+          "max_evidence_bytes": 24576,
+          "max_records": 16,
+          "per_query_records": 6,
+          "per_document_records": 3
+        }
+      },
+      "mustPaths": [
+        "docs/machine/shin-observer-outbox-v1.json",
+        "observer/src/observation.cpp",
+        "observer/src/observer.cpp",
+        "observer/src/outbox.cpp"
+      ],
+      "mustNotPaths": [
+        "profiles/shin-observer.json"
+      ],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 24576,
+      "maxRecords": 16,
+      "maxCompactBytes": 50000,
+      "requireSerialParallelIdentity": true
+    }
+  ],
+  "topicRules": [
+    {
+      "id": "local-observer",
+      "description": "Local source observation, bounded private state and explicit authority.",
+      "keywords": [
+        "observer",
+        "worktree",
+        "state",
+        "source",
+        "snapshot"
+      ]
+    }
+  ]
+}

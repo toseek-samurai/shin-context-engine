@@ -1,0 +1,9 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<testsuites tests="2" failures="0" errors="0" skipped="0">
+  <testsuite name="outer" tests="2" failures="0" errors="0" skipped="0">
+    <testsuite name="inner" tests="2" failures="0" errors="0" skipped="0">
+      <testcase name="first" classname="example.Nested"/>
+      <testcase name="second" classname="example.Nested"/>
+    </testsuite>
+  </testsuite>
+</testsuites>

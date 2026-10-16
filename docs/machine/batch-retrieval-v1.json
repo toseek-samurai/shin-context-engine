@@ -1,0 +1,116 @@
+{
+  "schemaVersion": "shin.batch-retrieval-contract.v1",
+  "document": "batch-retrieval-v1",
+  "status": "accepted",
+  "title": "Snapshot-Pinned Batch Retrieval Contract",
+  "summary": "Bounded search, context, and brief execution over one verified generated-index publication and one shared retrieval session.",
+  "release": {
+    "productVersion": "1.25.0",
+    "compatibility": "Shin v1.25 requires an explicit generator-v17 rebuild for corrected authority semantics. No compatibility reader or implicit migration is retained."
+  },
+  "command": {
+    "name": "batch",
+    "arguments": "--input FILE|--input - [--jobs N] [--require-current]",
+    "inputSchema": "shin.batch-request.v1",
+    "outputSchema": "shin.batch.v1",
+    "generatedIndexRequired": true,
+    "sourceScanSupported": false
+  },
+  "input": {
+    "topLevelFields": [
+      "schema_version",
+      "requests"
+    ],
+    "requestFields": [
+      "request_id",
+      "command",
+      "query",
+      "limit",
+      "per_doc_limit"
+    ],
+    "commands": [
+      "search",
+      "context",
+      "brief"
+    ],
+    "rules": [
+      "unknown fields are rejected at both document and request level",
+      "request_id is required, bounded, non-control text, and unique within the document",
+      "query is required and must retain meaningful normalized terms",
+      "per_doc_limit is valid only for context and brief",
+      "the complete input and every expanded request are validated before the generated index lock is opened"
+    ]
+  },
+  "session": {
+    "owner": "RetrievalSession",
+    "lock": "The CLI batch path holds one shared generated-index lock from session open through completion of every child retrieval. The candidate embedded immutable-snapshot path is a separate admission lifecycle defined in shin-warm-snapshot-v1, not an automatic daemon mode for this command.",
+    "freshness": "Freshness is assessed once at session open. --require-current requires one exact current proof before child execution.",
+    "manifest": "The active manifest is a non-symlink regular file, is bounded at 64 MiB, matches the session snapshot_id, and uses the supported KB schema and tool identity.",
+    "snapshotRule": "The parent and every child result carry the same non-null snapshot_id.",
+    "freshnessScope": "session-open",
+    "parallelism": "Independent requests may execute concurrently against immutable files under the same shared lock.",
+    "ordering": "Result order always equals input request order regardless of worker scheduling.",
+    "outputBoundary": "The complete bounded JSON document is built before the session and lock are destroyed; stdout emission happens after lock release."
+  },
+  "limits": {
+    "inputBytes": 1048576,
+    "requests": 64,
+    "requestIdBytes": 128,
+    "queryBytesPerRequest": 16384,
+    "queryBytesPerBatch": 262144,
+    "termGroupsPerRequest": 64,
+    "termGroupsPerBatch": 512,
+    "expandedTermsPerRequest": 512,
+    "expandedTermsPerBatch": 4096,
+    "limitPerRequest": 64,
+    "perDocumentLimit": 8,
+    "requestedRecordsPerBatch": 1024,
+    "jobs": 8,
+    "serializedOutputBytes": 16777216
+  },
+  "output": {
+    "topLevelFields": [
+      "schema_version",
+      "tool",
+      "command",
+      "ok",
+      "profile",
+      "root",
+      "out_root",
+      "require_current",
+      "snapshot_id",
+      "index_freshness",
+      "freshness_scope",
+      "execution",
+      "results"
+    ],
+    "resultEntry": {
+      "fields": [
+        "request_id",
+        "result"
+      ],
+      "resultRule": "result is the unmodified structured result model of the requested search, context, or brief command, including evidence_kind and verification_level on evidence rows."
+    }
+  },
+  "failurePolicy": [
+    "The batch is atomic at the response level: invalid input or any child execution failure produces one shin.error.v1 document and no partial batch stdout.",
+    "No per-request retry or partial-success envelope is inferred by Core.",
+    "Resource ceilings fail before unbounded work or stdout emission."
+  ],
+  "verification": [
+    "mixed search/context/brief result equivalence with standalone retrieval",
+    "one snapshot identity across parent and child results",
+    "serial and parallel result equality with stable input ordering",
+    "stdin and regular-file inputs",
+    "validation before index creation or lock acquisition",
+    "duplicate or control-byte id, unknown field, aggregate budget, request count, worker count, and input byte failures",
+    "unsafe retrieval manifest symlink rejection"
+  ],
+  "nonGoals": [
+    "no cross-profile or federated batch",
+    "no source-scan batch",
+    "no long-lived daemon session",
+    "no product-specific query orchestration",
+    "no distributed snapshot transaction"
+  ]
+}

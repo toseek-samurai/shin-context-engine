@@ -1,0 +1,33 @@
+{
+  "schemaVersion": "shin.journal-writer-contract.v1",
+  "document": "shin-journal-writer-v1",
+  "status": "active-contract",
+  "summary": "P3E20 opt-in bounded asynchronous capture of process-local retrieval observations; no foreground SQL logging or automatic retention.",
+  "successor": "The versions and v9 admission below describe the P3E20 introduction. Current configuration/schema come from shin-companion-protocols-v1.json. Server dev36 also applies the Store connected-socket deadline to the writer's separate one-slot pool; shin-server-operations-v1.json owns its limits. This is not a total DNS/connect/CPU or multi-export shutdown deadline.",
+  "configuration": {
+    "journal_writer": {
+      "enabled": false,
+      "principal_id": "",
+      "interval_ms": 1000,
+      "max_retry_ms": 30000,
+      "flush_on_shutdown": true
+    }
+  },
+  "admission": "An enabled writer requires a configured administrator and nonzero observability retention. Disabled policy requires an empty principal. Interval100..60000ms, max_retry_ms at least interval_ms and at most300000ms. Only v9 configuration is accepted; no automatic upgrade or enablement.",
+  "ownership": "One std::jthread uses the existing telemetry ring and retains at most one immutable pending batch, at most256 records and4MiB encoded bytes. There is no extra producer queue and no SQL callback on the retrieval thread. A separate lazy one-slot Store pool prevents consuming foreground pool leases. These are encoded-data bounds, not a process RSS cap.",
+  "delivery": "Polls snapshot the existing native collector after the acknowledged sequence cursor, avoiding copies of acknowledged records. Zero progress does not enroll a producer. Successful export confirms a sequence prefix, which can include known missing observations. A failed batch is retried unchanged with capped exponential delay; later ring eviction remains visible as missing sequence progress when capture resumes. No durable local spool or exactly-once transport claim. Existing Store deduplication and epoch fences remain authoritative.",
+  "failures": "Reclaimed/conflicting identity, malformed native batches, invalid configuration/schema and authority errors block further attempts until explicit process restart or configuration repair. Capacity and availability failures retain the batch and back off; the writer never reclaims storage or rotates identity. Logs/status contain bounded reason codes, not exception text, source snippets, queries or credentials.",
+  "statusEndpoint": "GET /api/v1/telemetry/retrieval/journal/writer is administrator-only and read-only. It exposes process-local counters, pending encoded size/count, last-polled source progress and acknowledgement, retry timing and terminal blockage. It does not call PostgreSQL, poll the source, flush or repair anything. Last-polled backlog is not live queue depth or all-traffic completeness.",
+  "shutdown": "After HTTP handlers drain, request stop and finish the in-flight operation. Since dev37, if that operation fails after stop was requested, retain its pending batch without another immediate export. Otherwise optionally attempt at most two exports to cover pending data and a final source snapshot, stopping on the first non-success. Report shutdown_prefix_acknowledged separately from known missing records. Failure never changes the retrieval result. Join before destroying collector/Store; no detached work. Existing libpq connect/statement/lock timeouts still apply, but this slice does not provide a universal hard wall-clock deadline for synchronous driver or network stalls. Crash loss remains possible.",
+  "authority": "Configured background capture is the only new automatic write. Manual capture stays available. GETs never schedule writes; query capture still requires the existing explicit project allowlist. No source/KB mutation, publication, retention, producer reclamation, consumer cutover or trust escalation.",
+  "acknowledgedIdentity": "Status acknowledged_producer_epoch is null until a validated capture receipt. It does not claim the database has no producer: registration may already have committed before a failed capture. Current database admission is independently observable through the admin producer inventory.",
+  "sharedProgress": "A concurrent manual capture can advance database observed_through beyond the background writer's last source poll. That receipt is valid; unacknowledged_sequences_at_last_poll is max(0,sampled_through-acknowledged_through), not an assertion that sampled progress always dominates acknowledgement.",
+  "counterScope": "Export/insert/missing/recovery counters attribute only this background writer's operations. A manual capture can insert some or all shared observations; its inserted_count is not added to writer.inserted_records. Use persisted journal coverage for database totals and keep contributor counters separate.",
+  "nativePort": "Exporter is a trusted in-process callback, not an external event import. It receives an unregistered source snapshot. RetrievalService::capture_journal_batch copies it, registers and assigns the lifetime epoch, then checks the Store receipt schema/instance/epoch against that decorated batch. Writer validates the acknowledged progress/schema and subsequent epoch continuity; it must not compare an epoch against the undecorated pending source snapshot.",
+  "sources": [
+    {
+      "url": "https://opentelemetry.io/docs/specs/otel/logs/sdk/",
+      "use": "Bounded batching, serialized export, explicit flush/shutdown and exporter self-observability. This is architectural guidance, not an OTel SDK integration or compliance claim."
+    }
+  ]
+}

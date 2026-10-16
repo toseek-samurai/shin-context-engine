@@ -1,0 +1,8 @@
+id: WrongWorkflowStart
+type: datasource
+subtype: JavascriptQuery
+resourceName: JavascriptQuery
+blockData:
+  uuid: fixture-start
+  pluginId: WrongWorkflowStart
+  blockType: code

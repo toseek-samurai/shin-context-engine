@@ -1,0 +1,62 @@
+{
+  "schemaVersion": "shin.retrieval-journal-contract.v1",
+  "document": "shin-retrieval-journal-v1",
+  "status": "active-contract",
+  "summary": "P3E15 typed PostgreSQL retrieval facts and bounded analytical reports, populated by an explicit administrative capture of current process diagnostics.",
+  "currentExtension": "P3E15 foundation baseline; P3E16 in shin-retrieval-journal-retention-v1 adds explicit fact prefix retirement. P3E19 in shin-retrieval-journal-epochs-v1 adds registered epochs, explicit fully-retired producer-prefix reclamation and cumulative counters. P3E20 in shin-journal-writer-v1 adds separately configured opt-in asynchronous capture; consult its current verification status. The manual-only/no-retention/no-reclamation statements below describe the P3E15 baseline, not current Server capability. Retention and reclamation remain explicit admin actions.",
+  "grain": "One fact is one completed authorized Server retrieval attempt, identified by process instance plus sequence. Repeated capture/delivery is not another retrieval. New execution of the same request is a new fact. Feedback, per-requirement judgments and graph edges are not mixed into this grain.",
+  "api": {
+    "capture": "POST /api/v1/telemetry/retrieval/journal/capture, exact empty object, no query parameters, administrator only. Atomically snapshots the current bounded native diagnostic buffer, releases its mutex, then commits typed facts and producer progress in one existing Store transaction. No arbitrary event import or caller-supplied fact body. No source/index/publication mutation.",
+    "history": "GET /api/v1/telemetry/retrieval/journal?project_id=ID&after=0&limit=20, administrator only; limit1..32, optional project filter. Returns metadata records by durable commit-ordered ID, next_after and explicit journal-only scope; query text is not included.",
+    "summary": "GET /api/v1/telemetry/retrieval/journal/summary?project_id=ID, administrator only and required project. Cohorts preserve operation, selector kind, Server/Core versions, profile fingerprint and snapshot. At most32 cohorts ordered by accumulated elapsed time, with total/omitted cohort accounting. Exact counts and nullable p95 for successful/error durations; Pack and empty-result measures have explicit known-value denominators.",
+    "queries": "GET /api/v1/telemetry/retrieval/journal/queries?project_id=ID, administrator only. Repeated exact captured request fingerprints grouped within execution cohorts; no semantic grouping of human text and no claim that repeated queries were unnecessary. At most32 groups, total/omitted accounting, example_attempt_id for direct bounded drill-down. Capture-disabled and omitted requests are not assigned synthetic identities.",
+    "detail": "GET /api/v1/telemetry/retrieval/journal/attempts/{id}, administrator only. Returns one typed fact plus its optional explicitly captured request. No implicit retrieval, replay or execution."
+  },
+  "storage": {
+    "producers": "retrieval_journal_producers stores process instance, source host, immutable Server/Core versions, observed_through sequence, captured_count and missing_count. Progress changes only in the same transaction as facts. captured_count+missing_count=observed_through. Producers are not claimed to be sealed or complete after process death.",
+    "outOfOrder": "Deduplication checks persisted process/sequence identities, not only the observed_through cursor. An older snapshot can fill a missing earlier sequence without regressing the cursor. Capture returns independent new_missing_sequences and recovered_missing_sequences counts; missing_count and known_missing_sequences_global are gauges that may decrease after backfill. Same identity with different canonical content rejects the entire capture with journal-fact-conflict.",
+    "facts": "retrieval_journal_attempts stores typed identity, operation/outcome/phase, required validation duration plus four nullable later-phase durations, query coverage/completion primitives, actual selection provenance and immutable catalog profile identity. Only optional captured request is JSONB. Each record has a canonical content hash for retry conflict checks.",
+    "identity": "Request fingerprint is SHA256 of project, operation and canonical captured request JSON. It denotes exact payload identity, including request parameters, not semantic equivalence or anonymization. No hash is computed for uncaptured requests.",
+    "requestRepresentation": "PostgreSQL JSONB cannot represent U+0000 in strings or keys. If an otherwise valid captured request contains this character, the journal retains the attempt metadata but records query_capture=capture-failed with request/request_fingerprint=null. It neither rewrites the text nor changes the retrieval outcome. Literal backslash-u0000 text is representable and retained. Process-local diagnostic capture remains unchanged; durable capture status includes this sink-specific omission.",
+    "bounds": "At most128 producers and8192 facts, at most8192 encoded request bytes per fact. Exhaustion rejects capture atomically with journal-capacity; retrieval and in-memory diagnostics continue. No silent deletion, TTL, archival promise, partitions, automatic retention or producer reclamation in this foundation slice. These lifecycle operations must be delivered before long-running adoption.",
+    "indexes": "Unique process/sequence and project/durable-ID navigation. Writer transaction lock establishes commit-order IDs and atomic count/progress accounting. No foreign key to artifact/preparation prevents diagnostic retention from pinning source artifacts."
+  },
+  "analysis": {
+    "metricContract": "shin.retrieval-journal-metrics.v1",
+    "population": "Every report is about persisted journal facts only, never all Server traffic. Explicit capture can miss evicted/dropped records. Missing producer sequences are counted globally, not falsely allocated to a project. Missing data remains unknown; no feedback means unknown usefulness. Failed and successful duration distributions remain separate.",
+    "time": "Source observed_at_unix_ms and database received_at are separate. P3E14 elapsed/phase measurement boundary is unchanged; not HTTP/network latency. Summary windows are currently the whole bounded retained journal, not event-time finalized windows.",
+    "metrics": "service_attempts=count; service_errors=count(status!=200); pack_incomplete=count(pack_complete=false) with known_pack_count=count(non-null pack_complete); zero_results=count(returned_records=0) with known_result_count=count(non-null returned_records). Optional phase totals include only measured durations, have explicit *_count denominators, and remain null when count=0. p95 is calculated over actual observations per outcome, never an average of per-producer percentiles. Coverage is not relevance or agent usefulness.",
+    "comparisonBoundary": "Identity cohorts prevent mixing reported versions/profile/snapshot but do not control hardware, traffic mix or uncaptured request budgets/admission flags. Summary differences are observations, not proof of a performance regression or improvement. Exact captured-payload groups preserve all request parameters; they do not infer semantic equivalence, agent intent or wasted work. Source-clock chronology and capture population remain incomplete.",
+    "totals": "Top-level project outcome and known-value counters include all persisted project facts, even when only32 cohorts are returned. Never derive project totals from a truncated group list. A34-cohort regression checks this boundary. These counters still do not claim complete Server traffic.",
+    "projections": "Bounded SQL aggregation on typed base facts is the first read model. Minute/hour rollups and late-event revision rules are separate measured extensions, not an unimplemented materialized-view claim."
+  },
+  "privacy": "Capture is an explicit persistence action. Existing project allowlist controls whether request JSON exists; metadata/default diagnostics never become raw query text. Admin-only details and reports. Raw request hashes inherit the sensitivity of their inputs. No authentication headers, exception messages or source snippets are persisted. The inherited query_capture=invalid-request value means capture validation was not completed, not necessarily that the source request itself was malformed; use status/reason_code for service failure classification.",
+  "implementation": [
+    "server/migrations/014_retrieval_journal.sql",
+    "server/src/retrieval_journal_model.cpp",
+    "server/src/retrieval_journal_store.cpp",
+    "server/src/retrieval_journal_schema.cpp",
+    "server/tests/retrieval_journal_checks.py",
+    "server/tests/retrieval_journal_test.cpp",
+    "server/tests/retrieval_journal_store_probe.cpp"
+  ],
+  "acceptance": [
+    "Typed fact/source schema and runtime grants survive014 migration with001..013 unchanged",
+    "Capture retry and concurrent capture do not double count; SQL failure rolls back facts and progress",
+    "Journal history and analytical reads are read-only, bounded and admin-only",
+    "Controlled known datasets match exact totals, denominators, p95 and cohort isolation",
+    "Default privacy, capture-disabled population and missing-sequence accounting remain explicit",
+    "Full companion, sanitizer, static analysis and machine profile gates"
+  ],
+  "sources": [
+    "https://www.kimballgroup.com/2003/03/declaring-the-grain/",
+    "https://opentelemetry.io/docs/specs/otel/logs/data-model/",
+    "https://www.postgresql.org/docs/18/pgstatstatements.html",
+    "https://www.postgresql.org/docs/18/datatype-json.html",
+    "https://prometheus.io/docs/practices/histograms/"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-retrieval-observability-v1.json",
+    "docs/machine/shin-server-development-v1.json"
+  ]
+}

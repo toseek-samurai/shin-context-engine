@@ -21,7 +21,6 @@ jobs:
         component: [core, observer]
     runs-on: ${{ matrix.os }}
     env:
-      CCACHE_DIR: ${{ github.workspace }}/../ccache
       CCACHE_BASEDIR: ${{ github.workspace }}
       CCACHE_COMPILERCHECK: content
       CCACHE_MAXSIZE: 500M
@@ -43,10 +42,13 @@ jobs:
           brew install cmake ninja ccache jq openssl@3 python@3.14
           echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
           echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      - name: Prepare compiler cache
+        shell: bash
+        run: echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
       - name: Restore compiler cache
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
-          path: ${{ env.CCACHE_DIR }}
+          path: ${{ runner.temp }}/ccache
           key: ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.component }}-${{ github.sha }}
           restore-keys: |
             ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.component }}-

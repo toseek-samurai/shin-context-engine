@@ -14,7 +14,7 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-24.04, macos-15]
-        component: [core, observer, server]
+        component: [core, observer]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -24,16 +24,16 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build jq python3 libsqlite3-dev libssl-dev libpq-dev libcurl4-openssl-dev libncurses-dev
+          sudo apt-get install -y cmake ninja-build jq python3 libsqlite3-dev libssl-dev libncurses-dev
       - name: macOS prerequisites
         if: runner.os == 'macOS'
         run: |
           sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
           xcrun --sdk macosx --show-sdk-path
-          brew install cmake ninja jq openssl@3 libpq python@3.14
+          brew install cmake ninja jq openssl@3 python@3.14
           echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
-          echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3):$(brew --prefix libpq)" >> "$GITHUB_ENV"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
       - name: Core build and tests
         if: matrix.component == 'core'
         run: |
@@ -66,12 +66,6 @@ jobs:
             --test-results "$RUNNER_TEMP/observer-tests.xml" 2>&1 | tee "$RUNNER_TEMP/package-smoke.log"
           cd "$RUNNER_TEMP/observer/packages"
           shasum -a 256 -c "$(basename "${archives[0]}").sha256" | tee "$RUNNER_TEMP/package-checksum.log"
-      - name: Server build and tests
-        if: matrix.component == 'server'
-        run: |
-          cmake -S server -B "$RUNNER_TEMP/server" -DCMAKE_BUILD_TYPE=Release
-          cmake --build "$RUNNER_TEMP/server" --parallel 4
-          ctest --test-dir "$RUNNER_TEMP/server" --output-on-failure --output-junit "$RUNNER_TEMP/server-tests.xml"
       - name: Upload qualified macOS kit
         if: success() && steps.qualify-kit.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

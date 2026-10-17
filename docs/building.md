@@ -7,8 +7,7 @@ The commands below build Core alone, for development or embedding.
 
 Use a C++20 compiler and CMake 3.24 or newer. Tests require Python 3.11 or newer,
 Bash, and jq. Local source discovery requires SQLite with FTS5, version 3.38 or
-newer. Observer also requires OpenSSL Crypto. Server requires OpenSSL 3 or newer,
-libcurl 7.85 or newer, and PostgreSQL client development libraries 13 or newer.
+newer. Observer also requires OpenSSL Crypto.
 CMake downloads pinned dependencies and checks their hashes.
 
 macOS CI uses Xcode 26.3 on macOS 15. The C++20 standard library must provide
@@ -43,19 +42,3 @@ To build an index directly, choose an external, unmanaged output directory:
 The low-level Core CLI defaults to the project root if `--out-dir` is omitted.
 Native CE instead enforces separate source and state directories. An index
 managed by Observer must be refreshed by its publisher, not by a manual build.
-
-## Server development
-
-```sh
-cmake -S server -B /tmp/shin-server-build -DCMAKE_BUILD_TYPE=Release
-cmake --build /tmp/shin-server-build --parallel 4
-ctest --test-dir /tmp/shin-server-build --output-on-failure
-```
-
-These tests do not establish database integration or remote deployment readiness.
-The [Server readiness assessment](server-readiness.md) describes the implemented
-capabilities, required integration proof, and remaining user workflows.
-
-The development PostgreSQL harness uses a fixed Compose project and volume and
-resets its test schema. It must run on a dedicated disposable Docker environment;
-a different source checkout or `--state-root` does not isolate the database.

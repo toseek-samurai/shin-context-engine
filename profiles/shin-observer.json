@@ -31,7 +31,7 @@
     "observer/VERSION",
     "docs/machine/shin-component-profiles-v1.json",
     "docs/machine/shin-companion-protocols-v1.json",
-    "docs/machine/shin-server-recovery-v1.json"
+    "docs/machine/shin-observer-recovery-v1.json"
   ],
   "sourceFactRoots": [
     "observer/src",
@@ -53,7 +53,7 @@
   "sourceFactMaxFileBytes": 131072,
   "agentStartPaths": [
     "AGENTS.md",
-    "docs/machine/shin-observer-history-v1.json"
+    "docs/machine/shin-observer-recovery-v1.json"
   ],
   "jsonKeySections": true,
   "jsonKeyMaxDepth": 1,
@@ -113,12 +113,12 @@
     },
     {
       "id": "observer-recovery-boundary",
-      "query": "shin-server-recovery-v1",
+      "query": "shin-observer-recovery-v1",
       "mustPaths": [
-        "docs/machine/shin-server-recovery-v1.json"
+        "docs/machine/shin-observer-recovery-v1.json"
       ],
       "mustTopPaths": [
-        "docs/machine/shin-server-recovery-v1.json"
+        "docs/machine/shin-observer-recovery-v1.json"
       ],
       "mustTopN": 1,
       "limit": 6

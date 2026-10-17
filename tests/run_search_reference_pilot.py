@@ -38,7 +38,7 @@ def main():
                "sourceExtensions": [".md", ".json"],
                "documentIncludePrefixes": ["README.md", "AGENTS.md", "docs/machine"],
                "documentExcludePrefixes": ["docs/kb"],
-               "sourceFactRoots": ["src", "server/src", "server/include", "observer/src", "observer/include"],
+               "sourceFactRoots": ["src", "observer/src", "observer/include"],
                "sourceFactExtensions": [".cpp", ".h"], "sourceFactExtractors": ["language"],
                "defaultTopic": "source", "evalCases": [], "topicRules": []}
     (registry / "pilot.json").write_text(json.dumps(profile))

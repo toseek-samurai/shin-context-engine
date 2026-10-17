@@ -2,7 +2,7 @@
   "schemaVersion": "shin.component-profiles.v1",
   "document": "component-profiles",
   "status": "active-contract",
-  "summary": "Declare component profile ownership and keep Core, Observer, and Server self-evaluation scopes independent.",
+  "summary": "Declare independent Core and Observer profile ownership.",
   "ownershipContract": {
     "oneOwnerPerProfile": true,
     "rootFiles": "Explicit selected documents, not recursive traversal.",
@@ -16,8 +16,7 @@
       "shared/windows-io/src"
     ],
     "optionalReferences": [
-      "observer",
-      "server"
+      "observer"
     ],
     "aggregateAcceptance": false
   },
@@ -32,19 +31,6 @@
       "shared/observer-protocol/tests"
     ],
     "serverDependency": false
-  },
-  "server": {
-    "profile": "profiles/shin-server.json",
-    "sourceRoots": [
-      "server/src",
-      "server/include",
-      "server/tests",
-      "server/tools",
-      "shared/observer-protocol/src",
-      "shared/observer-protocol/include",
-      "shared/observer-protocol/tests"
-    ],
-    "coreConsumer": true
   },
   "routeUse": {
     "explicitProfileRequired": true,

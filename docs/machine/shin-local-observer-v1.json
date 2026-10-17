@@ -113,9 +113,7 @@
     "synchronization": "not-implemented, not an invented online/offline Server assessment."
   },
   "relatedContracts": [
-    "docs/machine/shin-server-observer-v1.json",
     "docs/machine/shin-observer-offline-collaboration-v1.json",
-    "docs/machine/shin-server-workspaces-v1.json",
     "docs/machine/worktree-diff-v1.json"
   ],
   "sources": [

@@ -340,7 +340,7 @@
       ],
       "default": "strict",
       "scope": "Only maxCandidateRows, maxMatchedSections and maxMatchedFacts are advisory after explicit owner opt-in. Coverage, rank, required/forbidden paths, types, freshness, integrity and safety remain blocking. No runtime or Pack cap changes.",
-      "results": "Raw ceiling violations remain; quality_passed and resources_passed are independent. resource_check.ok is false on any exceeded work ceiling or empty suite, regardless of admission policy. Bounded warnings and explicit omissions survive failed-only eval, compact validation and readiness. Server observations expose policy and counts without queries.",
+      "results": "Raw ceiling violations remain; quality_passed and resources_passed are independent. resource_check.ok is false on any exceeded work ceiling or empty suite, regardless of admission policy. Bounded warnings and explicit omissions survive failed-only eval, compact validation and readiness.",
       "regressionJob": "Check normal eval strict exit and resource_check.ok separately on a fixed corpus. Live-corpus advisory readiness is not resource-regression acceptance.",
       "compatibility": "Native dev22 addition; a separately qualified Stable1.27.4 backport is installed locally with owner-approved BFF working-profile opt-in. Stable1.27.3 does not support it. Profile hash binds opt-in; rebuild required. Invalid types/values reject. No CLI bypass, automatic threshold mutation or native deployment."
     },

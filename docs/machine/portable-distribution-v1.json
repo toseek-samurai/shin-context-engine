@@ -85,10 +85,13 @@
     "verification": "portable-install-check moves the staged prefix before invoking the installed binary and imports/checks external execution-evidence artifacts after relocation."
   },
   "nativeCompanions": {
+    "layout": "Observer CMake install provides the local CLI and optional MCP/Monitor kit. It does not enroll projects or install credentials.",
+    "verification": "observer/installer/package_smoke.py qualifies the extracted macOS archive, relocation, disposable installation, local retrieval and EN/RU terminal monitoring.",
+    "releaseOwner": "docs/machine/shin-release-closure-v1.json",
     "optionalCoreAllocator": {
       "selection": "CMake SHIN_CORE_ALLOCATOR=mimalloc",
       "default": "system",
-      "scope": "Non-sanitized standalone Linux Core CLI only; never the embeddable Core library, Server, Observer or macOS.",
+      "scope": "Non-sanitized standalone Linux Core CLI only; never the embeddable Core library, Observer or macOS.",
       "version": "3.5.3",
       "pin": "shared/cmake/CoreAllocator.cmake",
       "transparentHugePages": false,
@@ -97,11 +100,8 @@
       "license": "share/shin-context/licenses/mimalloc/LICENSE",
       "approval": "Owner approved an isolated Linux candidate on2026-10-02, not Stable installation or release approval."
     },
-    "status": "development-install-smoke-not-release-package",
-    "layout": "Separate CMake installs provide bin/shin-server or bin/shin-observer, share/<tool>/VERSION and share/<tool>/licenses. They do not install services, credentials, configuration or project state.",
-    "externalDependencies": "Server requires compatible libpq and OpenSSL runtime libraries; Observer requires OpenSSL. These system libraries are not bundled. Build-tree RPATH or a private qualification dependency prefix is not a portable deployment promise.",
-    "verification": "server/tests/companion_install_test.py stages both builds in a temporary prefix, relocates them, verifies version envelopes and license inventory, and checks that --version leaves a temporary HOME empty. The report records loader overrides; it does not prove service installation, source-tree-hidden operation or availability on an unprovisioned host.",
-    "releaseOwner": "docs/machine/shin-server-release-closure-v1.json"
+    "status": "development-preview",
+    "externalDependencies": "Observer requires OpenSSL Crypto. The macOS local kit bundles its runtime Crypto dependency and license; source builds require provisioned platform libraries."
   },
   "executionEvidence": {
     "contract": "contracts/execution-evidence-v1.json",

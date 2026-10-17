@@ -1,0 +1,21 @@
+{
+  "schemaVersion": "shin.observer-recovery.v1",
+  "document": "observer-recovery",
+  "status": "active-contract",
+  "title": "Local Observer State And Identity Preservation",
+  "summary": "Local sampling and archive operations preserve state, delivery pins and pending observations. The standalone Server is no longer distributed.",
+  "localQueueDisposition": "Use outbox-export and outbox-verify with an explicit private archive destination. Export and verification do not change the original state, destination, acknowledgements or cursors.",
+  "identity": "Legacy loopback delivery pins a configured destination and rejects mismatched identities before export. Never silently repin an immutable outbox or discard pending observations to resume delivery.",
+  "reconciliation": "Read-only reconciliation requires an already persisted destination. It cannot repair local cursors, rewrite pending packets, reconstruct missing history or authorize a new binding.",
+  "recovery": "Keep the original state and matching binary. Continue local sampling independently. Any fresh state namespace or disposition of an old queue requires an explicit owner decision.",
+  "implementation": [
+    "observer/src/observer.cpp",
+    "observer/src/delivery_transport.cpp",
+    "observer/src/outbox.cpp"
+  ],
+  "relatedContracts": [
+    "docs/machine/shin-observer-delivery-v1.json",
+    "docs/machine/shin-observer-outbox-v1.json",
+    "docs/machine/shin-companion-protocols-v1.json"
+  ]
+}

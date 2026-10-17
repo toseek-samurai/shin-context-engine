@@ -7,7 +7,7 @@ description: Retrieve verified code and docs through Shin 2.0 before broad repos
 
 Use Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
 readable `shin-generator-v21-cpp-syntax`. The local
-offline service is independent of the shared Server, accounts and vector services.
+offline service needs no account, remote backend or vector service.
 Retrieval grants no execution, publication or installation authority. Read the repository's applicable `AGENTS.md` and named adoption marker.
 
 ## Normal Work

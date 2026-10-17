@@ -91,7 +91,16 @@
       ],
       "selfProfileInstalled": false,
       "integrationProfilesInstalled": false
-    }
+    },
+    "forbiddenConsumerIdentifiers": [
+      "shin-server",
+      "integrations/shin-server/"
+    ],
+    "forbiddenReleasePlanTokens": [
+      "cmake -S server",
+      "shin-server",
+      "postgresql"
+    ]
   },
   "integrationBundles": [
     "integrations/shin-development/shin-integration-bundle-v1.json"

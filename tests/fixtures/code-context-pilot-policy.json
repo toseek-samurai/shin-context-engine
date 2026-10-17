@@ -1,7 +1,7 @@
 {
   "schema_version": "shin.code-context-pilot-policy.v1",
-  "status": "frozen-before-cpp-candidate",
-  "scope": "eight prompts, four topics, shin-server; evaluator-only rubric; not agent input",
+  "status": "local-source-cohort-unrun",
+  "scope": "Eight EN/RU prompts on four local Core behaviors. Evaluator-only rubric; requires a new source freeze. Historical Server measurements do not qualify this cohort.",
   "budgets": {
     "rounds": 3,
     "tool_calls": 12,
@@ -22,87 +22,94 @@
   },
   "topics": [
     {
-      "id": "pool-release",
-      "english": "When a database lease expires, how is its connection discarded and how does the pool make the slot available again?",
-      "russian": "\u041a\u043e\u0433\u0434\u0430 \u0438\u0441\u0442\u0435\u043a\u0430\u0435\u0442 \u0441\u0440\u043e\u043a \u0430\u0440\u0435\u043d\u0434\u044b \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u044f \u0441 \u0431\u0430\u0437\u043e\u0439, \u043a\u0430\u043a \u0441\u043e\u0435\u0434\u0438\u043d\u0435\u043d\u0438\u0435 \u0443\u0434\u0430\u043b\u044f\u0435\u0442\u0441\u044f \u0438 \u043a\u0430\u043a \u0441\u043b\u043e\u0442 \u043f\u0443\u043b\u0430 \u0441\u043d\u043e\u0432\u0430 \u0441\u0442\u0430\u043d\u043e\u0432\u0438\u0442\u0441\u044f \u0434\u043e\u0441\u0442\u0443\u043f\u043d\u044b\u043c?",
+      "id": "resident-currentness",
+      "english": "How does a session reuse a loaded generation and refuse it if a newer publication becomes current?",
+      "russian": "Как сессия повторно использует загруженное поколение и отказывает, если текущая публикация уже изменилась?",
       "evidence": [
         {
-          "path": "server/src/store_pool.cpp",
-          "start": 67,
-          "end": 76
-        },
-        {
-          "path": "server/src/store_deadlines.cpp",
-          "start": 41,
-          "end": 66
+          "path": "src/retrieval_session.cpp",
+          "start": 103,
+          "end": 122
         }
       ],
       "clauses": [
-        "disarm returns expiration state",
-        "discard expired or unusable connection",
-        "clear in_use under mutex and notify waiter"
+        "loaded immutable snapshot is retained by shared ownership",
+        "currentness is checked under a publication lock",
+        "generation mismatch raises snapshot-generation-not-current without rebuilding"
       ]
     },
     {
-      "id": "pool-policy",
-      "english": "What limits are checked when constructing the database pool, and which connection and SQL timeouts are forced?",
-      "russian": "\u041a\u0430\u043a\u0438\u0435 \u043e\u0433\u0440\u0430\u043d\u0438\u0447\u0435\u043d\u0438\u044f \u043f\u0440\u043e\u0432\u0435\u0440\u044f\u044e\u0442\u0441\u044f \u043f\u0440\u0438 \u0441\u043e\u0437\u0434\u0430\u043d\u0438\u0438 \u043f\u0443\u043b\u0430 \u0431\u0430\u0437\u044b \u0434\u0430\u043d\u043d\u044b\u0445 \u0438 \u043a\u0430\u043a\u0438\u0435 \u0442\u0430\u0439\u043c\u0430\u0443\u0442\u044b \u043f\u043e\u0434\u043a\u043b\u044e\u0447\u0435\u043d\u0438\u044f \u0438 SQL \u0437\u0430\u0434\u0430\u044e\u0442\u0441\u044f \u043f\u0440\u0438\u043d\u0443\u0434\u0438\u0442\u0435\u043b\u044c\u043d\u043e?",
+      "id": "snapshot-layout",
+      "english": "Which file and traversal checks prevent unsafe generated snapshot paths from being admitted?",
+      "russian": "Какие проверки файлов и обхода не позволяют принять небезопасные пути сгенерированного снимка?",
       "evidence": [
         {
-          "path": "server/src/store_session.cpp",
-          "start": 12,
-          "end": 44
+          "path": "src/snapshot_verification.cpp",
+          "start": 8,
+          "end": 30
         },
         {
-          "path": "server/src/store_pool.cpp",
-          "start": 13,
-          "end": 21
-        }
-      ],
-      "clauses": [
-        "pool size from 1 through 16",
-        "invalid settings rejected before allocating slots",
-        "connect timeout 2 seconds, statement 2000ms, lock 500ms"
-      ]
-    },
-    {
-      "id": "namespace-retirement",
-      "english": "How does retiring the Observer identity namespace revoke old streams and prevent existing clients from continuing against the new deployment identity?",
-      "russian": "\u041a\u0430\u043a \u0441\u043c\u0435\u043d\u0430 \u043f\u0440\u043e\u0441\u0442\u0440\u0430\u043d\u0441\u0442\u0432\u0430 \u0438\u0434\u0435\u043d\u0442\u0438\u0444\u0438\u043a\u0430\u0442\u043e\u0440\u043e\u0432 Observer \u043e\u0442\u0437\u044b\u0432\u0430\u0435\u0442 \u0441\u0442\u0430\u0440\u044b\u0435 \u043f\u043e\u0442\u043e\u043a\u0438 \u0438 \u043d\u0435 \u043f\u043e\u0437\u0432\u043e\u043b\u044f\u0435\u0442 \u0441\u0443\u0449\u0435\u0441\u0442\u0432\u0443\u044e\u0449\u0438\u043c \u043a\u043b\u0438\u0435\u043d\u0442\u0430\u043c \u043f\u0440\u043e\u0434\u043e\u043b\u0436\u0438\u0442\u044c \u0440\u0430\u0431\u043e\u0442\u0443 \u0441 \u043d\u043e\u0432\u043e\u0439 \u0438\u0434\u0435\u043d\u0442\u0438\u0447\u043d\u043e\u0441\u0442\u044c\u044e \u0441\u0435\u0440\u0432\u0435\u0440\u0430?",
-      "evidence": [
-        {
-          "path": "server/src/recovery_store.cpp",
-          "start": 109,
-          "end": 162
-        },
-        {
-          "path": "server/src/store_session.cpp",
-          "start": 55,
-          "end": 80
-        }
-      ],
-      "clauses": [
-        "explicit plan and discard confirmation plus stale-plan validation",
-        "streams revoked and tombstones discarded transactionally with new identity",
-        "runtime expected deployment identity is checked; clients are not automatically repinned"
-      ]
-    },
-    {
-      "id": "withdrawal-no-fallback",
-      "english": "After a shared publication is withdrawn, does ordinary retrieval silently fall back to a previous accepted generation? Show the implemented behavior and do not infer runtime execution from source.",
-      "russian": "\u041f\u043e\u0441\u043b\u0435 \u043e\u0442\u0437\u044b\u0432\u0430 \u043e\u0431\u0449\u0435\u0439 \u043f\u0443\u0431\u043b\u0438\u043a\u0430\u0446\u0438\u0438 \u043e\u0431\u044b\u0447\u043d\u044b\u0439 \u043f\u043e\u0438\u0441\u043a \u043d\u0435\u0437\u0430\u043c\u0435\u0442\u043d\u043e \u0432\u043e\u0437\u0432\u0440\u0430\u0449\u0430\u0435\u0442\u0441\u044f \u043a \u043f\u0440\u0435\u0434\u044b\u0434\u0443\u0449\u0435\u043c\u0443 \u043f\u0440\u0438\u043d\u044f\u0442\u043e\u043c\u0443 \u043f\u043e\u043a\u043e\u043b\u0435\u043d\u0438\u044e? \u041f\u043e\u043a\u0430\u0436\u0438 \u0440\u0435\u0430\u043b\u0438\u0437\u043e\u0432\u0430\u043d\u043d\u043e\u0435 \u043f\u043e\u0432\u0435\u0434\u0435\u043d\u0438\u0435, \u043d\u0435 \u0432\u044b\u0434\u0430\u0432\u0430\u044f \u0447\u0442\u0435\u043d\u0438\u0435 \u043a\u043e\u0434\u0430 \u0437\u0430 \u043f\u0440\u043e\u0432\u0435\u0440\u043a\u0443 \u0440\u0430\u0431\u043e\u0442\u0430\u044e\u0449\u0435\u0433\u043e \u0441\u0435\u0440\u0432\u0438\u0441\u0430.",
-      "evidence": [
-        {
-          "path": "server/src/retrieval_service.cpp",
-          "start": 110,
+          "path": "src/snapshot_verification.cpp",
+          "start": 89,
           "end": 130
         }
       ],
       "clauses": [
-        "withdrawn selection rejected with 410 publication-withdrawn",
-        "rejection occurs before snapshot admission/execution, not automatic old-generation fallback",
-        "source observation only; no runtime-test claim"
+        "snapshot files must be regular and not symlinks",
+        "relative paths must stay under the generated directory",
+        "enumeration refuses more than 2048 filesystem entries"
+      ]
+    },
+    {
+      "id": "checkpoint-binding",
+      "english": "Can a checkpoint from another task open a retrieval session or become continuation-ready?",
+      "russian": "Может ли checkpoint другой задачи открыть сессию поиска или получить готовность к продолжению?",
+      "evidence": [
+        {
+          "path": "src/session_resume.cpp",
+          "start": 134,
+          "end": 161
+        }
+      ],
+      "clauses": [
+        "compare current task binding before opening retrieval",
+        "mismatch returns mismatched with select-checkpoint-for-current-task",
+        "continuation_ready stays false and continuation_pack stays null"
+      ]
+    },
+    {
+      "id": "assertion-trust",
+      "english": "Does unchanged source or a current receipt automatically verify a saved assertion? Distinguish source reading from runtime proof.",
+      "russian": "Подтверждают ли неизменившийся код или актуальная квитанция сохранённое утверждение автоматически? Отдели чтение кода от проверки выполнения.",
+      "evidence": [
+        {
+          "path": "src/session_resume.cpp",
+          "start": 39,
+          "end": 74
+        }
+      ],
+      "clauses": [
+        "references and receipt currentness are assessed separately",
+        "assertions remain session-asserted with claim_verified false",
+        "source observation alone is not a runtime-test result"
       ]
     }
-  ]
+  ],
+  "writerControl": {
+    "english": "How is a staged local snapshot published under an exclusive lock, and what is restored if publication fails?",
+    "russian": "Как подготовленный локальный снимок публикуется под исключительной блокировкой и что восстанавливается при ошибке публикации?",
+    "evidence": [
+      {
+        "path": "src/generated_io.cpp",
+        "start": 235,
+        "end": 273
+      }
+    ],
+    "clauses": [
+      "exclusive index lock covers recovery and publication",
+      "current generation is renamed to backup before staging becomes active",
+      "failed rename restores backup only when active is absent and backup exists",
+      "publication errors are rethrown; source inspection alone is not runtime proof"
+    ]
+  }
 }

@@ -19,7 +19,6 @@ from run_code_context_pilot import prepare as prepare_smoke, QUESTION
 from shin_semantic.artifact import decode, encode, publication_id, require, root_identity, sha
 
 ROOT = Path(__file__).resolve().parents[1]
-FREEZE_SHA = "d4fd574db5930d39bbab5ffb71db8d913f5319888e8afb072f0d0139256dcf05"
 
 
 def launch(hermes_python, hermes_root, task_path, output):
@@ -46,7 +45,7 @@ def launch(hermes_python, hermes_root, task_path, output):
 
 def prepare(args):
     frozen = args.freeze.read_bytes()
-    require(sha(frozen) == FREEZE_SHA, "p0-freeze-changed")
+    require(sha(frozen) == args.freeze_sha256, "p0-freeze-changed")
     freeze = decode(frozen)
     policy_bytes = (ROOT / "tests/fixtures/code-context-pilot-policy.json").read_bytes()
     require(sha(policy_bytes) == freeze["policy_sha256"], "p0-policy-changed")
@@ -63,7 +62,7 @@ def prepare(args):
     profile = deepcopy(freeze["profile"])
     profile.update(rootFiles=[], documentIncludePrefixes=[], sourceFactRoots=[p.rstrip("/") for p in SOURCE_PREFIXES],
                    sourceFactExtensions=[".cpp", ".h"], agentStartPaths=[], evalCases=[], packEvalCases=[], bootstrapOnly=True)
-    profile_path = home / "profiles" / "shin-server.json"
+    profile_path = home / "profiles" / "shin.json"
     write(profile_path, profile)
     # The existing native scanner examines every full file before any baseline raw read.
     screen = home / "screen-input.jsonl"
@@ -85,14 +84,14 @@ def prepare(args):
         if variant == "baseline":
             require(sha(core.read_bytes()) == freeze["core_sha256"], "p0-baseline-changed")
         index = home / variant / "index"
-        prefix = [str(core), "--root", str(source), "--profile", "shin-server", "--profile-dir", str(profile_path.parent),
+        prefix = [str(core), "--root", str(source), "--profile", "shin", "--profile-dir", str(profile_path.parent),
                   "--out-dir", str(index)]
         for command in (["build"], ["doctor", "--strict"]):
             checked = query(prefix + command)
             write(output / variant / (command[0] + ".json"), checked)
             require(checked["exit_code"] == 0 and checked["response"]["ok"] is True, "paired-native-preflight-failed")
         route = {"core_binary": str(core), "core_sha256": sha(core.read_bytes()), "root": str(source),
-                 "root_identity": root_identity(source), "project": "shin", "profile": "shin-server",
+                 "root_identity": root_identity(source), "project": "shin", "profile": "shin",
                  "profile_path": str(profile_path), "profile_sha256": sha(profile_path.read_bytes()),
                  "out_dir": str(index), "model_dir": str(args.model_dir.resolve())}
         config = home / variant / "build.json"
@@ -111,13 +110,10 @@ def prepare(args):
     policy, case_policy_sha = cohort_policy(args.cohort)
     cases = [{"id": topic["id"] + "-" + language, "question": topic[language], "group": "new", "language": language}
              for topic in policy["topics"] for language in ("english", "russian")]
-    prior = decode((ROOT / "tests/fixtures/semantic-heldout-cases.json").read_bytes())
-    writer = [case for project in prior["projects"] for case in project["cases"]
-              if case["id"] in ("shin-heldout-english", "shin-heldout-russian")]
-    cases += [{"id": "writer-" + row["kind"], "question": row["query"], "group": "writer", "language": row["kind"]}
-              for row in writer]
+    cases += [{"id": "writer-" + language, "question": policy["writerControl"][language],
+               "group": "writer", "language": language} for language in ("english", "russian")]
     require(len(cases) == 10, "paired-case-count")
-    binding = {"schema_version": "shin.code-context-pair.v1", "freeze_sha256": FREEZE_SHA,
+    binding = {"schema_version": "shin.code-context-pair.v1", "freeze_sha256": args.freeze_sha256,
         "policy_sha256": freeze["policy_sha256"], "cohort": args.cohort, "case_policy_sha256": case_policy_sha,
         "root": str(source), "sources": sources, "variants": variants,
         "profile_path": str(profile_path), "profile_sha256": sha(profile_path.read_bytes()),
@@ -197,6 +193,7 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     commands = parser.add_subparsers(dest="command", required=True)
     prep = commands.add_parser("prepare")
+    prep.add_argument("--freeze-sha256", required=True, help="Reviewed SHA-256 from the new local source freeze")
     prep.add_argument("--cohort", choices=("p4-regression", "file-first"), required=True)
     for name in ("freeze", "baseline", "candidate", "baseline-exporter", "candidate-exporter", "model-dir", "python", "output"):
         prep.add_argument("--" + name, type=Path, required=True)

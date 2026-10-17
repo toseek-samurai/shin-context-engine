@@ -66,7 +66,7 @@ class PairTests(unittest.TestCase):
 
     def test_sources_are_identical_p0_product_bytes_not_reports_tests_or_docs(self):
         rows = [{"path": path, "text": "int f();\n", "sha256": sha(b"int f();\n")} for path in (
-            "server/src/test.cpp", "server/include/test.h", "server/tests/oracle.cpp", "docs/machine/rubric.json",
+            "src/test.cpp", "observer/include/test.h", "observer/tests/oracle.cpp", "docs/machine/rubric.json",
             "AGENTS.md", "shared/observer-protocol/src/protocol.cpp", "shared/observer-protocol/tests/test.cpp")]
         selected = source_rows({"sources": rows})
         self.assertEqual([row["path"] for row in selected], [rows[i]["path"] for i in (0, 1, 5)])

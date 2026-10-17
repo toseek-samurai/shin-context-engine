@@ -7,7 +7,7 @@ skill. Avoid duplicating those procedures into this document.
 
 ## Source and state
 
-Use Core, Observer, and Server version files independently. Rebuild affected
+Use Core and Observer version files independently. Rebuild affected
 companions after shared Core changes. Keep test databases, generated publications,
 identities and telemetry outside source inputs. An explicit build does not
 authorize installation or changes to any running service.

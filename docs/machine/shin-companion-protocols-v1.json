@@ -2,97 +2,6 @@
   "schemaVersion": "shin.companion-protocol-inventory.v1",
   "document": "shin-companion-protocols-v1",
   "status": "accepted",
-  "title": "Current Companion Configuration And Identity Protocol",
-  "summary": "Current Server dev64/schema030 uses configuration v10 and rejects historical v8/v9 without silent upgrades. Database identity pin, Observer handshake v3, X-Shin-Server-ID and default-false receipt_producer remain unchanged. Personal ownership is development-only; content HTTP stays fenced. See shin-workspace-ownership-v1. Historical RC1 remains schema019.",
-  "contracts": {
-    "configuration_schema": "shin.server-config.v10",
-    "recovery_configuration_schema": "shin.server-recovery-config.v1",
-    "observer_identity_schema": "shin.observer-server-identity.v3",
-    "request_identity_header": "X-Shin-Server-ID"
-  },
-  "serviceConfigExample": {
-    "schema_version": "shin.server-config.v10",
-    "source_host_id": "local-example",
-    "listen": {
-      "host": "127.0.0.1",
-      "port": 19125
-    },
-    "database": {
-      "connection_file": "${ROOT}/connection",
-      "expected_name": "fixture",
-      "runtime_role": "fixture",
-      "server_id": "0123456789abcdef0123456789abcdef"
-    },
-    "allowed_roots": [
-      "${ROOT}/allowed"
-    ],
-    "principals": [
-      {
-        "id": "owner",
-        "role": "admin",
-        "token_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
-        "project_ids": []
-      }
-    ],
-    "retrieval": {
-      "routes": [],
-      "max_payload_bytes": 8388608,
-      "max_generation_bytes": 1048576,
-      "max_file_bytes": 1048576,
-      "max_generations": 2
-    },
-    "preparations": {
-      "enabled": false,
-      "state_dir": "${ROOT}/preparations",
-      "max_retained_jobs": 2,
-      "lease_seconds": 30
-    },
-    "observability": {
-      "max_retained_requests": 128,
-      "max_query_bytes": 4096,
-      "capture_query_projects": []
-    },
-    "knowledge": {
-      "enabled": false,
-      "principal_id": "",
-      "route_ids": [],
-      "interval_seconds": 60,
-      "max_age_seconds": 180,
-      "prepare_on_drift": false
-    },
-    "journal_writer": {
-      "enabled": false,
-      "principal_id": "",
-      "interval_ms": 1000,
-      "max_retry_ms": 30000,
-      "flush_on_shutdown": true
-    },
-    "workers": 2,
-    "queue_limit": 8
-  },
-  "journalLifecycleContract": "docs/machine/shin-retrieval-journal-epochs-v1.json",
-  "sessionBootstrap": {
-    "request": "shin.session-bootstrap-request.v2",
-    "response": "shin.session-bootstrap.v2",
-    "contract": "docs/machine/shin-session-bootstrap-v2.json",
-    "legacyReader": false
-  },
-  "databaseSchema": 28,
-  "identityDirectory": {
-    "server": "2.0.0-dev.40",
-    "contract": "docs/machine/shin-identity-directory-v1.json",
-    "scope": "Development directory only; enrolled accounts are denied legacy data-plane access. Qualified RC1 remains schema019."
-  },
-  "observerIdentityRetirement": {
-    "request": "shin.observer-retirement-request.v1",
-    "plan": "shin.observer-retirement-plan.v1",
-    "receipt": "shin.observer-retirement-receipt.v1",
-    "contract": "docs/machine/shin-observer-registry-v1.json#namespaceRetirement",
-    "server": "2.0.0-dev.35",
-    "offlineOnly": true,
-    "ordinaryRecoveryUnchanged": true,
-    "scope": "Explicit whole-deployment pin rotation; no automatic queue repin or new client wire format."
-  },
   "observerArchive": {
     "receipt": "shin.observer-outbox-archive.v1",
     "archiveFile": "canonical shin.observer-state.v3",
@@ -100,15 +9,6 @@
     "observer": "2.0.0-dev.20",
     "noStateMigration": true,
     "noServerHistoryDisposition": true
-  },
-  "privateCheckpoints": {
-    "write": "shin.task-checkpoint-write.v1",
-    "metadata": "shin.task-checkpoint.v1",
-    "resume": "shin.task-resume.v1",
-    "impact": "shin.task-impact.v1",
-    "contract": "docs/machine/shin-private-checkpoints-v1.json",
-    "authenticatedReceiptImport": "shin.task-receipt-import.v1",
-    "receiptContract": "docs/machine/shin-authenticated-receipts-v1.json"
   },
   "localMcp": {
     "observer": "2.0.5-dev.3",
@@ -119,7 +19,7 @@
     "followUp": "Query retains native snapshot_id and adds mcp_project/mcp_snapshot. Multi-root inspect/read require the same project and its mcp_snapshot; equal native snapshot strings do not cross scopes.",
     "lifecycle": "Pin root/home/workspace directory identity and lifecycle revision; verify before and after service reads and match successful response root. Reconnect after detach/re-init or identity change; unchanged reordered reconnect preserves selectors.",
     "bounds": "Existing two outstanding tool calls and 128KiB transport bound; catalog JSON at most32KiB. No bulk context merge or per-chat current project.",
-    "boundary": "Local read-only candidate; no Server MCP, enrollment, publication or model-token reassignment. Installed clients require a separate matched-kit rollout and explicit host allowlist."
+    "boundary": "Read-only local MCP; no enrollment, publication or model-token reassignment. Clients require an explicit host allowlist."
   },
   "observerFormats": {
     "sourceConfig": "shin.observer-config.v2",
@@ -132,27 +32,12 @@
     "reconcileRequest": "shin.observer-reconcile-request.v1",
     "reconcileResult": "shin.observer-reconcile-result.v1"
   },
-  "inspection": {
-    "describe": [
-      "shin-server",
-      "--version"
-    ],
-    "checkConfig": [
-      "shin-server",
-      "check-config",
-      "--config",
-      "/absolute/private/runtime.json"
-    ],
-    "boundary": "check-config reads private config/conninfo and validates configured local path bindings only. No PostgreSQL connection, listener, worker, migration, source write or publication. Success is configuration validity, not service readiness. --version result.contracts must equal this inventory's contracts object."
-  },
-  "exampleSubstitution": "For an isolated test/example replace ${ROOT} with a canonical private directory containing allowed and preparations directories and a private connection file. This is a template, never an automatically usable deployment credential. Real Server identity is independently pinned; never learn it silently from the database.",
   "reconciliation": "A persisted non-null destination is required before read-only reconcile. Use an explicit mutating delivery operation to establish it. Unbound or mismatched destinations fail before network access. Retired acknowledgement history never permits resume. No local cursor or pending file is repaired by reconciliation.",
-  "configurationTransition": "Only v10 is accepted. For an explicitly reviewed private v9 stand, stop Server/config writers, preserve owner-only byte-for-byte backups and stage runtime.json and migrator.json changing only schema_version to shin.server-config.v10. Absent receipt_producer is false, including admins; enabling it is a separate operator choice. Reject duplicate keys, preserve all other fields and credentials, check both staged files with the new binary check-config before replacement, and recheck original bytes. Do not regenerate identity, routes or recovery state. Run explicit migrate with schema-owner credentials: dev33 upgrades schema017 through018 to019, not just018. Migration018 gives existing checkpoints an empty origin list; migration019 captures publication provenance without retiring history. Preserve the original schema017 backup and matching dev31 binary for rollback; old binaries cannot run against newer schemas. Never drop origins or provenance in a live database. init creates fresh disabled configs, never upgrades existing ones.",
-  "currentSchemaTransition": "For dev40 explicitly migrate019 to020 only in a reviewed development contour with old Server processes stopped. The new identity directory is empty; no old project/workspace ownership or rows change. Configv10 and deployment pin stay unchanged. Qualified RC1 remains schema019; older binaries reject020. Rollback restores the matched old data/config/binary, never an in-place destructive downgrade. See shin-identity-directory-v1 for the enrolled-account data-plane fence.",
+  "title": "Local Companion Protocol Inventory",
+  "summary": "Local MCP and persisted Observer formats. Historical loopback delivery remains a compatibility interface; no receiver or remote service is distributed.",
   "relatedContracts": [
-    "docs/machine/shin-server-recovery-v1.json",
-    "docs/machine/shin-observer-history-v1.json",
-    "docs/machine/shin-server-dev-workflow-v1.json",
-    "docs/machine/shin-retrieval-observability-v1.json"
+    "docs/machine/shin-observer-recovery-v1.json",
+    "docs/machine/shin-observer-delivery-v1.json",
+    "docs/machine/shin-observer-state-read-v1.json"
   ]
 }

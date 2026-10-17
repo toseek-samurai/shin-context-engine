@@ -4,13 +4,17 @@
   "status": "development",
   "coreRuntimeDependency": false,
   "coreReleaseDependency": false,
-  "purpose": "Optional self-development context for the Observer and Server companion components. Both consume Core; portable Core does not require either component or this bundle.",
+  "purpose": "Optional self-development context for Observer. It consumes Core; portable Core does not require this component or bundle.",
   "profiles": [
-    { "id": "shin-observer", "path": "profiles/shin-observer.json" },
-    { "id": "shin-server", "path": "profiles/shin-server.json" }
+    {
+      "id": "shin-observer",
+      "path": "profiles/shin-observer.json"
+    }
   ],
   "consumerRootVariables": [],
   "federations": [],
-  "evalSuites": ["profiles/shin-observer.json", "profiles/shin-server.json"],
+  "evalSuites": [
+    "profiles/shin-observer.json"
+  ],
   "gates": []
 }

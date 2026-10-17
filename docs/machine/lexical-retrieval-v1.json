@@ -30,8 +30,7 @@
     "identity": "Search-only text and omissions participate in typed equality, independent retrieval-unit keys, deterministic ordering and full canonical Pack identity before display projection. Resident and disk readers use the same strict decoder.",
     "verification": [
       "tests/fixtures/query-parity/test_query_parity.py",
-      "tests/warm_snapshot_test.cpp",
-      "server/tests/retrieval_integration_test.py"
+      "tests/warm_snapshot_test.cpp"
     ]
   },
   "retrievalUnits": {

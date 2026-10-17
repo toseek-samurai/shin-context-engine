@@ -11,11 +11,11 @@ import time
 
 ROOT = Path(__file__).resolve().parents[1]
 CASES = [
-    ("semantic-en", "Where does the server prepare source and publish an immutable context snapshot?", "available"),
-    ("semantic-telemetry", "How does the server measure retrieval latency and keep diagnostics out of project evidence?", "available"),
-    ("cpp-symbol", "PreparationService::prepare", "runtime-unavailable-lexical-only"),
-    ("owner", "server/src/preparation_service.cpp", "not-needed-exact-or-owner"),
-    ("runtime-absent", "Where does the server prepare source and publish an immutable context snapshot?",
+    ("semantic-en", "Where does the local engine verify source currentness before reusing a snapshot?", "available"),
+    ("semantic-telemetry", "How does the local engine measure retrieval latency and keep diagnostics out of project evidence?", "available"),
+    ("cpp-symbol", "RetrievalSession::RetrievalSession", "runtime-unavailable-lexical-only"),
+    ("owner", "src/retrieval_session.cpp", "not-needed-exact-or-owner"),
+    ("runtime-absent", "Where does the local engine verify source currentness before reusing a snapshot?",
      "runtime-unavailable-lexical-only"),
 ]
 

@@ -97,7 +97,7 @@ class SelfProfileTests(unittest.TestCase):
         (cls.root / "profiles/archive-fixture.json").write_text(json.dumps(cls.history))
         cls.companions = [
             cls.read_json(f"profiles/{name}.json")
-            for name in ("shin-server", "shin-observer")
+            for name in ("shin-observer",)
         ]
         distribution = cls.read_json("docs/machine/portable-distribution-v1.json")
         cls.core_documents = {
@@ -208,16 +208,16 @@ class SelfProfileTests(unittest.TestCase):
 
     def test_companion_changes_preserve_core_currentness_and_snapshot(self):
         paths = self.companion_documents | {
-            "profiles/shin-server.json", "profiles/shin-observer.json",
-            "server/src/main.cpp", "observer/src/main.cpp",
+            "profiles/shin-observer.json",
+            "observer/src/main.cpp",
             "shared/observer-protocol/src/observer_protocol.cpp",
         }
         updates = {path: (self.root / path).read_bytes() + b"\n" for path in paths}
-        for component in ("server", "observer"):
+        for component in ("observer",):
             updates[f"docs/machine/shin-{component}-new-fixture-v1.json"] = (
                 b'{"schemaVersion":"fixture.v1","summary":"New companion contract"}\n'
             )
-        for directory in ("server/src", "observer/src", "shared/observer-protocol/src"):
+        for directory in ("observer/src", "shared/observer-protocol/src"):
             updates[f"{directory}/self_profile_fixture.cpp"] = (
                 b"int companion_fixture() { return 1; }\n"
             )
@@ -274,7 +274,7 @@ class SelfProfileTests(unittest.TestCase):
             kept = {"README.md", "docs/machine/contract.json", "src/example.cpp"}
             excluded = {
                 "private-work/note.txt", "build/result.json", "build-cmake-debug/cache.txt",
-                "server/build-cmake-debug/cache.txt", "observer/build-private/cache.txt",
+                "shared/build-cmake-debug/cache.txt", "observer/build-private/cache.txt",
                 "docs/kb/generated/manifest.json", "profiles/.git/config",
             }
             for relative in kept | excluded:
@@ -296,7 +296,6 @@ class SelfProfileTests(unittest.TestCase):
 
     def test_companion_routes_observe_their_own_documents(self):
         for profile, path in (
-            ("shin-server", "docs/machine/shin-publication-proposals-v1.json"),
             ("shin-observer", "docs/machine/shin-local-observer-v1.json"),
         ):
             with self.subTest(profile=profile):

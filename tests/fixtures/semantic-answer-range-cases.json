@@ -1,17 +1,56 @@
 {
   "schema_version": "shin.semantic-answer-range-review.v1",
-  "scope": "Manually reviewed implementation-navigation targets; additive diagnostics, not revised historical gates or runtime proof",
+  "scope": "Local source review targets, unrun; no historical measurement or runtime proof.",
   "reviews": [
     {
       "project": "shin",
-      "path": "server/src/journal_writer.cpp",
-      "source_sha256": "6aed348d234c83615ed73d18ae12d75710f37d647ee7a9d16b19e94f030672b7",
-      "cases": ["shin-heldout-english", "shin-heldout-russian"],
+      "path": "observer/src/delivery.cpp",
+      "source_sha256": "e7a3424e22aa388fd214229c84f0bf672c903f945619f787d9a4ba8e5c82a1f5",
+      "cases": [
+        "shin-local-delivery-english",
+        "shin-local-delivery-russian"
+      ],
       "clauses": [
-        {"id": "reuse-pending-batch", "description": "load_pending reuses the unacknowledged batch instead of replacing it", "spans": [[84, 113]]},
-        {"id": "validate-receipt", "description": "step validates receipt progress, identity and epoch before acknowledging success", "spans": [[141, 155]]},
-        {"id": "clear-after-success", "description": "pending state is cleared on the validated success path", "spans": [[153, 170]]},
-        {"id": "retain-after-failure", "description": "exception handling records failure without clearing pending state", "spans": [[115, 123], [171, 181]]}
+        {
+          "id": "reuse-pending-batch",
+          "description": "tick sends the first existing outbox entry without replacing it",
+          "spans": [
+            [
+              43,
+              59
+            ]
+          ]
+        },
+        {
+          "id": "validate-receipt",
+          "description": "complete acknowledges successful receipt and verifies the resulting outbox",
+          "spans": [
+            [
+              19,
+              37
+            ]
+          ]
+        },
+        {
+          "id": "persist-before-publish",
+          "description": "verified next state is saved before replacing in-memory state",
+          "spans": [
+            [
+              36,
+              39
+            ]
+          ]
+        },
+        {
+          "id": "retain-after-failure",
+          "description": "failed receipt updates retry and failure metrics without acknowledging the entry",
+          "spans": [
+            [
+              26,
+              35
+            ]
+          ]
+        }
       ]
     }
   ]

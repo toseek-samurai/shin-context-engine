@@ -2,7 +2,7 @@
 
 The kit includes Core, Observer, the `shin-ce` CLI, `shin-mcp`, the usage collector,
 Shin Monitor, profiles, contracts, and dependency notices. Local retrieval needs
-no account or AI model service. Server and PostgreSQL are separate components.
+no account or AI model service.
 This is a development candidate; public release approval is pending.
 
 ## Download a CI candidate

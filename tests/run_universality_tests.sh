@@ -14,7 +14,7 @@ portable_contract="$source_root/docs/machine/portable-distribution-v1.json"
 planner_contract="$source_root/docs/machine/adoption-planner-v1.json"
 adoption_contract="$source_root/docs/machine/project-adoption-v1.json"
 version_file="$source_root/VERSION"
-candidate_policy="$source_root/docs/machine/shin-server-development-v1.json"
+candidate_policy="$source_root/docs/machine/shin-development-v1.json"
 
 if ! command -v "$jq_bin" >/dev/null 2>&1; then
   echo "jq is required for universality validation: $jq_bin" >&2
@@ -24,6 +24,17 @@ if [[ ! -f "$contract" || ! -f "$portable_contract" || ! -f "$planner_contract" 
   echo "universality contract or VERSION is missing" >&2
   exit 2
 fi
+
+# Process-substitution failures do not propagate through the loops below.
+# Validate required boundary lists before any scan can claim an empty result.
+"$jq_bin" -e '
+  [.core.forbiddenConsumerIdentifiers, .core.forbiddenReleasePlanTokens,
+   .core.releaseTargets] | all(.[];
+     type == "array" and length > 0 and all(.[]; type == "string" and length > 0))
+' "$contract" >/dev/null || {
+  echo "universality boundary lists must be explicit nonempty string arrays" >&2
+  exit 2
+}
 
 release_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 candidate_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(dev|rc)\.(0|[1-9][0-9]*)$'
@@ -53,7 +64,7 @@ contract_version="$source_version"
 version_policy="stable"
 if [[ "$source_version" =~ $candidate_pattern ]]; then
   if [[ ! -f "$candidate_policy" ]]; then
-    echo "candidate VERSION requires an explicit server development policy" >&2
+    echo "candidate VERSION requires an explicit local development policy" >&2
     exit 2
   fi
   candidate_identity="$("$jq_bin" -er '.developmentLane.coreVersion' "$candidate_policy")"

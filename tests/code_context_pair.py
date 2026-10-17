@@ -10,14 +10,14 @@ from shin_semantic.compact import expand_read, number_read
 
 ANSWER_CONTRACTS = ("legacy-v1", "quoted-v2")
 
-SOURCE_PREFIXES = ("server/src/", "server/include/", "shared/observer-protocol/src/",
+SOURCE_PREFIXES = ("src/", "observer/src/", "observer/include/", "shared/observer-protocol/src/",
                    "shared/observer-protocol/include/")
 MODEL = "gpt-6-sol"
 PROVIDER = "openai-codex"
 EFFORT = "high"
 CONTEXT_LENGTH = 128000
-POLICY_SHA = "13f771d982423b9822b4c55222b1c6f7d4379499c114f50395cea7a99af9d1b3"
-FILE_FIRST_POLICY_SHA = "1cad8f20b717d76f8ca32f7bebc17ace57b96cb570b82f2d17ae02b343c422fd"
+POLICY_SHA = "cb1bf16e885478a71d5ff296129f7a7fa9488f8a8f398c019db7d06925702388"
+FILE_FIRST_POLICY_SHA = "7dcbf9ddae4905d21c4afb36d946f22a240bb6dfca9a3d61f100d63068233316"
 
 
 def cohort_policy(cohort):

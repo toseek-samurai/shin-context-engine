@@ -12,7 +12,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[1]
 GATE = ROOT / "tests/run_release_contract_tests.sh"
 MACHINE = "docs/machine/shin-context-engine.manifest.json"
-POLICY = "docs/machine/shin-server-development-v1.json"
+POLICY = "docs/machine/shin-development-v1.json"
 GENERATED = "docs/kb/generated/manifest.json"
 STABLE = "7.8.9"
 DEV = "8.0.0-dev.9"
@@ -125,6 +125,7 @@ class ReleaseContractGateTests(unittest.TestCase):
         process = subprocess.run(["bash", str(gate), self.jq, str(self.root), str(report)],
                                  capture_output=True, text=True, timeout=30)
         self.assertEqual(process.returncode, 0, process.stderr or process.stdout)
+        self.assertEqual(process.stderr, "")
         result = json.loads(report.read_text())
         self.assertTrue(result["ok"])
         self.assertEqual(result["contract_release"], STABLE)
@@ -137,6 +138,23 @@ class ReleaseContractGateTests(unittest.TestCase):
         failed = {item["id"] for item in json.loads(report.read_text())["checks"] if not item["ok"]}
         self.assertIn("contract-release", failed)
         self.assertIn("project-adoption-contract-release", failed)
+
+    def test_universality_refuses_missing_or_invalid_boundary_lists(self):
+        relative = "docs/machine/universality-boundary-v1.json"
+        original = self.read(relative)
+        for field in ("forbiddenConsumerIdentifiers", "forbiddenReleasePlanTokens", "releaseTargets"):
+            for value in (None, [], "invalid", [""], [1]):
+                with self.subTest(field=field, value=value):
+                    self.write(relative, original)
+                    self.change(relative, "core." + field, value)
+                    report = self.root / "universality-invalid.json"
+                    process = subprocess.run([
+                        "bash", str(ROOT / "tests/run_universality_tests.sh"),
+                        self.jq, str(self.root), str(report)],
+                        capture_output=True, text=True, timeout=30)
+                    self.assertEqual(process.returncode, 2)
+                    self.assertIn("boundary lists must be explicit", process.stderr)
+                    self.assertFalse(report.exists())
 
     def write(self, relative, value):
         (self.root / relative).write_text(json.dumps(value) + "\n", encoding="utf-8")

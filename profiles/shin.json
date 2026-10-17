@@ -111,7 +111,9 @@
     "integrations/hermes/plugins/shin-context/skills/workflow/references/retrieval-playbook.md",
     "integrations/hermes/plugins/shin-context/skills/workflow/references/route-and-publication.md",
     "integrations/hermes/plugins/shin-context/skills/workflow/references/session-and-execution.md",
-    "integrations/hermes/plugins/shin-context/skills/workflow/references/source-verification.md"
+    "integrations/hermes/plugins/shin-context/skills/workflow/references/source-verification.md",
+    "docs/machine/shin-development-v1.json",
+    "docs/machine/shin-release-closure-v1.json"
   ],
   "sourceFactRoots": [
     "src",
@@ -261,7 +263,7 @@
       ],
       "mustTopN": 3,
       "mustNotPaths": [
-        "profiles/shin-server.json"
+        "profiles/shin-observer.json"
       ],
       "maxMatchedSections": 230,
       "limit": 8,
@@ -387,7 +389,7 @@
       ],
       "mustTopN": 4,
       "mustNotPaths": [
-        "profiles/shin-server.json"
+        "profiles/shin-observer.json"
       ],
       "maxCandidateRows": 1750,
       "minCoveredGroups": 11,
@@ -696,7 +698,7 @@
         "src/pack_bench.cpp"
       ],
       "mustNotPaths": [
-        "profiles/shin-server.json"
+        "profiles/shin-observer.json"
       ],
       "expectedComplete": true,
       "maxEvidenceBytes": 24576,

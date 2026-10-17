@@ -148,7 +148,7 @@ if [[ "$expected_version" == *-dev.* || "$expected_version" == *-rc.* ]]; then
     select(.schemaVersion == "shin.parallel-development-policy.v1" and
            .developmentLane.coreVersion == $version and .cutover.automatic == false) |
     .stableLane.version | select(test("^(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)$"))
-  ' "$source_root/docs/machine/shin-server-development-v1.json")"
+  ' "$source_root/docs/machine/shin-development-v1.json")"
 fi
 "$tool" --version >"$work_root/version.json"
 "$jq_bin" -e --arg version "$expected_version" \

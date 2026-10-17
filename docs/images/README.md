@@ -37,3 +37,9 @@ The dark palette and monospace font represent one terminal theme; actual colors
 and fonts depend on the user's terminal. To refresh the image, repeat the same
 disposable setup, open `shin-ce stats --home /absolute/path/to/demo-state`, choose
 Projects, and capture the terminal view. Stop only the demo service afterward.
+
+## Project logo
+
+`shin-logo.png` is the existing Shin project mark. PNG text metadata records
+Shin Context Engine, Anton Petropavlovskiy and Apache-2.0. It contains no source
+file paths or inherited EXIF/XMP metadata. The original pixel stream is preserved.

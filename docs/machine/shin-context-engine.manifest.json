@@ -11,13 +11,13 @@
       "date": null,
       "versionSource": "VERSION",
       "versionCommand": "build/shin-context --version",
-      "semantics": "Development source identity only. Core, Observer, and Server are independently versioned; generator compatibility is carried by generator_version."
+      "semantics": "Development source identity only. Core and Observer are independently versioned; generator compatibility is carried by generator_version."
     },
     "stableBaseline": {
       "version": "2.0.4",
       "generator": "shin-generator-v21-cpp-syntax",
       "tag": "v2.0.4",
-      "policy": "docs/machine/shin-server-development-v1.json",
+      "policy": "docs/machine/shin-development-v1.json",
       "classification": "historical-compatibility-metadata-not-release-qualification"
     }
   },
@@ -345,11 +345,6 @@
       "owner": "shin-development"
     },
     {
-      "id": "shin-server",
-      "path": "profiles/shin-server.json",
-      "owner": "shin-development"
-    },
-    {
       "id": "generic-cpp",
       "path": "profiles/generic-cpp.json",
       "owner": "core"
@@ -481,7 +476,6 @@
   "profileFiles": [
     "profiles/shin.json",
     "profiles/shin-observer.json",
-    "profiles/shin-server.json",
     "profiles/generic-cpp.json",
     "profiles/generic-docs.json",
     "profiles/generic-dotnet.json",
@@ -1522,13 +1516,11 @@
   ],
   "selfProfiles": {
     "core": "profiles/shin.json",
-    "observer": "profiles/shin-observer.json",
-    "server": "profiles/shin-server.json"
+    "observer": "profiles/shin-observer.json"
   },
   "profileOwners": {
     "shin": "core",
     "shin-observer": "shin-development",
-    "shin-server": "shin-development",
     "generic-cpp": "core",
     "generic-docs": "core",
     "generic-dotnet": "core",

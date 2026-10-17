@@ -1,0 +1,82 @@
+{
+  "schemaVersion": "shin.parallel-development-policy.v1",
+  "document": "shin-development-v1",
+  "status": "accepted",
+  "title": "Local Development And Compatibility Baseline",
+  "summary": "Qualify independently versioned Core, Observer and the portable local kit against exact source and package inputs.",
+  "policyScope": "Development metadata describes source identities and isolation policy. It is not proof that a release, installation, or deployment has been qualified.",
+  "relatedPlans": [
+    "docs/machine/shin-release-closure-v1.json"
+  ],
+  "stableLane": {
+    "status": "historical-compatibility-baseline",
+    "version": "2.0.4",
+    "generator": "shin-generator-v21-cpp-syntax",
+    "currentReleaseCommit": null,
+    "maintenance": "The compatibility baseline identifies contract provenance only. It does not qualify current public source or delivery."
+  },
+  "developmentLane": {
+    "coreVersion": "2.0.5-dev.1",
+    "observerSourceVersion": "2.0.5-dev.8",
+    "artifactRetention": {
+      "policy": "Generated build outputs and measurements are disposable unless explicitly retained by a separate reviewed process.",
+      "releaseClaim": false
+    },
+    "localStableScope": {
+      "status": "separate-delivery-line",
+      "core": "Local offline Core and Observer are independently versioned.",
+      "boundary": "No consumer cutover or installed-service claim is made here."
+    },
+    "releaseCandidate": {
+      "version": null,
+      "releaseApproved": false,
+      "qualification": "A candidate requires the complete closure defined by shin-release-closure-v1."
+    },
+    "coreGenerator": "shin-generator-v22-compact-lexical",
+    "contractBaselineVersion": "2.0.4",
+    "contractBaselineGenerator": "shin-generator-v21-cpp-syntax",
+    "contractBaselinePolicy": "Historical compatibility baseline identity only; it is not current release evidence.",
+    "generatorTransitionPolicy": "Snapshot compatibility is checked by generator identity. An incompatible snapshot requires an explicit rebuild; no implicit migration is performed.",
+    "sameRepository": true,
+    "separateCheckoutAndBuilds": true,
+    "currentScope": "The public source contains independently versioned Core and Observer, including the native CLI, MCP and Monitor.",
+    "documentation": "Keep component versions and generator identities in their declared source files and contracts.",
+    "candidateTool": "Build into an explicit development output directory and compare each binary version with its source version file."
+  },
+  "isolatedResources": {
+    "builds": "Use distinct build directories for Core and Observer.",
+    "indexes": "Generated indexes and reports use explicit external destinations.",
+    "profiles": "The public profile registry is explicit and checked into the source distribution.",
+    "artifactsAndState": "Keep test state separate from source and from any installed service.",
+    "listeners": "Bind test services to explicitly selected local endpoints.",
+    "skills": "Agent adapters are optional and do not alter Core runtime dependencies.",
+    "makeTargets": "Inspect target outputs before invoking a target that writes files.",
+    "environment": "Pass development configuration per process; do not alter global user settings."
+  },
+  "branchRules": {
+    "normalWork": "Development and stable compatibility identities remain separate.",
+    "backport": "Backports require an independently reviewed and tested change.",
+    "sync": "Do not rewrite unrelated source or release history.",
+    "remote": "Publishing source is a separate owner action.",
+    "consumerOwnership": "Public contracts do not grant permission to modify external projects."
+  },
+  "verificationLayers": {
+    "planning": "Validate profile and contract structure.",
+    "runtime": "Run the component checks required by the release closure.",
+    "comparison": "Compare only equivalent source, profile, generator, and limits.",
+    "corpus": "Synthetic fixtures and project-specific evidence are separate scopes.",
+    "network": "Network delivery and deployed service checks require separate evidence."
+  },
+  "releaseClosure": "docs/machine/shin-release-closure-v1.json",
+  "cutover": {
+    "automatic": false,
+    "requirements": [
+      "All required component and package gates pass on exact release inputs.",
+      "Compatibility is checked for source, schema, and generator identities.",
+      "Deployment and data migration are separately reviewed."
+    ],
+    "procedure": "Publish a validated artifact and explicitly select the compatible route.",
+    "rollback": "Retain a known compatible artifact and state recovery procedure.",
+    "compatibilityBoundary": "Parallel component delivery does not imply compatibility with every historical data, protocol, or index format."
+  }
+}

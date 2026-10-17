@@ -12,7 +12,7 @@ metadata:
 # Shin Project Context
 
 Require Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
-readable `shin-generator-v21-cpp-syntax`. Local use needs no Server, login or embeddings. Configure native
+readable `shin-generator-v21-cpp-syntax`. Local use needs no login or embeddings. Configure native
 MCP separately; a Python plugin is not the native service or its replacement.
 
 1. Read the repository's `AGENTS.md` chain and adoption marker. Do not

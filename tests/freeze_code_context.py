@@ -26,12 +26,12 @@ def main():
         parser.add_argument("--" + name, required=True, type=Path)
     args = parser.parse_args()
     root, core, index = args.root.resolve(), args.core.resolve(), args.index.resolve()
-    profile = root / "profiles/shin-server.json"
+    profile = root / "profiles/shin.json"
     policy = root / "tests/fixtures/code-context-pilot-policy.json"
     manifest_path = index / "docs/kb/generated/manifest.json"
     manifest_bytes = manifest_path.read_bytes()
     manifest = json.loads(manifest_bytes)
-    command = [str(core), "--root", str(root), "--profile", "shin-server", "--profile-dir",
+    command = [str(core), "--root", str(root), "--profile", "shin", "--profile-dir",
                str(profile.parent), "--out-dir", str(index)]
     proof = subprocess.run(command + ["validate", "--require-current", "--strict", "--summary"],
                            check=True, capture_output=True, timeout=60)
@@ -54,7 +54,8 @@ def main():
         if total > 32 * 1024 * 1024 or fnv(content) != expected:
             raise ValueError("Changed or oversized input corpus")
         sources.append({"path": relative, "sha256": digest(content), "text": content.decode("utf-8")})
-    for topic in json.loads(policy.read_bytes())["topics"]:
+    declared = json.loads(policy.read_bytes())
+    for topic in [*declared["topics"], declared["writerControl"]]:
         for span in topic["evidence"]:
             source = next(row for row in sources if row["path"] == span["path"])
             if not 1 <= span["start"] <= span["end"] <= len(source["text"].splitlines()):

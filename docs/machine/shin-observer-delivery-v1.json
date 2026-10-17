@@ -3,14 +3,14 @@
   "document": "observer-delivery",
   "status": "active-contract",
   "title": "Explicit Native Observer Delivery And Durable Receipt Application",
-  "summary": "P3E5 adds an opt-in loopback native sender, separate from local observation, with one immutable in-flight packet, bounded attempts, verified receipt application and restart replay. Local Core retrieval and sampling do not depend on Server availability.",
+  "summary": "Historical opt-in loopback observation delivery compatibility. Local CLI, MCP and Monitor do not require this interface; no backend receiver is distributed.",
   "transport": {
-    "library": "Reuse checksum-pinned cpp-httplib 0.54.1 through shared/cmake/Http.cmake, not a new HTTP implementation. No PostgreSQL dependency is added to Observer. TLS and compression are disabled in this loopback-only development slice. Observer disables the library's optional asynchronous hostname resolver and explicitly maps loopback to its numeric IP path (AI_NUMERICHOST); no DNS lookup or CFHost resolver is needed for the permitted endpoint. Server's resolver configuration is unchanged.",
+    "library": "Reuse checksum-pinned cpp-httplib 0.54.1 through shared/cmake/Http.cmake, not a new HTTP implementation. No PostgreSQL dependency is added to Observer. TLS and compression are disabled in this loopback-only development slice. Observer disables the library's optional asynchronous hostname resolver and explicitly maps loopback to its numeric IP path (AI_NUMERICHOST); no DNS lookup or CFHost resolver is needed for the permitted endpoint.",
     "handshake": "Before each POST, GET /api/v1/observer-identity under Bearer authentication. Require exact Server/principal identities, submission/ack schema and service-observed provenance. This read-only endpoint returns only those bounded values and never source data. Do not export a submission after identity mismatch.",
     "boundaries": "No redirects, ambient proxy routing, DNS hostname or response decompression. Limit response body to 16KiB and reuse duplicate-key/depth JSON guards. HTTP success without an exact supported envelope and matching receipt is not acknowledgement.",
     "authLimit": "HTTP Bearer authenticates the client to Server. Explicit endpoint plus persisted Server ID is an identity-mixup guard within the trusted local OS boundary, not cryptographic peer authentication. A hostile loopback listener or compromised same-UID process is not defended by the ID alone. Off-loopback deployment requires authenticated encrypted transport and a separate verification milestone."
   },
-  "successor": "P3E6 adds confirmation/reconciliation and Server history plan/apply. P3E8 Server/Observer dev.16 uses identity handshake v3 and pins every request with X-Shin-Server-ID; read shin-server-recovery-v1. Versions and v1 handshake below record the P3E5 baseline, not a compatibility fallback. Local state v3/outbox v2 and submission/ack v1 remain unchanged.",
+  "successor": "Current local state v3, outbox v2 and explicit identity fencing remain supported without automatic migration or repinning. See shin-observer-recovery-v1.",
   "schemas": {
     "observerConfig": "shin.observer-config.v2",
     "state": "shin.observer-state.v3",
@@ -87,9 +87,7 @@
     "https://raw.githubusercontent.com/yhirose/cpp-httplib/v0.54.1/README.md"
   ],
   "relatedContracts": [
-    "docs/machine/shin-observer-ingestion-v1.json",
     "docs/machine/shin-observer-outbox-v1.json",
-    "docs/machine/shin-observer-offline-collaboration-v1.json",
-    "docs/machine/shin-server-dev-workflow-v1.json"
+    "docs/machine/shin-observer-offline-collaboration-v1.json"
   ]
 }

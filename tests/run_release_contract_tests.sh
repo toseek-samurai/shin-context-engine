@@ -121,7 +121,7 @@ fi
 candidate_policy="$work_root/no-development-policy.json"
 printf '{}\n' >"$candidate_policy"
 if [[ "$expected_stability" == development ]]; then
-  candidate_policy="$source_root/docs/machine/shin-server-development-v1.json"
+  candidate_policy="$source_root/docs/machine/shin-development-v1.json"
 fi
 
 "$tool" --version >"$work_root/version.json"
@@ -226,7 +226,7 @@ mkdir -p "$(dirname "$report")"
         ($machine_manifest.project.release | has("tag") and has("date")); true),
       equality_check("development-release-date"; $machine_manifest.project.release.date; null),
       equality_check("development-version-source"; $machine_manifest.project.release.versionSource; "VERSION"),
-      equality_check("development-baseline-policy"; $machine_manifest.project.stableBaseline.policy; "docs/machine/shin-server-development-v1.json"),
+      equality_check("development-baseline-policy"; $machine_manifest.project.stableBaseline.policy; "docs/machine/shin-development-v1.json"),
       equality_check("development-baseline-version"; $machine_manifest.project.stableBaseline.version; $contract_version),
       equality_check("development-baseline-tag"; $machine_manifest.project.stableBaseline.tag; "v" + $contract_version),
       equality_check("development-baseline-generator"; $machine_manifest.project.stableBaseline.generator; $contract_generator)

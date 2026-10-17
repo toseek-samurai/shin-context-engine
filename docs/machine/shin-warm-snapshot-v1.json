@@ -30,7 +30,6 @@
     "UI",
     "MCP"
   ],
-  "serverIntegration": "Authorized search/Brief/Pack routes and bounded global residency are described in shin-server-retrieval-v1. The earlier native-foundation benchmark remains historical dev.2 evidence, not HTTP capacity.",
   "ownership": {
     "snapshot": "GeneratedSnapshot owns verified manifest and immutable artifact bytes in a private unlinked file mapping, plus the selected root/output/profile route. Streaming capture verifies the existing hashes before mapping; source truncation or replacement cannot mutate the retained inode. It owns no IndexLock, thread, source files, freshness claim or lazy mutable query cache.",
     "request": "RetrievalSession owns request admission metadata and a shared immutable generation. Each GeneratedInput has its own cursor. Concurrent requests never seek one shared stream.",
@@ -72,7 +71,6 @@
     ]
   },
   "relatedContracts": [
-    "docs/machine/shin-server-plan-v1.json",
     "docs/machine/retrieval-evidence-v1.json",
     "docs/machine/agent-context-pack-v1.json",
     "docs/machine/batch-retrieval-v1.json",

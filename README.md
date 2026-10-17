@@ -1,4 +1,4 @@
-# Shin Context Engine
+# <img src="docs/images/shin-logo.png" width="48" height="48" alt="Shin logo"> Shin Context Engine
 
 [![Source qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml)
 
@@ -15,8 +15,8 @@ project states and timing calculations. Local retrieval needs no account, model
 download, or cloud inference API.
 
 **Development preview:** the source is available for review and testing.
-There is no stable release yet. The separate Server component
-is under development; see [what remains for Server](docs/server-readiness.md).
+There is no stable release yet. Development focuses on the portable local engine,
+its CLI and MCP integrations, and the Monitor interface.
 
 [Get started](#get-started-on-macos) · [CLI guide](docs/cli.md) ·
 [Connect an MCP client](docs/native-client-setup.md) ·
@@ -99,18 +99,16 @@ startup at login is a separate opt-in step in the
 | --- | --- | --- |
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS candidate; ARM64 local package checks completed, public release pending |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS and Linux source builds; [build instructions](docs/building.md) |
-| Server | Authenticated APIs and isolated personal workspaces backed by PostgreSQL | Development source; native remote login and setup remain unfinished |
 
 Linux desktop packaging, Windows distribution, and macOS Intel package
-qualification remain pending. Server and PostgreSQL are not required for the
-local kit. Configuring an AI client may send the context it retrieves to that
+qualification remain pending. Configuring an AI client may send the context it retrieves to that
 client's chosen model provider.
 
 For contributors: [build and test](docs/building.md),
 [contribution guidance](CONTRIBUTING.md), and the
 [product manifest](docs/machine/shin-context-engine.manifest.json).
-The root `VERSION` records [Core](VERSION); [Observer](observer/VERSION) and
-[Server](server/VERSION) are versioned separately.
+The root `VERSION` records [Core](VERSION); [Observer](observer/VERSION) is
+versioned separately.
 
 Licensed under [Apache-2.0](LICENSE). [Third-party notices](THIRD_PARTY.md)
 and [private security reporting](SECURITY.md).

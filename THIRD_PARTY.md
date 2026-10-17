@@ -14,15 +14,13 @@ the referenced build files; system-library versions depend on the build host.
 | cpp-httplib | 0.54.1, `shared/cmake/Http.cmake` | Upstream MIT `LICENSE` |
 | MCP C++ SDK | Commit pinned in `shared/cmake/Mcp.cmake` | Upstream MIT `LICENSE` |
 | Dear ImGui | 1.92.9b, `observer/tray/CMakeLists.txt` | Upstream MIT `LICENSE.txt` |
-| libpqxx | 8.0.2, `server/CMakeLists.txt` | Upstream `COPYING` |
-| jwt-cpp | 0.7.2, `server/cmake/Oidc.cmake` | Upstream MIT `LICENSE` |
 | mimalloc | Optional Linux 3.5.3, `shared/cmake/CoreAllocator.cmake` | Upstream MIT `LICENSE` |
 
 The vendored Tree-sitter source also includes its wasm libc license files.
 Preserve them when redistributing those sources, even when that code is not
 compiled by the native build.
 
-OpenSSL Crypto, SQLite, PostgreSQL/libpq and libcurl are selected through the
+OpenSSL Crypto and SQLite are selected through the
 component build configuration. Record their actual versions and linkage for each
 release. The macOS local kit copies its runtime Crypto dependency and its license;
 other component packages may require provisioned system libraries. Do not assume

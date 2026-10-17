@@ -1,6 +1,8 @@
 #include "shin/observer/local_installation.h"
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_supervision.h"
+#include "shin/observer/local_registry.h"
+#include <regex>
 #include <array>
 #include <algorithm>
 #include <chrono>
@@ -153,10 +155,10 @@ Json record(const fs::path& prefix) {
         "installation-ownership-changed", "Installed payload directory changed.");
     return value;
 }
-Json state_record(const StateStore& store, const Json& receipt, bool active) {
+Json state_record(const StateStore& store, const Json& receipt, bool active, bool startup = false) {
     const auto state = store.load();
     if (!state || state->value("schema_version", "") != "shin.local-install-operation.v1" ||
-        state->at("receipt") != receipt || (active && state->at("phase") != "installed"))
+        state->at("receipt") != receipt || (active && state->at("phase") != "installed" && !(startup && state->at("phase") == "activating")))
         throw Error("installation-incomplete", "Installation is incomplete; repeat the original install or uninstall command from the extracted kit.");
     return *state;
 }
@@ -236,18 +238,326 @@ std::unique_ptr<StateStore> stop_owned_service(const Json& receipt) {
     }
     return control;
 }
+// Update journals retain both complete payload identities. Data and project
+// bindings are never copied, rewritten or included in rollback snapshots.
+std::array<unsigned long, 5> release_order(const std::string& version) {
+    static const std::regex pattern(R"(^([0-9]{1,9})\.([0-9]{1,9})\.([0-9]{1,9})(?:-(dev|rc)\.([0-9]{1,9}))?$)");
+    std::smatch match;
+    require(std::regex_match(version, match, pattern), "installation-version-invalid", "Kit version is not a supported release identity.");
+    return {std::stoul(match[1]), std::stoul(match[2]), std::stoul(match[3]),
+        match[4] == "dev" ? 0UL : match[4] == "rc" ? 1UL : 2UL, match[5].matched ? std::stoul(match[5]) : 0UL};
+}
+void qualify_update(const fs::path& home, const fs::path& executable) {
+    if (!present(home / "registry")) return;
+    for (auto project : registered_local_projects(home)) {
+        project.command = "status";
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+        for (;;) {
+            try {
+                const auto result = qualify_local_project(project, executable);
+                require(result.value("ok", false) && result.value("local_ready", false),
+                    "installation-project-not-ready", "A project is not ready under the new engine; the current kit was preserved.");
+                break;
+            } catch (const Error& error) {
+                if ((error.code != "project-busy" && error.code != "binding-changed") ||
+                    std::chrono::steady_clock::now() >= deadline) throw;
+                std::this_thread::sleep_for(std::chrono::milliseconds(30));
+            }
+        }
+    }
+}
+std::string registry_digest(const fs::path& home) {
+    return present(home / "registry/state.json") ? digest(read_text(home / "registry/state.json", kMaximumStateBytes, true)) : "";
+}
+Json runtime_before_update(const fs::path& home, const fs::path& executable) {
+    Json runtime{{"managed", false}, {"running", false}};
+    LocalProjectRequest request; request.home = home; request.command = "service-installation";
+    if (present(home / "supervision")) {
+        const auto status = local_autostart_status(request, executable);
+        if (status.at("phase") != "not-installed" && status.at("phase") != "removed") {
+            require(status.at("phase") == "installed" && status.value("kit_current", false),
+                "installation-service-conflict", "Finish the existing service operation using its owning kit first.");
+            runtime["managed"] = true;
+        }
+    }
+    if (present(home / "service")) {
+        StateStore service(home / "service", false);
+        if (service.writer_present()) {
+            request.command = "service-status";
+            const auto status = request_local_service(request);
+            require(status.value("enrollment_mode", "") == "registry", "installation-service-conflict", "Explicit-root services must be stopped before updating this kit.");
+            runtime["running"] = true;
+        }
+    }
+    return runtime;
+}
+void resume_update_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
+    LocalProjectRequest request; request.home = home;
+    if (runtime.at("managed")) {
+        request.command = "service-install";
+        (void)configure_local_autostart(request, executable);
+    }
+    if (runtime.at("running") || runtime.at("managed")) {
+        request.command = "service-start";
+        const auto status = start_local_service(request, executable);
+        require(status.value("registry_error", std::string{}).empty() && status.at("enrollment_errors").empty(),
+            "installation-service-not-ready", "Updated service could not admit its registered projects.");
+        qualify_update(home, executable);
+        // A registered but deliberately stopped service stays stopped.
+        if (!runtime.at("running").get<bool>()) {
+            request.command = "service-stop";
+            (void)request_local_service(request);
+        }
+    }
+}
+void verify_update_payload(const fs::path& path, const Json& kit, const Json& receipt) {
+    require(directory_identity(path, true) == receipt.at("prefix_identity").get<std::string>() &&
+        digest(read_text(path / manifest_name, kMaximumStateBytes, false)) == receipt.at("manifest_sha256").get<std::string>() &&
+        manifest(path) == kit && parse_json(read_text(path / marker_name, kMaximumStateBytes, true)) == receipt,
+        "installation-ownership-changed", "An update payload, manifest or receipt changed.");
+    verify_files(path, kit, true);
+}
+void clear_previous(Json& state, StateStore& store, const fs::path& stage) {
+    if (!state.contains("previous")) {
+        require(!present(stage), "installation-not-owned", "An unowned update payload was preserved.");
+        return;
+    }
+    const auto previous = state.at("previous");
+    if (present(stage)) {
+        verify_update_payload(stage, validate_manifest(previous.at("kit")), previous.at("receipt"));
+        remove_payload(stage, previous.at("kit"), previous.at("receipt").at("prefix_identity").get<std::string>());
+    }
+    state.erase("previous"); store.save(state);
+}
+void copy_update_payload(const fs::path& source, const fs::path& stage, Json& state, StateStore& store) {
+    auto& update = state["update"];
+    const auto kit = validate_manifest(update.at("kit"));
+    auto& receipt = update["receipt"];
+    if (present(stage)) {
+        if (receipt.at("prefix_identity").get<std::string>() == "") {
+            (void)directory_identity(stage, true);
+            require(fs::is_empty(stage), "installation-not-owned", "An uncommitted update directory is not empty.");
+            fs::remove(stage);
+        } else remove_payload(stage, kit, receipt.at("prefix_identity").get<std::string>());
+    }
+    ensure_private_directory(stage, true);
+    receipt["prefix_identity"] = directory_identity(stage, true); store.save(state);
+    for (const auto& path : directories(kit)) ensure_private_directory(stage / path);
+    for (const auto& file : kit.at("files")) {
+        const auto name = file.at("path").get<std::string>();
+        const auto bytes = read_text(source / name, max_file, false);
+        require(bytes.size() == file.at("size") && digest(bytes) == file.at("sha256").get<std::string>(),
+            "installation-file-changed", "New kit changed while copying; the current kit was preserved.");
+        write_payload(stage / name, bytes, file.at("executable"));
+    }
+    const auto bytes = read_text(source / manifest_name, kMaximumStateBytes, false);
+    require(digest(bytes) == receipt.at("manifest_sha256").get<std::string>(), "installation-file-changed", "New kit manifest changed during copying.");
+    write_payload(stage / manifest_name, bytes, false);
+    (void)write_private_archive(stage / marker_name, receipt.dump());
+    verify_files(stage, kit, true);
+    for (const auto& path : directories(kit)) sync_directory(stage / path);
+    sync_directory(stage); sync_directory(stage.parent_path());
+    update["step"] = "stopping"; store.save(state);
+}
+void swap_update_payload(const fs::path& prefix, const fs::path& stage,
+                         const Json& before, const Json& after) {
+    const auto current = directory_identity(prefix, true);
+    if (current == after.at("prefix_identity").get<std::string>()) {
+        require(directory_identity(stage, true) == before.at("prefix_identity").get<std::string>(),
+            "installation-ownership-changed", "Previous payload identity changed after switching.");
+        return; // The atomic switch committed before its journal acknowledgement.
+    }
+    require(current == before.at("prefix_identity").get<std::string>() && directory_identity(stage, true) == after.at("prefix_identity").get<std::string>(),
+        "installation-ownership-changed", "A payload directory changed before switching.");
+#ifdef __APPLE__
+    require(::renamex_np(prefix.c_str(), stage.c_str(), RENAME_SWAP) == 0,
+        "installation-publish-failed", "Cannot atomically exchange the installed and staged kits.");
+#else
+    throw Error("installation-platform-unsupported", "Atomic kit updates are qualified only on macOS.");
+#endif
+    sync_directory(prefix.parent_path()); sync_directory(stage.parent_path());
+}
+Json adopt_update_prefix(const fs::path& prefix, const fs::path& bin, const fs::path& home,
+                         StateStore& store, std::optional<Json> saved) {
+    const auto control = control_path(prefix);
+    Json state;
+    if (saved) {
+        state = *saved;
+        require(state.at("phase") == "adopting", "installation-incomplete", "Complete the existing installation operation first.");
+        verify_files(prefix, state.at("kit"), present(prefix / marker_name));
+        require(state.at("receipt").at("prefix_identity").get<std::string>() == directory_identity(prefix),
+            "installation-ownership-changed", "Legacy kit changed during adoption.");
+    } else {
+        require(!present(prefix / marker_name), "installation-ownership-changed", "An existing receipt must not be adopted as an unowned kit.");
+        const auto kit = manifest(prefix); verify_files(prefix, kit, false);
+        require(present(home / "registry/state.json") && present(home / "identity/state.json"),
+            "installation-home-conflict", "Explicit adoption requires an existing Shin registry and identity.");
+        (void)registered_local_projects(home);
+        user_directory(prefix, false); user_directory(bin, false); (void)directory_identity(home, true);
+        const auto receipt = Json{{"schema_version", "shin.local-installation.v1"}, {"prefix", prefix.string()},
+            {"prefix_identity", directory_identity(prefix)}, {"control", control.string()},
+            {"control_identity", directory_identity(control, true)}, {"home", home.string()},
+            {"home_identity", directory_identity(home, true)}, {"bin_dir", bin.string()},
+            {"bin_dir_identity", directory_identity(bin)},
+            {"manifest_sha256", digest(read_text(prefix / manifest_name, kMaximumStateBytes, false))}};
+        links(receipt, false, false); // Adoption does not claim or replace unrelated commands.
+        (void)runtime_before_update(home, prefix / "bin/shin-ce");
+        if (present(home / "installation")) {
+            StateStore claim(home / "installation", false);
+            require(claim.load() == Json{{"schema_version", "shin.local-install-home.v1"}, {"prefix", prefix.string()},
+                {"control_identity", directory_identity(control, true)}}, "installation-home-conflict", "Existing data belongs to another installer.");
+        }
+        state = {{"schema_version", "shin.local-install-operation.v1"}, {"phase", "adopting"}, {"receipt", receipt}, {"kit", kit}};
+        store.save(state);
+    }
+    // Only explicitly adopted, fully inventoried payload permissions are tightened.
+    const int directory = ::open(prefix.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
+    require(directory >= 0, "installation-path-unsafe", "Cannot open the adopted payload safely.");
+    const int protected_mode = ::fchmod(directory, 0700);
+    ::close(directory);
+    require(protected_mode == 0, "installation-path-unsafe", "Cannot protect the adopted payload.");
+    ensure_private_directory(home / "installation");
+    StateStore claim(home / "installation", true); claim.recover_pending();
+    const auto expected = Json{{"schema_version", "shin.local-install-home.v1"}, {"prefix", prefix.string()},
+        {"control_identity", directory_identity(control, true)}};
+    if (const auto old = claim.load()) require(*old == expected, "installation-home-conflict", "Data-home ownership changed during adoption.");
+    else claim.save(expected);
+    (void)write_private_archive(prefix / marker_name, state.at("receipt").dump());
+    require(record(prefix) == state.at("receipt"), "installation-ownership-changed", "Adopted receipt changed.");
+    state["phase"] = "installed"; store.save(state);
+    return state;
+}
+Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& bin, const fs::path& home,
+                bool adopt, std::unique_ptr<StateStore>& owner, std::optional<Json> saved) {
+    const auto control = control_path(prefix), stage = control / "update-payload";
+    const auto kit = manifest(source);
+    require(kit.at("version") == SHIN_OBSERVER_VERSION && kit.at("core_version") == SHIN_VERSION,
+        "installation-version-mismatch", "Run update from the same complete new kit.");
+    verify_files(source, kit, present(source / marker_name));
+    const auto hash = digest(read_text(source / manifest_name, kMaximumStateBytes, false));
+    if (!saved || saved->at("phase") == "adopting") {
+        require(adopt, "installation-not-owned", "Use explicit --adopt-existing with the verified legacy prefix, home and command directory.");
+        qualify_update(home, source / "bin/shin-ce");
+        saved = adopt_update_prefix(prefix, bin, home, *owner, saved);
+    }
+    auto state = *saved;
+    require(state.at("phase") == "installed" || state.at("phase") == "updating" ||
+        state.at("phase") == "activating" || state.at("phase") == "rolling-back",
+        "installation-incomplete", "Complete the pending installation operation before updating.");
+    verify_record_locations(prefix, state.at("receipt"));
+    if (state.at("phase") == "installed" && !state.contains("update")) {
+        require(record(prefix) == state.at("receipt"), "installation-ownership-changed", "Installed receipt changed.");
+        verify_update_payload(prefix, state.at("kit"), state.at("receipt")); links(state.at("receipt"), false, false);
+        if (state.at("receipt").at("manifest_sha256").get<std::string>() == hash)
+            return {{"ok", true}, {"command", "update"}, {"changed", false}, {"phase", "installed"}, {"version", kit.at("version")}, {"data_preserved", true}};
+        require(kit.at("core_version") == state.at("kit").at("core_version"),
+            "installation-core-transition-unsupported", "This updater preserves the current Core data contract; a different Core version requires an explicit migration.");
+        require(release_order(kit.at("version")) > release_order(state.at("kit").at("version")),
+            "installation-version-not-newer", "Update requires a newer kit version; altered same-version kits and downgrades are refused.");
+        const auto registry = registry_digest(home);
+        qualify_update(home, source / "bin/shin-ce");
+        const auto runtime = runtime_before_update(home, prefix / "bin/shin-ce");
+        require(registry_digest(home) == registry, "registry-binding-changed", "Project enrollment changed during update admission.");
+        clear_previous(state, *owner, stage);
+        auto next = state.at("receipt"); next["prefix_identity"] = ""; next["manifest_sha256"] = hash;
+        state["update"] = {{"receipt", next}, {"kit", kit}, {"old_receipt", state.at("receipt")},
+            {"old_kit", state.at("kit")}, {"runtime", runtime}, {"registry_sha256", registry}, {"step", "copying"}};
+        state["phase"] = "updating"; owner->save(state);
+    }
+    require(state.contains("update") && state.at("update").at("receipt").at("manifest_sha256").get<std::string>() == hash,
+        "installation-options-conflict", "Resume the update from its original extracted kit.");
+    auto update = state.at("update");
+    require(validate_manifest(update.at("kit")) == kit, "installation-state-invalid", "Pending target inventory changed.");
+    (void)validate_manifest(update.at("old_kit"));
+    for (const auto* field : {"receipt", "old_receipt"}) {
+        verify_record_locations(prefix, update.at(field));
+        require(update.at(field).at("home") == home.string() && update.at(field).at("bin_dir") == bin.string(),
+            "installation-state-invalid", "Pending update locations changed.");
+    }
+    require(registry_digest(home) == update.at("registry_sha256").get<std::string>(), "registry-binding-changed", "Enrollment changed during a pending update; files were preserved for review.");
+    if (state.at("phase") == "updating" && update.at("step") == "copying") {
+        copy_update_payload(source, stage, state, *owner); update = state.at("update");
+    }
+    const auto rollback = [&] {
+        if (!owner) owner = std::make_unique<StateStore>(control, true);
+        state["phase"] = "rolling-back"; owner->save(state);
+        const auto current = directory_identity(prefix, true);
+        const auto current_receipt = current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("receipt") : update.at("old_receipt");
+        auto service_guard = stop_owned_service(current_receipt);
+        if (current == update.at("receipt").at("prefix_identity").get<std::string>()) {
+            verify_update_payload(stage, update.at("old_kit"), update.at("old_receipt"));
+            swap_update_payload(prefix, stage, update.at("receipt"), update.at("old_receipt"));
+        } else require(current == update.at("old_receipt").at("prefix_identity").get<std::string>(), "installation-ownership-changed", "Rollback destination changed.");
+        state["receipt"] = update.at("old_receipt"); state["kit"] = update.at("old_kit");
+        verify_files(prefix, state.at("kit"), true);
+        state["phase"] = "installed"; state["update"]["step"] = "rollback-starting";
+        state["previous"] = {{"receipt", update.at("receipt")}, {"kit", update.at("kit")}};
+        owner->save(state); service_guard.reset(); owner.reset();
+        resume_update_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
+        owner = std::make_unique<StateStore>(control, true);
+        require(owner->load() == state, "installation-ownership-changed", "Rollback state changed during restart.");
+        state.erase("update"); owner->save(state);
+    };
+    if (state.at("phase") == "rolling-back" || update.at("step") == "rollback-starting") {
+        rollback();
+        throw Error("installation-update-rolled-back", "Interrupted rollback completed; the previous kit is active and project data was preserved.");
+    }
+    try {
+        if (state.at("phase") == "updating") {
+            if (directory_identity(prefix, true) == update.at("old_receipt").at("prefix_identity").get<std::string>()) {
+                verify_update_payload(prefix, update.at("old_kit"), update.at("old_receipt"));
+                verify_update_payload(stage, update.at("kit"), update.at("receipt"));
+                auto service_guard = stop_owned_service(update.at("old_receipt"));
+                require(registry_digest(home) == update.at("registry_sha256").get<std::string>(), "registry-binding-changed", "Enrollment changed before switching kits.");
+                state["update"]["step"] = "swapping"; owner->save(state);
+                swap_update_payload(prefix, stage, update.at("old_receipt"), update.at("receipt"));
+            } else {
+                require(update.at("step") == "swapping", "installation-ownership-changed", "Unexpected payload before update activation.");
+                verify_update_payload(prefix, update.at("kit"), update.at("receipt"));
+                verify_update_payload(stage, update.at("old_kit"), update.at("old_receipt"));
+                swap_update_payload(prefix, stage, update.at("old_receipt"), update.at("receipt"));
+            }
+            state["receipt"] = update.at("receipt"); state["kit"] = kit;
+            state["phase"] = "activating"; owner->save(state);
+        }
+        require(record(prefix) == update.at("receipt"), "installation-ownership-changed", "New payload receipt changed.");
+        verify_files(prefix, kit, true);
+        owner.reset(); // The operation lock remains held while the new child takes its startup fence.
+        resume_update_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
+        owner = std::make_unique<StateStore>(control, true);
+        require(owner->load() == state && registry_digest(home) == update.at("registry_sha256").get<std::string>(),
+            "installation-ownership-changed", "Installation or enrollment changed during activation.");
+        state["phase"] = "installed"; state.erase("update");
+        state["previous"] = {{"receipt", update.at("old_receipt")}, {"kit", update.at("old_kit")}};
+        owner->save(state);
+        return {{"ok", true}, {"command", "update"}, {"phase", "installed"}, {"changed", true}, {"version", kit.at("version")},
+            {"previous_version", update.at("old_kit").at("version")}, {"prefix", prefix.string()}, {"home", home.string()},
+            {"data_preserved", true}, {"service_restored", true}, {"readiness_assessed", true}, {"previous_kit_retained", true}, {"restart_monitor", true}};
+    } catch (const std::exception& error) {
+        const auto* typed = dynamic_cast<const Error*>(&error);
+        const auto failure = typed ? validation_identifier(typed->code) : std::string("installation-update-failed");
+        try { rollback(); }
+        catch (const std::exception& recovery) {
+            const auto* cause = dynamic_cast<const Error*>(&recovery);
+            const auto recovery_code = cause ? validation_identifier(cause->code) : std::string("installation-recovery-failed");
+            throw Error("installation-update-recovery-required", "Update failed (" + failure + ") and recovery did not complete (" + recovery_code + "). Rerun update from the same extracted kit.");
+        }
+        throw Error("installation-update-rolled-back", "New kit activation failed (" + failure + "); the previous kit and service were restored. Project data was preserved.");
+    }
+}
+
 } // namespace
 
-std::optional<fs::path> installed_local_home(const fs::path& executable) {
+std::optional<fs::path> installed_local_home(const fs::path& executable, bool startup) {
     const auto prefix = executable_prefix(executable);
     if (!present(prefix / marker_name)) return std::nullopt;
     const auto receipt = record(prefix);
     StateStore state(control_path(prefix), false);
-    (void)state_record(state, receipt, true);
+    (void)state_record(state, receipt, true, startup);
     return fs::path(receipt.at("home").get<std::string>());
 }
 
-void check_local_installation_home(const fs::path& home, const fs::path& executable) {
+void check_local_installation_home(const fs::path& home, const fs::path& executable, bool startup) {
     if (!present(home / "installation")) return;
     StateStore owner(home / "installation", false);
     const auto claim = owner.load();
@@ -255,12 +565,12 @@ void check_local_installation_home(const fs::path& home, const fs::path& executa
     require(claim && claim->value("schema_version", "") == "shin.local-install-home.v1" &&
         claim->at("prefix") == prefix.string() && present(prefix / marker_name),
         "installation-home-conflict", "Use the installed shin-ce to manage this installation's data home.");
-    (void)installed_local_home(executable);
+    (void)installed_local_home(executable, startup);
 }
 
 LocalInstallationGuard::~LocalInstallationGuard() { if (descriptor_ >= 0) ::close(descriptor_); }
 
-std::unique_ptr<LocalInstallationGuard> lock_local_installation(const fs::path& executable) {
+std::unique_ptr<LocalInstallationGuard> lock_local_installation(const fs::path& executable, bool startup) {
     const auto prefix = executable_prefix(executable);
     if (!present(prefix / marker_name)) return {};
     const auto receipt = record(prefix);
@@ -277,7 +587,8 @@ std::unique_ptr<LocalInstallationGuard> lock_local_installation(const fs::path& 
         receipt.at("control_identity") == directory_identity(control_path(prefix), true),
         "installation-lock-unavailable", "Installation control lock changed.");
     StateStore state(control_path(prefix), false);
-    (void)state_record(state, receipt, true);
+    const auto operation = state_record(state, receipt, true, startup);
+    require(startup || !operation.contains("update"), "installation-incomplete", "An update is still restoring the service; resume it from the extracted kit.");
     return guard;
 }
 
@@ -287,6 +598,8 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
 #endif
     require(::geteuid() != 0, "installation-root-forbidden", "Install the local kit as your normal user, without sudo.");
     const std::string command = argv[1];
+    const bool updating = command == "update";
+    bool adopt = false;
     const auto source = executable_prefix(current_executable_path());
     fs::path prefix = present(source / marker_name) ? source : user_home / ".local/opt/shin-local";
     fs::path bin = user_home / ".local/bin";
@@ -294,8 +607,9 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
     std::set<std::string> seen;
     for (int i = 2; i < argc; ++i) {
         const std::string name = argv[i];
-        require((name == "--prefix" || (command == "install" && (name == "--bin-dir" || name == "--home"))) &&
-            seen.insert(name).second && i + 1 < argc, "invalid-arguments", "Use install [--prefix DIR] [--bin-dir DIR] [--home DIR], or installation/uninstall [--prefix DIR].");
+        if (updating && name == "--adopt-existing" && seen.insert(name).second) { adopt = true; continue; }
+        require((name == "--prefix" || ((command == "install" || updating) && (name == "--bin-dir" || name == "--home"))) &&
+            seen.insert(name).second && i + 1 < argc, "invalid-arguments", "Use install/update [--prefix DIR] [--bin-dir DIR] [--home DIR], update --adopt-existing with all three paths, or installation/uninstall [--prefix DIR].");
         const auto value = normalized(argv[++i]);
         if (name == "--prefix") prefix = value;
         else if (name == "--bin-dir") bin = value;
@@ -307,9 +621,15 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         "installation-path-conflict", "Use an installation directory inside your home, outside the extracted kit.");
     user_directory(prefix.parent_path(), command == "install");
     const auto control = control_path(prefix);
-    if (command == "install") ensure_private_directory(control);
+    if (command == "install" || updating) ensure_private_directory(control);
     require(present(control), "installation-not-owned", "No owned installation exists at this prefix.");
-    StateStore store(control, command != "installation");
+    std::unique_ptr<StateStore> operation;
+    if (command != "installation") {
+        ensure_private_directory(control / "operation");
+        operation = std::make_unique<StateStore>(control / "operation", true);
+    }
+    auto owner = std::make_unique<StateStore>(control, command != "installation");
+    auto& store = *owner;
     if (command != "installation") store.recover_pending();
     auto saved = store.load();
     if (saved) require(saved->value("schema_version", "") == "shin.local-install-operation.v1" &&
@@ -325,6 +645,13 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         within(home, user_home) && home != user_home && !within(home, prefix) && !within(prefix, home) &&
         !within(bin, prefix) && !within(prefix, bin) && !within(bin, home) && !within(home, bin),
         "installation-path-conflict", "Use separate installation, command and data directories inside your home.");
+    if (updating) {
+        require(source != prefix, "installation-update-source", "Run update using shin-ce from the new extracted kit, outside the installed directory.");
+        require(!adopt || (seen.contains("--prefix") && seen.contains("--home") && seen.contains("--bin-dir")),
+            "invalid-arguments", "Adopting an existing kit requires explicit --prefix, --home and --bin-dir.");
+        return update_kit(source, prefix, bin, home, adopt, owner, saved);
+    }
+    require(!saved || !saved->contains("update"), "installation-incomplete", "Resume the pending update from its original extracted kit.");
     if (command != "install") {
         if (!saved) throw Error("installation-not-owned", "No owned installation exists at this prefix.");
         auto state = *saved;
@@ -355,6 +682,7 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         const auto service_guard = stop_owned_service(receipt);
         links(receipt, false, true);
         if (present(prefix)) remove_payload(prefix, state.at("kit"), receipt.at("prefix_identity"));
+        clear_previous(state, store, control / "update-payload");
         state["phase"] = "removed"; store.save(state);
         return {{"ok", true}, {"command", command}, {"phase", "removed"}, {"prefix", prefix.string()}, {"data_preserved", true}};
     }

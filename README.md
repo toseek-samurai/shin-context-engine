@@ -58,13 +58,23 @@ setup](docs/cli.md#interactive-terminal-monitor).
 
 ## Get started on macOS
 
-For now, [build the local kit](docs/local-kit.md#build-the-package) or use a
-[candidate from a successful CI run](docs/local-kit.md#download-a-ci-candidate).
-Extract the entire kit ZIP and open Terminal in the
-extracted kit directory. No `sudo` is needed.
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.9)
+is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-./bin/shin-ce install
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.9/install.sh | sh
+```
+
+The installer downloads a versioned binary kit, checks SHA-256, and installs it
+for your user without `sudo` or a compiler. This preview is ad-hoc signed and
+not notarized; macOS may require manual approval on first launch. You can also
+[download and inspect the archive](docs/local-kit.md#download-a-preview-release),
+[build from source](docs/local-kit.md#build-the-package), or test a
+[CI candidate](docs/local-kit.md#download-a-ci-candidate).
+
+Connect your first project:
+
+```sh
 export PATH="$HOME/.local/bin:$PATH"
 
 cd /path/to/your/project
@@ -91,13 +101,15 @@ Use Tab or 1–5 to switch views, Enter for project details, and q to exit.
 To use Shin from a coding agent,
 [configure the included MCP adapter](docs/native-client-setup.md). Automatic
 startup at login is a separate opt-in step in the
-[installation guide](docs/local-kit.md#automatic-startup).
+[installation guide](docs/local-kit.md#automatic-startup). For an existing kit,
+follow the [update procedure](docs/local-kit.md#update-an-existing-kit), which preserves
+project data and restores the previous kit if activation fails.
 
 ## Choose the component you need
 
 | Component | What it does | Current distribution scope |
 | --- | --- | --- |
-| Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS candidate; ARM64 local package checks completed, public release pending |
+| Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS and Linux source builds; [build instructions](docs/building.md) |
 
 Linux desktop packaging, Windows distribution, and macOS Intel package

@@ -26,6 +26,8 @@ def run(script, *options):
 
 run('tests/local_install_test.py', args.cmake, args.build, '1', '--archive', args.archive)
 run('tests/native_installation_test.py', args.cmake, args.build, '--archive', args.archive)
+run('installer/update_test.py', args.cmake, args.build, '--archive', args.archive)
+run('installer/bootstrap_test.py', args.build / 'packages/install.sh', args.archive)
 with tempfile.TemporaryDirectory(prefix='shin-package-stats-') as folder:
     # Preserve executable modes from the exact archive.
     subprocess.run([args.cmake, '-E', 'tar', 'xf', str(args.archive.resolve())], cwd=folder, check=True, timeout=90)

@@ -73,6 +73,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce stats [--home DIR] [--usage-file FILE] [--language auto|en|ru] opens the interactive read-only monitor.\n"
 #endif
                      "shin-ce install [--prefix DIR] [--bin-dir DIR] [--home DIR] installs an extracted native kit.\n"
+                     "shin-ce update [--prefix DIR] [--adopt-existing --home DIR --bin-dir DIR] updates from an extracted kit.\n"
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
                      "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"
@@ -105,14 +106,14 @@ int run(int argc, char** argv, char** environment) {
     }
     LocalProjectRequest request;
     request.command = argv[1];
-    if (request.command == "install" || request.command == "installation" || request.command == "uninstall") {
+    if (request.command == "install" || request.command == "update" || request.command == "installation" || request.command == "uninstall") {
         const char* home = user_home(environment);
         if (!home || !*home) throw Error("home-unavailable", "HOME is required for a per-user installation.");
         auto result = local_installation(argc, argv, fs::canonical(home));
         result["schema_version"] = "shin.local-install-response.v1";
         result["tool"] = "shin-ce";
         result["tool_version"] = SHIN_OBSERVER_VERSION;
-        result["readiness_assessed"] = false;
+        result["readiness_assessed"] = result.value("readiness_assessed", false);
         std::cout << result.dump(2) << '\n';
         return result.at("ok") == true ? 0 : 1;
     }
@@ -228,8 +229,8 @@ int run(int argc, char** argv, char** environment) {
     }
     std::unique_ptr<LocalInstallationGuard> installation_guard;
     if (!std::set<std::string>{"stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
-        installation_guard = lock_local_installation(executable_path());
-    if (const auto installed_home = installed_local_home(executable_path())) {
+        installation_guard = lock_local_installation(executable_path(), background_child || supervised_child);
+    if (const auto installed_home = installed_local_home(executable_path(), background_child || supervised_child)) {
         if (!request.home.empty() && fs::absolute(request.home).lexically_normal() != *installed_home)
             throw Error("installation-home-conflict", "This installed kit uses its recorded data home; a different --home would create a competing service.");
         request.home = *installed_home;
@@ -249,7 +250,7 @@ int run(int argc, char** argv, char** environment) {
 #endif
     }
     if (!std::set<std::string>{"query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
-        check_local_installation_home(request.home, executable_path());
+        check_local_installation_home(request.home, executable_path(), background_child || supervised_child);
     if (!use_service && std::set<std::string>{"status", "query", "inspect", "read"}.contains(request.command) &&
         fs::exists(fs::symlink_status(request.home / "registry"))) {
         const auto projects = registered_local_projects(request.home);

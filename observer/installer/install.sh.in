@@ -1,0 +1,67 @@
+#!/bin/sh
+# Versioned preview bootstrap. Native shin-ce owns installation and update state.
+set -eu
+main() {
+version='@SHIN_OBSERVER_VERSION@'
+repository='https://github.com/toseek-samurai/shin-context-engine/releases/download'
+fail() { printf '%s\n' "Shin: $*" >&2; exit 1; }
+usage() {
+    printf '%s\n' 'Install or update the macOS Apple Silicon preview.' \
+      'Options: --prefix DIR --bin-dir DIR --home DIR --adopt-existing' \
+      'Legacy adoption requires all three existing locations explicitly.'
+}
+prefix=${HOME:?HOME is required}/.local/opt/shin-local
+# Parse a copy; forward the original argument vector unchanged to the native tool.
+parse() {
+    while [ "$#" -gt 0 ]; do
+        case "$1" in
+            --prefix|--bin-dir|--home)
+                option=$1
+                [ "$#" -ge 2 ] && [ -n "$2" ] || fail "$option needs a directory"
+                [ "$option" != --prefix ] || prefix=$2
+                shift 2 ;;
+            --adopt-existing) shift ;;
+            --help) usage; exit 0 ;;
+            *) fail "Unknown option: $1" ;;
+        esac
+    done
+}
+parse "$@"
+[ "$(id -u)" -ne 0 ] || fail 'Run as your normal user, without sudo.'
+[ "$(uname -s)" = Darwin ] || fail 'This preview supports macOS only.'
+[ "$(uname -m)" = arm64 ] || fail 'This preview supports Apple Silicon; use a native arm64 terminal.'
+os_version=$(sw_vers -productVersion)
+major=${os_version%%.*}
+case "$major" in ''|*[!0-9]*) fail 'Cannot identify the macOS version.' ;; esac
+[ "$major" -ge 15 ] || fail 'This preview requires macOS 15 or newer.'
+archive="shin-local-$version-macos-arm64.zip"
+url="$repository/v$version"
+temporary=$(mktemp -d "${TMPDIR:-/tmp}/shin-install.XXXXXXXX")
+trap 'rm -rf "$temporary"' EXIT
+trap 'exit 130' INT
+trap 'exit 143' TERM
+printf 'Downloading Shin %s for macOS Apple Silicon…\n' "$version"
+curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    "$url/$archive" --output "$temporary/$archive"
+curl --fail --location --silent --show-error --proto '=https' --proto-redir '=https' --tlsv1.2 \
+    "$url/$archive.sha256" --output "$temporary/checksum"
+expected=$(awk 'NR==1 {print $1} END {if (NR!=1) exit 1}' "$temporary/checksum") || fail 'Invalid checksum file.'
+case "$expected" in ''|*[!0-9a-f]*) fail 'Invalid SHA-256 digest.' ;; esac
+[ "${#expected}" -eq 64 ] || fail 'Invalid SHA-256 digest length.'
+actual=$(shasum -a 256 "$temporary/$archive" | awk '{print $1}')
+[ "$actual" = "$expected" ] || fail 'Archive checksum mismatch; installation was not started.'
+mkdir "$temporary/unpacked"
+# libarchive rejects unsafe extraction paths; the native installer then checks
+# the complete inventory, file types, ownership and every manifest hash.
+tar -xf "$temporary/$archive" -C "$temporary/unpacked"
+kit="$temporary/unpacked/shin-local-$version-macos-arm64"
+[ -x "$kit/bin/shin-ce" ] || fail 'The release does not contain the expected complete kit.'
+action=install
+if [ -e "$prefix" ] || [ -L "$prefix" ]; then action=update; fi
+"$kit/bin/shin-ce" "$action" "$@"
+printf 'Shin %s: %s complete.\n' "$version" "$action"
+printf '%s\n' 'To add a project, run shin-ce init in its directory.' \
+    'If shin-ce is not on PATH, use the installed kit/bin/shin-ce path shown above.' \
+    'Restart Monitor after an update. Login startup remains an explicit opt-in.'
+}
+main "$@"

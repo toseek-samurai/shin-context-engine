@@ -167,6 +167,10 @@ if(BUILD_TESTING AND NOT WIN32)
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native_installation_test.py
                     ${CMAKE_COMMAND} ${CMAKE_CURRENT_BINARY_DIR})
             set_tests_properties(shin-ce-native-installation PROPERTIES TIMEOUT 180 RESOURCE_LOCK shin-install-tree)
+            add_test(NAME shin-ce-native-update
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/installer/update_test.py
+                    ${CMAKE_COMMAND} ${CMAKE_CURRENT_BINARY_DIR})
+            set_tests_properties(shin-ce-native-update PROPERTIES TIMEOUT 180 RESOURCE_LOCK shin-install-tree)
         endif()
         add_executable(shin-observer-test-core ../src/main.cpp)
         target_link_libraries(shin-observer-test-core PRIVATE shin-context-core)

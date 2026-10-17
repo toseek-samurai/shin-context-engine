@@ -3,7 +3,34 @@
 The kit includes Core, Observer, the `shin-ce` CLI, `shin-mcp`, the usage collector,
 Shin Monitor, profiles, contracts, and dependency notices. Local retrieval needs
 no account or AI model service.
-This is a development candidate; public release approval is pending.
+The current development preview targets macOS 15+ on Apple Silicon. It uses an
+ad-hoc signature, without Developer ID or notarization; first launch on another
+Mac may require manual approval. This is not a stable release.
+
+## Download a preview release
+
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.9).
+The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
+Public release downloads do not require a GitHub account.
+
+For one-command installation or update:
+
+```sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.9/install.sh | sh
+```
+
+You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
+It uses macOS tools, checks the archive checksum, and delegates to the same native
+`install`/`update` commands documented below. No build tools, Python or Homebrew
+are needed. It retains macOS security settings and does not remove quarantine
+attributes. Existing manual installations require explicit adoption; follow the
+[legacy migration procedure](#adopt-a-previous-manually-installed-kit).
+
+To use custom locations, run `sh install.sh --prefix DIR --bin-dir DIR --home DIR`.
+An existing native installation normally needs only `--prefix`; its recorded home
+and command links are retained. First installation does not enroll projects or
+enable login startup. Repeating the versioned bootstrap safely resumes an update
+with the same archive contents.
 
 ## Download a CI candidate
 
@@ -113,9 +140,58 @@ shin-ce service-start
 `service-install` registers the background service, not the Monitor UI.
 `service-uninstall` removes automatic service startup. `uninstall` removes an
 owned kit and its command links while preserving project data and history.
-Use `shin-ce --help` for current options. Replacing a different installed kit is
-not an automatic upgrade flow; preserve its state and follow the reported
-installation checks.
+Use `shin-ce --help` for current options. Use the update procedure below to replace an installed kit while retaining its
+recorded data home and service preference.
+
+## Update an existing kit
+
+Download and verify the new complete kit, then extract it outside the installed
+folder. Close Monitor and run the **new kit's** executable:
+
+```sh
+./bin/shin-ce update
+```
+
+For a custom installation, add `--prefix /path/to/installed-kit`; its recorded
+command directory and data home are retained. The updater verifies both manifests,
+checks current projects under the new engine, stages complete files, stops the
+owned service and atomically exchanges the payload directories. It restores the
+previous service/autostart preference and checks readiness before reporting success.
+Project bindings, indexes, identity and history remain in their existing data home.
+Restart Monitor after completion. Existing CLI/MCP processes may need restarting to
+report the new executable version.
+
+An interrupted operation is resumed by repeating the same command from the same
+extracted kit. Failed activation restores the previous payload and service; the
+error reports whether rollback completed or further recovery is required. One
+previous kit is retained outside the active payload. A subsequent update or
+uninstall removes it only after verifying its ownership and contents. Unexpected
+files or corruption are preserved for review, never silently deleted.
+
+Updating with the exact installed archive is a no-op. A changed archive must have
+a newer version; downgrades and altered same-version kits are refused. This first
+updater supports the same Core version only: a change to the Core data contract
+requires an explicit migration. It does not download releases or change shell,
+client, project or model-usage configuration.
+
+### Adopt a previous manually installed kit
+
+Older installations without a native installation receipt require an explicit,
+one-time adoption. Supply all three existing locations using the new kit:
+
+```sh
+./bin/shin-ce update --adopt-existing \
+  --prefix "$HOME/.local/opt/shin-local" \
+  --bin-dir "$HOME/.local/bin" \
+  --home /absolute/path/to/existing-shin-data
+```
+
+Use the actual existing data directory, not a fresh default. Adoption verifies a
+complete old kit manifest, its command links, registry, identity and service
+ownership before recording installation ownership. It makes the kit directory
+private and preserves existing project data. Arbitrary directories, conflicting
+links and another installation's data home are refused. Later updates use only
+`update` (and `--prefix` if customized).
 
 ## Portable use and custom locations
 
@@ -145,6 +221,7 @@ CMake downloads pinned dependencies with checked hashes.
 ```sh
 cmake -S observer -B /tmp/shin-observer-kit \
   -DCMAKE_BUILD_TYPE=Release \
+  -DCMAKE_OSX_DEPLOYMENT_TARGET=15.0 \
   -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON \
   -DSHIN_OBSERVER_MCP=ON \
   -DSHIN_OBSERVER_TRAY=ON \
@@ -157,6 +234,6 @@ cpack --config /tmp/shin-observer-kit/CPackConfig.cmake
 The ZIP and checksum are under the build directory's `packages` folder. Keep the
 whole directory layout when extracting. The package contains no credentials,
 client settings, or project state. The build does not qualify other CPU
-architectures or macOS versions. Public distribution still needs a defined
-minimum macOS version and a signing/notarization and first-launch check on a
-clean machine; a local ad-hoc signature alone does not establish that experience.
+architectures or macOS versions. Stable distribution still needs Developer ID signing/notarization and a
+first-launch check on a clean machine; an ad-hoc signature alone does not
+establish that experience.

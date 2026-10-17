@@ -60,7 +60,8 @@ jobs:
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
           if [[ "$RUNNER_OS" == macOS ]]; then
             # Hash the selected compiler itself, not Apple's /usr/bin dispatch shim.
-            flags+=(-DCMAKE_C_COMPILER="$(xcrun --find clang)"
+            flags+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+              -DCMAKE_C_COMPILER="$(xcrun --find clang)"
               -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)")
             if [[ '${{ matrix.component }}' == observer ]]; then
               flags+=(-DCMAKE_OBJCXX_COMPILER="$(xcrun --find clang++)"
@@ -110,6 +111,7 @@ jobs:
           path: |
             ${{ runner.temp }}/observer/packages/*.zip
             ${{ runner.temp }}/observer/packages/*.zip.sha256
+            ${{ runner.temp }}/observer/packages/install.sh
           if-no-files-found: error
           retention-days: 14
           compression-level: 0

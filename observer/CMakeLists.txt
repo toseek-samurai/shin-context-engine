@@ -161,12 +161,12 @@ if(BUILD_TESTING AND NOT WIN32)
         add_test(NAME shin-ce-local-install
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_install_test.py
                 ${CMAKE_COMMAND} ${CMAKE_CURRENT_BINARY_DIR} $<BOOL:${SHIN_OBSERVER_LOCAL_KIT}>)
-        set_tests_properties(shin-ce-local-install PROPERTIES TIMEOUT 120)
+        set_tests_properties(shin-ce-local-install PROPERTIES TIMEOUT 120 RESOURCE_LOCK shin-install-tree)
         if(SHIN_OBSERVER_LOCAL_KIT)
             add_test(NAME shin-ce-native-installation
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/native_installation_test.py
                     ${CMAKE_COMMAND} ${CMAKE_CURRENT_BINARY_DIR})
-            set_tests_properties(shin-ce-native-installation PROPERTIES TIMEOUT 180)
+            set_tests_properties(shin-ce-native-installation PROPERTIES TIMEOUT 180 RESOURCE_LOCK shin-install-tree)
         endif()
         add_executable(shin-observer-test-core ../src/main.cpp)
         target_link_libraries(shin-observer-test-core PRIVATE shin-context-core)
@@ -174,6 +174,14 @@ if(BUILD_TESTING AND NOT WIN32)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_route_test.py
                 $<TARGET_FILE:shin-ce> $<TARGET_FILE:shin-observer> $<TARGET_FILE:shin-observer-test-core>)
         set_tests_properties(shin-ce-local-route PROPERTIES TIMEOUT 180)
+        # Start the longest isolated lifecycle suites first on a fresh CTest run.
+        # Costs only affect scheduling; deadlines and assertions are unchanged.
+        set_tests_properties(shin-ce-local-service PROPERTIES COST 130)
+        set_tests_properties(shin-ce-local-route PROPERTIES COST 110)
+        set_tests_properties(shin-ce-local-watch shin-ce-managed-init PROPERTIES COST 65)
+        if(SHIN_OBSERVER_MCP)
+            set_tests_properties(shin-native-mcp PROPERTIES COST 90)
+        endif()
     endif()
     add_executable(shin-observer-source-view-tests tests/source_view_test.cpp)
     target_link_libraries(shin-observer-source-view-tests PRIVATE shin-observer-native)

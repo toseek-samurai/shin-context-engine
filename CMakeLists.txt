@@ -430,7 +430,9 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
         set_tests_properties(shin-context-model-usage PROPERTIES TIMEOUT 30)
         add_test(NAME shin-context-client-status-hook
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_client_status_hook.py)
-        set_tests_properties(shin-context-client-status-hook PROPERTIES TIMEOUT 30)
+        # This suite measures a real one-second child deadline. Keep CPU contention
+        # from unrelated suites out of the measurement; do not relax that deadline.
+        set_tests_properties(shin-context-client-status-hook PROPERTIES TIMEOUT 30 RUN_SERIAL TRUE)
         add_test(NAME shin-context-semantic-runtime
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_semantic_runtime.py
                     --core $<TARGET_FILE:shin-context>)

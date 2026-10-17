@@ -169,6 +169,7 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
         endif()
         add_test(NAME shin-native-install COMMAND ${Python3_EXECUTABLE} -B
             "${SHIN_OBSERVER_ROOT}/tests/native_install_test.py" ${install_test_args})
-        set_tests_properties(shin-native-install PROPERTIES TIMEOUT 120)
+        # cmake --install writes the build tree's shared install_manifest.txt.
+        set_tests_properties(shin-native-install PROPERTIES TIMEOUT 120 RESOURCE_LOCK shin-install-tree)
     endif()
 endif()

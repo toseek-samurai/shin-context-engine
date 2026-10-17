@@ -8,6 +8,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: source-qualification-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   native:
     strategy:
@@ -16,6 +20,11 @@ jobs:
         os: [ubuntu-24.04, macos-15]
         component: [core, observer]
     runs-on: ${{ matrix.os }}
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/../ccache
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 500M
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -24,35 +33,60 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build jq python3 libsqlite3-dev libssl-dev libncurses-dev
+          sudo apt-get install -y cmake ninja-build ccache jq python3 libsqlite3-dev libssl-dev libncurses-dev
       - name: macOS prerequisites
         if: runner.os == 'macOS'
         run: |
           sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
           xcodebuild -version
           xcrun --sdk macosx --show-sdk-path
-          brew install cmake ninja jq openssl@3 python@3.14
+          brew install cmake ninja ccache jq openssl@3 python@3.14
           echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
           echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
-      - name: Core build and tests
-        if: matrix.component == 'core'
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ env.CCACHE_DIR }}
+          key: ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.component }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.component }}-
+      - name: Configure
+        shell: bash
         run: |
-          cmake -S . -B "$RUNNER_TEMP/core" -DCMAKE_BUILD_TYPE=Release -DSHIN_CONTEXT_BUILD_SOURCE_DISCOVERY=ON -DSHIN_CONTEXT_BUILD_SEMANTIC_EXPORTER=ON
-          cmake --build "$RUNNER_TEMP/core" --parallel 4
-          ctest --test-dir "$RUNNER_TEMP/core" --output-on-failure --output-junit "$RUNNER_TEMP/core-tests.xml"
+          ccache --zero-stats
+          flags=(-G Ninja -DCMAKE_BUILD_TYPE=Release
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            # Hash the selected compiler itself, not Apple's /usr/bin dispatch shim.
+            flags+=(-DCMAKE_C_COMPILER="$(xcrun --find clang)"
+              -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)")
+            if [[ '${{ matrix.component }}' == observer ]]; then
+              flags+=(-DCMAKE_OBJCXX_COMPILER="$(xcrun --find clang++)"
+                -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache)
+            fi
+          fi
+          if [[ '${{ matrix.component }}' == core ]]; then
+            cmake -S . -B "$RUNNER_TEMP/core" "${flags[@]}" \
+              -DSHIN_CONTEXT_BUILD_SOURCE_DISCOVERY=ON -DSHIN_CONTEXT_BUILD_SEMANTIC_EXPORTER=ON
+          else
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              flags+=(-DSHIN_OBSERVER_TRAY=ON -DSHIN_OBSERVER_LOCAL_KIT=ON)
+            fi
+            cmake -S observer -B "$RUNNER_TEMP/observer" "${flags[@]}" \
+              -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON -DSHIN_OBSERVER_MCP=ON
+          fi
+      - name: Build
+        run: cmake --build "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4
+      - name: Compiler cache statistics
+        if: always()
+        run: |
+          ccache --show-stats --verbose
+          ccache --print-stats > "$RUNNER_TEMP/ccache-stats.tsv"
+      - name: Tests
+        run: ctest --test-dir "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4 --output-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/${{ matrix.component }}-tests.xml"
       - name: Strict source profiles
         if: matrix.component == 'core'
         run: python3 tools/verify_source_profiles.py "$RUNNER_TEMP/core/shin-context" "$RUNNER_TEMP/profile-proof"
-      - name: Observer build and tests
-        if: matrix.component == 'observer'
-        run: |
-          kit_flags=()
-          if [[ "$RUNNER_OS" == macOS ]]; then
-            kit_flags=(-DSHIN_OBSERVER_TRAY=ON -DSHIN_OBSERVER_LOCAL_KIT=ON)
-          fi
-          cmake -S observer -B "$RUNNER_TEMP/observer" -DCMAKE_BUILD_TYPE=Release -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON -DSHIN_OBSERVER_MCP=ON "${kit_flags[@]}"
-          cmake --build "$RUNNER_TEMP/observer" --parallel 4
-          ctest --test-dir "$RUNNER_TEMP/observer" --output-on-failure --output-junit "$RUNNER_TEMP/observer-tests.xml"
       - name: Exact macOS kit qualification
         id: qualify-kit
         if: matrix.component == 'observer' && runner.os == 'macOS'
@@ -89,5 +123,6 @@ jobs:
             ${{ runner.temp }}/package-build.log
             ${{ runner.temp }}/package-smoke.log
             ${{ runner.temp }}/package-checksum.log
+            ${{ runner.temp }}/ccache-stats.tsv
           if-no-files-found: warn
           retention-days: 14

@@ -42,10 +42,10 @@ if(BUILD_TESTING)
     target_link_libraries(shin-tray-layout-tests PRIVATE shin-observer-native shin-imgui "-framework ImageIO")
     add_test(NAME shin-tray-layout COMMAND shin-tray-layout-tests "${CMAKE_CURRENT_BINARY_DIR}/layout-check"
         -ShinHome /shin-monitor-test-home)
-    set_tests_properties(shin-tray-layout PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77)
+    set_tests_properties(shin-tray-layout PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
     add_test(NAME shin-tray-layout-en COMMAND shin-tray-layout-tests "${CMAKE_CURRENT_BINARY_DIR}/layout-check-en"
         -ShinHome /shin-monitor-test-home en)
-    set_tests_properties(shin-tray-layout-en PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77)
+    set_tests_properties(shin-tray-layout-en PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
 endif()
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SHIN_MONITOR_SHORT_VERSION "${SHIN_OBSERVER_VERSION}")
 set_target_properties(shin-tray PROPERTIES

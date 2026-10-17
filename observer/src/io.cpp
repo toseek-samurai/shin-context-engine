@@ -21,7 +21,9 @@
 // Inject after system declarations: glibc may bind a renamed declaration back
 // to the original assembler symbol, bypassing a command-line macro replacement.
 extern "C" int shin_observer_test_openat(int directory, const char* name, int flags, ...);
+extern "C" int shin_observer_test_fstatat(int directory, const char* name, struct stat* status, int flags);
 #define openat shin_observer_test_openat
+#define fstatat shin_observer_test_fstatat
 #endif
 
 namespace shin::observer {
@@ -245,6 +247,11 @@ std::string read_open_file(Descriptor file, const FileStamp& before, std::size_t
 std::string read_named_file(int directory, const char* name, std::size_t maximum_bytes, bool private_only,
                             const char* unsafe_code, const char* too_large_code, const char* changed_code) {
     const FileStamp named_before = named_stamp(directory, name, unsafe_code, "File is not a safe regular file.");
+    // A named stat can resolve an inode just before an atomic rename unlinks it.
+    // Retry only a regular, otherwise safe inode; never accept its stale bytes.
+    if (named_before.links == 0 && S_ISREG(named_before.mode) &&
+        (!private_only || (named_before.owner == ::geteuid() && (named_before.mode & 07777) == 0600)))
+        fail(changed_code, "File changed during reading.");
     require_regular(named_before, private_only, unsafe_code, "File is not a safe regular file.");
     Descriptor file(::openat(directory, name, O_RDONLY | O_CLOEXEC | O_NONBLOCK | O_NOFOLLOW));
     if (file.get() < 0) fail_system(unsafe_code, "File is not a safe regular file.", errno);

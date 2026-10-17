@@ -15,6 +15,7 @@
 #include <utility>
 
 extern "C" int shin_observer_test_openat(int directory, const char* name, int flags, ...);
+extern "C" int shin_observer_test_fstatat(int directory, const char* name, struct stat* status, int flags);
 
 namespace {
 using namespace shin::observer;
@@ -73,6 +74,49 @@ struct Interleaving {
         }
     }
 };
+
+struct NamedInterleaving {
+    StateStore& writer;
+    unsigned limit;
+    mode_t replacement_mode = 0600;
+    unsigned observations = 0, replacements = 0;
+    bool inside_writer = false;
+};
+NamedInterleaving* named_interleaving = nullptr;
+class ScopedNamedInterleaving {
+public:
+    explicit ScopedNamedInterleaving(NamedInterleaving& value) { named_interleaving = &value; }
+    ~ScopedNamedInterleaving() { named_interleaving = nullptr; }
+    ScopedNamedInterleaving(const ScopedNamedInterleaving&) = delete;
+    ScopedNamedInterleaving& operator=(const ScopedNamedInterleaving&) = delete;
+};
+
+void initial_stat_replacement_retries_boundedly() {
+    for (const unsigned limit : {1U, 3U}) {
+        Fixture fixture;
+        StateStore writer(fixture.root, true);
+        writer.save(Json{{"generation", 0}});
+        StateStore reader(fixture.root, false);
+        NamedInterleaving interleaving{writer, limit};
+        const ScopedNamedInterleaving scope(interleaving);
+        if (limit == 1) check(reader.load() == Json{{"generation", 1}}, "initial stat race did not return the new state");
+        else rejects("state-changed", [&] { (void)reader.load(); });
+        check(interleaving.replacements == limit, "initial stat replacement bypassed bounded retry");
+    }
+}
+void initial_stat_race_does_not_accept_unsafe_replacement() {
+    for (const mode_t mode : {0644, 0666}) {
+        Fixture fixture;
+        StateStore writer(fixture.root, true);
+        writer.save(Json{{"generation", 0}});
+        StateStore reader(fixture.root, false);
+        NamedInterleaving interleaving{writer, 1, mode};
+        const ScopedNamedInterleaving scope(interleaving);
+        rejects("state-unsafe", [&] { (void)reader.load(); });
+        check(interleaving.observations == 4 && interleaving.replacements == 1,
+            "unsafe replacement was not rejected on the second attempt");
+    }
+}
 
 Interleaving* active_interleaving = nullptr;
 int next_pending_error = 0;
@@ -155,6 +199,28 @@ void initial_unsafe_modes_are_not_retried() {
 }
 
 } // namespace
+
+extern "C" int shin_observer_test_fstatat(int directory, const char* name, struct stat* status, int flags) {
+    const int result = ::fstatat(directory, name, status, flags);
+    auto* interleaving = named_interleaving;
+    if (result != 0 || !interleaving || interleaving->inside_writer || std::strcmp(name, "state.json") != 0) return result;
+    // Each attempt first checks existence, then captures the named file's stamp.
+    ++interleaving->observations;
+    if (interleaving->observations % 2 != 0 || interleaving->replacements == interleaving->limit) return result;
+    const int descriptor = ::openat(directory, name, O_RDONLY | O_CLOEXEC | O_NOFOLLOW);
+    check(descriptor >= 0, "cannot hold the initially resolved inode");
+    interleaving->inside_writer = true;
+    try {
+        interleaving->writer.save(Json{{"generation", ++interleaving->replacements}});
+        if (interleaving->replacement_mode != 0600)
+            check(::fchmodat(directory, name, interleaving->replacement_mode, 0) == 0, "replacement chmod failed");
+        // Linux can resolve the old inode, then observe its attributes after rename.
+        check(::fstat(descriptor, status) == 0 && status->st_nlink == 0, "initial stat did not observe the unlinked inode");
+    } catch (...) { interleaving->inside_writer = false; ::close(descriptor); throw; }
+    interleaving->inside_writer = false;
+    ::close(descriptor);
+    return result;
+}
 
 extern "C" int shin_observer_test_openat(int directory, const char* name, int flags, ...) {
     if (next_pending_error && (flags & O_CREAT) && std::strcmp(name, "state.pending") == 0) {
@@ -397,6 +463,8 @@ int main() {
         const char* name;
         void (*run)();
     } tests[] = {
+        {"initial_stat_replacement_retries_boundedly", initial_stat_replacement_retries_boundedly},
+        {"initial_stat_race_does_not_accept_unsafe_replacement", initial_stat_race_does_not_accept_unsafe_replacement},
         {"one_replacement_returns_new_json", one_replacement_returns_new_json},
         {"repeated_replacement_stops_after_three_attempts", repeated_replacement_stops_after_three_attempts},
         {"unsafe_replacement_is_not_bypassed", unsafe_replacement_is_not_bypassed},

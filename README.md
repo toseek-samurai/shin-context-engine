@@ -1,4 +1,4 @@
-# <img src="docs/images/shin-logo.png" width="48" height="48" alt="Shin logo"> Shin Context Engine
+# <img src="docs/images/shin-logo.png" align="middle" width="48" height="48" alt="Shin logo"> Shin Context Engine
 
 [![Source qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml)
 

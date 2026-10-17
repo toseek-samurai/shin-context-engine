@@ -15,9 +15,10 @@ Json failure(const std::string& id, const std::string& code, const std::string& 
     return value;
 }
 
-Json project_response(const Json& response, const std::string& id) {
+namespace {
+Json response_for_version(const Json& response, const std::string& id, const std::string& observer_version) {
     if (!response.is_object() || response.value("schema_version", "") != "shin.local-rpc.v1" ||
-        response.value("request_id", "") != id || response.value("observer_version", "") != SHIN_OBSERVER_VERSION ||
+        response.value("request_id", "") != id || response.value("observer_version", "") != observer_version ||
         response.value("core_version", "") != SHIN_VERSION || !response.contains("ok") || !response.at("ok").is_boolean())
         throw Error("service-response-invalid", "Local response identity/version is invalid.");
     if (response.contains("error")) throw Error(response.at("error").at("code"), response.at("error").at("message"),
@@ -26,6 +27,16 @@ Json project_response(const Json& response, const std::string& id) {
     if (!result.is_object() || !result.contains("ok") || result.at("ok") != response.at("ok"))
         throw Error("service-response-invalid", "Local response success is inconsistent.");
     return result;
+}
+
+} // namespace
+Json project_response(const Json& response, const std::string& id) {
+    return response_for_version(response, id, SHIN_OBSERVER_VERSION);
+}
+Json control_response(const Json& response, const std::string& id, const std::string& observer_version) {
+    if (validation_identifier(observer_version).empty())
+        throw Error("service-version-mismatch", "A verified kit version is required for installation control.");
+    return response_for_version(response, id, observer_version);
 }
 
 std::string string_field(const Json& value, const char* key, std::size_t limit) {

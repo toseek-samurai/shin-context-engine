@@ -10,6 +10,8 @@ Json start_local_service(const LocalProjectRequest& request, const fs::path& exe
 Json initialize_local_service(const LocalProjectRequest& request, const fs::path& executable);
 Json detach_local_service(const LocalProjectRequest& request);
 Json request_local_service(const LocalProjectRequest& request, const std::function<bool()>& cancelled = {});
+// Restricted update channel: only status or stop, same Core, exact pinned Observer.
+Json control_local_service_for_update(const fs::path& home, const std::string& observer_version, bool stop);
 Json qualify_local_project(const LocalProjectRequest& request, const fs::path& executable,
                            const std::function<bool()>& cancelled = {});
 int local_service_worker();

@@ -158,8 +158,9 @@ checks current projects under the new engine, stages complete files, stops the
 owned service and atomically exchanges the payload directories. It restores the
 previous service/autostart preference and checks readiness before reporting success.
 Project bindings, indexes, identity and history remain in their existing data home.
-Restart Monitor after completion. Existing CLI/MCP processes may need restarting to
-report the new executable version.
+Restart Monitor after completion. Restart persistent MCP connections in your coding
+agent as well: already-running adapters retain the old version and cannot query
+the new service until relaunched. Client configuration paths stay the same.
 
 An interrupted operation is resumed by repeating the same command from the same
 extracted kit. Failed activation restores the previous payload and service; the

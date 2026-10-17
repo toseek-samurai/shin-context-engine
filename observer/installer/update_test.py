@@ -91,7 +91,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         return value
 
     def stop_service():
-        call('service-stop', executable=prefix / 'bin/shin-ce')
+        call('service-stop', '--home', home, executable=prefix / 'bin/shin-ce')
         until = time.monotonic() + 15
         while (home / 'service/rpc.sock').exists():
             assert time.monotonic() < until, 'service did not release its endpoint'
@@ -112,6 +112,9 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         history_inode = history.stat().st_ino
         with sqlite3.connect(f'file:{history}?mode=ro', uri=True) as db:
             events_before = db.execute('SELECT COUNT(*) FROM events').fetchone()[0]
+        # Fixture manifests differ from the current binaries: version-pinned RPC
+        # is covered with a real previous release, not by lying about a live service.
+        stop_service()
         call(*update, error='installation-not-owned')
         assert not (prefix / '.shin-installation.json').exists()
         assert not (home / 'installation').exists()
@@ -127,6 +130,8 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         state_file = Path(receipt['control']) / 'state.json'
         stage = Path(receipt['control']) / 'update-payload'
         assert call('installation', '--prefix', prefix)['integrity_verified']
+        assert not (home / 'service/rpc.sock').exists()
+        call('service-start', executable=prefix / 'bin/shin-ce')
         assert not call(*update)['changed']
         assert (prefix / asset_name).read_bytes() == asset.read_bytes()
         call('update', executable=prefix / 'bin/shin-ce', error='installation-update-source')
@@ -152,7 +157,6 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         stop_service()
         previous_fixture(owned=True)
         previous_manifest = (prefix / 'shin-kit.json').read_bytes()
-        call('service-start', executable=prefix / 'bin/shin-ce')
         child = subprocess.Popen([str(tool), *update], cwd=root, env=env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         killed = False
@@ -170,6 +174,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         assert (home / 'registry/state.json').read_bytes() == registry
         resumed = call(*update)
         assert resumed['changed'] and resumed['data_preserved']
+        call('service-start', executable=prefix / 'bin/shin-ce')
         assert call('query', 'updateQuota', executable=prefix / 'bin/shin-ce')['local_ready']
 
         # Model the atomic rename committing just before the journal acknowledgement.
@@ -203,6 +208,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         with sqlite3.connect(f'file:{history}?mode=ro', uri=True) as db:
             assert db.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
             assert db.execute('SELECT COUNT(*) FROM events').fetchone()[0] >= events_before
+        stop_service()
         # Retained corruption is never silently deleted, even from a rollback kit.
         call(*update, error='installation-file-changed')
         (stage / 'bin/shin-context').chmod(0o755)

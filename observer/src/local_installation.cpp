@@ -3,6 +3,10 @@
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_registry.h"
 #include <regex>
+#include <csignal>
+#include <spawn.h>
+#include <sys/wait.h>
+#include <poll.h>
 #include <array>
 #include <algorithm>
 #include <chrono>
@@ -211,7 +215,7 @@ void remove_payload(const fs::path& prefix, const Json& kit, const std::string& 
     require(fs::remove(prefix), "installation-remove-failed", "The owned installation directory is not empty.");
     sync_directory(prefix.parent_path());
 }
-std::unique_ptr<StateStore> stop_owned_service(const Json& receipt) {
+std::unique_ptr<StateStore> stop_owned_service(const Json& receipt, const std::string& observer_version = SHIN_OBSERVER_VERSION) {
     LocalProjectRequest request;
     request.home = receipt.at("home").get<std::string>();
     const auto executable = fs::path(receipt.at("prefix").get<std::string>()) / "bin/shin-ce";
@@ -229,7 +233,7 @@ std::unique_ptr<StateStore> stop_owned_service(const Json& receipt) {
     StateStore service(request.home / "service", false);
     if (service.writer_present()) {
         request.command = "service-stop";
-        (void)request_local_service(request);
+        (void)control_local_service_for_update(request.home, observer_version, true);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(55);
         while (service.writer_present()) {
             require(std::chrono::steady_clock::now() < deadline, "installation-service-busy", "Service is still stopping; repeat uninstall.");
@@ -284,12 +288,20 @@ Json runtime_before_update(const fs::path& home, const fs::path& executable) {
         StateStore service(home / "service", false);
         if (service.writer_present()) {
             request.command = "service-status";
-            const auto status = request_local_service(request);
+            const auto status = control_local_service_for_update(home, manifest(executable.parent_path().parent_path()).at("version"), false);
             require(status.value("enrollment_mode", "") == "registry", "installation-service-conflict", "Explicit-root services must be stopped before updating this kit.");
             runtime["running"] = true;
         }
     }
     return runtime;
+}
+void wait_update_service_stopped(const fs::path& home) {
+    StateStore service(home / "service", false);
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(55);
+    while (service.writer_present()) {
+        require(std::chrono::steady_clock::now() < deadline, "installation-service-busy", "Service is still stopping; repeat update.");
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    }
 }
 void resume_update_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
     LocalProjectRequest request; request.home = home;
@@ -307,7 +319,89 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
         if (!runtime.at("running").get<bool>()) {
             request.command = "service-stop";
             (void)request_local_service(request);
+            wait_update_service_stopped(home);
         }
+    }
+}
+// Rollback must use the verified previous CLI's protocol and qualification rules.
+// No shell, inherited user environment, or arbitrary subcommand is involved.
+Json previous_cli(const fs::path& executable, const fs::path& home,
+                  const char* command, const fs::path& root = {}) {
+    const auto previous = std::signal(SIGCHLD, SIG_DFL);
+    require(previous != SIG_ERR, "installation-recovery-process", "Cannot establish recovery child ownership.");
+    struct Restore { decltype(previous) handler; ~Restore() { std::signal(SIGCHLD, handler); } } restore{previous};
+    int channel[2];
+    require(::pipe(channel) == 0, "installation-recovery-process", "Cannot create recovery output channel.");
+    struct Channel { int* fds; ~Channel() { for (int i = 0; i < 2; ++i) if (fds[i] >= 0) ::close(fds[i]); } } cleanup{channel};
+    require(::fcntl(channel[0], F_SETFD, FD_CLOEXEC) == 0 && ::fcntl(channel[1], F_SETFD, FD_CLOEXEC) == 0 &&
+        ::fcntl(channel[0], F_SETFL, O_NONBLOCK) == 0,
+        "installation-recovery-process", "Cannot protect recovery output channel.");
+    std::vector<std::string> words{executable.string(), command, "--home", home.string()};
+    if (!root.empty()) { words.emplace_back("--root"); words.push_back(root.string()); }
+    std::vector<char*> argv; argv.reserve(words.size() + 1);
+    for (auto& word : words) argv.push_back(word.data());
+    argv.push_back(nullptr);
+    std::array<char*, 2> environment{const_cast<char*>("LC_ALL=C"), nullptr};
+    posix_spawn_file_actions_t actions;
+    require(::posix_spawn_file_actions_init(&actions) == 0, "installation-recovery-process", "Cannot prepare recovery process.");
+    int error = ::posix_spawn_file_actions_addopen(&actions, STDIN_FILENO, "/dev/null", O_RDONLY, 0);
+    for (int fd : {STDOUT_FILENO, STDERR_FILENO})
+        if (!error) error = ::posix_spawn_file_actions_adddup2(&actions, channel[1], fd);
+    pid_t child = -1;
+    if (!error) error = ::posix_spawn(&child, executable.c_str(), &actions, nullptr, argv.data(), environment.data());
+    ::posix_spawn_file_actions_destroy(&actions);
+    require(!error, "installation-recovery-process", "Cannot start the verified previous CLI.");
+    struct Child {
+        pid_t pid;
+        ~Child() { if (pid > 0) { ::kill(pid, SIGKILL); while (::waitpid(pid, nullptr, 0) < 0 && errno == EINTR) {} } }
+    } reap{child};
+    ::close(channel[1]); channel[1] = -1;
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(90);
+    std::string output;
+    int status = 0;
+    bool ended = false, eof = false;
+    while (!ended || !eof) {
+        require(std::chrono::steady_clock::now() < deadline, "installation-recovery-timeout", "Previous CLI did not complete; repeat update to resume recovery.");
+        std::array<char, 8192> bytes{};
+        const auto count = ::read(channel[0], bytes.data(), bytes.size());
+        if (count > 0) {
+            require(output.size() + static_cast<std::size_t>(count) <= kMaximumStateBytes,
+                "installation-recovery-output", "Previous CLI exceeded the bounded recovery response.");
+            output.append(bytes.data(), static_cast<std::size_t>(count));
+        } else if (count == 0) eof = true;
+        else require(errno == EAGAIN || errno == EINTR, "installation-recovery-output", "Cannot read recovery response.");
+        if (!ended) {
+            const auto waited = ::waitpid(child, &status, WNOHANG);
+            require(waited >= 0 || errno == EINTR, "installation-recovery-process", "Lost recovery child ownership.");
+            if (waited == child) { ended = true; reap.pid = -1; }
+        }
+        if (count <= 0 && (!ended || !eof)) {
+            if (eof) std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            else { pollfd wait{channel[0], POLLIN, 0}; (void)::poll(&wait, 1, 10); }
+        }
+    }
+    require(WIFEXITED(status), "installation-recovery-process", "Previous CLI terminated unexpectedly.");
+    const auto result = parse_json(output);
+    if (WEXITSTATUS(status) != 0) {
+        const auto code = result.contains("error") ? validation_identifier(result.at("error").value("code", "")) : "";
+        throw Error("installation-recovery-command", "Previous CLI could not restore the service (" + code + ").");
+    }
+    require(result.is_object() && result.value("ok", false), "installation-recovery-output", "Previous CLI did not confirm recovery.");
+    return result;
+}
+void resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
+    if (runtime.at("managed")) (void)previous_cli(executable, home, "service-install");
+    if (!runtime.at("running").get<bool>() && !runtime.at("managed").get<bool>()) return;
+    const auto status = previous_cli(executable, home, "service-start");
+    require(status.value("registry_error", std::string{}).empty() && status.at("enrollment_errors").empty(),
+        "installation-service-not-ready", "Previous service could not admit its registered projects.");
+    if (present(home / "registry")) for (const auto& project : registered_local_projects(home)) {
+        const auto result = previous_cli(executable, home, "status", project.root);
+        require(result.value("local_ready", false), "installation-project-not-ready", "A project is not ready after rollback.");
+    }
+    if (!runtime.at("running").get<bool>()) {
+        (void)previous_cli(executable, home, "service-stop");
+        wait_update_service_stopped(home);
     }
 }
 void verify_update_payload(const fs::path& path, const Json& kit, const Json& receipt) {
@@ -445,6 +539,15 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         state.at("phase") == "activating" || state.at("phase") == "rolling-back",
         "installation-incomplete", "Complete the pending installation operation before updating.");
     verify_record_locations(prefix, state.at("receipt"));
+    if (state.contains("resume_runtime")) {
+        verify_update_payload(prefix, state.at("kit"), state.at("receipt"));
+        owner.reset();
+        resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"));
+        owner = std::make_unique<StateStore>(control, true);
+        require(owner->load() == state, "installation-ownership-changed", "Recovery state changed during restart.");
+        state.erase("resume_runtime"); owner->save(state);
+        throw Error("installation-update-rolled-back", "Interrupted rollback completed; the previous kit and service are restored.");
+    }
     if (state.at("phase") == "installed" && !state.contains("update")) {
         require(record(prefix) == state.at("receipt"), "installation-ownership-changed", "Installed receipt changed.");
         verify_update_payload(prefix, state.at("kit"), state.at("receipt")); links(state.at("receipt"), false, false);
@@ -483,22 +586,23 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         state["phase"] = "rolling-back"; owner->save(state);
         const auto current = directory_identity(prefix, true);
         const auto current_receipt = current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("receipt") : update.at("old_receipt");
-        auto service_guard = stop_owned_service(current_receipt);
+        auto service_guard = stop_owned_service(current_receipt, current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("kit").at("version").get<std::string>() : update.at("old_kit").at("version").get<std::string>());
         if (current == update.at("receipt").at("prefix_identity").get<std::string>()) {
             verify_update_payload(stage, update.at("old_kit"), update.at("old_receipt"));
             swap_update_payload(prefix, stage, update.at("receipt"), update.at("old_receipt"));
         } else require(current == update.at("old_receipt").at("prefix_identity").get<std::string>(), "installation-ownership-changed", "Rollback destination changed.");
         state["receipt"] = update.at("old_receipt"); state["kit"] = update.at("old_kit");
-        verify_files(prefix, state.at("kit"), true);
-        state["phase"] = "installed"; state["update"]["step"] = "rollback-starting";
+        verify_update_payload(prefix, state.at("kit"), state.at("receipt"));
+        state["phase"] = "installed"; state.erase("update");
+        state["resume_runtime"] = update.at("runtime");
         state["previous"] = {{"receipt", update.at("receipt")}, {"kit", update.at("kit")}};
         owner->save(state); service_guard.reset(); owner.reset();
-        resume_update_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
+        resume_previous_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Rollback state changed during restart.");
-        state.erase("update"); owner->save(state);
+        state.erase("resume_runtime"); owner->save(state);
     };
-    if (state.at("phase") == "rolling-back" || update.at("step") == "rollback-starting") {
+    if (state.at("phase") == "rolling-back") {
         rollback();
         throw Error("installation-update-rolled-back", "Interrupted rollback completed; the previous kit is active and project data was preserved.");
     }
@@ -507,7 +611,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             if (directory_identity(prefix, true) == update.at("old_receipt").at("prefix_identity").get<std::string>()) {
                 verify_update_payload(prefix, update.at("old_kit"), update.at("old_receipt"));
                 verify_update_payload(stage, update.at("kit"), update.at("receipt"));
-                auto service_guard = stop_owned_service(update.at("old_receipt"));
+                auto service_guard = stop_owned_service(update.at("old_receipt"), update.at("old_kit").at("version"));
                 require(registry_digest(home) == update.at("registry_sha256").get<std::string>(), "registry-binding-changed", "Enrollment changed before switching kits.");
                 state["update"]["step"] = "swapping"; owner->save(state);
                 swap_update_payload(prefix, stage, update.at("old_receipt"), update.at("receipt"));

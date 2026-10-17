@@ -112,7 +112,7 @@ bool JournalWriter::load_pending() {
     return true;
 }
 
-void JournalWriter::failed(const ServiceError& error, std::string_view stage) {
+JournalWriter::Step JournalWriter::failed(const ServiceError& error, std::string_view stage, std::stop_token stop) {
     std::lock_guard lock(mutex_);
     add(failures_);
     add(consecutive_failures_);
@@ -120,9 +120,12 @@ void JournalWriter::failed(const ServiceError& error, std::string_view stage) {
     failure_stage_ = stage;
     blocked_ = terminal(error);
     in_flight_ = false;
+    // Capture stop ordering before status() can expose this completed failure.
+    // A later shutdown must not reclassify it as an in-flight shutdown failure.
+    return blocked_ ? Step::blocked : stop.stop_requested() ? Step::failed_after_stop : Step::failed;
 }
 
-JournalWriter::Step JournalWriter::step() {
+JournalWriter::Step JournalWriter::step(std::stop_token stop) {
     std::string_view stage = "snapshot";
     try {
         if (!load_pending()) {
@@ -169,23 +172,21 @@ JournalWriter::Step JournalWriter::step() {
         pending_through_ = 0;
         return Step::exported;
     } catch (const ServiceError& error) {
-        failed(error, stage);
+        return failed(error, stage, stop);
     } catch (const Json::exception&) {
-        failed(ServiceError(500, stage == "snapshot" ? "journal-writer-invalid-batch" :
+        return failed(ServiceError(500, stage == "snapshot" ? "journal-writer-invalid-batch" :
                             stage == "receipt" ? "journal-writer-invalid-receipt" : "journal-writer-invalid-data",
-                            "Journal writer data is invalid."), stage);
+                            "Journal writer data is invalid."), stage, stop);
     } catch (...) {
-        failed(ServiceError(503, "journal-writer-unavailable", "Journal writer is unavailable."), stage);
+        return failed(ServiceError(503, "journal-writer-unavailable", "Journal writer is unavailable."), stage, stop);
     }
-    std::lock_guard lock(mutex_);
-    return blocked_ ? Step::blocked : Step::failed;
 }
 
 void JournalWriter::work(std::stop_token stop) {
     bool failed_during_shutdown = false;
     while (!stop.stop_requested()) {
-        const auto outcome = step();
-        if (stop.stop_requested() && outcome == Step::failed) {
+        const auto outcome = step(stop);
+        if (outcome == Step::failed_after_stop) {
             failed_during_shutdown = true;
             break;
         }

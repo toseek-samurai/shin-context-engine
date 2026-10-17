@@ -24,10 +24,10 @@ public:
 
 private:
     using Clock = std::chrono::steady_clock;
-    enum class Step { idle, exported, failed, blocked };
+    enum class Step { idle, exported, failed, failed_after_stop, blocked };
     bool load_pending();
-    Step step();
-    void failed(const ServiceError& error, std::string_view stage);
+    Step step(std::stop_token stop = {});
+    Step failed(const ServiceError& error, std::string_view stage, std::stop_token stop = {});
     void work(std::stop_token stop);
     JournalWriterConfig policy_;
     Snapshotter snapshot_;

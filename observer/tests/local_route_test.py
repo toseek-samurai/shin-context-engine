@@ -643,7 +643,15 @@ class LocalRouteTests(unittest.TestCase):
                         opened = 'n' + lock_path in descriptors
                     else:
                         descriptors = Path(f'/proc/{process.pid}/fd')
-                        opened = any(os.readlink(fd) == lock_path for fd in descriptors.iterdir())
+                        opened = False
+                        for fd in descriptors.iterdir():
+                            try:
+                                opened = os.readlink(fd) == lock_path
+                            except FileNotFoundError:
+                                # Other descriptors can close between listing and readlink.
+                                continue
+                            if opened:
+                                break
                     if opened:
                         break
                     time.sleep(.02)

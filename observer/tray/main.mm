@@ -151,6 +151,9 @@ void platform_action(int code) {
     case 44: [NSApp sendAction:@selector(choosePeriod:) to:NSApp.delegate from:nil]; break;
     case 62: [NSApp sendAction:@selector(chooseTimingTraffic:) to:NSApp.delegate from:nil]; break;
     case 66: [NSApp sendAction:@selector(chooseTimingScope:) to:NSApp.delegate from:nil]; break;
+    case 85:
+        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showSetup:) to:NSApp.delegate from:nil]; });
+        break;
     case 80: case 83: case 84: {
         SEL action = code == 80 ? @selector(addProjectFolder:) : code == 83 ? @selector(openStorageWindow:) : @selector(showProjectManagementMenu:);
         dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:action to:NSApp.delegate from:nil]; });
@@ -344,6 +347,23 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSButton* storageClean;
 @property(nonatomic) BOOL storageAutoCleanEnabled;
 @property(nonatomic) NSUInteger statusSamples;
+@property(nonatomic, strong) NSWindow* setupWindow;
+@property(nonatomic, strong) NSTextField* setupProject;
+@property(nonatomic, strong) NSTextField* setupStatus;
+@property(nonatomic, strong) NSButton* setupCheck;
+@property(nonatomic, strong) NSButton* setupChoose;
+@property(nonatomic, strong) NSButton* setupLogin;
+@property(nonatomic, copy) NSString* setupRoot;
+@property(nonatomic) NSUInteger setupEpoch;
+@property(nonatomic, strong) NSStackView* setupAgents;
+@property(nonatomic, strong) NSButton* setupConnect;
+@property(nonatomic, strong) NSMutableArray<NSMutableDictionary*>* setupTargets;
+@property(nonatomic, strong) NSMutableArray<NSButton*>* setupTargetButtons;
+@property(nonatomic, strong) NSMutableArray<NSButton*>* setupFileButtons;
+@property(nonatomic, strong) NSMutableArray<NSMutableDictionary*>* setupPlans;
+@property(nonatomic, strong) NSMutableString* setupReport;
+@property(nonatomic, copy) NSString* setupConnectRoot;
+@property(nonatomic) BOOL setupConnecting;
 - (void)toggle:(id)sender;
 - (void)showDiagnosticReport:(id)sender;
 - (void)copyDiagnosticReport:(id)sender;
@@ -355,6 +375,16 @@ static std::unique_ptr<Monitor> monitor;
 - (void)choosePeriod:(id)sender;
 - (void)chooseTimingTraffic:(id)sender;
 - (void)chooseTimingScope:(id)sender;
+- (void)showSetup:(id)sender;
+- (void)showAgentSetup:(id)sender;
+- (void)beginSetupProject:(id)sender;
+- (void)refreshSetup:(id)sender;
+- (void)selectSetupTarget:(id)sender;
+- (void)chooseSetupConfig:(NSButton*)sender;
+- (void)connectSetupAgents:(id)sender;
+- (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying;
+- (void)checkSetup:(id)sender;
+- (void)enableSetupLogin:(id)sender;
 - (void)addProjectFolder:(id)sender;
 - (void)disconnectProject:(id)sender;
 - (void)disconnectAndCleanProject:(id)sender;
@@ -375,10 +405,14 @@ static std::unique_ptr<Monitor> monitor;
 @end
 
 @implementation ShinApp
+#include "setup_window.h"
 - (void)showProjectManagementMenu:(id)sender {
     (void)sender;
     if (diagnostic_root.empty()) return;
     NSMenu* menu = [[NSMenu alloc] initWithTitle:ui_text("Project actions")];
+    NSMenuItem* connect = [menu addItemWithTitle:ui_text("Connect coding agent…") action:@selector(showAgentSetup:) keyEquivalent:@""];
+    connect.target = self;
+    [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem* detach = [menu addItemWithTitle:ui_text("Disconnect") action:@selector(beginProjectDisconnect:) keyEquivalent:@""];
     detach.target = self;
     NSMenuItem* cleanup = [menu addItemWithTitle:ui_text("Disconnect and clean…") action:@selector(beginProjectDisconnectAndClean:) keyEquivalent:@""];
@@ -509,10 +543,6 @@ static std::unique_ptr<Monitor> monitor;
 
 - (void)addProjectFolder:(id)sender {
     (void)sender;
-    if (!monitor || !monitor->snapshot().connected) {
-        NSAlert* alert = [[NSAlert alloc] init]; alert.messageText = ui_text("Shin is unavailable");
-        alert.informativeText = ui_text("Wait for the connection to recover and try adding the folder again."); [alert runModal]; release_project_operation(); return;
-    }
     [self closePanel:nil];
     NSOpenPanel* picker = [NSOpenPanel openPanel];
     picker.title = ui_text("Add a project folder"); picker.prompt = ui_text("Connect");
@@ -520,13 +550,15 @@ static std::unique_ptr<Monitor> monitor;
     const auto response = [picker runModal];
     NSString* root = picker.URL.path;
     if (response != NSModalResponseOK || !root) { release_project_operation(); return; }
+    self.setupChoose.enabled = NO;
+    self.setupStatus.stringValue = ui_text("Preparing project… This can take a moment on the first import.");
     [self runCLI:@"project-add" arguments:@[@"--root", root] completion:^(Json result, NSString* failure) {
         const bool serviceFailed = result.contains("service") && result.at("service").is_object() &&
             result.at("service").contains("ok") && result.at("service").at("ok").is_boolean() && !result.at("service").at("ok").get<bool>();
         const bool added = !failure && result.value("ok", false) && !serviceFailed;
         const Json& errorResult = serviceFailed ? result.at("service") : result;
         NSString* message = failure;
-        if (!message && added) message = ui_text("The project folder is connected. To use it in a chat, add it to your client settings. Model usage is connected separately.");
+        if (!message && added) message = ui_text("The project is connected. Model statistics are collected automatically in the background. Choose agents to use Shin in chats.");
         if (!message) {
             const auto code = cli_error_code(errorResult);
             if (code == "existing-project-adoption")
@@ -535,6 +567,15 @@ static std::unique_ptr<Monitor> monitor;
                 message = ui_text("The folder or its location failed a safety check. Choose a regular project folder owned by your user.");
             else message = friendly_project_storage_error(code);
         }
+        release_project_operation();
+        self.setupChoose.enabled = YES;
+        if (added) {
+            self.setupRoot = root;
+            [self showSetup:nil];
+            self.setupStatus.stringValue = ui_text("Project added. Select the agents that should have access.");
+            return;
+        }
+        self.setupStatus.stringValue = message;
         NSAlert* alert = [[NSAlert alloc] init]; alert.messageText = added ? ui_text("Project connected") : ui_text("Project not connected");
         alert.informativeText = message; [alert runModal]; release_project_operation();
     }];
@@ -905,6 +946,10 @@ static std::unique_ptr<Monitor> monitor;
     }
     if (!home) home = [NSHomeDirectory() stringByAppendingPathComponent:@".shin-ce"];
     self.shinHome = home;
+    // A fresh installation has no registry or running service. Make its first
+    // action visible without relying on a successful service connection.
+    if (![NSFileManager.defaultManager fileExistsAtPath:[home stringByAppendingPathComponent:@"registry"]])
+        dispatch_async(dispatch_get_main_queue(), ^{ [self showSetup:nil]; });
     NSString* usageFile = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinUsageFile"];
     monitor = std::make_unique<Monitor>(std::string(home.fileSystemRepresentation), usageFile ? fs::path(usageFile.fileSystemRepresentation) : fs::path{});
     NSString* usageProject = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinUsageSelection"];
@@ -1180,6 +1225,8 @@ int main() {
         compact.target = delegate;
         NSMenuItem* usage = [application addItemWithTitle:ui_text("Model history…") action:@selector(chooseUsageFile:) keyEquivalent:@""];
         usage.target = delegate;
+        NSMenuItem* setup = [application addItemWithTitle:ui_text("Set up Shin…") action:@selector(showSetup:) keyEquivalent:@""];
+        setup.target = delegate;
         NSMenuItem* storage = [application addItemWithTitle:ui_text("Storage…") action:@selector(openStorageWindow:) keyEquivalent:@""];
         storage.target = delegate;
         [application addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(terminate:) keyEquivalent:@"q"];

@@ -6,6 +6,8 @@
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_registry.h"
 #include "shin/observer/local_installation.h"
+#include "shin/observer/local_client_setup.h"
+#include "shin/observer/model_usage.h"
 #include "context_internal.h"
 #include <array>
 #include <cstdio>
@@ -77,6 +79,9 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
                      "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"
+                     "shin-ce client-targets lists supported agents and their settings paths.\n"
+                     "shin-ce client-connect --client NAME [--config FILE] [--root DIR] [--home DIR] previews a connection; --revision HASH applies that exact review.\n"
+                     "shin-ce mcp-config --client codex|opencode|rider|generic [--root DIR] [--home DIR] [--text] prints settings without editing files.\n"
                      "shin-ce detach [--root DIR] [--home DIR] disconnects one project; data and history stay.\n"
                      "shin-ce query TEXT [--root DIR]\n"
                      "Read commands accept --diagnostic to label operator/test traffic in telemetry.\n"
@@ -122,9 +127,11 @@ int run(int argc, char** argv, char** environment) {
     bool registered = background_child || supervised_child;
     bool no_service = false;
     bool text_status = false;
+    std::string setup_client = "generic", client_revision;
+    fs::path client_config;
     fs::path usage_file;
     if (background_child || supervised_child) request.command = "serve";
-    if (!std::set<std::string>{"stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
+    if (!std::set<std::string>{"client-targets", "client-connect", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
                                "service-start", "service-status", "service-stop", "service-definition",
                                "service-install", "service-update", "service-uninstall", "service-installation"}.contains(request.command))
         throw Error("invalid-arguments", "Unsupported command; see shin-ce --help.");
@@ -137,6 +144,15 @@ int run(int argc, char** argv, char** environment) {
     std::set<std::string> seen;
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
+        if ((request.command == "mcp-config" || request.command == "client-connect") && option == "--client" && seen.insert(option).second && i + 1 < argc) {
+            setup_client = argv[++i];
+            continue;
+        }
+        if (request.command == "client-connect" && (option == "--config" || option == "--revision") && seen.insert(option).second && i + 1 < argc) {
+            if (option == "--config") client_config = argv[++i];
+            else client_revision = argv[++i];
+            continue;
+        }
         if (request.command == "stats" && option == "--language" && seen.insert(option).second && i + 1 < argc) {
             ui_language = argv[++i];
             if (ui_language != "auto" && ui_language != "en" && ui_language != "ru")
@@ -150,7 +166,7 @@ int run(int argc, char** argv, char** environment) {
         }
         if (request.command == "stats" && option != "--home")
             throw Error("invalid-arguments", "Use stats [--home DIR] [--usage-file FILE] [--language auto|en|ru].");
-        if (option == "--text" && (request.command == "status" || request.command == "service-status") &&
+        if (option == "--text" && (request.command == "status" || request.command == "service-status" || request.command == "mcp-config") &&
             seen.insert(option).second) { text_status = true; continue; }
         if (option == "--diagnostic" && std::set<std::string>{"query", "inspect", "read"}.contains(request.command)
             && seen.insert(option).second) { request.diagnostic = true; continue; }
@@ -228,7 +244,7 @@ int run(int argc, char** argv, char** environment) {
         } else throw Error("invalid-arguments", "Unsupported command argument; see shin-ce --help.");
     }
     std::unique_ptr<LocalInstallationGuard> installation_guard;
-    if (!std::set<std::string>{"stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
+    if (!std::set<std::string>{"client-targets", "client-connect", "mcp-config", "stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
         installation_guard = lock_local_installation(executable_path(), background_child || supervised_child);
     if (const auto installed_home = installed_local_home(executable_path(), background_child || supervised_child)) {
         if (!request.home.empty() && fs::absolute(request.home).lexically_normal() != *installed_home)
@@ -239,6 +255,22 @@ int run(int argc, char** argv, char** environment) {
         const char* home = user_home(environment);
         if (home == nullptr || *home == '\0') throw Error("home-unavailable", "HOME is required or pass --home.");
         request.home = fs::canonical(home) / ".shin-ce";
+    }
+    if (request.command == "client-targets" || request.command == "client-connect") {
+        const auto targets = (request.command == "client-targets" || client_config.empty()) ? local_client_targets(fs::canonical(user_home(environment)), environment) : Json::object();
+        if (request.command == "client-targets") { std::cout << targets.dump(2) << '\n'; return 0; }
+        if (client_config.empty()) {
+            for (const auto& target : targets.at("targets")) if (target.at("client") == setup_client) {
+                client_config = target.at("config").get<std::string>(); break;
+            }
+        }
+        std::cout << local_client_connect(executable_path(), request.root, request.home, setup_client, client_config, client_revision).dump(2) << '\n';
+        return 0;
+    }
+    if (request.command == "mcp-config") {
+        const auto setup = local_client_setup(executable_path(), request.root, request.home, setup_client);
+        std::cout << (text_status ? setup.at("configuration").get<std::string>() : setup.dump(2) + "\n");
+        return 0;
     }
     if ((request.command == "init" || request.command == "project-add") && !request.profile_dir) request.profile_dir = bundled_profiles();
     if (request.command == "stats") {
@@ -280,7 +312,15 @@ int run(int argc, char** argv, char** environment) {
     else if (request.command == "service-update") result = update_local_autostart(request, executable_path());
     else if (request.command == "serve")
         result = serve_local_projects(request, watch_roots, executable_path(), [] { return stop_requested != 0; }, registered, supervised_child,
-                                      [&] { installation_guard.reset(); });
+                                      [&] { installation_guard.reset(); }
+#ifndef _WIN32
+                                      , [&]() -> Json {
+                                          if (!registered) return nullptr;
+                                          try { return default_model_usage_sources(environment); }
+                                          catch (...) { return Json::object(); }
+                                      }()
+#endif
+                                      );
     else if (request.command == "service-start") result = start_local_service(request, executable_path());
     else if (request.command.starts_with("storage-")) {
         if (request.command == "storage-clean" && storage_revision.empty()) throw Error("invalid-arguments", "Review storage-status and supply --revision.");
@@ -307,6 +347,12 @@ int run(int argc, char** argv, char** environment) {
     }
     else if (use_service) result = request_local_service(request);
     else result = local_project(request);
+    if (request.command == "init" && result.value("ok", false) && !no_service) {
+#ifndef _WIN32
+        result["model_usage"] = {{"collection","automatic-background"},{"snapshot",(request.home/"usage/state.json").string()},
+                                 {"history_completeness","depends-on-client-history"}};
+#endif
+    }
     // The service-status projection budgets diagnostic detail, not indentation.
     // Project/query and control-response limits stay unchanged.
     const auto output = request.command == "service-status" ? result.dump() : result.dump(2);

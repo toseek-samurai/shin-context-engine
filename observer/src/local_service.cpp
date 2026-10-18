@@ -5,6 +5,7 @@
 #include "shin/observer/local_worker_process.h"
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_registry.h"
+#include "shin/observer/model_usage.h"
 #include "shin/observer/local_telemetry.h"
 #include "shin/observer/resident_retention.h"
 #include <algorithm>
@@ -785,7 +786,7 @@ std::string service_read(ServiceChannel& channel, std::size_t limit, ServiceDead
 
 Json serve_local_projects(const LocalProjectRequest& request, const std::vector<fs::path>& roots,
                           const fs::path& executable, const std::function<bool()>& stopped, bool registered, bool supervised,
-                          const std::function<void()>& started) {
+                          const std::function<void()>& started, const Json& usage_sources) {
     const auto reaping = service_reaping();
     if (roots.size() > kLocalServiceProjectLimit || (registered && registered_local_projects(request.home).size() > kLocalServiceProjectLimit))
         throw Error("registry-capacity", "This local service supports at most sixteen enrolled projects.");
@@ -801,6 +802,16 @@ Json serve_local_projects(const LocalProjectRequest& request, const std::vector<
                 std::this_thread::sleep_for(std::chrono::milliseconds(100));
         }
     });
+    std::jthread usage_collection;
+#ifndef _WIN32
+    if (registered && !usage_sources.is_null())
+        usage_collection = std::jthread([&request, &usage_sources](std::stop_token stop) {
+            try { watch_registered_model_usage(request.home, usage_sources, stop); }
+            catch (...) { return; } // A stopped collector leaves a visibly stale snapshot, never a crashed service.
+        });
+#else
+    (void)usage_sources;
+#endif
     LocalEnrollmentHooks enrollment;
     enrollment.removed = [&](const auto& root) { service.retire_project(root); };
     enrollment.preparing = [&](const auto& root, bool active) {

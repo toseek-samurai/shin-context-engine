@@ -7,6 +7,7 @@ import os
 from pathlib import Path
 import platform
 import plistlib
+import re
 import select
 import subprocess
 import sys
@@ -36,6 +37,10 @@ def verify_macos_dependencies(prefix):
     programs.append(app / 'Contents/MacOS/Shin Monitor')
     images = programs + list(prefix.rglob('*.dylib'))
     for path in images:
+        build_info = subprocess.run(['/usr/bin/vtool', '-show-build', str(path)], check=True,
+                                    capture_output=True, text=True, timeout=10).stdout
+        minimums = re.findall(r'\bminos (\d+)\.(\d+)(?:\.(\d+))?', build_info)
+        assert minimums and all(tuple(int(x or 0) for x in version) <= (15, 0, 0) for version in minimums), (path, build_info)
         output = subprocess.run(['/usr/bin/otool', '-L', str(path)], check=True,
                                 capture_output=True, text=True, timeout=10).stdout
         for line in output.splitlines()[1:]:

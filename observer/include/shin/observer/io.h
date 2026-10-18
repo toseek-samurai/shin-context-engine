@@ -46,6 +46,11 @@ void remove_user_archive(const fs::path& path, const std::string& expected_conte
 void replace_user_archive(const fs::path& path, const std::string& expected_content,
                           const std::string& content, const std::string& parent_identity);
 
+// Same optimistic atomic replacement, accepting owned 0600/0644 config files
+// and preserving their permission bits. Symlinks/hardlinks remain refused.
+void replace_user_config(const fs::path& path, const std::string& expected_content,
+                         const std::string& content, const std::string& parent_identity);
+
 class StateStore {
 public:
     StateStore(fs::path directory, bool writer, const std::string& expected_identity = {}, bool create_lock = true);

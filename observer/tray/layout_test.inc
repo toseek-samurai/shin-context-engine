@@ -117,6 +117,28 @@ int main(int argc, char** argv) {
                 }
             }
             [storageApp.storageWindow close];
+            ShinApp* setupApp = [[ShinApp alloc] init];
+            [setupApp showSetup:nil];
+            if (!setupApp.setupChoose.enabled || setupApp.setupConnect.enabled || setupApp.setupCheck.enabled)
+                throw std::runtime_error("first-run controls need a service or allow copying an empty config");
+            for (const auto size : {NSMakeSize(720, 620), NSMakeSize(660, 620)}) {
+                [setupApp.setupWindow setContentSize:size];
+                NSView* body = setupApp.setupWindow.contentView;
+                [body layoutSubtreeIfNeeded];
+                [setupApp.setupWindow displayIfNeeded];
+                for (NSView* control : @[setupApp.setupChoose, setupApp.setupConnect, setupApp.setupCheck, setupApp.setupLogin, setupApp.setupStatus]) {
+                    const auto rect = [control convertRect:control.bounds toView:body];
+                    if (!NSContainsRect(body.bounds, rect) || rect.size.height < 10)
+                        throw std::runtime_error("setup control clipped outside its window");
+                }
+                NSBitmapImageRep* bitmap = [body bitmapImageRepForCachingDisplayInRect:body.bounds];
+                [body cacheDisplayInRect:body.bounds toBitmapImageRep:bitmap];
+                NSData* png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+                const auto name = output / ("setup-" + std::to_string(static_cast<int>(size.width)) + ".png");
+                if (!png.length || ![png writeToFile:diagnostic_text_content(name.string()) atomically:YES])
+                    throw std::runtime_error("setup snapshot failed");
+            }
+            [setupApp.setupWindow close];
             auto device = MTLCreateSystemDefaultDevice();
             if (!device) return 77;
             auto queue = [device newCommandQueue];
@@ -132,7 +154,7 @@ int main(int argc, char** argv) {
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
             for (const auto size : {ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
-                for (const auto* scenario : {"cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects",
+                for (const auto* scenario : {"first-run", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "language-pending", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
@@ -158,7 +180,7 @@ int main(int argc, char** argv) {
                         {"name", "Shin-Context-Engine-a-very-long-project-name"}});
                     if (kind == "warming") project.update({{"query_ready", false}, {"query_phase", "preparing"}});
                     ViewState view;
-                    view.connected = kind != "offline" && kind != "timing-offline";
+                    view.connected = kind != "first-run" && kind != "offline" && kind != "timing-offline";
                     view.profile_review = std::make_shared<ProfileReviewChannel>();
                     if (kind.starts_with("profile-review")) {
                         view.profile_review->preview("/fixture/workspace");
@@ -194,9 +216,10 @@ int main(int argc, char** argv) {
                             }
                         }
                     }
+                    if (kind == "first-run") { dashboard_view = 0; timing_open = false; selected.clear(); }
                     view.received = Clock::now();
                     view.error = view.connected ? "" : "service-disconnected";
-                    Json projects = Json::array({project});
+                    Json projects = kind == "first-run" ? Json::array() : Json::array({project});
                     if (kind == "projects") for (int i = 1; i < 9; ++i) {
                         auto other = base; other["id"] = "project-" + std::to_string(i);
                         other["name"] = "Project " + std::to_string(i); projects.push_back(other);
@@ -308,6 +331,12 @@ int main(int argc, char** argv) {
                             return action.chart == 54 && action.label == shin::ui::tr("Context partially available");
                         });
                         if (visible == ui_actions.end()) throw std::runtime_error("partial coverage not visible: " + context);
+                    }
+                    if (kind == "first-run") {
+                        const auto setup = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                            return action.chart == 85 && action.enabled;
+                        });
+                        if (setup == ui_actions.end()) throw std::runtime_error("fresh user cannot open setup without a service");
                     }
                     for (const auto& action : ui_actions) {
                         if (action.chart == 50 && std::abs(action.origin.x + action.size.x -

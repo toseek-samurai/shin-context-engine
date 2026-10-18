@@ -19,6 +19,8 @@
 #include <unistd.h>
 #include <thread>
 
+extern char** environ;
+
 namespace shin::observer {
 namespace {
 using Clock = std::chrono::steady_clock;
@@ -250,7 +252,15 @@ public:
         const auto binary = executable.string(), data = home.string();
         std::array<char*, 5> args{const_cast<char*>(binary.c_str()), const_cast<char*>("_serve-registered"),
             const_cast<char*>("--home"), const_cast<char*>(data.c_str()), nullptr};
-        std::array<char*, 2> environment{const_cast<char*>("LC_ALL=C"), nullptr};
+        std::vector<std::string> environment_values{"LC_ALL=C"};
+        for (auto** entry = environ; entry && *entry; ++entry) {
+            const std::string_view value(*entry);
+            for (const auto* key : {"HOME=", "CODEX_HOME=", "XDG_DATA_HOME=", "HERMES_HOME="})
+                if (value.starts_with(key)) environment_values.emplace_back(value);
+        }
+        std::vector<char*> environment; environment.reserve(environment_values.size()+1);
+        for (auto& value : environment_values) environment.push_back(value.data());
+        environment.push_back(nullptr);
         int code = 0;
         for (int fd : {STDIN_FILENO, STDOUT_FILENO, STDERR_FILENO})
             if (!code) code = ::posix_spawn_file_actions_addopen(&actions, fd, "/dev/null", fd == STDIN_FILENO ? O_RDONLY : O_WRONLY, 0);

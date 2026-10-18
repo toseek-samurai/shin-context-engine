@@ -101,6 +101,10 @@ if(BUILD_TESTING AND NOT WIN32)
         add_test(NAME shin-usage-cli COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/usage_cli_test.py $<TARGET_FILE:shin-usage>)
         set_tests_properties(shin-usage-cli PROPERTIES TIMEOUT 45)
+        add_test(NAME shin-usage-registered COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/usage_registered_test.py $<TARGET_FILE:shin-ce>
+            $<TARGET_FILE:shin-usage> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
+        set_tests_properties(shin-usage-registered PROPERTIES TIMEOUT 120)
         add_executable(shin-local-telemetry-tests tests/local_telemetry_test.cpp)
         target_link_libraries(shin-local-telemetry-tests PRIVATE shin-observer-native ${SHIN_NATIVE_SQLITE})
         add_test(NAME shin-local-telemetry COMMAND shin-local-telemetry-tests)
@@ -153,6 +157,13 @@ if(BUILD_TESTING AND NOT WIN32)
                 $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
         set_tests_properties(shin-ce-local-supervision PROPERTIES TIMEOUT 120)
         if(SHIN_OBSERVER_MCP)
+            add_test(NAME shin-client-connect
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/client_connect_test.py $<TARGET_FILE:shin-ce>)
+            set_tests_properties(shin-client-connect PROPERTIES TIMEOUT 120)
+            add_test(NAME shin-client-setup
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/client_setup_test.py
+                    $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
+            set_tests_properties(shin-client-setup PROPERTIES TIMEOUT 180)
             add_test(NAME shin-native-mcp
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_mcp_test.py
                     $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)

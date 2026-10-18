@@ -3,6 +3,7 @@
 import argparse
 import json
 import os
+import shlex
 from pathlib import Path
 import subprocess
 import tempfile
@@ -13,7 +14,7 @@ p.add_argument('archive', type=Path)
 a = p.parse_args()
 with tempfile.TemporaryDirectory(prefix='shin-bootstrap-') as directory:
     root = Path(directory).resolve()
-    user = root / 'user with spaces'
+    user = root / "user's space $not_a_variable"
     user.mkdir(mode=0o700)
     tools = root / 'transport'
     tools.mkdir()
@@ -55,6 +56,11 @@ esac
     env['FIXTURE_CHECKSUM'] = str(Path(str(a.archive.resolve()) + '.sha256'))
     first = run()
     assert '"phase": "installed"' in first.stdout
+    launch = next(line.strip() for line in first.stdout.splitlines() if line.startswith('  open '))
+    assert shlex.split(launch) == ['open', str(user / '.local/opt/shin-local/Shin Monitor.app')]
+    commands = [shlex.split(line.strip()) for line in first.stdout.splitlines() if line.startswith("  '")]
+    assert commands[0][0] == str(user / '.local/opt/shin-local/bin/shin-ce')
+    assert commands[1][1] == 'client-targets'
     again = run()
     assert '"changed": false' in again.stdout
     prefix = user / '.local/opt/shin-local'

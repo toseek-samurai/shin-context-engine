@@ -1,5 +1,6 @@
 #include "shin/observer/model_usage.h"
 #include "shin/observer/observer.h"
+#include "shin/observer/local_registry.h"
 #include <iostream>
 #include <fstream>
 #include <sqlite3.h>
@@ -77,6 +78,45 @@ void source_fixture(std::int64_t now) {
 }
 
 using namespace shin::observer;
+void registered_fixture() {
+    using namespace shin::observer;
+    std::string name = "/tmp/shin-registered-usage-XXXXXX";
+    if (!::mkdtemp(name.data())) throw std::runtime_error("fixture-directory");
+    const auto home = fs::canonical(name);
+    struct Cleanup { fs::path path; ~Cleanup() { std::error_code ec; fs::remove_all(path,ec); } } cleanup{home};
+    ensure_local_registry(home);
+    const auto registry = [&](const Json& roots) {
+        Json projects = Json::array();
+        for (const auto& root : roots) projects.push_back({{"root",root},{"root_identity","fixture-root"},{"workspace_identity","fixture-workspace"}});
+        StateStore store(home/"registry",true);
+        store.save({{"schema_version","shin.local-registry.v1"},{"home_identity",directory_identity(home,true)},{"projects",projects}});
+    };
+    registry(Json::array({"/fixture/one"}));
+    Json sources = {{"codex",{{"database",(home/"absent.sqlite").string()}}},
+                    {"hermes",{{"database",(home/"absent.sqlite").string()}}},
+                    {"opencode",{{"database",(home/"absent.sqlite").string()}}}};
+    Json seed{{"schema_version","shin.usage-collector.v1"},{"sources",sources},
+              {"projects",Json::array({{{"id","custom"},{"name","Existing group"},{"paths",Json::array({"/fixture/one","/fixture/legacy"})}}})}};
+    (void)collect_registered_model_usage(home,sources,seed);
+    registry(Json::array({"/fixture/one","/fixture/two"}));
+    (void)collect_registered_model_usage(home,sources);
+    const auto original = read_text(home/"usage/state.json",kMaximumStateBytes,true);
+    const auto result = parse_json(original);
+    if (result.at("config").at("projects").at(0) != seed.at("projects").at(0) || result.at("snapshot").at("projects").size() != 2)
+        throw std::runtime_error("automatic-groups-not-preserved");
+    (void)read_model_usage(home/"usage/state.json",now_ms());
+    std::stop_source cancel; cancel.request_stop();
+    bool cancelled = false;
+    try { (void)collect_registered_model_usage(home,sources,nullptr,cancel.get_token()); }
+    catch (const Error& error) { cancelled = error.code == "usage-cancelled"; }
+    if (!cancelled || read_text(home/"usage/state.json",kMaximumStateBytes,true) != original)
+        throw std::runtime_error("cancelled-collection-mutated-history");
+    bool refused = false;
+    try { (void)collect_registered_model_usage(home,sources,seed); }
+    catch (const Error& error) { refused = error.code == "usage-already-configured"; }
+    if (!refused) throw std::runtime_error("existing-usage-overwritten");
+}
+
 int main() {
     ::umask(0077); // Fixture databases/logs are deliberately trusted private inputs.
     try {
@@ -124,6 +164,7 @@ int main() {
         const auto aggregate_result = summarize_model_usage(aggregate, now);
         if (!aggregate_result.at("projects").at(0).at("days").empty() || aggregate_result.at("projects").at(0).at("totals").at("input_tokens") != 100) return 13;
         source_fixture(now);
+        registered_fixture();
         std::cout << "native normalized model usage: projection, provenance, attribution and rejection passed\n";
         return 0;
     } catch (const std::exception& e) { std::cerr << e.what() << '\n'; return 20; }

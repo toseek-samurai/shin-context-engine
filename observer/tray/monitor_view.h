@@ -225,7 +225,7 @@ private:
             { std::lock_guard lock(mutex); usage_file = usage_path; revision = usage_revision; }
             if (revision != loaded_revision || Clock::now() >= usage_due) {
                 try {
-                    auto usage = usage_file.empty() ? Json{{"status", "unconfigured"}} : read_model_usage(usage_file, now_ms());
+                    auto usage = read_model_usage(usage_file.empty() ? home / "usage" / "state.json" : usage_file, now_ms());
                     std::lock_guard lock(mutex);
                     if (revision == usage_revision) state.usage = std::make_shared<Json>(std::move(usage));
                 } catch (...) {
@@ -514,7 +514,7 @@ void activate(int code) {
         bool expected = false;
         if (project_management_busy.compare_exchange_strong(expected, true)) platform_action(code);
     } else if ((code == 39 && selected == diagnostic_project && !diagnostic_report_text.empty()) ||
-        code == 40 || code == 43 || code == 44 || code == 62 || code == 66 || code == 83 || code == 84) platform_action(code);
+        code == 40 || code == 43 || code == 44 || code == 62 || code == 66 || code == 83 || code == 84 || code == 85) platform_action(code);
 }
 
 void metric_choice(const char* label, const std::string& value, int code, ImVec4 color, float width) {
@@ -1401,10 +1401,10 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     const float width = ImGui::GetContentRegionAvail().x;
 #if defined(__APPLE__)
     const bool project_busy = project_management_busy.load();
-    ImGui::BeginDisabled(!view.connected || project_busy);
+    ImGui::BeginDisabled(project_busy);
     if (ImGui::Button(project_busy ? shin::ui::tr("Operation in progress…") : shin::ui::tr("Add project folder…"), {width, 28})) activate(80);
     ui_actions.push_back({project_busy ? shin::ui::tr("Project operation in progress") : shin::ui::tr("Add project folder…"), "",
-        ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 80, view.connected && !project_busy});
+        ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 80, !project_busy});
     ImGui::EndDisabled();
 #endif
     const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y, static_cast<int>(projects.size()));
@@ -1569,6 +1569,14 @@ void render(const ViewState& view) {
     const float footer_y = ImGui::GetWindowHeight() - 34;
     ImGui::BeginChild("view-content", {0, std::max(1.0f, footer_y - ImGui::GetCursorPosY() - 5)}, ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+#if defined(__APPLE__)
+    if (projects.empty() && dashboard_view != 2 && !timing_open) {
+        ImGui::TextWrapped("%s", shin::ui::tr("Choose a project to start using Shin. Setup also helps connect your coding agent."));
+        ImGui::Spacing();
+        if (ImGui::Button(shin::ui::tr("Set up Shin…"), {ImGui::GetContentRegionAvail().x, 32})) activate(85);
+        ui_actions.push_back({shin::ui::tr("Set up Shin…"), "", ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 85, true});
+    } else
+#endif
     if (dashboard_view == 0 && timing_open) render_request_timing(view, telemetry);
     else if (dashboard_view == 0) render_overview(view, telemetry, history);
     else if (dashboard_view == 1) render_projects(view, telemetry, history);

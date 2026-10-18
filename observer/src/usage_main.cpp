@@ -11,22 +11,30 @@ namespace {
 volatile std::sig_atomic_t stopped = 0;
 void stop(int) { stopped = 1; }
 }
-int main(int argc, char** argv) {
+int main(int argc, char** argv, char** environment) {
     using namespace shin::observer;
     try {
         if (argc == 2 && std::string(argv[1]) == "--version") {
             std::cout << Json{{"tool","shin-usage"},{"version",SHIN_OBSERVER_VERSION},{"runtime","native-cpp"}}.dump() << '\n'; return 0;
         }
-        fs::path config_path, home; bool watch = false, definition = false;
+        fs::path config_path, home, registry; bool watch = false, definition = false;
         std::set<std::string> seen;
         for (int i = 1; i < argc; ++i) {
             const std::string option = argv[i];
             if (!seen.insert(option).second) throw Error("usage-arguments", "Duplicate usage option.");
             if (option == "--watch") watch = true;
             else if (option == "--service-definition") definition = true;
+            else if (i + 1 < argc && option == "--registry") registry = argv[++i];
             else if (i + 1 < argc && option == "--config") config_path = argv[++i];
             else if (i + 1 < argc && option == "--home") home = argv[++i];
             else throw Error("usage-arguments", "Use --config FILE --home PRIVATE_DIRECTORY [--watch | --service-definition].");
+        }
+        if (!registry.empty()) {
+            if (!registry.is_absolute() || !home.empty() || watch || definition)
+                throw Error("usage-arguments", "Use --registry ABSOLUTE_HOME [--config INITIAL_CONFIG].");
+            const auto seed = config_path.empty() ? Json(nullptr) : parse_json(read_text(config_path,65536,true));
+            std::cout << collect_registered_model_usage(registry,default_model_usage_sources(environment),seed).dump() << '\n';
+            return 0;
         }
         if (watch && definition) throw Error("usage-arguments", "Choose watch or service definition.");
         if (!config_path.is_absolute() || !home.is_absolute()) throw Error("usage-arguments", "Absolute private paths required.");

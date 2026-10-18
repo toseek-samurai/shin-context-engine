@@ -158,7 +158,7 @@ private:
             }
             if ((Clock::now() >= usage_due || revision != usage_revision) && !stop.stop_requested()) {
                 try {
-                    auto value = usage_.empty() ? Json{{"status", "unconfigured"}} : read_model_usage(usage_, now_ms());
+                    auto value = read_model_usage(usage_.empty() ? request_.home / "usage" / "state.json" : usage_, now_ms());
                     std::lock_guard lock(mutex_); state_.usage = std::move(value);
                 } catch (...) {
                     std::lock_guard lock(mutex_); state_.usage = {{"status", "unavailable"}};

@@ -76,6 +76,7 @@ inline std::string model_usage_coverage(const Json& usage) {
     std::string text = !fresh ? shin::ui::tr("Statistics stale or temporarily unavailable") :
         usage.value("complete", false) ? shin::ui::tr("Statistics updated") : shin::ui::tr("Statistics updated; some history was skipped");
 
+    if (usage.contains("collection_error")) text += "\n" + usage.at("collection_error").get<std::string>();
     const auto sources = usage.value("sources", Json::object());
     for (const auto& source : sources.items()) {
         const std::string client = source.key() == "codex" ? "Codex" : source.key() == "hermes" ? "Hermes" : "OpenCode";

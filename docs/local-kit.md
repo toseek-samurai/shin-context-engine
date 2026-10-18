@@ -103,15 +103,63 @@ Click the Shin icon in the menu bar. Add more projects with the folder picker or
 For an interactive terminal dashboard, run `shin-ce stats`. Use Tab or 1–5 for
 Overview, Projects, Timing, Storage and Models; Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
-service. Model counters require `--usage-file /absolute/path/to/usage/state.json`
-from the separately configured collector. Storage inspection happens on demand;
+service. In the next preview (dev.12), model counters are collected automatically
+for enrolled projects and shown by default in both Monitor and the TUI. The first
+pass starts in the background; enrollment changes are checked within five seconds,
+and counters refresh every five minutes. Missing or unreadable client history is
+reported as incomplete, not as proof of zero usage. Storage inspection happens on demand;
 management and cleanup remain explicit CLI commands.
 
 The installer refuses an unowned destination, conflicting command links, or an
 existing data home it cannot safely adopt. Read the reported error and choose
 fresh locations; do not delete existing state to force installation.
 
+### Automatic model statistics (dev.12)
+
+`init` and `project-add` enroll the project in both local retrieval and background
+model statistics. Existing enrolled projects are picked up when the new service
+starts. No separate project list or scheduled collector is needed. Statistics
+stay under the kit's recorded data home, in `usage/state.json`.
+
+The collector reads local numerical counters from Codex, OpenCode and Hermes;
+it does not upload history, contact providers or modify client settings. It uses
+standard user locations and respects `CODEX_HOME`, `XDG_DATA_HOME` and `HERMES_HOME`
+from the service's environment. An OS login service may have a different environment
+from your terminal. Command Code and IDE-specific usage histories are not supported.
+Token counts are client-reported usage, not a count of Shin calls or a bill.
+
+Repeating enrollment does not duplicate counters. Disconnecting a project stops
+its automatic collection while retaining the last collected statistics. Reconnecting
+recollects the group without summing cumulative counters twice. The collector retains
+its existing bounds, including 24 usage groups; exhausted capacity is reported and
+requires review rather than silently deleting old groups.
+
+An explicit `--usage-file` or Monitor's **Model history…** selection still overrides
+the automatic snapshot. For an existing custom collector, stop it before migrating
+and preserve its files. Before the first automatic collection, import its group
+names, root aliases and source locations once:
+
+```sh
+shin-usage --registry /absolute/path/to/shin-home --config /absolute/path/to/usage-config.json
+```
+
+This creates a separate automatic snapshot and leaves the original configuration
+and history untouched. Import into an already initialized automatic collector is
+refused. Stop the Shin service during this initial import to avoid competing writers.
+Select the new `usage/state.json` in Monitor if a custom history file was selected.
+The imported groups retain their aliases; a group is collected while any of its
+roots is enrolled. Historical totals are reconstructed only from readable client
+history; retain the old snapshot for any history no longer present in the clients.
+
 ## Connect a coding agent
+
+In the next preview (dev.12, available when built from this source), Monitor opens
+**Set up Shin** on a fresh installation. Choose the first folder, select agents
+and profiles, and apply their MCP settings directly. Existing settings are preserved. You can opt into background service
+startup at login from the same window. It does not register Monitor itself.
+See [guided client setup](native-client-setup.md#automatic-setup-next-preview-dev11).
+The published dev.9 preview uses the CLI instructions above.
+
 
 Use the installed `shin-mcp` executable with an explicit project root. For a
 default installation its path is `~/.local/opt/shin-local/bin/shin-mcp`; expand

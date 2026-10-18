@@ -4,7 +4,7 @@
 namespace shin::observer {
 Json serve_local_projects(const LocalProjectRequest& request, const std::vector<fs::path>& roots,
                           const fs::path& executable, const std::function<bool()>& stopped, bool registered = false, bool supervised = false,
-                          const std::function<void()>& started = {});
+                          const std::function<void()>& started = {}, const Json& usage_sources = nullptr);
 std::unique_ptr<StateStore> lock_local_service_control(const fs::path& home);
 Json start_local_service(const LocalProjectRequest& request, const fs::path& executable);
 Json initialize_local_service(const LocalProjectRequest& request, const fs::path& executable);

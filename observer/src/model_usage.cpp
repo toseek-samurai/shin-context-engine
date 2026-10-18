@@ -135,6 +135,19 @@ Json summarize_model_usage(const Json& input, std::int64_t now) {
 }
 Json read_model_usage(const fs::path& path, std::int64_t now) {
     (void)directory_identity(path.parent_path(), true);
-    return summarize_model_usage(parse_json(read_text(path, 2 * 1024 * 1024, true)), now);
+    const auto input = parse_json(read_text(path, 2 * 1024 * 1024, true));
+    if (input.value("schema_version", "") == "shin.registered-usage.v1") {
+        auto result = summarize_model_usage(input.at("snapshot"), now);
+        const auto health_dir = path.parent_path().parent_path()/"usage-health";
+        if (fs::exists(fs::symlink_status(health_dir))) {
+            StateStore health(health_dir,false);
+            if (const auto state = health.load(); state && !state->value("error", "").empty()) {
+                result["fresh"] = false; result["complete"] = false;
+                result["collection_error"] = state->at("error");
+            }
+        }
+        return result;
+    }
+    return summarize_model_usage(input, now);
 }
 } // namespace shin::observer

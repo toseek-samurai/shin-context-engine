@@ -67,7 +67,7 @@ search reader warms when needed.
 | Add a project from a folder | `shin-ce project-add --root /absolute/path/to/project` |
 | Storage inventory and cleanup plan | TUI Storage or `shin-ce storage-status` JSON; cleanup remains a separate command requiring the reported revision |
 | Profile changes requiring review | `shin-ce profile-review`; acceptance is a separate explicit action |
-| Model usage | TUI Models with `--usage-file`; data comes from the separately configured `shin-usage` collector |
+| Model usage | TUI Models uses automatic enrolled-project collection in dev.12; `--usage-file` remains an explicit override |
 
 The TUI shares Monitor's project-state and request-timing calculations. It uses
 native service status for observations and the existing read-only storage

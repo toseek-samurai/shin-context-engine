@@ -208,6 +208,12 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
             reconnect.close()
     finally:
         ce(home, 'service-stop')
+        # The RPC acknowledges a stop request, not process termination. Wait for
+        # the owned endpoint to close before deleting its history directory.
+        deadline = time.monotonic() + 10
+        while (home / 'service/rpc.sock').exists() and time.monotonic() < deadline:
+            time.sleep(0.02)
+        assert not (home / 'service/rpc.sock').exists(), 'service did not stop before fixture cleanup'
 print(json.dumps({'ok': True, 'pty': True, 'tabs': 5, 'signals': ['INT', 'TERM', 'HUP', 'QUIT'],
                   'resize': True, 'unicode': True, 'pending_rpc_cancelled': True,
                   'terminal_restored': True, 'service_and_source_preserved': True}))

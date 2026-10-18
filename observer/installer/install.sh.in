@@ -60,8 +60,20 @@ action=install
 if [ -e "$prefix" ] || [ -L "$prefix" ]; then action=update; fi
 "$kit/bin/shin-ce" "$action" "$@"
 printf 'Shin %s: %s complete.\n' "$version" "$action"
-printf '%s\n' 'To add a project, run shin-ce init in its directory.' \
-    'If shin-ce is not on PATH, use the installed kit/bin/shin-ce path shown above.' \
-    'Restart Monitor after an update. Login startup remains an explicit opt-in.'
+shell_quote() {
+    printf "'"
+    printf '%s' "$1" | sed "s/'/'\\\\''/g"
+    printf "'"
+}
+printf '\nOpen Monitor to choose a project and connect your coding agent:\n  open '
+shell_quote "$prefix/Shin Monitor.app"
+printf '\n\nFor terminal setup (no PATH changes needed):\n  '
+shell_quote "$prefix/bin/shin-ce"
+printf ' init --root /absolute/path/to/project\n  '
+shell_quote "$prefix/bin/shin-ce"
+printf ' client-targets\n\n'
+printf '%s\n' 'Preview: not notarized by Apple; first launch may require macOS approval.' \
+    'After an update, restart Monitor and reconnect persistent MCP clients.' \
+    'Login startup is optional. Existing shell and client settings are preserved.'
 }
 main "$@"

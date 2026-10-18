@@ -45,7 +45,8 @@ std::string day_text(std::int64_t ms) {
 struct Database {
     std::unique_ptr<sqlite3, decltype(&sqlite3_close)> db{nullptr, sqlite3_close};
     Clock::time_point deadline;
-    Database(const fs::path& path, Clock::time_point until) : deadline(until) {
+    std::stop_token stop;
+    Database(const fs::path& path, Clock::time_point until, std::stop_token token) : deadline(until), stop(token) {
         need(fs::canonical(path) == fs::absolute(path).lexically_normal());
         struct stat status{}; need(::lstat(path.c_str(), &status) == 0 && S_ISREG(status.st_mode) && status.st_uid == ::geteuid() && status.st_nlink == 1 && !(status.st_mode & 0022));
         sqlite3* raw = nullptr;
@@ -53,7 +54,7 @@ struct Database {
         db.reset(raw); need(rc == SQLITE_OK);
         sqlite3_busy_timeout(raw, 200);
         need(sqlite3_db_config(raw, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, nullptr) == SQLITE_OK);
-        sqlite3_progress_handler(raw, 1000, [](void* p) { return Clock::now() > *static_cast<Clock::time_point*>(p) ? 1 : 0; }, &deadline);
+        sqlite3_progress_handler(raw, 1000, [](void* p) { auto* self = static_cast<Database*>(p); return self->stop.stop_requested() || Clock::now() > self->deadline ? 1 : 0; }, this);
     }
     Statement prepare(const char* sql) {
         sqlite3_stmt* raw = nullptr; const int rc = sqlite3_prepare_v2(db.get(), sql, -1, &raw, nullptr);
@@ -92,12 +93,14 @@ std::map<std::string, Cached> cache;
 std::mutex cache_mutex;
 
 Cached codex_file(const fs::path& path, const Json& config, const std::string& session, const std::string& project,
-    std::int64_t created, std::int64_t from, std::int64_t now, Clock::time_point deadline, std::uint64_t& bytes) {
+    std::int64_t created, std::int64_t from, std::int64_t now, Clock::time_point deadline, std::uint64_t& bytes, std::stop_token stop) {
     const auto canonical = fs::canonical(path); need(canonical == path, "rollout-unsafe-file");
     const auto& source = config.at("sources").at("codex");
     bool allowed = false;
     for (const auto* key : {"sessions", "archives"}) {
-        const auto root = fs::canonical(source.at(key).get<std::string>());
+        const fs::path configured = source.at(key).get<std::string>();
+        if (!fs::exists(configured)) continue;
+        const auto root = fs::canonical(configured);
         const auto relative = canonical.lexically_relative(root);
         if (!relative.empty() && *relative.begin() != "..") allowed = true;
     }
@@ -122,6 +125,7 @@ Cached codex_file(const fs::path& path, const Json& config, const std::string& s
     std::array<char, 65536> buffer{};
     std::uint64_t consumed = 0, lines = 0;
     while (consumed < result.size) {
+        need(!stop.stop_requested(), "usage-cancelled");
         need(Clock::now() < deadline, "usage-time-budget-exhausted");
         const auto count = ::read(fd, buffer.data(), std::min<std::uint64_t>(buffer.size(), result.size - consumed)); need(count > 0, "rollout-read-failed");
         consumed += static_cast<std::uint64_t>(count); bytes += static_cast<std::uint64_t>(count);
@@ -166,7 +170,7 @@ Cached codex_file(const fs::path& path, const Json& config, const std::string& s
 }
 } // namespace
 
-Json collect_model_usage(const Json& config, std::int64_t now) {
+Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token stop) {
     std::lock_guard lock(cache_mutex);
     need(config.at("schema_version") == "shin.usage-collector.v1" && config.at("projects").is_array() && !config.at("projects").empty() && config.at("projects").size() <= 24);
     std::map<std::string,std::string> paths; Json projects = Json::array(); std::set<std::string> ids;
@@ -191,7 +195,7 @@ Json collect_model_usage(const Json& config, std::int64_t now) {
             {"source_records",0},{"unassigned_sessions",0},{"skipped_sessions",0},{"skipped_reasons",Json::object()},{"adapter_version","shin-native-v1"}};
         std::set<std::string> unassigned;
         try {
-            Database db(config.at("sources").at(client).at("database").get<std::string>(), deadline);
+            Database db(config.at("sources").at(client).at("database").get<std::string>(), deadline, stop);
             if (std::string(client) == "codex") {
                 auto sessions = db.prepare("SELECT id,rollout_path,cwd,coalesce(created_at_ms,created_at*1000) FROM threads WHERE coalesce(updated_at_ms,updated_at*1000)>=?1 ORDER BY updated_at DESC LIMIT 513");
                 need(sqlite3_bind_int64(sessions.get(),1,from) == SQLITE_OK); int rc = 0, count = 0;
@@ -199,7 +203,7 @@ Json collect_model_usage(const Json& config, std::int64_t now) {
                     need(++count <= 512); const auto session = text(sessions.get(),0), root = text(sessions.get(),2);
                     if (!paths.contains(root)) { unassigned.insert(session); continue; }
                     try {
-                        const auto data = codex_file(text(sessions.get(),1),config,session,paths.at(root),sqlite3_column_int64(sessions.get(),3),from,now,deadline,bytes);
+                        const auto data = codex_file(text(sessions.get(),1),config,session,paths.at(root),sqlite3_column_int64(sessions.get(),3),from,now,deadline,bytes,stop);
                         for (const auto& [key, row] : data.rows.values) {
                             need(rows.values.contains(key) || rows.values.size() < 512);
                             auto& target = rows.values[key]; if (target.is_null()) target = row;
@@ -227,7 +231,7 @@ Json collect_model_usage(const Json& config, std::int64_t now) {
                     "SELECT s.id,s.cwd,CAST(coalesce(u.last_seen,s.last_activity_at,s.started_at)*1000 AS INTEGER),u.model,u.input_tokens,u.output_tokens,u.cache_read_tokens,u.cache_write_tokens,u.reasoning_tokens FROM session_model_usage u JOIN sessions s ON u.session_id=s.id WHERE coalesce(u.last_seen,s.last_activity_at,s.started_at)*1000>=?1 LIMIT 200001");
                 need(sqlite3_bind_int64(query.get(),1,from) == SQLITE_OK); int rc = 0, count = 0;
                 while ((rc = sqlite3_step(query.get())) == SQLITE_ROW) {
-                    need(++count <= 200000 && Clock::now() < deadline);
+                    need(++count <= 200000 && Clock::now() < deadline && !stop.stop_requested());
                     const auto root = text(query.get(),1); if (!paths.contains(root)) { unassigned.insert(text(query.get(),0)); continue; }
                     const auto when = sqlite3_column_int64(query.get(),2); need(when >= from && when <= now);
                     Json usage = Json::object(); for (int i = 0; i < 5; ++i) {
@@ -243,6 +247,7 @@ Json collect_model_usage(const Json& config, std::int64_t now) {
         state["unassigned_sessions"] = unassigned.size(); output["sources"][client] = std::move(state);
     }
     for (const auto& [key, row] : rows.values) { (void)key; output["buckets"].push_back(row); }
+    need(!stop.stop_requested(), "usage-cancelled");
     (void)summarize_model_usage(output,now);
     return output;
 }

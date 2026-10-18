@@ -428,8 +428,9 @@ bool write_archive(const fs::path& path, const std::string& content, bool privat
 bool write_private_archive(const fs::path& path, const std::string& content) { return write_archive(path, content, true); }
 bool write_user_archive(const fs::path& path, const std::string& content) { return write_archive(path, content, false); }
 
-void replace_user_archive(const fs::path& path, const std::string& expected_content,
-                          const std::string& content, const std::string& parent_identity) {
+namespace {
+void replace_user_file(const fs::path& path, const std::string& expected_content,
+                          const std::string& content, const std::string& parent_identity, bool config) {
     if (content.size() > kMaxStateBytes) fail("archive-too-large", "Replacement exceeds the bounded state limit.");
     auto parent = open_parent(path, "unsafe-file", "Archive parent is unavailable.");
     const auto held = descriptor_stamp(parent.directory.get(), "unsafe-directory", "Archive parent is unavailable.");
@@ -438,8 +439,10 @@ void replace_user_archive(const fs::path& path, const std::string& expected_cont
         directory_identity(path.parent_path()) != identity)
         fail("unsafe-directory", "Archive parent ownership or identity changed.");
     const auto before = named_stamp(parent.directory.get(), parent.name.c_str(), "unsafe-file", "Archive is unavailable.");
-    require_regular(before, true, "unsafe-file", "Archive must be private and singly linked.");
-    const auto current = read_named_file(parent.directory.get(), parent.name.c_str(), kMaxStateBytes, true,
+    require_regular(before, !config, "unsafe-file", "Archive must be private and singly linked.");
+    if (config && (before.owner != ::geteuid() || before.links != 1 || (before.mode & 0022) || (before.mode & 07000)))
+        fail("unsafe-file", "Settings must be singly linked, owned by this user and not writable by others.");
+    const auto current = read_named_file(parent.directory.get(), parent.name.c_str(), kMaxStateBytes, !config,
                                          "unsafe-file", "file-too-large", "file-changed");
     if (current != expected_content && current != content)
         fail("archive-conflict", "Changed archive must not be replaced.");
@@ -459,9 +462,10 @@ void replace_user_archive(const fs::path& path, const std::string& expected_cont
         }
     } cleanup{parent.directory.get(), staged.get(), temporary};
     write_all(staged.get(), content);
+    if (config && ::fchmod(staged.get(), before.mode & 0777) != 0) fail("archive-write-failed", "Cannot preserve settings permissions.");
     if (::fsync(staged.get()) != 0) fail("archive-sync-failed", "Cannot synchronize the replacement.");
     const auto written = descriptor_stamp(staged.get(), "unsafe-file", "Staged file changed.");
-    require_regular(written, true, "unsafe-file", "Staged file is not private.");
+    require_regular(written, !config, "unsafe-file", "Staged file is not private.");
     if (!same_stamp(written, named_stamp(parent.directory.get(), temporary.c_str(), "file-changed", "Staged file changed.")) ||
         !same_stamp(before, named_stamp(parent.directory.get(), parent.name.c_str(), "file-changed", "Archive changed.")) ||
         directory_identity(path.parent_path()) != identity)
@@ -471,6 +475,16 @@ void replace_user_archive(const fs::path& path, const std::string& expected_cont
     fsync_directory(parent.directory.get());
     if (directory_identity(path.parent_path()) != identity)
         fail("directory-changed", "Archive parent changed during replacement.");
+}
+
+}
+void replace_user_archive(const fs::path& path, const std::string& expected_content,
+                          const std::string& content, const std::string& parent_identity) {
+    replace_user_file(path, expected_content, content, parent_identity, false);
+}
+void replace_user_config(const fs::path& path, const std::string& expected_content,
+                         const std::string& content, const std::string& parent_identity) {
+    replace_user_file(path, expected_content, content, parent_identity, true);
 }
 
 void remove_user_archive(const fs::path& path, const std::string& expected_content, std::size_t maximum_bytes) {

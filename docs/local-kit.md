@@ -9,14 +9,14 @@ Mac may require manual approval. This is not a stable release.
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.9).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.13).
 The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
 Public release downloads do not require a GitHub account.
 
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.9/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.13/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -103,7 +103,7 @@ Click the Shin icon in the menu bar. Add more projects with the folder picker or
 For an interactive terminal dashboard, run `shin-ce stats`. Use Tab or 1–5 for
 Overview, Projects, Timing, Storage and Models; Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
-service. In the next preview (dev.12), model counters are collected automatically
+service. Model counters are collected automatically
 for enrolled projects and shown by default in both Monitor and the TUI. The first
 pass starts in the background; enrollment changes are checked within five seconds,
 and counters refresh every five minutes. Missing or unreadable client history is
@@ -153,12 +153,11 @@ history; retain the old snapshot for any history no longer present in the client
 
 ## Connect a coding agent
 
-In the next preview (dev.12, available when built from this source), Monitor opens
+In dev.13, Monitor opens
 **Set up Shin** on a fresh installation. Choose the first folder, select agents
 and profiles, and apply their MCP settings directly. Existing settings are preserved. You can opt into background service
 startup at login from the same window. It does not register Monitor itself.
-See [guided client setup](native-client-setup.md#automatic-setup-next-preview-dev11).
-The published dev.9 preview uses the CLI instructions above.
+See [guided client setup](native-client-setup.md#automatic-setup).
 
 
 Use the installed `shin-mcp` executable with an explicit project root. For a
@@ -218,9 +217,10 @@ uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
 Updating with the exact installed archive is a no-op. A changed archive must have
-a newer version; downgrades and altered same-version kits are refused. This first
-updater supports the same Core version only: a change to the Core data contract
-requires an explicit migration. It does not download releases or change shell,
+a newer version; downgrades and altered same-version kits are refused. The updater
+supports the same Core version and the qualified Core dev.1 → dev.2 transition
+described in [Core patch compatibility](#core-patch-compatibility). Other Core changes
+require an explicit migration. It does not download releases or change shell,
 client, project or model-usage configuration.
 
 ### Adopt a previous manually installed kit

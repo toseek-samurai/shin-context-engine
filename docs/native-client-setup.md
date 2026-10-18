@@ -1,9 +1,9 @@
 # Native client setup
 
-## Automatic setup (next preview: dev.12)
+## Automatic setup
 
-This source revision includes automatic setup. The published dev.9 preview still
-uses the manual configuration below.
+The dev.13 preview includes automatic setup. Manual configuration remains
+available for clients that need it.
 
 1. Open Monitor → **Set up Shin…** and choose a project folder. Shin connects it
    and starts the local service, including on a fresh installation.
@@ -87,7 +87,7 @@ shin-ce mcp-config --client rider --root /absolute/path/to/project --text
 ```
 
 For a portable installation, add `--home /absolute/path/to/private-data`.
-The export command is available in the next preview; for older kits use the
+The export command is included in dev.13; for older kits use the
 command and arguments in [Manual configuration](#manual-configuration).
 
 - **Rider AI Assistant:** open Settings → Tools → AI Assistant → Model Context
@@ -214,7 +214,7 @@ Use the snapshot returned by the query for `inspect` and `read`. Paths are proje
 
 For installation, package contents, and the local service lifecycle, see the [local kit guide](local-kit.md).
 
-## Agent routing and read refusals (next preview: dev.13)
+## Agent routing and read refusals
 
 Use Shin when entering unfamiliar project code, recovering context, or locating
 source contracts. Load the `shin-context` workflow, select the exact enrolled

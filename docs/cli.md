@@ -96,11 +96,12 @@ portable extraction also needs the same explicit `--home` used at initialization
 See [installation](local-kit.md) and [MCP setup](native-client-setup.md).
 
 Shin's usage collector observes supported local client usage records. It is not
-required for indexing or retrieval. Collection and attribution need explicit
-configuration; installing the kit alone does not enable a complete model-usage
-dashboard.
+required for indexing or retrieval. Adding a project enables automatic collection
+for that project. Counters depend on readable client history; missing history is
+reported as incomplete. See [the local kit guide](local-kit.md)
+for configuration details.
 
-### Interpreting service activity (next preview: dev.13)
+### Interpreting service activity
 
 Timing shows separate current-service-run counters for query, inspect, read and
 project status calls. Project details expose the same breakdown (Monitor tooltip,

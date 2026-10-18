@@ -58,15 +58,14 @@ setup](docs/cli.md#interactive-terminal-monitor).
 
 ## Get started on macOS
 
-Building from source? The next preview adds a first-run setup window and
-automatic agent connections and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup-next-preview-dev12).
-The published preview below uses the existing CLI setup.
+The preview includes a first-run setup window, automatic agent connections
+and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.9)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.13)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.9/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.13/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it

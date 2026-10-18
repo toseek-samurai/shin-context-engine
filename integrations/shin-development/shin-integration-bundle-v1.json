@@ -9,12 +9,17 @@
     {
       "id": "shin-observer",
       "path": "profiles/shin-observer.json"
+    },
+    {
+      "id": "shin-observer-tests",
+      "path": "profiles/shin-observer-tests.json"
     }
   ],
   "consumerRootVariables": [],
   "federations": [],
   "evalSuites": [
-    "profiles/shin-observer.json"
+    "profiles/shin-observer.json",
+    "profiles/shin-observer-tests.json"
   ],
   "gates": []
 }

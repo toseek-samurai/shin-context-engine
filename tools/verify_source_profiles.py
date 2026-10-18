@@ -21,7 +21,7 @@ def main():
     core = args.core.resolve(strict=True)
     output.mkdir(parents=True, mode=0o700)
     failed = []
-    for profile in ("shin", "shin-observer"):
+    for profile in ("shin", "shin-observer", "shin-observer-tests"):
         common = [str(core), "--root", str(root), "--profile-dir", str(root / "profiles"),
                   "--profile", profile, "--out-dir", str(output / profile)]
         for command in (["build"], ["validate", "--strict"],

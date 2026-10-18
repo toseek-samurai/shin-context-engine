@@ -25,10 +25,8 @@
     "sourceRoots": [
       "observer/src",
       "observer/include",
-      "observer/tests",
       "shared/observer-protocol/src",
-      "shared/observer-protocol/include",
-      "shared/observer-protocol/tests"
+      "shared/observer-protocol/include"
     ],
     "serverDependency": false
   },
@@ -40,7 +38,17 @@
   "regression": [
     "Each profile uses only paths present in the package.",
     "Each profile has a neutral self-eval with required paths scoped to its component.",
-    "Removing one optional component does not silently change another profile owner."
+    "Removing one optional component does not silently change another profile owner.",
+    "Observer runtime and regression-test profiles are both required; their union retains the original source coverage without increasing either file or byte ceilings."
   ],
-  "companionBundle": "integrations/shin-development/shin-integration-bundle-v1.json"
+  "companionBundle": "integrations/shin-development/shin-integration-bundle-v1.json",
+  "observerTests": {
+    "profile": "profiles/shin-observer-tests.json",
+    "sourceRoots": [
+      "observer/tests",
+      "shared/observer-protocol/tests"
+    ],
+    "runtimeOwner": "observer",
+    "releaseGateRequired": true
+  }
 }

@@ -209,6 +209,7 @@ class SelfProfileTests(unittest.TestCase):
     def test_companion_changes_preserve_core_currentness_and_snapshot(self):
         paths = self.companion_documents | {
             "profiles/shin-observer.json",
+            "profiles/shin-observer-tests.json",
             "observer/src/main.cpp",
             "shared/observer-protocol/src/observer_protocol.cpp",
         }

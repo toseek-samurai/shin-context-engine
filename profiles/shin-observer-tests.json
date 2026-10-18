@@ -1,0 +1,140 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-observer-tests",
+  "status": "active",
+  "summary": "Independent bounded retrieval profile for Observer and shared protocol regression tests.",
+  "id": "shin-observer-tests",
+  "sourceLabel": "Shin Observer regression tests",
+  "rootFiles": [
+    "AGENTS.md",
+    "observer/CMakeLists.txt",
+    "observer/VERSION",
+    "profiles/shin-observer-tests.json",
+    "docs/machine/shin-component-profiles-v1.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json"
+  ],
+  "sourceExtensions": [
+    ".md",
+    ".json"
+  ],
+  "documentIncludePrefixes": [
+    "AGENTS.md",
+    "profiles/shin-observer-tests.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "docs/machine/shin-local-observer-v1.json",
+    "docs/machine/shin-observer-delivery-v1.json",
+    "docs/machine/shin-observer-offline-collaboration-v1.json",
+    "docs/machine/shin-observer-outbox-v1.json",
+    "docs/machine/shin-observer-state-read-v1.json",
+    "docs/machine/shin-observer-desktop-plan-v1.json",
+    "observer/CMakeLists.txt",
+    "observer/VERSION",
+    "docs/machine/shin-component-profiles-v1.json",
+    "docs/machine/shin-companion-protocols-v1.json",
+    "docs/machine/shin-observer-recovery-v1.json"
+  ],
+  "sourceFactRoots": [
+    "observer/tests",
+    "shared/observer-protocol/tests"
+  ],
+  "sourceFactExtensions": [
+    ".cpp",
+    ".h",
+    ".py"
+  ],
+  "sourceFactExtractors": [
+    "language"
+  ],
+  "sourceFactMaxFiles": 128,
+  "sourceFactMaxFileBytes": 131072,
+  "agentStartPaths": [
+    "AGENTS.md",
+    "docs/machine/shin-observer-recovery-v1.json"
+  ],
+  "jsonKeySections": true,
+  "jsonKeyMaxDepth": 1,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonPathReferences": true,
+  "jsonSchemaTitle": true,
+  "jsonSummaryKeys": true,
+  "defaultTopic": "observer-tests",
+  "evalCases": [
+    {
+      "id": "state-writer-regression",
+      "query": "writer_exclusion_and_atomic_state",
+      "mustPaths": [
+        "observer/tests/io_test.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tests/io_test.cpp"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    },
+    {
+      "id": "usage-config-preservation",
+      "query": "registered_fixture",
+      "mustPaths": [
+        "observer/tests/model_usage_test.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tests/model_usage_test.cpp"
+      ],
+      "mustTopN": 1,
+      "limit": 6
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": "observer-regression-proof",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "observer-regression-proof",
+        "task": {
+          "objective": "Inspect regression evidence for state writer exclusion and automatic model-statistics preservation.",
+          "must": [
+            {
+              "id": "state",
+              "query": "writer_exclusion_and_atomic_state"
+            },
+            {
+              "id": "usage",
+              "query": "registered_fixture"
+            }
+          ]
+        },
+        "budget": {
+          "max_evidence_bytes": 24576,
+          "max_records": 16,
+          "per_query_records": 6,
+          "per_document_records": 3
+        }
+      },
+      "mustPaths": [
+        "observer/tests/io_test.cpp",
+        "observer/tests/model_usage_test.cpp"
+      ],
+      "mustNotPaths": [
+        "profiles/shin-observer-tests.json"
+      ],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 24576,
+      "maxRecords": 16,
+      "maxCompactBytes": 50000,
+      "requireSerialParallelIdentity": true
+    }
+  ],
+  "topicRules": [
+    {
+      "id": "observer-tests",
+      "description": "Regression evidence for local Observer behavior and shared protocol contracts.",
+      "keywords": [
+        "test",
+        "fixture",
+        "regression",
+        "usage",
+        "protocol"
+      ]
+    }
+  ]
+}

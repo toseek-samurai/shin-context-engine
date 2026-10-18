@@ -2,7 +2,7 @@
   "schemaVersion": "shin.profile.v1",
   "document": "shin-profile-observer-self",
   "status": "active",
-  "summary": "Focused self profile for local Observer source, bounded state, explicit delivery, and shared protocol contracts.",
+  "summary": "Focused self profile for Observer runtime source, bounded state, explicit delivery and shared protocol contracts. Regression fixtures are owned by shin-observer-tests.",
   "id": "shin-observer",
   "sourceLabel": "Shin Observer public component contracts and source",
   "rootFiles": [
@@ -36,10 +36,8 @@
   "sourceFactRoots": [
     "observer/src",
     "observer/include",
-    "observer/tests",
     "shared/observer-protocol/src",
-    "shared/observer-protocol/include",
-    "shared/observer-protocol/tests"
+    "shared/observer-protocol/include"
   ],
   "sourceFactExtensions": [
     ".cpp",

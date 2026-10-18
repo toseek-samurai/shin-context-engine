@@ -1,10 +1,21 @@
 #include "../ui/request_timing.h"
+#include "../ui/service_activity.h"
 #include <cassert>
 #include <iostream>
 
 int main() try {
     using nlohmann::json;
     using shin::ui::request_timing;
+    assert(shin::ui::service_activity_lines(json::object()).empty());
+    json activity{{"activity", {{"schema_version","shin.service-activity.v1"},
+        {"calls",{{"query",2},{"inspect",1},{"read",3},{"status",4}}},
+        {"diagnostic",1},{"uncorrelated",2},{"reported_sessions",64},{"sessions_truncated",true}}}};
+    auto lines = shin::ui::service_activity_lines(activity);
+    assert(lines.size() == 5 && lines[3].find("64+") != std::string::npos);
+    activity["activity"]["calls"]["query"] = -1;
+    assert(shin::ui::service_activity_lines(activity).empty());
+    activity["activity"]["calls"]["query"] = "2";
+    assert(shin::ui::service_activity_lines(activity).empty());
     const auto cohort = [](int requests, double worker, int measured, const char* purpose, const char* reader) {
         return json::array({"root", "query", purpose, reader, requests, 0, measured, worker + 100, worker + 100,
             worker, worker, nullptr, worker / 2, worker / 2, 2, nullptr, measured, 0, measured, measured, measured, 0});

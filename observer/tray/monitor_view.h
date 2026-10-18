@@ -7,6 +7,7 @@
 #include "../ui/project_diagnostics.h"
 #include "../ui/model_projects.h"
 #include "../ui/request_timing.h"
+#include "../ui/service_activity.h"
 #include "profile_review.h"
 #include <atomic>
 #include <chrono>
@@ -742,6 +743,21 @@ void render_request_timing(const ViewState& view, const Json& telemetry) {
     const float half = (width - 7) / 2;
     view_tab(timing_retained ? shin::ui::tr("All history ▾") : shin::ui::tr("This run ▾"), 66, false, half); ImGui::SameLine();
     view_tab(timing_filter == 0 ? shin::ui::tr("All queries ▾") : timing_filter == 1 ? shin::ui::tr("Unclassified ▾") : shin::ui::tr("Diagnostic ▾"), 62, false, half);
+    const auto activity = shin::ui::service_activity_lines(telemetry);
+    if (!activity.empty()) {
+        ImGui::PushFont(nullptr, 11);
+        if (ImGui::GetContentRegionAvail().y >= 250) {
+            for (const auto& line : activity) ImGui::TextWrapped("%s", line.c_str());
+        } else {
+            ImGui::TextWrapped("%s", activity.front().c_str());
+            if (ImGui::IsItemHovered()) {
+                std::string detail;
+                for (const auto& line : activity) detail += line + "\n";
+                ImGui::SetTooltip("%s", detail.c_str());
+            }
+        }
+        ImGui::PopFont();
+    }
     const auto origin = ImGui::GetCursorScreenPos();
     const auto ms = [](const shin::ui::TimingMean& value) {
         const auto mean = value.value(); return mean ? number(*mean, shin::ui::tr("ms")) : std::string("—");
@@ -1299,6 +1315,11 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
                 ImGui::PushFont(nullptr, 11); ImGui::TextColored(muted, "%s", shin::ui::tr("This service run")); ImGui::PopFont();
                 ImGui::TableNextColumn();
                 metric(shin::ui::tr("Requests"), retained ? compact_number(static_cast<double>(count(*retained, "requests"))) : "—", ink, 23);
+                if (ImGui::IsItemHovered()) {
+                    std::string detail;
+                    for (const auto& line : shin::ui::service_activity_lines(project)) detail += line + "\n";
+                    if (!detail.empty()) ImGui::SetTooltip("%s", detail.c_str());
+                }
                 ImGui::PushFont(nullptr, 11); ImGui::TextColored(muted, "%s", shin::ui::tr("Retained history")); ImGui::PopFont();
                 ImGui::EndTable();
                 ui_actions.push_back({shin::ui::tr("Updates in this service run: ") + (project.contains("publications") ? std::to_string(count(project, "publications")) : shin::ui::tr("unknown")) +

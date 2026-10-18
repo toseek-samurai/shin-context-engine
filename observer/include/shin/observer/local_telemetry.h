@@ -4,6 +4,8 @@
 #include <chrono>
 #include <deque>
 #include <map>
+#include <array>
+#include <set>
 
 namespace shin::observer {
 // Leave room for the RPC envelope and client transport metadata below 64 KiB.
@@ -26,7 +28,17 @@ public:
     std::uint64_t admission_rejections = 0;
 private:
     using Clock = std::chrono::steady_clock;
+    struct Activity {
+        std::array<std::uint64_t, 4> calls{}; // query, inspect, read, status
+        std::uint64_t diagnostic = 0, uncorrelated = 0;
+        std::set<std::string> sessions;
+        bool sessions_truncated = false;
+        void add(std::size_t method, const Json& report, std::size_t session_limit);
+        Json snapshot() const;
+    };
+    Activity activity;
     struct Project {
+        Activity service_activity;
         Json value;
         Clock::time_point completed{}, succeeded{}, activity{};
         std::string event_key, completed_phase, last_error;

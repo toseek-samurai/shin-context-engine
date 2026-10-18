@@ -11,6 +11,9 @@ metadata:
 
 # Shin Project Context
 
+Use Shin for discovery; read known files directly.
+Read [reader selection](references/source-verification.md#choosing-the-right-reader) for context/read recovery.
+
 Require Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
 readable `shin-generator-v21-cpp-syntax`. Local use needs no login or embeddings. Configure native
 MCP separately; a Python plugin is not the native service or its replacement.
@@ -61,9 +64,6 @@ explicit `--root` and the configured `--home`. Do not guess another home or
 select a source-checkout binary. Missing setup is not permission to bootstrap
 over a canonical marker. `init`, detach, profile/marker approval and grants are
 explicit owner operations; MCP navigation and reads grant no new access.
-
-Native inspect/read follow SOURCE locators. Document evidence without a SOURCE
-locator is read directly; it is not necessarily eligible for native source-read.
 
 ## Conversation And Compression Boundary
 

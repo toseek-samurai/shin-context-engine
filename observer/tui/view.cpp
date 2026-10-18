@@ -2,6 +2,7 @@
 
 #include "../ui/project_diagnostics.h"
 #include "../ui/request_timing.h"
+#include "../ui/service_activity.h"
 #include <cwchar>
 #include <cwctype>
 #include <iomanip>
@@ -138,6 +139,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
             const auto found = std::find_if(rows.begin(), rows.end(), [&](const auto& row) { return key(row) == state.project; });
             if (found != rows.end()) {
                 const auto& row = *found;
+                for (const auto& line : ui::service_activity_lines(row)) out.push_back({line});
                 out.push_back({text(field(row, "name")), Tone::heading}); out.push_back({state.project});
                 out.push_back({shin::ui::tr("Search: ") + state_name(row, connected) + shin::ui::tr(" | Observer: ") + shin::ui::tr(text(field(row, "phase")).c_str())});
                 out.push_back({shin::ui::tr("Last successful check (at observation): ") + number(field(row, "last_success_age_ms"), 1000) + shin::ui::tr(" s ago")});
@@ -153,6 +155,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
             }
         }
     } else if (state.tab == 2) {
+        for (const auto& line : ui::service_activity_lines(telemetry)) out.push_back({line});
         out.push_back({shin::ui::tr("Request timing"), Tone::heading});
         const std::array filters{shin::ui::tr("all queries"), shin::ui::tr("unclassified queries"), shin::ui::tr("diagnostic queries")};
         out.push_back({std::string(state.retained ? shin::ui::tr("Retained history") : shin::ui::tr("Recent requests")) + " | " + filters[static_cast<std::size_t>(state.traffic)]});

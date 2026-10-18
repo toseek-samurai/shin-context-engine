@@ -1029,7 +1029,7 @@ Json detach_local_service(const LocalProjectRequest& input) {
 
 namespace {
 Json exchange_local_request(const LocalProjectRequest& request, const std::function<bool()>& cancelled,
-                            const std::string& observer_version) {
+                            const std::string& observer_version, const std::string& core_version) {
     const auto started = Clock::now();
     require_not_cancelled(cancelled);
     const auto deadline = Clock::now() + std::chrono::seconds(35);
@@ -1037,9 +1037,10 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
     const auto id = digest(std::to_string(service_process_id()) + ":" + std::to_string(Clock::now().time_since_epoch().count()));
     auto input = reply(id);
     const bool control = request.command == "service-status" || request.command == "service-stop";
-    if (!control && observer_version != SHIN_OBSERVER_VERSION)
+    if (!control && (observer_version != SHIN_OBSERVER_VERSION || core_version != SHIN_VERSION))
         throw Error("service-method-denied", "Version-pinned installation traffic cannot read project context.");
     input["observer_version"] = observer_version;
+    input["core_version"] = core_version;
     input.update({{"command", request.command}, {"root", control ? "" : fs::canonical(request.root).string()},
         {"query", request.query}, {"path", request.path}, {"record", request.record}, {"snapshot", request.snapshot}});
     if (request.diagnostic) input["diagnostic"] = true;
@@ -1050,7 +1051,7 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
     service_write(*channel, frame, deadline, cancelled);
     const auto response = parse_json(service_read(*channel, response_limit, deadline, cancelled));
     require_not_cancelled(cancelled);
-    auto result = control ? local_rpc::control_response(response, id, observer_version) : project_response(response, id);
+    auto result = control ? local_rpc::control_response(response, id, observer_version, core_version) : project_response(response, id);
     if (!control) result["request_trace"] = {{"request_id", digest(id)},
         {"session_correlated", !request.session_id.empty()}, {"task_outcome", "not-observed"}};
     result["transport"] = service_transport();
@@ -1060,10 +1061,10 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
 }
 } // namespace
 Json request_local_service(const LocalProjectRequest& request, const std::function<bool()>& cancelled) {
-    return exchange_local_request(request, cancelled, SHIN_OBSERVER_VERSION);
+    return exchange_local_request(request, cancelled, SHIN_OBSERVER_VERSION, SHIN_VERSION);
 }
-Json control_local_service_for_update(const fs::path& home, const std::string& observer_version, bool stop) {
+Json control_local_service_for_update(const fs::path& home, const std::string& observer_version, bool stop, const std::string& core_version) {
     LocalProjectRequest request; request.home = home; request.command = stop ? "service-stop" : "service-status";
-    return exchange_local_request(request, {}, observer_version);
+    return exchange_local_request(request, {}, observer_version, core_version);
 }
 } // namespace shin::observer

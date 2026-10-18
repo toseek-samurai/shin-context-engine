@@ -60,9 +60,11 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         if private:
             path.chmod(0o600)
 
-    def previous_fixture(owned=False, version=None):
+    def previous_fixture(owned=False, version=None, core_version=None):
         value = json.loads((prefix / 'shin-kit.json').read_text())
         value['version'] = version or next(old_versions)
+        if core_version is not None:
+            value['core_version'] = core_version
         old_asset = prefix / asset_name
         old_asset.write_text(old_asset.read_text() + '\nPrevious release fixture.\n')
         for row in value['files']:
@@ -155,7 +157,18 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
 
         # Real process interruption while staging. The old payload remains intact.
         stop_service()
-        previous_fixture(owned=True)
+        previous_fixture(owned=True, core_version='unsupported-core')
+        call(*update, error='installation-core-transition-unsupported')
+        # This explicit format-preserving Core patch is admitted; unknown Core
+        # identities remain refused above, including before any payload swap.
+        previous_fixture(owned=True, version='2.0.5-dev.1', core_version='2.0.5-dev.1')
+        # New engine recovery must refresh the stale publication using its grant;
+        # pre-admission must not demand that the old engine repair itself first.
+        (root / 'quota.cpp').write_text('int updateQuota() { return 42; }\n')
+        binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
+        old_binding = json.loads(binding_path.read_text())
+        old_binding['core_version'] = '2.0.5-dev.1'
+        write_json(binding_path, old_binding, True)
         previous_manifest = (prefix / 'shin-kit.json').read_bytes()
         child = subprocess.Popen([str(tool), *update], cwd=root, env=env,
                                  stdout=subprocess.PIPE, stderr=subprocess.PIPE)
@@ -170,12 +183,36 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             time.sleep(0.001)
         out, err = child.communicate(timeout=20)
         assert killed, (out, err)
+        pending_recovery = json.loads(state_file.read_text())['update']
+        assert pending_recovery['recover_publications'] is True
+        assert pending_recovery['runtime']['unready_roots'] == []
+        assert pending_recovery['runtime']['running'] is False
+        assert [row['root'] for row in pending_recovery['bootstrap_migrations']] == [str(root)]
         assert (prefix / 'shin-kit.json').read_bytes() == previous_manifest
         assert (home / 'registry/state.json').read_bytes() == registry
+        recovery_child = subprocess.Popen([str(tool), *update], cwd=root, env=env,
+                                          stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        interrupted_recovery = False
+        until = time.monotonic() + 25
+        while recovery_child.poll() is None and time.monotonic() < until:
+            journal = json.loads(state_file.read_text())
+            if journal['phase'] == 'activating' and journal['update']['recover_publications']:
+                recovery_child.kill()
+                interrupted_recovery = True
+                break
+            time.sleep(0.001)
+        out, err = recovery_child.communicate(timeout=20)
+        assert interrupted_recovery, (out, err)
+        assert json.loads(state_file.read_text())['phase'] == 'activating'
         resumed = call(*update)
         assert resumed['changed'] and resumed['data_preserved']
         call('service-start', executable=prefix / 'bin/shin-ce')
-        assert call('query', 'updateQuota', executable=prefix / 'bin/shin-ce')['local_ready']
+        recovered_query = call('query', 'updateQuota', executable=prefix / 'bin/shin-ce')
+        assert recovered_query['local_ready'] and 'return 42;' in recovered_query['source_context']
+        migrated_binding = json.loads(binding_path.read_text())
+        assert migrated_binding['core_version'] == manifest['core_version']
+        for key in old_binding.keys() - {'core_version', 'prepared_snapshot'}:
+            assert migrated_binding[key] == old_binding[key], key
 
         # Model the atomic rename committing just before the journal acknowledgement.
         # Both real payloads/identities are those produced by the successful update.

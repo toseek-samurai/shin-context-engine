@@ -213,3 +213,20 @@ The native `shin-ce` CLI can query the same enrolled project without changing cl
 Use the snapshot returned by the query for `inspect` and `read`. Paths are project-relative. Check project and service status before relying on results. Missing or stale evidence is not permission to enroll, rebuild, or replace a project index; ask its owner before changing an existing binding or publication authority.
 
 For installation, package contents, and the local service lifecycle, see the [local kit guide](local-kit.md).
+
+## Agent routing and read refusals (next preview: dev.13)
+
+Use Shin when entering unfamiliar project code, recovering context, or locating
+source contracts. Load the `shin-context` workflow, select the exact enrolled
+project and ask a focused query. Once a path or symbol is known, ordinary reads,
+rg/jq, IDE navigation, edits and tests are appropriate. There is no call quota.
+Keep each repository's context separate when a task spans projects; a single-root
+MCP entry does not grant access to other repositories.
+
+`shin_read` reads scanned source files identified by query SOURCE locators.
+A document excerpt is not automatically such a locator. `source-read-document-only`
+means the path is indexed as document evidence: use its excerpt or an authorized
+ordinary local reader. `source-read-unknown-file` means no scanned source binding
+exists in the selected snapshot; it does not prove that a file is absent on disk.
+Do not reindex or widen a profile for these refusals. On a snapshot mismatch,
+query the same project once and use its new snapshot for the next source read.

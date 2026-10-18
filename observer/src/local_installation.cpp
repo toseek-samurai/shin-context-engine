@@ -215,7 +215,8 @@ void remove_payload(const fs::path& prefix, const Json& kit, const std::string& 
     require(fs::remove(prefix), "installation-remove-failed", "The owned installation directory is not empty.");
     sync_directory(prefix.parent_path());
 }
-std::unique_ptr<StateStore> stop_owned_service(const Json& receipt, const std::string& observer_version = SHIN_OBSERVER_VERSION) {
+std::unique_ptr<StateStore> stop_owned_service(const Json& receipt, const std::string& observer_version = SHIN_OBSERVER_VERSION,
+                                                const std::string& core_version = SHIN_VERSION) {
     LocalProjectRequest request;
     request.home = receipt.at("home").get<std::string>();
     const auto executable = fs::path(receipt.at("prefix").get<std::string>()) / "bin/shin-ce";
@@ -233,7 +234,7 @@ std::unique_ptr<StateStore> stop_owned_service(const Json& receipt, const std::s
     StateStore service(request.home / "service", false);
     if (service.writer_present()) {
         request.command = "service-stop";
-        (void)control_local_service_for_update(request.home, observer_version, true);
+        (void)control_local_service_for_update(request.home, observer_version, true, core_version);
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(55);
         while (service.writer_present()) {
             require(std::chrono::steady_clock::now() < deadline, "installation-service-busy", "Service is still stopping; repeat uninstall.");
@@ -288,7 +289,8 @@ Json runtime_before_update(const fs::path& home, const fs::path& executable) {
         StateStore service(home / "service", false);
         if (service.writer_present()) {
             request.command = "service-status";
-            const auto status = control_local_service_for_update(home, manifest(executable.parent_path().parent_path()).at("version"), false);
+            const auto previous = manifest(executable.parent_path().parent_path());
+            const auto status = control_local_service_for_update(home, previous.at("version"), false, previous.at("core_version"));
             require(status.value("enrollment_mode", "") == "registry", "installation-service-conflict", "Explicit-root services must be stopped before updating this kit.");
             runtime["running"] = true;
         }
@@ -326,7 +328,7 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
 // Rollback must use the verified previous CLI's protocol and qualification rules.
 // No shell, inherited user environment, or arbitrary subcommand is involved.
 Json previous_cli(const fs::path& executable, const fs::path& home,
-                  const char* command, const fs::path& root = {}) {
+                  const char* command, const fs::path& root = {}, bool allow_unready = false) {
     const auto previous = std::signal(SIGCHLD, SIG_DFL);
     require(previous != SIG_ERR, "installation-recovery-process", "Cannot establish recovery child ownership.");
     struct Restore { decltype(previous) handler; ~Restore() { std::signal(SIGCHLD, handler); } } restore{previous};
@@ -338,6 +340,7 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
         "installation-recovery-process", "Cannot protect recovery output channel.");
     std::vector<std::string> words{executable.string(), command, "--home", home.string()};
     if (!root.empty()) { words.emplace_back("--root"); words.push_back(root.string()); }
+    if (std::string_view(command) == "init") words.emplace_back("--no-service");
     std::vector<char*> argv; argv.reserve(words.size() + 1);
     for (auto& word : words) argv.push_back(word.data());
     argv.push_back(nullptr);
@@ -384,24 +387,100 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
     const auto result = parse_json(output);
     if (WEXITSTATUS(status) != 0) {
         const auto code = result.contains("error") ? validation_identifier(result.at("error").value("code", "")) : "";
+        if (allow_unready && std::string_view(command) == "status" && !root.empty() &&
+            (code == "refresh-validation-failed" || code == "project-check-failed" ||
+             (result.contains("local_ready") && result.at("local_ready") == false))) return result;
         throw Error("installation-recovery-command", "Previous CLI could not restore the service (" + code + ").");
     }
-    require(result.is_object() && result.value("ok", false), "installation-recovery-output", "Previous CLI did not confirm recovery.");
+    require(result.is_object() && (result.value("ok", false) ||
+        (allow_unready && std::string_view(command) == "status" && !root.empty() && result.contains("local_ready") && result.at("local_ready") == false)),
+        "installation-recovery-output", "Previous CLI did not confirm recovery.");
     return result;
+}
+Json bootstrap_identity(Json binding) {
+    binding.erase("core_version");
+    binding.erase("prepared_snapshot");
+    return binding;
+}
+Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate) {
+    Json records = Json::array();
+    for (const auto& project : registered_local_projects(home)) {
+        StateStore store(home / "projects" / digest(project.root.string()), false);
+        const auto binding = store.load();
+        if (!binding) throw Error("binding-unavailable", "An enrolled project binding is missing.");
+        if (binding->value("schema_version", "") != "shin.local-project-binding.v1" ||
+            binding->value("core_version", "") == SHIN_VERSION) continue;
+        require(binding->value("core_version", "") == "2.0.5-dev.1" &&
+            binding->value("generator_version", "") == "shin-generator-v22-compact-lexical",
+            "refresh-engine-changed", "This private binding is outside the qualified Core patch transition.");
+        (void)qualify_local_project(project, candidate); // Validate identity and policy without publication.
+        records.push_back({{"root", project.root.string()}, {"binding", *binding}});
+    }
+    return records;
+}
+void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs::path& previous = {}) {
+    require(records.is_array() && records.size() <= 16, "installation-state-invalid", "Invalid bootstrap migration inventory.");
+    const auto projects = registered_local_projects(home);
+    for (const auto& record : records) {
+        const fs::path root = record.at("root").get<std::string>();
+        require(record.at("binding").value("schema_version", "") == "shin.local-project-binding.v1" &&
+            record.at("binding").value("root", "") == root.string() &&
+            record.at("binding").value("core_version", "") == "2.0.5-dev.1" &&
+            record.at("binding").value("generator_version", "") == "shin-generator-v22-compact-lexical",
+            "installation-state-invalid", "Bootstrap migration is outside the reviewed source contract.");
+        const auto project = std::find_if(projects.begin(), projects.end(), [&](const auto& value) { return value.root == root; });
+        require(project != projects.end(), "registry-binding-changed", "Migration project is no longer enrolled.");
+        const auto workspace = home / "projects" / digest(root.string());
+        const auto load = [&] {
+            StateStore store(workspace, false);
+            const auto current = store.load();
+            if (!current) throw Error("binding-unavailable", "Bootstrap binding disappeared during kit migration.");
+            require(bootstrap_identity(*current) == bootstrap_identity(record.at("binding")),
+                "binding-identity-changed", "Bootstrap authority changed during kit migration.");
+            return *current;
+        };
+        const auto target = previous.empty() ? "2.0.5-dev.2" : "2.0.5-dev.1";
+        const auto other = previous.empty() ? "2.0.5-dev.1" : "2.0.5-dev.2";
+        const auto current = load();
+        if (current.at("core_version") == target) continue;
+        require(current.at("core_version") == other, "refresh-engine-changed", "Unexpected bootstrap engine version.");
+        if (previous.empty()) {
+            auto request = *project; request.command = "init";
+            const auto result = local_project(request);
+            require(result.value("ok", false) && result.value("local_ready", false),
+                "installation-project-not-ready", "Private project did not qualify after the Core patch.");
+        } else {
+            (void)previous_cli(previous, home, "init", root);
+        }
+        require(load().at("core_version") == target, "refresh-engine-changed", "Bootstrap migration did not confirm the target engine.");
+    }
 }
 void resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
     if (runtime.at("managed")) (void)previous_cli(executable, home, "service-install");
-    if (!runtime.at("running").get<bool>() && !runtime.at("managed").get<bool>()) return;
-    const auto status = previous_cli(executable, home, "service-start");
+    if (!runtime.at("running").get<bool>()) {
+        if (runtime.at("managed")) {
+            (void)previous_cli(executable, home, "service-stop");
+            wait_update_service_stopped(home);
+        }
+        return;
+    }
+    const auto unready = runtime.value("unready_roots", Json::array());
+    Json status;
+    try { status = previous_cli(executable, home, "service-start"); }
+    catch (const Error&) {
+        if (unready.empty()) throw;
+        // A previous kit may serve healthy projects while one route remains
+        // blocked as before. Require its live protocol, not a successful spawn.
+        status = previous_cli(executable, home, "service-status");
+    }
     require(status.value("registry_error", std::string{}).empty() && status.at("enrollment_errors").empty(),
         "installation-service-not-ready", "Previous service could not admit its registered projects.");
-    if (present(home / "registry")) for (const auto& project : registered_local_projects(home)) {
-        const auto result = previous_cli(executable, home, "status", project.root);
-        require(result.value("local_ready", false), "installation-project-not-ready", "A project is not ready after rollback.");
-    }
-    if (!runtime.at("running").get<bool>()) {
-        (void)previous_cli(executable, home, "service-stop");
-        wait_update_service_stopped(home);
+    if (runtime.at("running") && present(home / "registry")) for (const auto& project : registered_local_projects(home)) {
+        const auto result = unready.empty() ? previous_cli(executable, home, "status", project.root) :
+            previous_cli(executable, home, "status", project.root, true);
+        const bool was_unready = std::find(unready.begin(), unready.end(), Json(project.root.string())) != unready.end();
+        require(result.value("local_ready", false) || was_unready,
+            "installation-project-not-ready", "A previously ready project is not ready after rollback.");
     }
 }
 void verify_update_payload(const fs::path& path, const Json& kit, const Json& receipt) {
@@ -541,11 +620,17 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     verify_record_locations(prefix, state.at("receipt"));
     if (state.contains("resume_runtime")) {
         verify_update_payload(prefix, state.at("kit"), state.at("receipt"));
+        const auto migrations = state.value("resume_bootstrap_migrations", Json::array());
+        if (!migrations.empty())
+            require(state.at("kit").at("core_version") == "2.0.5-dev.1" &&
+                state.at("previous").at("kit").at("core_version") == "2.0.5-dev.2",
+                "installation-state-invalid", "Interrupted bootstrap rollback has an incompatible kit pair.");
         owner.reset();
+        migrate_bootstrap_patch(home, migrations, prefix / "bin/shin-ce");
         resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Recovery state changed during restart.");
-        state.erase("resume_runtime"); owner->save(state);
+        state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); owner->save(state);
         throw Error("installation-update-rolled-back", "Interrupted rollback completed; the previous kit and service are restored.");
     }
     if (state.at("phase") == "installed" && !state.contains("update")) {
@@ -553,18 +638,36 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         verify_update_payload(prefix, state.at("kit"), state.at("receipt")); links(state.at("receipt"), false, false);
         if (state.at("receipt").at("manifest_sha256").get<std::string>() == hash)
             return {{"ok", true}, {"command", "update"}, {"changed", false}, {"phase", "installed"}, {"version", kit.at("version")}, {"data_preserved", true}};
-        require(kit.at("core_version") == state.at("kit").at("core_version"),
-            "installation-core-transition-unsupported", "This updater preserves the current Core data contract; a different Core version requires an explicit migration.");
+        const bool recall_patch = state.at("kit").at("core_version") == "2.0.5-dev.1" &&
+            kit.at("core_version") == "2.0.5-dev.2";
+        // Explicit format-preserving transition: v22 evidence rows and reader
+        // contracts are unchanged; candidate admission still qualifies every root.
+        require(kit.at("core_version") == state.at("kit").at("core_version") || recall_patch,
+            "installation-core-transition-unsupported", "This Core transition has no qualified data compatibility contract; the current kit was preserved.");
         require(release_order(kit.at("version")) > release_order(state.at("kit").at("version")),
             "installation-version-not-newer", "Update requires a newer kit version; altered same-version kits and downgrades are refused.");
         const auto registry = registry_digest(home);
-        qualify_update(home, source / "bin/shin-ce");
-        const auto runtime = runtime_before_update(home, prefix / "bin/shin-ce");
+        bool recover_publications = false;
+        try { qualify_update(home, source / "bin/shin-ce"); }
+        catch (const Error& error) {
+            if (!recall_patch || error.code != "installation-project-not-ready") throw;
+            recover_publications = true;
+        }
+        const auto bootstrap_migrations = recover_publications ? bootstrap_patch_migrations(home, source / "bin/shin-ce") : Json::array();
+        auto runtime = runtime_before_update(home, prefix / "bin/shin-ce");
+        if (recover_publications) {
+            runtime["unready_roots"] = Json::array();
+            if (runtime.at("running")) for (const auto& project : registered_local_projects(home)) {
+                const auto before = previous_cli(prefix / "bin/shin-ce", home, "status", project.root, true);
+                if (!before.value("local_ready", false)) runtime["unready_roots"].push_back(project.root.string());
+            }
+        }
         require(registry_digest(home) == registry, "registry-binding-changed", "Project enrollment changed during update admission.");
         clear_previous(state, *owner, stage);
         auto next = state.at("receipt"); next["prefix_identity"] = ""; next["manifest_sha256"] = hash;
         state["update"] = {{"receipt", next}, {"kit", kit}, {"old_receipt", state.at("receipt")},
-            {"old_kit", state.at("kit")}, {"runtime", runtime}, {"registry_sha256", registry}, {"step", "copying"}};
+            {"old_kit", state.at("kit")}, {"runtime", runtime}, {"registry_sha256", registry},
+            {"recover_publications", recover_publications}, {"bootstrap_migrations", bootstrap_migrations}, {"step", "copying"}};
         state["phase"] = "updating"; owner->save(state);
     }
     require(state.contains("update") && state.at("update").at("receipt").at("manifest_sha256").get<std::string>() == hash,
@@ -572,6 +675,10 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     auto update = state.at("update");
     require(validate_manifest(update.at("kit")) == kit, "installation-state-invalid", "Pending target inventory changed.");
     (void)validate_manifest(update.at("old_kit"));
+    if (!update.value("bootstrap_migrations", Json::array()).empty())
+        require(update.value("recover_publications", false) &&
+            update.at("old_kit").at("core_version") == "2.0.5-dev.1" && kit.at("core_version") == "2.0.5-dev.2",
+            "installation-state-invalid", "Bootstrap migration requires the qualified Core patch transition.");
     for (const auto* field : {"receipt", "old_receipt"}) {
         verify_record_locations(prefix, update.at(field));
         require(update.at(field).at("home") == home.string() && update.at(field).at("bin_dir") == bin.string(),
@@ -586,7 +693,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         state["phase"] = "rolling-back"; owner->save(state);
         const auto current = directory_identity(prefix, true);
         const auto current_receipt = current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("receipt") : update.at("old_receipt");
-        auto service_guard = stop_owned_service(current_receipt, current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("kit").at("version").get<std::string>() : update.at("old_kit").at("version").get<std::string>());
+        const auto& stopping_kit = current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("kit") : update.at("old_kit");
+        auto service_guard = stop_owned_service(current_receipt, stopping_kit.at("version"), stopping_kit.at("core_version"));
         if (current == update.at("receipt").at("prefix_identity").get<std::string>()) {
             verify_update_payload(stage, update.at("old_kit"), update.at("old_receipt"));
             swap_update_payload(prefix, stage, update.at("receipt"), update.at("old_receipt"));
@@ -595,12 +703,14 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         verify_update_payload(prefix, state.at("kit"), state.at("receipt"));
         state["phase"] = "installed"; state.erase("update");
         state["resume_runtime"] = update.at("runtime");
+        state["resume_bootstrap_migrations"] = update.value("bootstrap_migrations", Json::array());
         state["previous"] = {{"receipt", update.at("receipt")}, {"kit", update.at("kit")}};
         owner->save(state); service_guard.reset(); owner.reset();
+        migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()), prefix / "bin/shin-ce");
         resume_previous_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Rollback state changed during restart.");
-        state.erase("resume_runtime"); owner->save(state);
+        state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); owner->save(state);
     };
     if (state.at("phase") == "rolling-back") {
         rollback();
@@ -611,7 +721,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             if (directory_identity(prefix, true) == update.at("old_receipt").at("prefix_identity").get<std::string>()) {
                 verify_update_payload(prefix, update.at("old_kit"), update.at("old_receipt"));
                 verify_update_payload(stage, update.at("kit"), update.at("receipt"));
-                auto service_guard = stop_owned_service(update.at("old_receipt"), update.at("old_kit").at("version"));
+                auto service_guard = stop_owned_service(update.at("old_receipt"), update.at("old_kit").at("version"), update.at("old_kit").at("core_version"));
                 require(registry_digest(home) == update.at("registry_sha256").get<std::string>(), "registry-binding-changed", "Enrollment changed before switching kits.");
                 state["update"]["step"] = "swapping"; owner->save(state);
                 swap_update_payload(prefix, stage, update.at("old_receipt"), update.at("receipt"));
@@ -627,6 +737,20 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         require(record(prefix) == update.at("receipt"), "installation-ownership-changed", "New payload receipt changed.");
         verify_files(prefix, kit, true);
         owner.reset(); // The operation lock remains held while the new child takes its startup fence.
+        if (update.value("recover_publications", false)) {
+            require(update.at("old_kit").at("core_version") == "2.0.5-dev.1" &&
+                kit.at("core_version") == "2.0.5-dev.2", "installation-state-invalid",
+                "Publication recovery requires the qualified Core patch transition.");
+            migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()));
+            LocalProjectRequest request; request.home = home; request.command = "watch";
+            std::vector<fs::path> roots;
+            for (const auto& project : registered_local_projects(home)) roots.push_back(project.root);
+            // Run only the ordinary publisher under its existing grants, after
+            // the journaled swap and before service admission. Restart repeats
+            // this idempotent bounded step; no direct index repair is permitted.
+            if (!roots.empty()) (void)watch_local_projects(request, roots, 3, [] { return false; });
+            qualify_update(home, prefix / "bin/shin-ce");
+        }
         resume_update_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state && registry_digest(home) == update.at("registry_sha256").get<std::string>(),

@@ -99,3 +99,21 @@ Shin's usage collector observes supported local client usage records. It is not
 required for indexing or retrieval. Collection and attribution need explicit
 configuration; installing the kit alone does not enable a complete model-usage
 dashboard.
+
+### Interpreting service activity (next preview: dev.13)
+
+Timing shows separate current-service-run counters for query, inspect, read and
+project status calls. Project details expose the same breakdown (Monitor tooltip,
+TUI details and service-status JSON). These counters include completed or refused
+observed calls; they reset with the service, and a project's counters reset when it
+is detached. They are separate from retained request history and query timings.
+Successful status checks do not change the historical retrieval count.
+
+Diagnostic calls are explicitly tagged. Other calls remain unclassified: they
+may include agent traffic, CLI checks or installation probes. `reported_sessions`
+counts distinct valid opaque IDs actually supplied by callers (bounded to 256 for
+the run and 64 per project, with `+` displayed on overflow). Calls without such an
+ID are shown separately. These numbers do not identify models or measure all chats.
+Catalog/help calls handled inside the MCP adapter and service monitoring polls are
+excluded; client token counters are a different measurement. No historical status
+or missing session information is fabricated.

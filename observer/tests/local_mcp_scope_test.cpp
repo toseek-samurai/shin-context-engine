@@ -117,6 +117,13 @@ int main() {
             "resource limits must not grant automatic policy changes");
         for (const auto* code : {"project-updating", "route-revision-conflict", "refresh-validation-failed", "unknown"})
             check(local_mcp_recovery(code, malformed).dump().size() < 8192, "guidance exceeds its bounded surface");
+        check(local_mcp_recovery("source-read-document-only").at("next_action") == "read-authorized-document-directly",
+            "document evidence must not request index repair");
+        const auto unbound = local_mcp_recovery("source-read-unknown-file");
+        check(unbound.at("kind") == "request-correction" && unbound.at("file_existence_assessed") == false &&
+              unbound.at("retry_same_request") == false, "unbound file is not evidence of a missing file");
+        check(local_mcp_recovery("source-read-snapshot-mismatch").at("fresh_snapshot_required") == true,
+            "Core snapshot mismatches need same-project query recovery");
         const auto help = local_mcp_help();
         check(help.at("ok") == true && help.at("schema_version") == "shin.mcp-help.v1" &&
             help.at("scope") == "static-guidance" && help.at("readiness_assessed") == false &&

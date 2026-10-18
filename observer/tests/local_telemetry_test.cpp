@@ -262,6 +262,34 @@ int telemetry_scenario() {
                               {"final_verification", 70000}, {"query", "DO-NOT-EXPORT"}};
         telemetry.request_result("/project/one", "status", report);
         if (!telemetry.snapshot().at("request_metrics").at("recent").empty()) return 8;
+        const auto status_activity = telemetry.snapshot().at("activity");
+        if (status_activity.at("calls").at("status") != 1 || status_activity.at("diagnostic") != 1 ||
+            status_activity.at("calls").at("query") != 0) return 60;
+        {
+            LocalTelemetry isolated;
+            isolated.record("/activity-project", state);
+            auto correlated = report; correlated["session_id"] = std::string(64,'a');
+            isolated.request_result("/activity-project", "query", correlated);
+            isolated.request_result("/activity-project", "status", correlated);
+            correlated["purpose"] = "unclassified";
+            correlated["session_id"] = "PRIVATE-NOT-A-HASH";
+            isolated.request_result("/activity-project", "read", correlated);
+            auto snapshot = isolated.snapshot();
+            const auto& a = snapshot.at("activity");
+            if (a.at("reported_sessions") != 1 || a.at("uncorrelated") != 1 || a.at("diagnostic") != 2 ||
+                a.at("calls").at("status") != 1 || a.at("calls").at("query") != 1 || a.at("calls").at("read") != 1 ||
+                snapshot.at("project_states")[0].at("activity") != a ||
+                snapshot.dump().find("PRIVATE-NOT-A-HASH") != std::string::npos) return 61;
+            for (int i=0;i<300;++i) {
+                correlated["session_id"] = digest("session-"+std::to_string(i));
+                isolated.request_result("/activity-project", "status", correlated);
+            }
+            snapshot = isolated.snapshot();
+            if (snapshot.at("activity").at("reported_sessions") != 256 ||
+                snapshot.at("activity").at("sessions_truncated") != true ||
+                snapshot.at("project_states")[0].at("activity").at("reported_sessions") != 64 ||
+                snapshot.at("request_metrics").at("recent").size() != 2) return 62;
+        }
         telemetry.request_result("/project/one", "query", report);
         const auto first = telemetry.snapshot().at("request_metrics").at("recent").back();
         if (first.at("service_duration_ms") != 80.0 || first.at("reader_state") != "cold" ||

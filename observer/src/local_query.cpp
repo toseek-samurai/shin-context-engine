@@ -286,6 +286,17 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         } else if (request.command == "inspect") source = session.inspect(request.path);
         else {
             const bool file = request.record.empty();
+            if (file) {
+                const auto& manifest = state.snapshot->manifest();
+                const auto& bindings = manifest.at("source_fact_sources");
+                const bool scanned = std::any_of(bindings.begin(), bindings.end(), [&](const auto& row) {
+                    return row.value("path", "") == request.path && row.value("status", "") == "scanned";
+                });
+                const auto& documents = manifest.at("sources");
+                if (!scanned && std::any_of(documents.begin(), documents.end(), [&](const auto& row) {
+                    return row.value("path", "") == request.path;
+                })) throw Error("source-read-document-only", "This path is indexed as a document, not a scanned source file. Use document evidence or an authorized local file reader.");
+            }
             source = session.read_selected(Json{{"schema_version", file ? "shin.source-read-request.v2" : "shin.source-read-request.v1"},
                 {"snapshot_id", request.snapshot}, {file ? "file_paths" : "record_ids",
                 Json::array({file ? request.path : request.record})}}.dump());

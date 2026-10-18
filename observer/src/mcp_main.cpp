@@ -236,7 +236,7 @@ int run(int argc, char** argv, char** environment) {
         mcp::ToolOptions tool;
         std::string description = method == "query" ? "Find verified project code and documentation for a focused question." :
             method == "inspect" ? "Inspect declarations in a project-relative file at the query snapshot." :
-            method == "read" ? "Read a project-relative file at the exact query snapshot." :
+            method == "read" ? "Read an indexed source file from a query SOURCE locator, using its exact snapshot and project-relative path. Document-only evidence and files outside source coverage require an authorized ordinary local reader. After snapshot mismatch, query the same project again before reading." :
             method == "help" ? "Explain Shin failures and safe next steps: retry, correct the request, review project inputs, ask the owner, or contact Shin maintainers. Static help; no project access or live diagnosis." :
             method == "projects" ? "List this connection's allowed project selectors. Binding availability is not source readiness." :
             "Check this project's current readiness and refresh state.";

@@ -202,7 +202,37 @@ void LocalTelemetry::sample(std::size_t workers, std::optional<std::uint64_t> ch
     }
 }
 
+void LocalTelemetry::Activity::add(std::size_t method, const Json& report, std::size_t session_limit) {
+    ++calls.at(method);
+    if (report.is_object() && report.value("purpose", Json()) == "diagnostic") ++diagnostic;
+    const auto session = report.is_object() ? report.value("session_id", Json()) : Json();
+    if (!session.is_string() || session.get_ref<const std::string&>().size() != 64 ||
+        session.get_ref<const std::string&>().find_first_not_of("0123456789abcdef") != std::string::npos) {
+        ++uncorrelated; return;
+    }
+    const auto& id = session.get_ref<const std::string&>();
+    if (sessions.contains(id)) return;
+    if (sessions.size() >= session_limit) sessions_truncated = true;
+    else sessions.insert(id);
+}
+
+Json LocalTelemetry::Activity::snapshot() const {
+    return {{"schema_version","shin.service-activity.v1"},{"scope","current-service-run"},
+        {"calls",{{"query",calls[0]},{"inspect",calls[1]},{"read",calls[2]},{"status",calls[3]}}},
+        {"diagnostic",diagnostic},{"uncorrelated",uncorrelated},
+        {"reported_sessions",sessions.size()},{"sessions_truncated",sessions_truncated},
+        {"catalog_calls_recorded",false},{"model_attribution","unavailable"}};
+}
+
 void LocalTelemetry::request_result(const fs::path& root, const std::string& method, const Json& report) {
+    constexpr std::array methods{"query", "inspect", "read", "status"};
+    const auto found = std::find(methods.begin(), methods.end(), method);
+    if (found != methods.end()) {
+        const auto index = static_cast<std::size_t>(found-methods.begin());
+        activity.add(index, report, 256);
+        if (const auto project = projects.find(root.string()); project != projects.end())
+            project->second.service_activity.add(index, report, 64);
+    }
     const bool rejected = report.is_object() && report.value("stage", Json()) == "admission";
     if (!rejected && method != "query" && method != "inspect" && method != "read") return;
     const bool measured = report.is_object() && report.value("schema_version", "") == "shin.worker-metric.v1" &&
@@ -338,6 +368,7 @@ Json LocalTelemetry::snapshot() const {
     for (const auto& [key, project] : projects) {
         (void)key;
         auto value = project.value;
+        value["activity"] = project.service_activity.snapshot();
         value["last_check_age_ms"] = project.completed == Clock::time_point{} ? Json(nullptr) :
             Json(std::chrono::duration_cast<std::chrono::milliseconds>(now - project.completed).count());
         value["last_success_age_ms"] = project.succeeded == Clock::time_point{} ? Json(nullptr) :
@@ -360,7 +391,7 @@ Json LocalTelemetry::snapshot() const {
         {"scope", "service-and-owned-workers-current-run"}, {"durable", false}, {"requests_started", requests},
         {"project_states", std::move(rows)}, {"samples", samples}, {"events", events},
         {"history", history ? history->snapshot() : Json{{"status", "disabled"}}},
-        {"refresh_diagnostics", refresh_results},
+        {"refresh_diagnostics", refresh_results}, {"activity", activity.snapshot()},
         {"request_metrics", {{"scope", "worker-execution-until-response-ready"},
             {"service_duration_scope", "complete-request-received-until-response-ready"},
             {"purpose_policy", "explicit-diagnostic-otherwise-unclassified"},

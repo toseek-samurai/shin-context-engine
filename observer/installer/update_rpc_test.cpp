@@ -18,6 +18,10 @@ int main() {
         check(local_rpc::control_response(response, "update-control", "2.0.5-dev.7").at("ok"));
         rejects([&] { local_rpc::control_response(response, "different-request", "2.0.5-dev.7"); });
         rejects([&] { local_rpc::control_response(response, "update-control", "2.0.5-dev.6"); });
+        response["core_version"] = "2.0.5-dev.1";
+        rejects([&] { local_rpc::project_response(response, "update-control"); });
+        check(local_rpc::control_response(response, "update-control", "2.0.5-dev.7", "2.0.5-dev.1").at("ok"));
+        rejects([&] { local_rpc::control_response(response, "update-control", "2.0.5-dev.7", "wrong-core"); });
         response["core_version"] = "incompatible-core";
         rejects([&] { local_rpc::control_response(response, "update-control", "2.0.5-dev.7"); });
         response = local_rpc::failure("update-control", "writer-busy", "Owned service is busy.");

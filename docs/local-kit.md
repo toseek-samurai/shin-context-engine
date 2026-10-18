@@ -286,3 +286,19 @@ client settings, or project state. The build does not qualify other CPU
 architectures or macOS versions. Stable distribution still needs Developer ID signing/notarization and a
 first-launch check on a clean machine; an ad-hoc signature alone does not
 establish that experience.
+
+
+## Core patch compatibility
+
+The dev.13 kit qualifies the explicit Core `2.0.5-dev.1 → 2.0.5-dev.2`
+transition. This recall correction preserves generator-v22 evidence and storage
+formats. The updater still qualifies every enrolled project and preserves its
+ownership and rollback checks; other Core transitions remain refused.
+For this transition, stale or validation-blocked publications are refreshed by
+the ordinary Observer under existing grants during journaled activation. All
+projects must qualify before success. Interrupted recovery resumes from the same
+archive; failed activation rolls back the kit and restores the previous service
+readiness boundary. Existing private-bootstrap bindings are migrated through native initialization,
+without new enrollment or changed identity/profile. Rollback uses the verified
+previous kit to restore their previous Core binding. Canonical publisher grants
+retain their original identity. No index deletion or profile change is used.

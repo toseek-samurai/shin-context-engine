@@ -41,7 +41,8 @@
     "admission": "Document posting preselection may combine section/typed-record groups for declared whole documents, never independent facts or JSONL records. Exact decoded scoring and unit checks follow this conservative preselection.",
     "selection": "Sparse planning selects bounded units and respects per-document limits. A source unit contributes only its own matched groups. Planner acceptance is checked against final selected coverage, not coverage of discarded records.",
     "corroboration": "A document unit may contribute corroborating group paths only when a representative of that exact provenance/status/authority unit survives final selection. Another record at the same physical path does not authorize it.",
-    "boundary": "This is an explicit structural retrieval scope, not a compiler call graph or semantic relevance guarantee. No field weights, consumer policies or generated snapshot format change in this correction."
+    "boundary": "This is an explicit structural retrieval scope, not a compiler call graph or semantic relevance guarantee. No field weights, consumer policies or generated snapshot format change in this correction.",
+    "nearCompleteHeadingCorroboration": "When the existing multi-document body-only supplement is eligible, a section missing one query group may use a non-body match from a sibling section of the same declared document unit. Filename-only matches, independent rows, differing status/authority/provenance and fabricated coverage remain excluded. Indexed candidate and output limits remain unchanged."
   },
   "diagnostics": {
     "matching": "Includes policy, independent-expected-path-probe-not-selection scope and document_matched_groups. A path-local score is not a declaration of candidate admission or selection.",

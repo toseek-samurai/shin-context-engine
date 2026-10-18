@@ -268,7 +268,9 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
         }
     }
     const CandidateRows strict_candidates = candidates;
-    if (preserve_row_ranking && include_near_complete_sections && required_group_matches >= 4) {
+    const bool supplement_near = preserve_row_ranking && include_near_complete_sections &&
+        required_group_matches >= 4;
+    if (supplement_near) {
         auto near = select_generated_group_candidates(group_rows, required_group_matches - 1);
         if (!near.from_terms_index || !near.term_index_coverage_complete) {
             result.candidate_rows = near.discovered_row_count;
@@ -282,7 +284,7 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
     const std::size_t ordinary_candidate_count = candidate_row_count(strict_candidates);
     if (preserve_row_ranking) {
         auto qualified = filter_document_coverage_candidates(options, group_rows,
-                                                             required_group_matches,
+                                                             supplement_near ? required_group_matches - 1 : required_group_matches,
                                                              result.planner_document_paths,
                                                              missing_documents_only ? &strict_candidates : nullptr);
         if (!qualified.has_value()) {
@@ -340,6 +342,8 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
     }
 
     std::map<RetrievalUnitKey, PlannedUnit> units;
+    std::set<RetrievalUnitKey> anchored_documents;
+    std::vector<ContextHit> near_sections;
     for_each_generated_section_matching_terms(options, candidates, request.prepared_term_groups, 1,
                                                [&](const SectionRow& section) {
         MatchScore match = score_section_match(section, request.prepared_term_groups, 1);
@@ -357,9 +361,22 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
              section_has_non_body_query_match(section, request.prepared_term_groups, false))) {
             result.section_hits_by_doc[section.path].push_back(hit);
         }
-        retain_planned_evidence(units[retrieval_unit_key(section, result.planner_document_paths)],
-                                PlannedEvidence(std::move(hit)));
+        const auto unit = retrieval_unit_key(section, result.planner_document_paths);
+        if (supplement_near && unit.whole_document) {
+            if (section_has_non_body_query_match(section, request.prepared_term_groups, false))
+                anchored_documents.insert(unit);
+            if (match.matched_group_indices.size() == static_cast<std::size_t>(required_group_matches - 1))
+                near_sections.push_back(hit);
+        }
+        retain_planned_evidence(units[unit], PlannedEvidence(std::move(hit)));
     });
+
+    // A sibling heading can anchor a near-complete body in the same declared
+    // document unit. Filename words alone and other provenance units cannot.
+    for (auto& hit : near_sections) {
+        if (anchored_documents.contains(retrieval_unit_key(hit.section, result.planner_document_paths)))
+            append_planned_section(result, std::move(hit));
+    }
 
     std::set<FactRow> matched_fact_keys;
     for_each_generated_fact_matching_terms(options, candidates, request.prepared_term_groups, 1,

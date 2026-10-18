@@ -80,12 +80,21 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic) {
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "correct-request-arguments"},
             {"message", "Correct the tool arguments using the documented bounds, then retry the corrected request."}};
-    if (code == "mcp-snapshot-scope-mismatch" || code == "source-snapshot-mismatch" || code == "mcp-snapshot-invalid")
+    if (code == "mcp-snapshot-scope-mismatch" || code == "source-snapshot-mismatch" || code == "source-read-snapshot-mismatch" || code == "mcp-snapshot-invalid")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "query-same-project-for-fresh-snapshot"}, {"same_project_required", true},
             {"fresh_snapshot_required", true},
             {"message", "The snapshot cannot be used for this project and current request context. Make a fresh query "
                 "for the same project and use only the returned snapshot for follow-up reads."}};
+    if (code == "source-read-document-only")
+        return {{"kind", "request-correction"}, {"responsible_party", "requester"},
+            {"next_action", "read-authorized-document-directly"}, {"retry_same_request", false},
+            {"message", "This published path is document evidence, not a SOURCE file. Use the returned document excerpts or read the file with your ordinary local reader within the task's existing access. Do not retry shin_read for this document, reindex or change the profile."}};
+    if (code == "source-read-unknown-file")
+        return {{"kind", "request-correction"}, {"responsible_party", "requester"},
+            {"next_action", "check-source-locators-or-read-authorized-file-directly"},
+            {"file_existence_assessed", false}, {"retry_same_request", false},
+            {"message", "The path has no scanned source binding in this snapshot; this does not prove it is missing on disk. Check the project-relative path and SOURCE locators from the query. For a known authorized file outside source coverage, use your ordinary local reader. Do not re-enroll, reindex or widen the profile to read it."}};
     if (code == "mcp-project-denied")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "discover-allowed-project-catalog"},

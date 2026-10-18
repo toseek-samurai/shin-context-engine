@@ -612,6 +612,26 @@ class LexicalRetrievalTests(unittest.TestCase):
                 self.assertNotIn("docs/focused.md", missing_group["returned_evidence_paths"])
                 self.assertNotIn("docs/focused.md", missing_group["selected_document_paths"])
 
+    def test_near_complete_body_keeps_same_document_heading_corroboration(self):
+        query = "alpha beta gamma delta epsilon"
+        for name in ("one", "two"):
+            self.document(name + ".md", "# Overview\n\n" + query + ".\n")
+        self.document("alpha-beta-policy.md",
+                      "# Alpha beta policy\n\n## Decision\n\ngamma delta.\n")
+        self.document("alpha-beta-noise.md",
+                      "# Overview\n\n## Decision\n\ngamma delta.\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--limit", "8", "--per-doc", "3")
+        paths = [row["path"] for row in result["ranked_paths"]]
+        self.assertIn("docs/alpha-beta-policy.md", paths)
+        self.assertLessEqual(paths.index("docs/alpha-beta-policy.md"), 1)
+        self.assertNotIn("docs/alpha-beta-noise.md", paths)
+        row = next(row for row in result["sections"]
+                   if row["path"] == "docs/alpha-beta-policy.md" and row["heading"] == "Decision")
+        self.assertEqual(row["matched_group_indices"], [0, 1, 2, 3])
+        self.assertNotIn("docs/alpha-beta-policy.md",
+                         result["query_coverage"]["groups"][4]["returned_evidence_paths"])
+
     def test_multiple_body_owner_expansion_preserves_primary_heading_match(self):
         words = "alpha beta gamma delta epsilon zeta eta theta iota kappa".split()
         for count in (5, 8, 10):

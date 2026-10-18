@@ -117,6 +117,33 @@ class McpTests(unittest.TestCase):
         self.assertEqual(result.get('isError', False), not native['ok'])
         return native
 
+    def test_document_reads_explain_scope_and_keep_source_reads_available(self):
+        (self.root / "not-indexed.csproj").write_text("<Project />\n")
+        self.start()
+        child = self.adapter()
+        self.tool(child, 'shin_status', {})
+        query = self.tool(child, 'shin_query', {'query': 'readLimit'})
+        activity = self.raw('service-status')['result']['telemetry']['activity']
+        self.assertGreaterEqual(activity['calls']['status'], 1)
+        self.assertEqual(activity['calls']['query'], 1)
+        self.assertFalse(activity['catalog_calls_recorded'])
+        def denied(path, snapshot):
+            response = self.rpc(child, 'tools/call', {'name': 'shin_read',
+                'arguments': {'path': path, 'snapshot': snapshot}})['result']
+            self.assertTrue(response['isError'])
+            return json.loads(response['content'][0]['text'])
+        document = denied('README.md', query['snapshot_id'])
+        self.assertEqual(document['error']['code'], 'source-read-document-only')
+        self.assertEqual(document['recovery']['next_action'], 'read-authorized-document-directly')
+        unknown = denied('not-indexed.csproj', query['snapshot_id'])
+        self.assertEqual(unknown['error']['code'], 'source-read-unknown-file')
+        self.assertEqual(unknown['recovery']['kind'], 'request-correction')
+        self.assertFalse(unknown['recovery']['file_existence_assessed'])
+        stale = denied('README.md', 'fnv1a64:0000000000000000')
+        self.assertEqual(stale['recovery']['next_action'], 'query-same-project-for-fresh-snapshot')
+        good = self.tool(child, 'shin_read', {'path': 'limits.js', 'snapshot': query['snapshot_id']})
+        self.assertTrue(good['ok'])
+
     def test_quarantined_file_keeps_mcp_available_with_visible_coverage(self):
         secret = 'sk-' + 'Q7x9' * 16
         (self.root / 'unsafe.js').write_text('export const token = "' + secret + '"; // gitleaks:allow\n')

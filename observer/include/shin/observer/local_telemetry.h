@@ -33,6 +33,8 @@ private:
         std::uint64_t diagnostic = 0, uncorrelated = 0;
         std::set<std::string> sessions;
         bool sessions_truncated = false;
+        std::map<std::string, std::uint64_t> models;
+        std::uint64_t model_unknown = 0, model_overflow = 0;
         void add(std::size_t method, const Json& report, std::size_t session_limit);
         Json snapshot() const;
     };

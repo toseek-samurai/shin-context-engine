@@ -11,12 +11,12 @@ metadata:
 
 # Shin Project Context
 
-Use Shin for discovery; read known files directly.
+Use Shin first for unfamiliar code; read known files directly.
 Read [reader selection](references/source-verification.md#choosing-the-right-reader) for context/read recovery.
 
 Require Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
-readable `shin-generator-v21-cpp-syntax`. Local use needs no login or embeddings. Configure native
-MCP separately; a Python plugin is not the native service or its replacement.
+readable `shin-generator-v21-cpp-syntax`. Local use needs no login or embeddings. Configure native MCP separately;
+a Python plugin does not replace it.
 
 1. Read the repository's `AGENTS.md` chain and adoption marker. Do not
    add `.hermes.md` to override that route or infer the root from a chat title.

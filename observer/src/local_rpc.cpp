@@ -1,5 +1,6 @@
 #include "shin/observer/local_rpc.h"
 #include <set>
+#include "shin/observer/local_project.h"
 #include <algorithm>
 
 namespace shin::observer::local_rpc {
@@ -51,7 +52,7 @@ std::string string_field(const Json& value, const char* key, std::size_t limit) 
 void validate_request(const Json& value) {
     const std::set<std::string> allowed{"schema_version", "request_id", "observer_version", "core_version",
                                         "command", "root", "query", "path", "record", "snapshot"};
-    const std::set<std::string> optional{"diagnostic", "session_id", "parent_request_id"};
+    const std::set<std::string> optional{"diagnostic", "session_id", "parent_request_id", "model_id"};
     if (!value.is_object())
         throw Error("service-request-invalid", "Unexpected local request fields.");
     for (const auto& key : allowed)
@@ -66,6 +67,9 @@ void validate_request(const Json& value) {
             return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
         })) throw Error("service-request-invalid", "Correlation must be an opaque digest.");
     }
+    if (value.contains("model_id") && (!value.contains("session_id") ||
+        !valid_reported_model(string_field(value, "model_id", 64))))
+        throw Error("service-request-invalid", "A reported model requires a session and a bounded model identifier.");
     if (value.at("schema_version") != "shin.local-rpc.v1" || value.at("observer_version") != SHIN_OBSERVER_VERSION ||
         value.at("core_version") != SHIN_VERSION)
         throw Error("service-version-mismatch", "Restart the service with the same installed kit as its client.");

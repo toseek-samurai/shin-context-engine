@@ -20,10 +20,21 @@ inline std::vector<std::string> service_activity_lines(const nlohmann::json& own
     const auto query = number(*calls,"query"), inspect = number(*calls,"inspect"), read = number(*calls,"read"), status = number(*calls,"status");
     const auto diagnostic = number(activity,"diagnostic"), sessions = number(activity,"reported_sessions"), uncorrelated = number(activity,"uncorrelated");
     if (!query || !inspect || !read || !status || !diagnostic || !sessions || !uncorrelated) return {};
+    std::string model_line = tr("Catalog calls excluded. Unclassified traffic may include checks.");
+    if (const auto unknown = number(activity, "model_unknown")) {
+        model_line = std::string(tr("Caller-reported models: "));
+        const auto models = activity.find("models");
+        if (models != activity.end() && models->is_object()) for (const auto& [name, count] : models->items()) {
+            if (name.size() <= 64 && name.find_first_not_of("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:/-") == std::string::npos &&
+                (count.is_number_unsigned() || (count.is_number_integer() && count.get<std::int64_t>() >= 0))) model_line += name + " " + std::to_string(count.get<std::uint64_t>()) + "; ";
+        }
+        model_line += tr("unknown: ") + *unknown;
+        if (const auto overflow = number(activity, "model_overflow"); overflow && *overflow != "0") model_line += tr("; other: ") + *overflow;
+    }
     return {tr("Service activity · this run"),
         std::string(tr("Search: ")) + *query + tr(" · Inspect: ") + *inspect + tr(" · Read: ") + *read + tr(" · Status: ") + *status,
         std::string(tr("Diagnostic: ")) + *diagnostic + tr(" · Without session: ") + *uncorrelated,
         std::string(tr("Reported sessions: ")) + *sessions + (activity.value("sessions_truncated",nlohmann::json()) == true ? "+" : ""),
-        tr("Catalog calls excluded. Unclassified traffic may include checks.")};
+        model_line};
 }
 }

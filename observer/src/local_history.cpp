@@ -56,6 +56,7 @@ public:
             for (const auto* key : {"error_code", "reader_state", "purpose", "service_duration_ms",
                  "request_id", "session_id", "parent_request_id", "follow_up", "stage", "wait_ms", "admission_retries", "generation_id"})
                 row[key] = input.at(key);
+            row["model_id"] = input.value("model_id", "");
             for (const auto* key : {"admission", "documents", "source", "source_collection", "final_verification"})
                 row[key] = input.at("phase_ms").at(key);
         } else if (kind == "event") {
@@ -102,6 +103,18 @@ private:
             {"database_limit_bytes", max_bytes},
             {"captured_at_ms", now}, {"pruned_current_run", pruned}, {"timeline", Json::array()},
             {"projects", Json::array()}, {"events", Json::array()}, {"clock_basis", "utc-observed"}};
+        result["model_attribution"] = "caller-reported-not-verified";
+        result["model_cohorts"] = Json::array();
+        auto models = prepare(db, "SELECT coalesce(model_id,''),count(*),count(distinct nullif(session_id,'')) FROM events "
+            "WHERE kind='request' AND at_ms>=?1 AND at_ms<=?2 GROUP BY 1 ORDER BY count(*) DESC,1 LIMIT 17");
+        require(sqlite3_bind_int64(models.get(), 1, now-retention_ms) == SQLITE_OK && sqlite3_bind_int64(models.get(), 2, now) == SQLITE_OK);
+        int model_rc = SQLITE_OK;
+        while ((model_rc = sqlite3_step(models.get())) == SQLITE_ROW)
+            result["model_cohorts"].push_back({{"model_id", column(models.get(),0)},
+                {"requests",sqlite3_column_int64(models.get(),1)}, {"reported_sessions",sqlite3_column_int64(models.get(),2)}});
+        require(model_rc == SQLITE_DONE);
+        result["model_cohorts_truncated"] = result["model_cohorts"].size() > 16;
+        if (result["model_cohorts"].size() > 16) result["model_cohorts"].erase(16);
         auto extent = prepare(db, "SELECT count(*),min(at_ms),max(at_ms),sum(at_ms>?1) FROM events");
         require(sqlite3_bind_int64(extent.get(), 1, now) == SQLITE_OK && sqlite3_step(extent.get()) == SQLITE_ROW);
         result["rows"] = sqlite3_column_int64(extent.get(), 0);
@@ -270,7 +283,7 @@ private:
             { auto info = prepare(raw, "PRAGMA table_info(events)");
               while (sqlite3_step(info.get()) == SQLITE_ROW) columns.insert(column(info.get(), 1)); }
             execute(raw, "BEGIN IMMEDIATE");
-            for (const auto* name : {"request_id", "session_id", "parent_request_id", "follow_up", "stage", "generation_id"})
+            for (const auto* name : {"request_id", "session_id", "parent_request_id", "follow_up", "stage", "generation_id", "model_id"})
                 if (!columns.contains(name)) execute(raw, (std::string("ALTER TABLE events ADD COLUMN ") + name + " TEXT").c_str());
             if (!columns.contains("refresh_phases")) execute(raw, "ALTER TABLE events ADD COLUMN refresh_phases TEXT");
             if (!columns.contains("active_duration")) execute(raw, "ALTER TABLE events ADD COLUMN active_duration REAL");
@@ -301,8 +314,8 @@ private:
                 }
                 execute(raw, "BEGIN IMMEDIATE");
                 auto insert = prepare(raw, "INSERT INTO events(run,at_ms,kind,project,phase,method,outcome,duration,bytes,rss,workers,"
-                    "service_duration,admission,documents,source,source_collection,final_verification,reader_state,purpose,error_code,request_id,session_id,parent_request_id,follow_up,stage,wait_ms,admission_retries,generation_id,refresh_phases,active_duration,sleep_duration,refresh_work) "
-                    "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32)");
+                    "service_duration,admission,documents,source,source_collection,final_verification,reader_state,purpose,error_code,request_id,session_id,parent_request_id,follow_up,stage,wait_ms,admission_retries,generation_id,refresh_phases,active_duration,sleep_duration,refresh_work,model_id) "
+                    "VALUES(?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,?31,?32,?33)");
                 auto rollup = prepare(raw, "INSERT INTO refresh_hourly(project,hour_ms,attempts,successes,errors,paused,"
                     "wall_sum,wall_samples,active_sum,active_samples,sleep_sum,sleep_samples,active_max) "
                     "VALUES(?1,?2,1,?3,?4,?5,coalesce(?6,0),(?6 IS NOT NULL),coalesce(?7,0),(?7 IS NOT NULL),"
@@ -338,6 +351,7 @@ private:
                         ++position;
                     }
                     bind_text(insert.get(), position + 2, row.value("refresh_work", "{}"));
+                    bind_text(insert.get(), 33, row.value("model_id", ""));
                     require(sqlite3_step(insert.get()) == SQLITE_DONE && sqlite3_reset(insert.get()) == SQLITE_OK);
                     if (row.value("kind", "") == "refresh") {
                         bind_text(rollup.get(), 1, row.value("project_id", ""));

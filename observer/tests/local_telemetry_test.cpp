@@ -296,6 +296,30 @@ int telemetry_scenario() {
             first.at("purpose") != "diagnostic" || first.at("phase_ms").at("source") != 12.0 ||
             !first.at("phase_ms").at("documents").is_null() || !first.at("phase_ms").at("admission").is_null() ||
             !first.at("phase_ms").at("final_verification").is_null() || first.dump().find("DO-NOT-EXPORT") != std::string::npos) return 32;
+        {
+            LocalTelemetry attribution;
+            auto entry = report;
+            entry["session_id"] = std::string(64, 'a');
+            entry["model_id"] = "fixture-a";
+            attribution.request_result("/one", "query", entry);
+            entry["model_id"] = "fixture-b";
+            attribution.request_result("/one", "read", entry);
+            entry.erase("model_id");
+            attribution.request_result("/one", "status", entry);
+            entry["session_id"] = "invalid";
+            entry["model_id"] = "fixture-a";
+            attribution.request_result("/one", "status", entry);
+            auto value = attribution.snapshot().at("activity");
+            if (value["reported_sessions"] != 1 || value["models"]["fixture-a"] != 1 ||
+                value["models"]["fixture-b"] != 1 || value["model_unknown"] != 2) return 90;
+            entry["session_id"] = std::string(64, 'a');
+            for (int i = 0; i < 20; ++i) {
+                entry["model_id"] = "model-" + std::to_string(i);
+                attribution.request_result("/one", "query", entry);
+            }
+            value = attribution.snapshot().at("activity");
+            if (value["models"].size() != 16 || value["model_overflow"] != 6) return 91;
+        }
         report["duration_ms"] = 40.0;
         report["ok"] = false;
         telemetry.request_result("/project/one", "query", report);

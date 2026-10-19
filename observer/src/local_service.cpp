@@ -45,7 +45,7 @@ class Connection {
 public:
     explicit Connection(std::unique_ptr<ServiceChannel> input) : socket(std::move(input)) {}
     std::unique_ptr<ServiceChannel> socket;
-    std::string method = "unknown", input, output, request_id, session_id, parent_request_id, snapshot;
+    std::string method = "unknown", input, output, request_id, session_id, parent_request_id, model_id, snapshot;
     std::uint64_t admission_retries = 0;
     double wait_ms = 0;
     bool executed = false;
@@ -340,6 +340,7 @@ private:
         metric["stage"] = client.executed ? "execution" : "admission";
         metric["request_id"] = client.request_id.empty() ? "" : digest(client.request_id);
         metric["session_id"] = client.session_id;
+        metric["model_id"] = client.model_id;
         metric["parent_request_id"] = client.parent_request_id;
         metric["generation_id"] = client.snapshot.empty() ? "" : digest(client.snapshot);
         metric["wait_ms"] = client.wait_ms;
@@ -472,6 +473,7 @@ private:
         client.request_id = id;
         client.method = command;
         client.session_id = request.value("session_id", "");
+        client.model_id = request.value("model_id", "");
         client.parent_request_id = request.value("parent_request_id", "");
         client.snapshot = request.at("snapshot").get<std::string>();
         if (command == "service-status" || command == "service-stop") {
@@ -1045,6 +1047,7 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
         {"query", request.query}, {"path", request.path}, {"record", request.record}, {"snapshot", request.snapshot}});
     if (request.diagnostic) input["diagnostic"] = true;
     if (!request.session_id.empty()) input["session_id"] = request.session_id;
+    if (!request.model_id.empty()) input["model_id"] = request.model_id;
     if (!request.parent_request_id.empty()) input["parent_request_id"] = request.parent_request_id;
     const auto frame = input.dump() + '\n';
     if (frame.size() > request_limit) throw Error("service-frame-too-large", "Local request exceeds its byte limit.");
@@ -1053,7 +1056,8 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
     require_not_cancelled(cancelled);
     auto result = control ? local_rpc::control_response(response, id, observer_version, core_version) : project_response(response, id);
     if (!control) result["request_trace"] = {{"request_id", digest(id)},
-        {"session_correlated", !request.session_id.empty()}, {"task_outcome", "not-observed"}};
+        {"session_correlated", !request.session_id.empty()}, {"model_id", request.model_id},
+        {"model_attribution", request.model_id.empty() ? "unknown" : "caller-reported"}, {"task_outcome", "not-observed"}};
     result["transport"] = service_transport();
     result["transport_duration_ms"] = std::chrono::duration<double, std::milli>(Clock::now() - started).count();
     if (request.command == "service-status") bound_local_service_status(result);

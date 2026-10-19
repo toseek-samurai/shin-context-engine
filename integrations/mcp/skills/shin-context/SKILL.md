@@ -7,8 +7,8 @@ description: Retrieve verified code and documentation through the native Shin se
 
 ## Choosing the right reader
 
-For enrolled projects, query Shin when entering unfamiliar code, recovering context
-or finding a contract. Known paths/symbols use direct reads, rg/jq, IDE tools and tests.
+For enrolled projects, use Shin first for unfamiliar code, context recovery or
+contract discovery, before broad filesystem or other semantic searches. Known paths/symbols use direct reads, rg/jq, IDE tools and tests.
 Do not duplicate successful searches. Give narrow delegates paths and evidence;
 request fresh discovery only when needed. No per-read calls or usage quotas.
 
@@ -107,3 +107,15 @@ task's verified explicit root and configured service home:
 
 Do not invent the kit, root or home. Confirm them from the existing client/project
 configuration. Never switch to another home to turn a refusal into a success.
+
+## Request attribution
+
+When the tool schema supports it, pass the real current host session ID as
+`session_id` on project calls (Codex: read `CODEX_THREAD_ID` from this chat's shell
+once). Reuse it across projects in that chat; delegates use their own actual IDs.
+Pass `model_id` only when the host explicitly identifies the current model and the
+schema supports it; refresh it after a model switch. Do not infer it from a client,
+previous turn, default setting, title or process. Omit unknown values. These labels
+are caller-reported statistics, not verified model identity or task success. For
+read/inspect following a query, also pass its `request_trace.request_id` as
+`parent_request_id` when supported. Never persist a chat ID into shared MCP config.

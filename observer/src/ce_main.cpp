@@ -84,6 +84,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce mcp-config --client codex|opencode|rider|generic [--root DIR] [--home DIR] [--text] prints settings without editing files.\n"
                      "shin-ce detach [--root DIR] [--home DIR] disconnects one project; data and history stay.\n"
                      "shin-ce query TEXT [--root DIR]\n"
+                     "Project reads/status accept --session-id ID and --model-id ID (host-provided only); read/inspect accept --parent-request-id ID.\n"
                      "Read commands accept --diagnostic to label operator/test traffic in telemetry.\n"
                      "Advanced setup: init --observer-config FILE [--marker FILE] connects an existing managed index.\n"
                      "Add --manage-index once to authorize automatic publication of that existing index.\n"
@@ -168,6 +169,24 @@ int run(int argc, char** argv, char** environment) {
             throw Error("invalid-arguments", "Use stats [--home DIR] [--usage-file FILE] [--language auto|en|ru].");
         if (option == "--text" && (request.command == "status" || request.command == "service-status" || request.command == "mcp-config") &&
             seen.insert(option).second) { text_status = true; continue; }
+        if ((option == "--session-id" || option == "--model-id" || option == "--parent-request-id") &&
+            std::set<std::string>{"query", "inspect", "read", "status"}.contains(request.command) &&
+            seen.insert(option).second && i + 1 < argc) {
+            const std::string value = argv[++i];
+            if (option == "--session-id") {
+                if (value.empty() || value.size() > 128) throw Error("invalid-arguments", "Session ID must contain 1 to 128 bytes.");
+                request.session_id = value;
+            } else if (option == "--model-id") {
+                if (!valid_reported_model(value)) throw Error("invalid-arguments", "Invalid model ID.");
+                request.model_id = value;
+            } else {
+                if ((request.command != "read" && request.command != "inspect") || value.size() != 64 ||
+                    value.find_first_not_of("0123456789abcdef") != std::string::npos)
+                    throw Error("invalid-arguments", "Parent must be the query's opaque request ID for read/inspect.");
+                request.parent_request_id = value;
+            }
+            continue;
+        }
         if (option == "--diagnostic" && std::set<std::string>{"query", "inspect", "read"}.contains(request.command)
             && seen.insert(option).second) { request.diagnostic = true; continue; }
         if (option == "--manage-index" && request.command == "init" && seen.insert(option).second) {
@@ -256,6 +275,10 @@ int run(int argc, char** argv, char** environment) {
         if (home == nullptr || *home == '\0') throw Error("home-unavailable", "HOME is required or pass --home.");
         request.home = fs::canonical(home) / ".shin-ce";
     }
+    if (!request.model_id.empty() && request.session_id.empty())
+        throw Error("invalid-arguments", "Model attribution requires --session-id from the current host session.");
+    if (!request.session_id.empty())
+        request.session_id = digest("shin-session-v1:" + fs::weakly_canonical(request.home).string() + ":" + request.session_id);
     if (request.command == "client-targets" || request.command == "client-connect") {
         const auto targets = (request.command == "client-targets" || client_config.empty()) ? local_client_targets(fs::canonical(user_home(environment)), environment) : Json::object();
         if (request.command == "client-targets") { std::cout << targets.dump(2) << '\n'; return 0; }

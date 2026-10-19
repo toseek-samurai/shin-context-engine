@@ -235,7 +235,8 @@ int main(int argc, char** argv) {
                         auto& telemetry = view.data["telemetry"];
                         telemetry["activity"] = {{"schema_version", "shin.service-activity.v1"},
                             {"calls", {{"query", 100}, {"inspect", 24}, {"read", 31}, {"status", 17}}},
-                            {"diagnostic", 10}, {"uncorrelated", 42}, {"reported_sessions", 64}, {"sessions_truncated", true}};
+                            {"diagnostic", 10}, {"uncorrelated", 42}, {"reported_sessions", 64}, {"sessions_truncated", true},
+                            {"models", {{"fixture-model-a", 80}, {"fixture-model-b", 50}}}, {"model_unknown", 42}, {"model_overflow", 0}};
                         telemetry["request_metrics"]["recent"] = Json::array({
                             {{"method", "query"}, {"duration_ms", 25}, {"service_duration_ms", 160}, {"reader_state", "warm"},
                              {"purpose", "unclassified"}, {"phase_ms", {{"admission", 3}, {"documents", 4}, {"source", 15}, {"source_collection", 5}, {"final_verification", 3}}}},

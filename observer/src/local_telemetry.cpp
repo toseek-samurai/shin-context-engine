@@ -1,6 +1,7 @@
 #include "shin/observer/local_telemetry.h"
 #include "shin/observer/observer.h"
 #include <algorithm>
+#include "shin/observer/local_project.h"
 #include <array>
 #include <cmath>
 #include <set>
@@ -60,6 +61,7 @@ void bound_local_service_status(Json& status) {
             Detail{"/refresh_diagnostics", false, "/refresh_diagnostics_truncated"},
             Detail{"/events", false, nullptr}, Detail{"/samples", false, nullptr},
             Detail{"/history/events", true, nullptr},
+            Detail{"/history/model_cohorts", true, "/history/model_cohorts_truncated"},
             Detail{"/history/refresh_diagnostics", true, "/history/refresh_diagnostics_truncated"},
             Detail{"/history/refresh_aggregates", false, "/history/refresh_aggregates_truncated"},
             Detail{"/history/admission_cohorts", true, "/history/admission_cohorts_truncated"},
@@ -206,6 +208,14 @@ void LocalTelemetry::Activity::add(std::size_t method, const Json& report, std::
     ++calls.at(method);
     if (report.is_object() && report.value("purpose", Json()) == "diagnostic") ++diagnostic;
     const auto session = report.is_object() ? report.value("session_id", Json()) : Json();
+    const auto model = report.is_object() ? report.value("model_id", Json()) : Json();
+    const bool valid_session = session.is_string() && session.get_ref<const std::string&>().size() == 64 &&
+        session.get_ref<const std::string&>().find_first_not_of("0123456789abcdef") == std::string::npos;
+    if (valid_session && model.is_string() && valid_reported_model(model.get<std::string>())) {
+        const auto name = model.get<std::string>();
+        if (models.contains(name) || models.size() < 16) ++models[name];
+        else ++model_overflow;
+    } else ++model_unknown;
     if (!session.is_string() || session.get_ref<const std::string&>().size() != 64 ||
         session.get_ref<const std::string&>().find_first_not_of("0123456789abcdef") != std::string::npos) {
         ++uncorrelated; return;
@@ -221,7 +231,8 @@ Json LocalTelemetry::Activity::snapshot() const {
         {"calls",{{"query",calls[0]},{"inspect",calls[1]},{"read",calls[2]},{"status",calls[3]}}},
         {"diagnostic",diagnostic},{"uncorrelated",uncorrelated},
         {"reported_sessions",sessions.size()},{"sessions_truncated",sessions_truncated},
-        {"catalog_calls_recorded",false},{"model_attribution","unavailable"}};
+        {"catalog_calls_recorded",false},{"model_attribution","caller-reported-not-verified"},
+        {"models",models},{"model_unknown",model_unknown},{"model_overflow",model_overflow}};
 }
 
 void LocalTelemetry::request_result(const fs::path& root, const std::string& method, const Json& report) {
@@ -276,6 +287,8 @@ void LocalTelemetry::request_result(const fs::path& root, const std::string& met
     row["stage"] = rejected ? "admission" : "execution";
     row["request_id"] = opaque("request_id");
     row["session_id"] = session;
+    const auto model = metadata.value("model_id", Json());
+    if (!session.empty() && model.is_string() && valid_reported_model(model.get<std::string>())) row["model_id"] = model;
     row["generation_id"] = generation;
     row["parent_request_id"] = parent;
     row["follow_up"] = parent.empty() ? "not-reported" : followed ? "observed" : "unverified";
@@ -401,6 +414,6 @@ Json LocalTelemetry::snapshot() const {
             {"observed_follow_ups", observed_follow_ups}, {"admission_waits", admission_waits}, {"wait_recoveries", wait_recoveries},
             {"rpc_admission_rejections", admission_rejections}, {"recent", request_results},
             {"query_sample_count", durations.size()}, {"query_p50_ms", percentile(.5)}, {"query_p95_ms", percentile(.95)},
-            {"model_attribution", "unavailable"}, {"task_outcome", "not-observed"}}}};
+            {"model_attribution", "caller-reported-not-verified"}, {"task_outcome", "not-observed"}}}};
 }
 } // namespace shin::observer

@@ -349,7 +349,7 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(measured['reader_state'], 'warm')
         self.assertEqual(measured['purpose'], 'unclassified')
         self.assertGreaterEqual(measured['phase_ms']['source'], 0)
-        self.assertEqual(metrics['model_attribution'], 'unavailable')
+        self.assertEqual(metrics['model_attribution'], 'caller-reported-not-verified')
         self.assertNotIn('readLimit', json.dumps(metrics))
         self.assertNotIn(str(self.root), json.dumps(metrics))
         failed = self.raw('read', path='limits.js', snapshot='fnv1a64:0000000000000000')
@@ -467,10 +467,10 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(self.history()['admission_rejections'], 2)
 
     def test_correlation_is_explicit_and_does_not_cross_sessions_or_projects(self):
-        self.start()
+        child = self.start()
         session = 'a' * 64
         query_id = 'query-one'
-        query = self.raw('query', query='readLimit', request_id=query_id, session_id=session)
+        query = self.raw('query', query='readLimit', request_id=query_id, session_id=session, model_id='fixture/model-a')
         parent = hashlib.sha256(query_id.encode()).hexdigest()
         for current_session, expected in [(session, 'observed'), ('b' * 64, 'unverified')]:
             read = self.raw('read', path='limits.js', snapshot=query['result']['snapshot_id'],
@@ -479,6 +479,22 @@ class LocalServiceTests(unittest.TestCase):
             row = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
             self.assertEqual(row['follow_up'], expected)
         self.assertEqual(self.history(lambda h: h.get('observed_follow_ups') == 1)['correlated_requests'], 3)
+        history = self.history(lambda h: any(r['model_id'] == 'fixture/model-a' for r in h.get('model_cohorts', [])))
+        cohort = next(r for r in history['model_cohorts'] if r['model_id'] == 'fixture/model-a')
+        self.assertEqual(cohort, {'model_id': 'fixture/model-a', 'requests': 1, 'reported_sessions': 1})
+        for metadata in ({'model_id': 'fixture/model-a'}, {'session_id': session, 'model_id': 'bad model'}):
+            self.assertEqual(self.raw('query', **metadata)['error']['code'], 'service-request-invalid')
+        cli = self.run_ce('query', 'readLimit', '--service', '--session-id', 'CLI-PRIVATE-SESSION', '--model-id', 'fixture/model-b')
+        self.assertTrue(cli['request_trace']['session_correlated'])
+        self.assertEqual(cli['request_trace']['model_id'], 'fixture/model-b')
+        self.assertNotIn('CLI-PRIVATE-SESSION', json.dumps(self.raw('service-status')))
+        self.history(lambda h: any(r['model_id'] == 'fixture/model-b' for r in h.get('model_cohorts', [])))
+        self.run_ce('service-stop')
+        child.communicate(timeout=15)
+        self.start()
+        persisted = self.history(lambda h: bool(h.get('model_cohorts')))
+        self.assertTrue(any(r['model_id'] == 'fixture/model-b' and r['requests'] == 1 for r in persisted['model_cohorts']))
+
         refused = self.raw('query', session_id='PRIVATE-SESSION')
         self.assertEqual(refused['error']['code'], 'service-request-invalid')
         self.assertNotIn('PRIVATE-SESSION', json.dumps(self.raw('service-status')['result']['telemetry']['request_metrics']))

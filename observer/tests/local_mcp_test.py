@@ -169,10 +169,12 @@ class McpTests(unittest.TestCase):
     def test_explicit_chat_identity_and_query_follow_up_are_private(self):
         self.start()
         child = self.adapter()
-        args = {'query': 'readLimit', 'session_id': 'PRIVATE-CHAT-123'}
+        args = {'query': 'readLimit', 'session_id': 'PRIVATE-CHAT-123', 'model_id': 'fixture-model-v1'}
         query = self.tool(child, 'shin_query', args)
         trace = query['request_trace']
         self.assertTrue(trace['session_correlated'])
+        self.assertEqual(trace['model_attribution'], 'caller-reported')
+        self.assertEqual(trace['model_id'], 'fixture-model-v1')
         self.assertEqual(len(trace['request_id']), 64)
         result = self.tool(child, 'shin_read', {'path': 'limits.js', 'snapshot': query['snapshot_id'],
             'session_id': args['session_id'], 'parent_request_id': trace['request_id']})
@@ -182,6 +184,16 @@ class McpTests(unittest.TestCase):
         self.assertEqual(metrics['recent'][-1]['session_id'], metrics['recent'][-2]['session_id'])
         self.assertNotIn('PRIVATE-CHAT', json.dumps(metrics))
         self.assertEqual(metrics['task_outcome'], 'not-observed')
+        self.run_ce('query', 'readLimit', '--service', '--session-id', args['session_id'], '--model-id', 'fixture-model-v2')
+        latest = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
+        self.assertEqual(latest['session_id'], metrics['recent'][-2]['session_id'])
+        self.assertEqual(latest['model_id'], 'fixture-model-v2')
+
+        self.assertEqual(metrics['recent'][-2]['model_id'], 'fixture-model-v1')
+        self.assertEqual(metrics['recent'][-1].get('model_id', ''), '')  # Never inherit a previous turn's model.
+        for invalid in ({'query': 'readLimit', 'model_id': 'fixture-model'},
+                        {'query': 'readLimit', 'session_id': 'real-session', 'model_id': 'bad\nmodel'}):
+            self.assertFalse(self.tool(child, 'shin_query', invalid)['ok'])
         bad = self.tool(child, 'shin_read', {'path': 'limits.js', 'snapshot': query['snapshot_id'],
             'session_id': args['session_id'], 'parent_request_id': 'x' * 64})
         self.assertFalse(bad['ok'])

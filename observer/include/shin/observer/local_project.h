@@ -1,8 +1,16 @@
 #pragma once
 #include "observer.h"
 #include <vector>
+#include <algorithm>
 
 namespace shin::observer {
+// Caller-reported identifier, never inferred from a shared process or used for authority.
+inline bool valid_reported_model(const std::string& value) {
+    return !value.empty() && value.size() <= 64 && std::all_of(value.begin(), value.end(), [](unsigned char c) {
+        return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') || (c >= '0' && c <= '9') ||
+            c == '.' || c == '-' || c == '_' || c == ':' || c == '/';
+    });
+}
 class LocalQuerySession;
 struct LocalProjectRequest {
     std::string command;
@@ -23,7 +31,7 @@ struct LocalProjectRequest {
     std::string config_revision;
     bool diagnostic = false;
     // Optional opaque telemetry only; never used for project authority.
-    std::string session_id, parent_request_id;
+    std::string session_id, parent_request_id, model_id;
     // Internal reconciliation token, never accepted from a CLI argument.
     std::string maintenance_worktree;
     std::string maintenance_root_identity;

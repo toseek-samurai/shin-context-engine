@@ -5,7 +5,7 @@ description: Retrieve verified code and docs through Shin 2.0 before broad repos
 
 # Shin Context
 
-Use Shin for discovery/context recovery; read known files directly.
+Use Shin first for unfamiliar code/context recovery; read known files directly.
 Read [reader selection](references/reader-selection.md) before discovery or read recovery.
 
 Use Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
@@ -24,10 +24,9 @@ Retrieval grants no execution, publication or installation authority. Read the r
 3. Use `shin_inspect` and `shin_read` for returned SOURCE locators with the exact
    snapshot and project-relative path. In multi-project MCP pass `mcp_snapshot`
    from that response and the same `project`; single-root MCP uses `snapshot_id`. Read documents without SOURCE locators directly.
-   Requery after a snapshot change. Sources and tests,
-   not a retrieval preview, establish implementation and execution claims.
+   Requery after a snapshot change. Sources/tests establish implementation and execution claims.
 
-For optional chat/request correlation, use [session guidance](references/session-resume.md).
+Pass available real session IDs on project calls; see [session guidance](references/session-resume.md).
 
 
 On failure, follow `recovery`; use `shin_help` if advertised.

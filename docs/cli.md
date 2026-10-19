@@ -114,7 +114,29 @@ Diagnostic calls are explicitly tagged. Other calls remain unclassified: they
 may include agent traffic, CLI checks or installation probes. `reported_sessions`
 counts distinct valid opaque IDs actually supplied by callers (bounded to 256 for
 the run and 64 per project, with `+` displayed on overflow). Calls without such an
-ID are shown separately. These numbers do not identify models or measure all chats.
+ID are shown separately. Session counts do not identify models or measure all chats.
 Catalog/help calls handled inside the MCP adapter and service monitoring polls are
 excluded; client token counters are a different measurement. No historical status
 or missing session information is fabricated.
+
+### Session and model attribution (dev.14)
+
+For unfamiliar code in enrolled projects, agents use Shin first; known files and
+symbols can be read directly. If retrieval fails or is insufficient, continue
+with ordinary sources. There are no call quotas or per-edit rituals.
+
+MCP project tools accept the actual host `session_id` and, when explicitly known,
+`model_id` for that call. A model ID requires a session ID. The adapter hashes the
+session before local RPC; raw chat IDs are not stored in telemetry. It never derives
+a chat or model from shared process state. Clients must omit unavailable metadata
+and refresh model identity after a model switch. The CLI offers `--session-id`,
+`--model-id`, and `--parent-request-id` (read/inspect only). Use only flags/schema
+fields advertised by the installed version.
+
+Model labels are **caller-reported, not verified**. Current-service activity shows
+up to 16 labels and separate unknown/overflow call counts. Historical request rows
+retain the model with the opaque session; `history.model_cohorts` summarizes up to
+16 labels, with a truncation flag. Empty model IDs mean unknown, including legacy
+rows. This additive history column preserves earlier rows and allows older readers
+to ignore it. Status calls remain current-run only. Token-usage records are separate;
+no join by timestamp, project or default model is used to claim attribution.

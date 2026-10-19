@@ -30,3 +30,26 @@ If present, the file resolved by
 preparation context. It is not a product input or a publishable file. Do not copy
 its contents into public documentation. Its absence must not affect builds or
 tests after product sources are imported.
+
+<!-- shin-discovery-policy-start -->
+## Shin discovery and attribution
+
+For enrolled projects, use Shin first for unfamiliar code, context recovery and
+contract discovery, before broad filesystem or semantic searches. Select the exact
+project and verify readiness; then ask one focused question. Read known files and
+symbols directly with file tools, rg/jq or the IDE. Do not repeat successful discovery.
+If Shin is unavailable, blocked or insufficient, report the limitation and continue
+with direct sources or another search tool. Preserve project authority and freshness
+rules; never repair a managed index just to retrieve context. No call quotas,
+per-edit/per-read rituals, or Shin dependency for builds/tests/CI.
+
+When the tool schema supports it, pass the real current host session ID as
+`session_id` on project calls (Codex: read `CODEX_THREAD_ID` from this chat's shell
+once). Reuse it across projects in that chat; delegates use their own actual IDs.
+Pass `model_id` only when the host explicitly identifies the current model and the
+schema supports it; refresh it after a model switch. Do not infer it from a client,
+previous turn, default setting, title or process. Omit unknown values. These labels
+are caller-reported statistics, not verified model identity or task success. For
+read/inspect following a query, also pass its `request_trace.request_id` as
+`parent_request_id` when supported. Never persist a chat ID into shared MCP config.
+<!-- shin-discovery-policy-end -->

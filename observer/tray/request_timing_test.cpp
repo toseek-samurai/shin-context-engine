@@ -12,6 +12,12 @@ int main() try {
         {"diagnostic",1},{"uncorrelated",2},{"reported_sessions",64},{"sessions_truncated",true}}}};
     auto lines = shin::ui::service_activity_lines(activity);
     assert(lines.size() == 5 && lines[3].find("64+") != std::string::npos);
+    activity["activity"]["models"] = {{"fixture-model", std::uint64_t{2}}};
+    activity["activity"]["model_unknown"] = 3;
+    activity["activity"]["model_overflow"] = 1;
+    lines = shin::ui::service_activity_lines(activity);
+    assert(lines.size() == 5 && lines[4].find("fixture-model 2") != std::string::npos);
+    assert(lines[4].find("unknown: 3") != std::string::npos);
     activity["activity"]["calls"]["query"] = -1;
     assert(shin::ui::service_activity_lines(activity).empty());
     activity["activity"]["calls"]["query"] = "2";

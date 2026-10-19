@@ -227,14 +227,17 @@ int run(int argc, char** argv, char** environment) {
                 {"pattern", "^[A-Za-z0-9_.-]+$"},
                 {"description", "Optional error.code from a Shin response. Omit for workflow and escalation guidance."}};
         if (project_operation) {
+            properties["model_id"] = {{"type", "string"}, {"minLength", 1}, {"maxLength", 64},
+                {"pattern", "^[A-Za-z0-9_.:/-]+$"},
+                {"description", "Current model ID explicitly provided by the host for this call, with session_id. Caller-reported, not verified. Omit when unknown; never guess from client name or past turns."}};
             properties["session_id"] = {{"type", "string"}, {"minLength", 1}, {"maxLength", 128},
-                {"description", "Optional actual chat/session ID for local statistics; hashed before transport. Never grants access."}};
+                {"description", "Pass the actual current host chat/session ID when available; omit if unknown. Hashed before transport. Never use a project, process or invented ID."}};
             if (method == "inspect" || method == "read")
                 properties["parent_request_id"] = {{"type", "string"}, {"minLength", 64}, {"maxLength", 64},
                     {"pattern", "^[0-9a-f]{64}$"}, {"description", "Optional request_trace.request_id from the query being followed."}};
         }
         mcp::ToolOptions tool;
-        std::string description = method == "query" ? "Find verified project code and documentation for a focused question." :
+        std::string description = method == "query" ? "Use first for unfamiliar project code or context recovery, before broad searches. Ask one focused question; read known files directly. No call quotas." :
             method == "inspect" ? "Inspect declarations in a project-relative file at the query snapshot." :
             method == "read" ? "Read an indexed source file from a query SOURCE locator, using its exact snapshot and project-relative path. Document-only evidence and files outside source coverage require an authorized ordinary local reader. After snapshot mismatch, query the same project again before reading." :
             method == "help" ? "Explain Shin failures and safe next steps: retry, correct the request, review project inputs, ask the owner, or contact Shin maintainers. Static help; no project access or live diagnosis." :
@@ -261,7 +264,7 @@ int run(int argc, char** argv, char** environment) {
                         ((method == "inspect" || method == "read") && (key == "path" || key == "snapshot")) ||
                         (method == "help" && key == "error_code") ||
                         (scopes && project_operation && key == "project") ||
-                        (project_operation && key == "session_id") ||
+                        (project_operation && (key == "session_id" || key == "model_id")) ||
                         ((method == "inspect" || method == "read") && key == "parent_request_id");
                     if (!allowed) throw Error("invalid-arguments", "Unknown argument; project binding cannot be overridden.");
                 }
@@ -285,6 +288,11 @@ int run(int argc, char** argv, char** environment) {
                     // process identity is not a chat and must never substitute for it.
                     if (args.contains("session_id"))
                         request.session_id = digest("shin-session-v1:" + base.home.string() + ":" + argument(args, "session_id", 128));
+                    if (args.contains("model_id")) {
+                        request.model_id = argument(args, "model_id", 64);
+                        if (request.session_id.empty() || !valid_reported_model(request.model_id))
+                            throw Error("invalid-arguments", "Model attribution requires a real session and a bounded model ID.");
+                    }
                     if (args.contains("parent_request_id")) {
                         request.parent_request_id = argument(args, "parent_request_id", 64);
                         if (request.parent_request_id.size() != 64 || !std::all_of(request.parent_request_id.begin(), request.parent_request_id.end(), [](char c) {

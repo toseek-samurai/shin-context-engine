@@ -79,14 +79,14 @@ jobs:
               -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON -DSHIN_OBSERVER_MCP=ON
           fi
       - name: Build
-        run: cmake --build "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4
+        run: python3 tools/ci_progress.py build -- cmake --build "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4
       - name: Compiler cache statistics
         if: always()
         run: |
           ccache --show-stats --verbose
           ccache --print-stats > "$RUNNER_TEMP/ccache-stats.tsv"
       - name: Tests
-        run: ctest --test-dir "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4 --output-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/${{ matrix.component }}-tests.xml"
+        run: python3 tools/ci_progress.py tests -- ctest --test-dir "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4 --output-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/${{ matrix.component }}-tests.xml"
       - name: Strict source profiles
         if: matrix.component == 'core'
         run: python3 tools/verify_source_profiles.py "$RUNNER_TEMP/core/shin-context" "$RUNNER_TEMP/profile-proof"

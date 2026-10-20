@@ -37,7 +37,7 @@ struct LocalProjectRequest {
     std::string maintenance_root_identity;
     std::string maintenance_workspace_identity;
     std::function<bool()> maintenance_stop;
-    // Optional bounded refresh-stage observation; never participates in authority.
+    // Optional bounded stage observation (refresh and final reader verification); never authority.
     std::function<void(const std::string&)> maintenance_progress;
     // Private resident preparation hook, never accepted from CLI or RPC JSON.
     std::shared_ptr<LocalQuerySession>* query_session = nullptr;

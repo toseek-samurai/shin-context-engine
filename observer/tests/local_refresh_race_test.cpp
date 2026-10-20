@@ -427,6 +427,41 @@ void config_revision_during_final_verification(const fs::path& profiles) {
     }
 }
 
+void reader_final_binding_race(const fs::path& profiles, bool replace_binding) {
+    Fixture fixture(profiles);
+    const auto workspace = fixture.home / "projects" / digest(fixture.root.string());
+    StateStore reader(workspace, false);
+    const auto original = reader.load();
+    check(original.has_value(), "reader race binding missing");
+    std::unique_ptr<StateStore> writer;
+    bool injected = false;
+    fixture.request.command = "query";
+    fixture.request.query = "readLimit";
+    fixture.request.maintenance_progress = [&](const std::string& stage) {
+        if (stage != "final-verification" || injected) return;
+        writer = std::make_unique<StateStore>(workspace, true);
+        if (replace_binding) {
+            auto changed = *original;
+            changed["prepared_snapshot"] = "fnv1a64:0000000000000000";
+            writer->save(changed);
+        }
+        injected = true;
+    };
+    try {
+        (void)local_project(fixture.request);
+        throw std::runtime_error("reader returned context across final binding race");
+    } catch (const Error& error) {
+        check(injected, "reader final verification race was not injected");
+        check(error.code == (replace_binding ? "binding-changed" : "project-busy"),
+              "reader confused a maintenance writer with a changed binding");
+    }
+    writer->save(*original);
+    writer.reset();
+    fixture.request.maintenance_progress = {};
+    check(local_project(fixture.request).at("ok") == true,
+          "reader did not recover after unchanged writer released");
+}
+
 } // namespace
 
 int main(int argc, char** argv) {
@@ -454,6 +489,7 @@ int main(int argc, char** argv) {
                                 "generation-admission-changed", "file-changed-during-verification-other", "source-read-hash-mismatch"})
             hard_failure(profiles, code);
         config_revision_during_final_verification(profiles);
+        for (bool changed : {false, true}) reader_final_binding_race(profiles, changed);
         std::cout << "source races retry; real failures remain blocked\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

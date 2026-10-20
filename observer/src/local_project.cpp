@@ -1535,13 +1535,15 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         };
         *request.query_session = std::make_shared<LocalQuerySession>(config, workspace, config.state_dir / "source-cache", result, authority);
     }
-    refresh_stage(request, "final-verification");
+    // Native-only observation also lets reader races be tested at this boundary.
+    refresh_progress(request.maintenance_progress, "final-verification");
     if (options.generation_admission) options.generation_admission->verify_content(options);
     guard_existing_routes(root, home);
     if (local_project_lifecycle(workspace) != lifecycle || directory_identity(root) != root_identity ||
-        (!initialize && store.writer_present()) || store.load() != std::optional<Json>(binding) ||
-        config_reader.load() != config_document)
+        store.load() != std::optional<Json>(binding) || config_reader.load() != config_document)
         throw Error("binding-changed", "Project binding changed before returning the result.");
+    if (!initialize && store.writer_present())
+        throw Error("project-busy", "Project maintenance is in progress; retry the request.");
     if (result.dump(2).size() + 1 > 65536) throw Error("output-limit", "Response exceeds the bounded local view; narrow the query.");
     if (initialize && ready) qualify(readiness);
     if (initialize && ready && lifecycle.phase == "detached")

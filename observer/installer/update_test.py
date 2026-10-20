@@ -159,6 +159,22 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         stop_service()
         previous_fixture(owned=True, core_version='unsupported-core')
         call(*update, error='installation-core-transition-unsupported')
+        # The installed preview's Core dev.2 migrates without changing authority.
+        binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
+        previous_fixture(owned=True, version='2.0.5-dev.15', core_version='2.0.5-dev.2')
+        dev2_binding = json.loads(binding_path.read_text())
+        dev2_binding['core_version'] = '2.0.5-dev.2'
+        write_json(binding_path, dev2_binding, True)
+        assert call(*update)['changed']
+        dev3_binding = json.loads(binding_path.read_text())
+        assert dev3_binding['core_version'] == manifest['core_version']
+        for key in dev2_binding.keys() - {'core_version', 'prepared_snapshot'}:
+            assert dev3_binding[key] == dev2_binding[key], key
+        # Future/reverse Core transitions are refused before touching bindings.
+        previous_fixture(owned=True, version='2.0.5-dev.15', core_version='2.0.5-dev.4')
+        binding_before_refusal = binding_path.read_bytes()
+        call(*update, error='installation-core-transition-unsupported')
+        assert binding_path.read_bytes() == binding_before_refusal
         # This explicit format-preserving Core patch is admitted; unknown Core
         # identities remain refused above, including before any payload swap.
         previous_fixture(owned=True, version='2.0.5-dev.1', core_version='2.0.5-dev.1')

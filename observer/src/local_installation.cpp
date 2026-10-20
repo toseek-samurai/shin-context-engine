@@ -397,6 +397,11 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
         "installation-recovery-output", "Previous CLI did not confirm recovery.");
     return result;
 }
+bool compatible_core_patch(const std::string& from, const std::string& to) {
+    // Explicit format-preserving v22 transitions, never a generic version range.
+    return (from == "2.0.5-dev.1" && (to == "2.0.5-dev.2" || to == "2.0.5-dev.3")) ||
+           (from == "2.0.5-dev.2" && to == "2.0.5-dev.3");
+}
 Json bootstrap_identity(Json binding) {
     binding.erase("core_version");
     binding.erase("prepared_snapshot");
@@ -410,7 +415,7 @@ Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate)
         if (!binding) throw Error("binding-unavailable", "An enrolled project binding is missing.");
         if (binding->value("schema_version", "") != "shin.local-project-binding.v1" ||
             binding->value("core_version", "") == SHIN_VERSION) continue;
-        require(binding->value("core_version", "") == "2.0.5-dev.1" &&
+        require(compatible_core_patch(binding->value("core_version", ""), SHIN_VERSION) &&
             binding->value("generator_version", "") == "shin-generator-v22-compact-lexical",
             "refresh-engine-changed", "This private binding is outside the qualified Core patch transition.");
         (void)qualify_local_project(project, candidate); // Validate identity and policy without publication.
@@ -425,7 +430,7 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         const fs::path root = record.at("root").get<std::string>();
         require(record.at("binding").value("schema_version", "") == "shin.local-project-binding.v1" &&
             record.at("binding").value("root", "") == root.string() &&
-            record.at("binding").value("core_version", "") == "2.0.5-dev.1" &&
+            compatible_core_patch(record.at("binding").value("core_version", ""), SHIN_VERSION) &&
             record.at("binding").value("generator_version", "") == "shin-generator-v22-compact-lexical",
             "installation-state-invalid", "Bootstrap migration is outside the reviewed source contract.");
         const auto project = std::find_if(projects.begin(), projects.end(), [&](const auto& value) { return value.root == root; });
@@ -439,8 +444,9 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
                 "binding-identity-changed", "Bootstrap authority changed during kit migration.");
             return *current;
         };
-        const auto target = previous.empty() ? "2.0.5-dev.2" : "2.0.5-dev.1";
-        const auto other = previous.empty() ? "2.0.5-dev.1" : "2.0.5-dev.2";
+        const auto original = record.at("binding").at("core_version").get<std::string>();
+        const std::string target = previous.empty() ? SHIN_VERSION : original;
+        const std::string other = previous.empty() ? original : SHIN_VERSION;
         const auto current = load();
         if (current.at("core_version") == target) continue;
         require(current.at("core_version") == other, "refresh-engine-changed", "Unexpected bootstrap engine version.");
@@ -622,8 +628,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         verify_update_payload(prefix, state.at("kit"), state.at("receipt"));
         const auto migrations = state.value("resume_bootstrap_migrations", Json::array());
         if (!migrations.empty())
-            require(state.at("kit").at("core_version") == "2.0.5-dev.1" &&
-                state.at("previous").at("kit").at("core_version") == "2.0.5-dev.2",
+            require(compatible_core_patch(state.at("kit").at("core_version"),
+                state.at("previous").at("kit").at("core_version")),
                 "installation-state-invalid", "Interrupted bootstrap rollback has an incompatible kit pair.");
         owner.reset();
         migrate_bootstrap_patch(home, migrations, prefix / "bin/shin-ce");
@@ -638,11 +644,10 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         verify_update_payload(prefix, state.at("kit"), state.at("receipt")); links(state.at("receipt"), false, false);
         if (state.at("receipt").at("manifest_sha256").get<std::string>() == hash)
             return {{"ok", true}, {"command", "update"}, {"changed", false}, {"phase", "installed"}, {"version", kit.at("version")}, {"data_preserved", true}};
-        const bool recall_patch = state.at("kit").at("core_version") == "2.0.5-dev.1" &&
-            kit.at("core_version") == "2.0.5-dev.2";
+        const bool core_patch = compatible_core_patch(state.at("kit").at("core_version"), kit.at("core_version"));
         // Explicit format-preserving transition: v22 evidence rows and reader
         // contracts are unchanged; candidate admission still qualifies every root.
-        require(kit.at("core_version") == state.at("kit").at("core_version") || recall_patch,
+        require(kit.at("core_version") == state.at("kit").at("core_version") || core_patch,
             "installation-core-transition-unsupported", "This Core transition has no qualified data compatibility contract; the current kit was preserved.");
         require(release_order(kit.at("version")) > release_order(state.at("kit").at("version")),
             "installation-version-not-newer", "Update requires a newer kit version; altered same-version kits and downgrades are refused.");
@@ -650,7 +655,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         bool recover_publications = false;
         try { qualify_update(home, source / "bin/shin-ce"); }
         catch (const Error& error) {
-            if (!recall_patch || error.code != "installation-project-not-ready") throw;
+            if (!core_patch || error.code != "installation-project-not-ready") throw;
             recover_publications = true;
         }
         const auto bootstrap_migrations = recover_publications ? bootstrap_patch_migrations(home, source / "bin/shin-ce") : Json::array();
@@ -677,7 +682,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     (void)validate_manifest(update.at("old_kit"));
     if (!update.value("bootstrap_migrations", Json::array()).empty())
         require(update.value("recover_publications", false) &&
-            update.at("old_kit").at("core_version") == "2.0.5-dev.1" && kit.at("core_version") == "2.0.5-dev.2",
+            compatible_core_patch(update.at("old_kit").at("core_version"), kit.at("core_version")),
             "installation-state-invalid", "Bootstrap migration requires the qualified Core patch transition.");
     for (const auto* field : {"receipt", "old_receipt"}) {
         verify_record_locations(prefix, update.at(field));
@@ -738,8 +743,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         verify_files(prefix, kit, true);
         owner.reset(); // The operation lock remains held while the new child takes its startup fence.
         if (update.value("recover_publications", false)) {
-            require(update.at("old_kit").at("core_version") == "2.0.5-dev.1" &&
-                kit.at("core_version") == "2.0.5-dev.2", "installation-state-invalid",
+            require(compatible_core_patch(update.at("old_kit").at("core_version"), kit.at("core_version")), "installation-state-invalid",
                 "Publication recovery requires the qualified Core patch transition.");
             migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()));
             LocalProjectRequest request; request.home = home; request.command = "watch";

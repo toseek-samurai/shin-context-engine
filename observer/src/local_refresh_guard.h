@@ -103,6 +103,16 @@ inline Json classified_source_observation_tick(Json tick, const Json& classifica
     return tick;
 }
 
+inline int validate_refresh_candidate(const shin::context::RuntimeOptions& input, const fs::path& profiles,
+    const std::vector<std::string>& args, const std::function<void()>& authority,
+    const std::function<void()>& source_fence) {
+    // Keep cancellation invocation-local. A source/authority refusal escapes
+    // before the next gate; it never becomes a successful quality decision.
+    auto options = input;
+    options.validation_checkpoint = [&] { authority(); source_fence(); };
+    return shin::context::run_validate(options, profiles, args);
+}
+
 // A source-binding error alone does not prove a race: unchanged input must
 // retain the original failure, and changed authority always takes precedence.
 template<class Authority, class Verify, class Prepare>

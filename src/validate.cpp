@@ -334,23 +334,30 @@ int run_validate(const RuntimeOptions& input_options,
         eval_args.push_back("--failed-only");
     }
 
+    // Background publishers can reject a superseded candidate between gates.
+    // Run outside gate error capture: cancellation is not a quality verdict and
+    // must not trigger expensive independent audits on already obsolete input.
+    const auto execute = [&](std::string id, std::string domain, auto&& invoke) {
+        if (options.validation_checkpoint) options.validation_checkpoint();
+        return execute_validation_gate(std::move(id), std::move(domain), invoke);
+    };
     std::vector<ValidationGate> gates;
     gates.reserve(7);
-    gates.push_back(execute_validation_gate(
+    gates.push_back(execute(
         "profile-check", "configuration",
         [&]() { return run_profile_check(options, strict_args); }));
-    gates.push_back(execute_validation_gate(
+    gates.push_back(execute(
         "check", "index-integrity", [&]() { return run_check(options); }));
-    gates.push_back(execute_validation_gate(
+    gates.push_back(execute(
         "doctor", "index-integrity",
         [&]() { return run_doctor(options, strict_args); }));
-    gates.push_back(execute_validation_gate(
+    gates.push_back(execute(
         "vacuum", "index-integrity",
         [&]() { return run_vacuum(options, strict_args); }));
-    gates.push_back(execute_validation_gate(
+    gates.push_back(execute(
         "eval", "retrieval-quality",
         [&]() { return run_eval(options, eval_args); }));
-    gates.push_back(execute_validation_gate(
+    gates.push_back(execute(
         "pack-eval", "retrieval-quality",
         [&]() { return run_pack_eval(options, eval_args); }));
     if (validate_options.marker.has_value()) {
@@ -358,7 +365,7 @@ int run_validate(const RuntimeOptions& input_options,
         if (validate_options.strict) {
             adoption_args.push_back("--strict");
         }
-        gates.push_back(execute_validation_gate(
+        gates.push_back(execute(
             "adoption-check", "adoption",
             [&]() { return run_adoption_check(options.root, profile_dir, adoption_args); }));
     } else {
@@ -370,6 +377,7 @@ int run_validate(const RuntimeOptions& input_options,
         gates.push_back(std::move(skipped));
     }
 
+    if (options.validation_checkpoint) options.validation_checkpoint();
     int attempted = 0;
     int passed = 0;
     int failed = 0;

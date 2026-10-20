@@ -517,14 +517,14 @@ static bool is_source_doc_path(const Profile& profile, const std::string& path) 
 
 std::vector<std::string> enumerate_source_paths(const Profile& profile, const fs::path& root) {
     std::vector<std::string> paths;
+    // Explicit entries may alias the same file (hard links or case-insensitive
+    // spellings). Compare observed file identities once per entry, rather than
+    // re-statting every preceding pair on each freshness/validation pass.
+    std::set<std::pair<std::uint64_t, std::uint64_t>> explicit_files;
     auto append_unique_file = [&](const std::string& candidate) {
-        for (const std::string& existing : paths) {
-            std::error_code equivalent_ec;
-            if (fs::equivalent(root / existing, root / candidate, equivalent_ec) && !equivalent_ec) {
-                return;
-            }
-        }
-        paths.push_back(candidate);
+        const auto identity = source_file_metadata(root / candidate, "enumerate-source-entry");
+        if (explicit_files.emplace(identity.device_id, identity.file_id).second)
+            paths.push_back(candidate);
     };
     for (const std::string& root_file : profile.root_files) {
         if (profile_relative_path_valid(root_file) && !shin_internal_control_path(root_file) &&

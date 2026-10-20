@@ -52,6 +52,54 @@ void enumeration_is_lexical_and_keeps_coverage(const fs::path& parent) {
     fs::remove_all(outside, cleanup_ec);
 }
 
+void explicit_document_aliases_preserve_selection(const fs::path& parent) {
+    Fixture fixture(parent);
+    fs::create_directory(fixture.root / "notes");
+    std::ofstream(fixture.root / "notes/first.md") << "# Same bytes\n";
+    std::ofstream(fixture.root / "notes/distinct.md") << "# Same bytes\n";
+    fs::create_hard_link(fixture.root / "notes/first.md", fixture.root / "notes/alias.md");
+    Profile profile;
+    profile.source_extensions = {".md"};
+    profile.root_files = {"notes/first.md", "notes/first.md", "notes/distinct.md"};
+    profile.optional_root_files = {"notes/alias.md", "notes/missing.md"};
+    expect(enumerate_source_paths(profile, fixture.root) ==
+           std::vector<std::string>{"notes/distinct.md", "notes/first.md"},
+           "explicit aliases deduplicate by file identity, never content or list membership");
+    profile.root_files = {"notes/alias.md", "notes/distinct.md"};
+    profile.optional_root_files = {"notes/first.md"};
+    expect(enumerate_source_paths(profile, fixture.root) ==
+           std::vector<std::string>{"notes/alias.md", "notes/distinct.md"},
+           "first explicit spelling remains the selected alias");
+    std::error_code symlink_error;
+    fs::create_symlink(fixture.root / "notes/distinct.md", fixture.root / "notes/symlink.md", symlink_error);
+    if (!symlink_error) {
+        profile.root_files.push_back("notes/symlink.md");
+        expect(enumerate_source_paths(profile, fixture.root).size() == 2,
+               "symlink alias is not admitted");
+    }
+    // Each invocation observes identities anew, including replacements.
+    fs::remove(fixture.root / "notes/first.md");
+    std::ofstream(fixture.root / "notes/first.md") << "# Replacement\n";
+    expect(enumerate_source_paths(profile, fixture.root).size() == 3,
+           "replacement file identity must not reuse an earlier alias observation");
+}
+
+void explicit_document_inventory_at_scale(const fs::path& parent) {
+    Fixture fixture(parent);
+    fs::create_directory(fixture.root / "notes");
+    Profile profile;
+    std::vector<std::string> expected;
+    for (unsigned i = 0; i < 2048; ++i) {
+        const auto path = "notes/entry-" + std::to_string(i) + ".md";
+        std::ofstream(fixture.root / path) << "# Inventory\n";
+        profile.root_files.push_back(path);
+        expected.push_back(path);
+    }
+    std::sort(expected.begin(), expected.end());
+    expect(enumerate_source_paths(profile, fixture.root) == expected,
+           "large explicit inventory retains every selected file exactly once");
+}
+
 void errors_are_typed_and_safe() {
     for (const auto& [error, expected_code, expected_category] : {
              std::tuple{std::make_error_code(std::errc::no_such_file_or_directory),
@@ -105,6 +153,8 @@ int main(int argc, char** argv) {
     try {
         if (argc != 2) throw std::runtime_error("expected fixture parent");
         shin::context::enumeration_is_lexical_and_keeps_coverage(argv[1]);
+        shin::context::explicit_document_aliases_preserve_selection(argv[1]);
+        shin::context::explicit_document_inventory_at_scale(argv[1]);
         shin::context::errors_are_typed_and_safe();
         shin::context::disappeared_selected_source_is_changed(argv[1]);
         std::cout << "source-observation: lexical inventory and typed errors passed\n";

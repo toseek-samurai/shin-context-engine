@@ -338,7 +338,7 @@ void unchanged_qualification_failure(const fs::path& profiles, bool revoke, bool
     }
 }
 
-void config_revision_during_final_verification(const fs::path& profiles) {
+void config_revision_during_final_verification(const fs::path& profiles, bool source_change = false) {
     Fixture fixture(profiles);
     const auto external_home = fixture.base / "external-home";
     const auto external_index = fixture.base / "external-index";
@@ -405,25 +405,31 @@ void config_revision_during_final_verification(const fs::path& profiles) {
     attached.home = external_home;
     attached.profile_dir = permanent_profiles;
     attached.observer_config = config_file;
+    attached.manage_index = source_change;
     const auto attach_result = local_project(attached);
     if (attach_result.at("ok") != true)
         throw std::runtime_error("external route fixture attach failed: " + attach_result.dump());
 
     auto query = attached;
     query.command = "_refresh";
+    const auto generations_before = core::generation_execution_count();
     bool changed_at_final_verification = false;
     query.maintenance_progress = [&](const std::string& stage) {
-        if (stage != "final-verification" || changed_at_final_verification) return;
+        if (stage != (source_change ? "qualification" : "final-verification") || changed_at_final_verification) return;
         changed_at_final_verification = true;
-        std::ofstream(config_file, std::ios::app) << '\n';
+        if (source_change) std::ofstream(fixture.root / "README.md", std::ios::app) << "\nChanged retry ceiling.\n";
+        else std::ofstream(config_file, std::ios::app) << '\n';
     };
     try {
         (void)local_project(query);
-        throw std::runtime_error("configuration revision race was accepted");
+        throw std::runtime_error(source_change ? "managed source race was accepted" : "configuration revision race was accepted");
     } catch (const Error& error) {
         check(changed_at_final_verification, "config mutation did not run at final verification");
-        check(error.code == "route-revision-conflict",
-              "configuration revision changed at final verification lost route-revision-conflict classification");
+        check(error.code == (source_change ? "refresh-superseded" : "route-revision-conflict"),
+              "qualification race lost its source or authority classification");
+        if (source_change)
+            check(core::generation_execution_count() == generations_before,
+                  "moving sources triggered expensive full requalification");
     }
 }
 
@@ -489,6 +495,7 @@ int main(int argc, char** argv) {
                                 "generation-admission-changed", "file-changed-during-verification-other", "source-read-hash-mismatch"})
             hard_failure(profiles, code);
         config_revision_during_final_verification(profiles);
+        config_revision_during_final_verification(profiles, true);
         for (bool changed : {false, true}) reader_final_binding_race(profiles, changed);
         std::cout << "source races retry; real failures remain blocked\n";
         return 0;

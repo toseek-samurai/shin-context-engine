@@ -170,7 +170,7 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
     }
     const auto before_validation = grant ? core::generation_fingerprint(prepared_options) : "";
     const auto checked = prepare_with_source_fence(verify_authority, source_fence, [&] {
-        return grant ? core_result([&] { return core::run_validate(prepared_options, config.profile_dir, validation_args); }) :
+        return grant ? core_result([&] { return validate_refresh_candidate(prepared_options, config.profile_dir, validation_args, verify_authority, source_fence); }) :
                        bootstrap_readiness(prepared_options);
     });
     if (checked.at("ok") != true) {
@@ -505,6 +505,7 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
         }
     }
     options.generation_admission.reset();
+    if (options.validation_checkpoint) options.validation_checkpoint();
     std::string before;
     std::exception_ptr capture_error;
     try { before = core::generation_fingerprint(options); }
@@ -950,7 +951,9 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     const auto admission_started = core::SteadyClock::now();
     refresh_stage(request, "qualification");
     RefreshMeasurements qualification_metrics;
+    if (refresh && grant.active()) options.validation_checkpoint = verify_refresh_source;
     auto readiness = qualified_readiness(options, args, config, workspace, quality_binding, quality_key, published_qualification, &qualification_metrics);
+    options.validation_checkpoint = {};
     const double admission_ms = core::elapsed_ms_since(admission_started);
     const auto observer = observer_status(config);
     const auto& state = observer.at("state");

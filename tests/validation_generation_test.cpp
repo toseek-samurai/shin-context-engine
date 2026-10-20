@@ -1,5 +1,6 @@
 #include "context_internal.h"
 #include "validation_generation.h"
+#include "worktree_state.h"
 #include "generated_io.h"
 #include <chrono>
 
@@ -51,6 +52,30 @@ void test(const fs::path& base, const fs::path& registry) {
            "aggregate strict validation did not share its expected generation");
     for (const auto& [path, bytes] : expected.files)
         expect(read_file(options.out_root / path) == bytes, "validation mutated the index");
+
+    // A native publisher must stop before auditing later gates when its source
+    // fence changes. Standalone validation above still attempts every gate.
+    const auto inventory = observe_worktree(options);
+    const auto source_before_cancel = read_file(options.root / "src/value.js");
+    auto background = options;
+    unsigned checkpoints = 0;
+    background.validation_checkpoint = [&] {
+        if (++checkpoints == 3)
+            write(options.root / "src/value.js", "export function value() { return 8; }\n");
+        require_worktree_stable(options, inventory);
+    };
+    before = generation_execution_count();
+    bool cancelled = false;
+    try { (void)capture([&] { return run_validate(background, options.profile_dir, {"--strict"}); }); }
+    catch (const CliError& error) {
+        expect(error.code() == "file-changed-during-verification", "publisher cancellation lost source-race classification");
+        cancelled = true;
+    }
+    expect(cancelled && checkpoints == 3 && generation_execution_count() == before + 1,
+           "superseded validation continued expensive later gates");
+    for (const auto& [path, bytes] : expected.files)
+        expect(read_file(options.out_root / path) == bytes, "cancelled validation mutated the index");
+    write(options.root / "src/value.js", source_before_cancel);
 
     const auto invalidates = [&](auto mutate, auto restore) {
         auto current = std::make_shared<ValidationGeneration>(options);

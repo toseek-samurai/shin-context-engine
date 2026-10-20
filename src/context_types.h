@@ -244,6 +244,8 @@ struct RuntimeOptions {
     std::shared_ptr<const GeneratedSnapshot> generated_snapshot;
     std::shared_ptr<const GenerationAdmission> generation_admission;
     std::shared_ptr<ValidationGeneration> validation_generation;
+    // Native caller cancellation/freshness fence; cannot admit or skip a gate.
+    std::function<void()> validation_checkpoint;
 };
 
 struct FileMetadata {

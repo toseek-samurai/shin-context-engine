@@ -20,6 +20,8 @@ for folder in ('observer/ui', 'observer/tui', 'observer/tray'):
         text = path.read_text()
         for literal in re.findall(r'(?:\btr|ui_text)\((' + string + r')\)', text):
             assert json.loads(literal) in catalog, (path, literal, 'missing translation')
+        for literal in re.findall(r'live_(?:label|button)\((' + string + r')', text) + re.findall(r'live_text\([^;\n]*?,\s*@"[^"]+",\s*(' + string + r')\)', text):
+            assert json.loads(literal) in catalog, (path, literal, 'missing live translation')
         for literal in re.findall(string, text):
             value = json.loads(literal)
             assert not re.search('[А-Яа-яЁё]', value) or value == 'Русский', (path, value, 'untranslated Russian literal')

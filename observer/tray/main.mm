@@ -23,6 +23,8 @@ NSString* ui_text(const char* message) {
     NSString* fallback = [NSString stringWithUTF8String:message];
     return fallback ? fallback : @"Shin";
 }
+#include "native_language.h"
+
 NSString* storage_bytes(std::uint64_t bytes) {
     if (!bytes) return ui_text("0 B");
     if (bytes < 1024) return [NSString stringWithFormat:ui_text("%llu B"), static_cast<unsigned long long>(bytes)];
@@ -113,17 +115,22 @@ NSString* cleanup_result_message(const Json& result) {
     return [NSString stringWithFormat:ui_text("Cleanup did not complete. %@"), friendly_cleanup_error(code)];
 }
 void release_project_operation() { project_management_busy.store(false); }
+std::string platform_system_language() {
+    for (NSString* preferred in NSLocale.preferredLanguages)
+        if (shin::ui::supported_language(preferred.UTF8String)) return preferred.UTF8String;
+    return "en";
+}
 void platform_save_language(int preference) {
+#if defined(SHIN_TRAY_LAYOUT_TEST)
+    (void)preference;
+#else
     [[NSUserDefaults standardUserDefaults] setInteger:preference forKey:@"ShinLanguage"];
+#endif
+    // Apply native labels after this ImGui frame, on the same UI thread.
+    dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(refreshLanguage:) to:NSApp.delegate from:nil]; });
 }
 [[maybe_unused]] void initialize_language() {
-    language_preference = static_cast<int>(std::clamp<NSInteger>([[NSUserDefaults standardUserDefaults] integerForKey:@"ShinLanguage"], 0, 2));
-    applied_language_preference = language_preference;
-    const char* system = "en";
-    for (NSString* preferred in NSLocale.preferredLanguages) {
-        if (shin::ui::supported_language(preferred.UTF8String)) { system = preferred.UTF8String; break; }
-    }
-    shin::ui::set_language(shin::ui::resolve_language(language_preference == 1 ? "en" : language_preference == 2 ? "ru" : "auto", system));
+    apply_language_preference(static_cast<int>([[NSUserDefaults standardUserDefaults] integerForKey:@"ShinLanguage"]));
 }
 void platform_save_view(int view) {
     [[NSUserDefaults standardUserDefaults] setInteger:view forKey:@"ShinView"];
@@ -327,7 +334,9 @@ static std::unique_ptr<Monitor> monitor;
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size { (void)view; (void)size; }
 @end
 
-@interface ShinApp : NSObject<NSApplicationDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate>
+@interface ShinApp : NSObject<NSApplicationDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate> {
+    Json _storageStatus;
+}
 @property(nonatomic, strong) NSStatusItem* item;
 @property(nonatomic, strong) NSPopover* popover;
 @property(nonatomic, strong) ShinView* content;
@@ -364,6 +373,7 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSMutableString* setupReport;
 @property(nonatomic, copy) NSString* setupConnectRoot;
 @property(nonatomic) BOOL setupConnecting;
+- (void)refreshLanguage:(id)sender;
 - (void)toggle:(id)sender;
 - (void)showDiagnosticReport:(id)sender;
 - (void)copyDiagnosticReport:(id)sender;
@@ -545,13 +555,13 @@ static std::unique_ptr<Monitor> monitor;
     (void)sender;
     [self closePanel:nil];
     NSOpenPanel* picker = [NSOpenPanel openPanel];
-    picker.title = ui_text("Add a project folder"); picker.prompt = ui_text("Connect");
+    live_text(picker, @"title", "Add a project folder"); picker.prompt = ui_text("Connect");
     picker.canChooseDirectories = YES; picker.canChooseFiles = NO; picker.canCreateDirectories = NO;
     const auto response = [picker runModal];
     NSString* root = picker.URL.path;
     if (response != NSModalResponseOK || !root) { release_project_operation(); return; }
     self.setupChoose.enabled = NO;
-    self.setupStatus.stringValue = ui_text("Preparing project… This can take a moment on the first import.");
+    live_text(self.setupStatus, @"stringValue", "Preparing project… This can take a moment on the first import.");
     [self runCLI:@"project-add" arguments:@[@"--root", root] completion:^(Json result, NSString* failure) {
         const bool serviceFailed = result.contains("service") && result.at("service").is_object() &&
             result.at("service").contains("ok") && result.at("service").at("ok").is_boolean() && !result.at("service").at("ok").get<bool>();
@@ -572,7 +582,7 @@ static std::unique_ptr<Monitor> monitor;
         if (added) {
             self.setupRoot = root;
             [self showSetup:nil];
-            self.setupStatus.stringValue = ui_text("Project added. Select the agents that should have access.");
+            live_text(self.setupStatus, @"stringValue", "Project added. Select the agents that should have access.");
             return;
         }
         self.setupStatus.stringValue = message;
@@ -635,15 +645,29 @@ static std::unique_ptr<Monitor> monitor;
     }];
 }
 
+- (void)refreshLanguage:(id)sender {
+    (void)sender;
+    refresh_setup_status(self.setupStatus);
+    refresh_native_captions();
+    if (_storageStatus.is_object()) {
+        const auto policyState = self.storageAutoClean.state;
+        const bool policyEnabled = self.storageAutoClean.enabled, cleanEnabled = self.storageClean.enabled;
+        [self applyStorageStatus:_storageStatus];
+        self.storageAutoClean.state = policyState;
+        self.storageAutoClean.enabled = policyEnabled; self.storageClean.enabled = cleanEnabled;
+    }
+    [self.setupWindow.contentView layoutSubtreeIfNeeded];
+}
+
 - (void)ensureStorageWindow {
     if (self.storageWindow) return;
     NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 760, 580)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
         backing:NSBackingStoreBuffered defer:NO];
-    window.title = ui_text("Shin storage"); window.releasedWhenClosed = NO; window.delegate = self;
+    live_text(window, @"title", "Shin storage"); window.releasedWhenClosed = NO; window.delegate = self;
     window.contentMinSize = NSMakeSize(720, 500);
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-    NSTextField* text = [NSTextField wrappingLabelWithString:ui_text("Reading storage inventory…")];
+    NSTextField* text = live_label("Reading storage inventory…");
     text.font = [NSFont systemFontOfSize:13]; text.translatesAutoresizingMaskIntoConstraints = NO;
     NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0,0,716,200)];
     scroll.translatesAutoresizingMaskIntoConstraints = NO; scroll.hasVerticalScroller = YES;
@@ -654,23 +678,23 @@ static std::unique_ptr<Monitor> monitor;
     table.style = NSTableViewStyleFullWidth; table.intercellSpacing = NSMakeSize(6,0);
     table.columnAutoresizingStyle = NSTableViewFirstColumnOnlyAutoresizingStyle;
     NSArray* keys = @[@"project",@"used_bytes",@"index_bytes",@"cache_bytes",@"other_bytes",@"reclaimable_bytes"];
-    NSArray* titles = @[ui_text("Project"),ui_text("Total"),ui_text("Indexes"),ui_text("Caches"),ui_text("Other"),ui_text("Reclaimable")];
+    const char* titles[]{"Project", "Total", "Indexes", "Caches", "Other", "Reclaimable"};
     for (NSUInteger i=0;i<keys.count;++i) {
         NSTableColumn* column = [[NSTableColumn alloc] initWithIdentifier:keys[i]];
-        column.title = titles[i]; column.width = i==0 ? 240 : i==5 ? 90 : 80;
+        live_text(column, @"title", titles[i]); column.width = i==0 ? 240 : i==5 ? 90 : 80;
         column.resizingMask = i==0 ? NSTableColumnAutoresizingMask : NSTableColumnNoResizing;
         column.minWidth = i==0 ? 200 : 80;
         column.headerCell.alignment = i==0 ? NSTextAlignmentLeft : NSTextAlignmentRight;
         [table addTableColumn:column];
     }
     scroll.documentView = table;
-    NSTextField* note = [NSTextField wrappingLabelWithString:ui_text("File sizes outside projects. Data may change during updates; choose Refresh for a new inventory. Manual builds and diagnostics are excluded. Cleanup preserves sources, indexes and history.")];
+    NSTextField* note = live_label("File sizes outside projects. Data may change during updates; choose Refresh for a new inventory. Manual builds and diagnostics are excluded. Cleanup preserves sources, indexes and history.");
     note.translatesAutoresizingMaskIntoConstraints = NO; note.font = [NSFont systemFontOfSize:12];
     note.textColor = NSColor.secondaryLabelColor;
-    NSButton* policy = [NSButton checkboxWithTitle:ui_text("Automatically clean search caches of disconnected projects") target:self action:@selector(toggleStorageAutoClean:)];
+    NSButton* policy = live_button("Automatically clean search caches of disconnected projects", self, @selector(toggleStorageAutoClean:), true);
     policy.translatesAutoresizingMaskIntoConstraints = NO;
-    NSButton* refresh = [NSButton buttonWithTitle:ui_text("Refresh") target:self action:@selector(refreshStorage:)]; refresh.translatesAutoresizingMaskIntoConstraints = NO;
-    NSButton* clean = [NSButton buttonWithTitle:ui_text("Clean search caches…") target:self action:@selector(cleanStorage:)]; clean.translatesAutoresizingMaskIntoConstraints = NO;
+    NSButton* refresh = live_button("Refresh", self, @selector(refreshStorage:)); refresh.translatesAutoresizingMaskIntoConstraints = NO;
+    NSButton* clean = live_button("Clean search caches…", self, @selector(cleanStorage:)); clean.translatesAutoresizingMaskIntoConstraints = NO;
     for (NSView* view in @[text,scroll,note,policy,refresh,clean]) [window.contentView addSubview:view];
     [NSLayoutConstraint activateConstraints:@[
         [text.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:22],
@@ -736,6 +760,7 @@ static std::unique_ptr<Monitor> monitor;
     return cell;
 }
 - (void)applyStorageStatus:(const Json&)status {
+    _storageStatus = status;
     const auto used=json_uint(status,"used_bytes"), shared=json_uint(status,"shared_bytes");
     NSDateFormatter* formatter = [[NSDateFormatter alloc] init];
         formatter.locale = [NSLocale localeWithLocaleIdentifier:shin::ui::language() == shin::ui::Language::ru ? @"ru_RU" : @"en_US"];
@@ -774,7 +799,8 @@ static std::unique_ptr<Monitor> monitor;
 - (void)refreshStorage:(id)sender {
     (void)sender;
     const auto epoch=++self.storageRequestEpoch;
-    self.storageText.stringValue = ui_text("Reading storage inventory…");
+    _storageStatus = Json();
+    live_text(self.storageText, @"stringValue", "Reading storage inventory…");
     self.storageClean.enabled = NO; self.storageAutoClean.enabled = NO;
     [self runCLI:@"storage-status" arguments:@[] completion:^(Json status, NSString* failure) {
         if (epoch!=self.storageRequestEpoch) return;
@@ -795,8 +821,9 @@ static std::unique_ptr<Monitor> monitor;
         return;
     }
     self.storageAutoClean.enabled = NO; self.storageClean.enabled = NO;
+    _storageStatus = Json();
     const bool enable = self.storageAutoClean.state == NSControlStateValueOn;
-    self.storageText.stringValue = ui_text("Saving automatic cleanup setting…");
+    live_text(self.storageText, @"stringValue", "Saving automatic cleanup setting…");
     [self runCLI:@"storage-policy" arguments:@[@"--auto-clean", enable ? @"on" : @"off"] completion:^(Json result, NSString* failure) {
         if (failure || !result.value("ok", false)) {
             self.storageAutoClean.state = self.storageAutoCleanEnabled ? NSControlStateValueOn : NSControlStateValueOff;
@@ -813,7 +840,8 @@ static std::unique_ptr<Monitor> monitor;
     bool expected = false;
     if (!project_management_busy.compare_exchange_strong(expected, true)) return;
     self.storageClean.enabled = NO; self.storageAutoClean.enabled = NO;
-    self.storageText.stringValue = ui_text("Checking search caches of disconnected projects…");
+    _storageStatus = Json();
+    live_text(self.storageText, @"stringValue", "Checking search caches of disconnected projects…");
     // A fresh status response supplies the revision used for both preview and cleanup.
     [self runCLI:@"storage-status" arguments:@[] completion:^(Json status, NSString* failure) {
         if (failure || !status.value("ok", false)) {
@@ -823,7 +851,7 @@ static std::unique_ptr<Monitor> monitor;
         const auto bytes = status.value("reclaimable_bytes", 0ULL);
         const auto revision = status.value("revision", std::string{});
         if (!bytes || revision.empty()) {
-            self.storageText.stringValue = ui_text("No search caches of disconnected projects to clean.");
+            live_text(self.storageText, @"stringValue", "No search caches of disconnected projects to clean.");
             release_project_operation(); [self refreshStorage:nil]; return;
         }
         NSAlert* alert = [[NSAlert alloc] init]; alert.messageText = ui_text("Clean Shin search caches?");
@@ -831,7 +859,7 @@ static std::unique_ptr<Monitor> monitor;
         [alert addButtonWithTitle:ui_text("Clean caches")]; [alert addButtonWithTitle:ui_text("Cancel")];
         if ([alert runModal] != NSAlertFirstButtonReturn) { release_project_operation(); [self refreshStorage:nil]; return; }
         NSString* revisionText = [NSString stringWithUTF8String:revision.c_str()];
-        self.storageText.stringValue = ui_text("Cleaning search caches…");
+        live_text(self.storageText, @"stringValue", "Cleaning search caches…");
         [self runCLI:@"storage-clean" arguments:@[@"--revision", revisionText ? revisionText : @""] completion:^(Json cleaned, NSString* cleanFailure) {
             self.storageText.stringValue = cleanFailure.length ? cleanFailure : cleanup_result_message(cleaned);
             release_project_operation();
@@ -852,7 +880,7 @@ static std::unique_ptr<Monitor> monitor;
         std::min(600.0, available.width - 32), std::min(660.0, available.height - 48))
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable | NSWindowStyleMaskResizable
         backing:NSBackingStoreBuffered defer:NO];
-    window.title = ui_text("Project report · Shin");
+    live_text(window, @"title", "Project report · Shin");
     window.releasedWhenClosed = NO;
     window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     window.minSize = NSMakeSize(360, 320);
@@ -894,13 +922,13 @@ static std::unique_ptr<Monitor> monitor;
         codeStyle.lineBreakMode = NSLineBreakByCharWrapping;
         [text.textStorage addAttribute:NSParagraphStyleAttributeName value:codeStyle range:range];
     }
-    text.accessibilityLabel = ui_text("Project status report");
+    live_text(text, @"accessibilityLabel", "Project status report");
     scroll.documentView = text;
-    NSButton* copy = [NSButton buttonWithTitle:ui_text("Copy diagnostics") target:self action:@selector(copyDiagnosticReport:)];
+    NSButton* copy = live_button("Copy diagnostics", self, @selector(copyDiagnosticReport:));
     copy.image = [NSImage imageWithSystemSymbolName:@"doc.on.doc" accessibilityDescription:nil];
     copy.imagePosition = NSImageLeading;
     copy.translatesAutoresizingMaskIntoConstraints = NO;
-    NSTextField* note = [NSTextField labelWithString:ui_text("Last received observation")];
+    NSTextField* note = live_label("Last received observation", false);
     note.textColor = NSColor.secondaryLabelColor;
     note.font = [NSFont systemFontOfSize:12];
     note.lineBreakMode = NSLineBreakByTruncatingTail;
@@ -1083,7 +1111,7 @@ static std::unique_ptr<Monitor> monitor;
     (void)sender;
     [self.popover close];
     NSOpenPanel* panel = [NSOpenPanel openPanel];
-    panel.title = ui_text("Normalized model history");
+    live_text(panel, @"title", "Normalized model history");
     panel.canChooseDirectories = NO;
     panel.canChooseFiles = YES;
     panel.canCreateDirectories = NO;

@@ -430,7 +430,6 @@
     {"Response errors", "Ошибки ответов"},
     {"Response errors: ", "Ошибок ответа: "},
     {"Responses", "Ответы"},
-    {"Restart Monitor to apply the language.", "Перезапустите Monitor для смены языка."},
     {"Restart the selected agents to activate MCP, then ask them to call shin_status.", "Перезапустите выбранных агентов для включения MCP, затем попросите их вызвать shin_status."},
     {"Restore write access to the disk. The service will retry automatically.", "Верните диску возможность записи. Служба повторит попытку автоматически."},
     {"Retained history", "В истории"},

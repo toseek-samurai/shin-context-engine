@@ -15,6 +15,7 @@ namespace {
 using Microsoft::WRL::ComPtr;
 constexpr UINT tray_message = WM_APP + 1;
 constexpr UINT reopen_message = WM_APP + 2;
+constexpr UINT language_message = WM_APP + 3;
 constexpr wchar_t window_class[] = L"ShinMonitorWindow";
 HWND panel = nullptr, report = nullptr, report_edit = nullptr;
 std::unique_ptr<Monitor> monitor;
@@ -48,7 +49,13 @@ fs::path known_folder(REFKNOWNFOLDERID id) {
 void save_settings() {
     if (preferences) preferences->save(settings);
 }
-void platform_save_language(int preference) { settings["language"] = preference; save_settings(); }
+std::string platform_system_language() {
+    return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN ? "ru" : "en";
+}
+void platform_save_language(int preference) {
+    settings["language"] = preference; save_settings();
+    PostMessageW(panel, language_message, 0, 0);
+}
 void platform_save_view(int view) { settings["view"] = view; save_settings(); }
 std::string platform_font() { return (known_folder(FOLDERID_Fonts) / "segoeui.ttf").string(); }
 std::string platform_version() { return SHIN_OBSERVER_VERSION; }
@@ -216,6 +223,10 @@ LRESULT CALLBACK report_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
     return DefWindowProcW(window,message,wparam,lparam);
 }
 LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
+    if (message == language_message) {
+        if (report) SetWindowTextW(report, wide(shin::ui::tr("Shin · Diagnostics")).c_str());
+        return 0;
+    }
     try {
         if(ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(window,message,wparam,lparam)) return 1;
         if(taskbar_created && message==taskbar_created) { register_icon();return 0; }
@@ -375,10 +386,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             }
             preferences->recover_pending();
             settings=preferences->load().value_or(Json::object());
-            language_preference=std::clamp(settings.value("language",0),0,2);
-            applied_language_preference=language_preference;
-            const bool russian=PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN;
-            shin::ui::set_language(shin::ui::resolve_language(language_preference==1 ? "en" : language_preference==2 ? "ru" : "auto", russian ? "ru" : "en"));
+            apply_language_preference(settings.value("language",0));
             dashboard_view=std::clamp(settings.value("view",0),0,2);compact=settings.value("compact",false);
             model_project=settings.value("model_project","");
             monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")));

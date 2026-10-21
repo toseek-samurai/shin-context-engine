@@ -74,7 +74,7 @@ native service status for observations and the existing read-only storage
 inventory command. JSON remains available for automation.
 
 Monitor and stats support English and Russian. Monitor's language selector uses
-System, English or Русский and applies on restart. Stats follows `LC_ALL`, then
+System, English or Русский and applies immediately without restarting. Stats follows `LC_ALL`, then
 `LC_MESSAGES`, then `LANG`; unsupported languages fall back to English. Override
 with `shin-ce stats --language en` or `--language ru`, or press `l` to switch for
 the current terminal session. Russian text requires a UTF-8 terminal locale.
@@ -100,6 +100,16 @@ required for indexing or retrieval. Adding a project enables automatic collectio
 for that project. Counters depend on readable client history; missing history is
 reported as incomplete. See [the local kit guide](local-kit.md)
 for configuration details.
+
+Numerical service history resumes automatically after temporary SQLite contention,
+capacity or supported write-I/O errors, with a bounded retry interval. Committed
+rows and aggregates stay in the same database. Corruption, unsupported schemas and
+changed file ownership or identity remain hard refusals. History is best effort:
+a failed batch is never blindly replayed. In service-status JSON,
+`dropped_current_run` counts discarded observations; `unconfirmed_current_run`
+counts observations whose COMMIT was not acknowledged. Monitor marks either as a
+history gap. `retry_pending`, `recovery_attempts` and `recoveries` describe recovery
+for the current service run; missing observations are not reconstructed.
 
 ### Interpreting service activity
 

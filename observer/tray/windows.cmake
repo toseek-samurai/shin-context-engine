@@ -7,6 +7,7 @@ add_library(shin-imgui STATIC
 target_include_directories(shin-imgui SYSTEM PUBLIC ${shin_imgui_SOURCE_DIR} ${shin_imgui_SOURCE_DIR}/backends)
 target_link_libraries(shin-imgui PUBLIC d3d11 dxgi dwmapi)
 add_executable(shin-tray WIN32 windows_main.cpp windows_resources.rc)
+target_compile_definitions(shin-tray PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_compile_definitions(shin-tray PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00 UNICODE _UNICODE)
 target_compile_options(shin-tray PRIVATE /W4 /WX /permissive- /utf-8)
 target_link_libraries(shin-tray PRIVATE shin-observer-native shin-imgui shell32 ole32 windowscodecs comctl32)

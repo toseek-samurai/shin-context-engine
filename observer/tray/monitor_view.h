@@ -256,8 +256,17 @@ bool platform_copy(const std::string& text);
 void platform_reveal(const std::string& path);
 void platform_save_view(int view);
 void platform_save_language(int preference);
-int language_preference = 0, applied_language_preference = 0;
-Clock::time_point language_changed{};
+std::string platform_system_language();
+int language_preference = 0;
+void apply_language_preference(int preference) {
+    language_preference = std::clamp(preference, 0, 2);
+    shin::ui::set_language(shin::ui::resolve_language(language_preference == 1 ? "en" :
+        language_preference == 2 ? "ru" : "auto", platform_system_language()));
+}
+void select_language_preference(int preference) {
+    platform_save_language(preference);
+    apply_language_preference(preference);
+}
 std::string platform_font();
 std::string platform_version();
 
@@ -393,7 +402,7 @@ void graph(const Json& samples, int mode, bool connected, float height = 112) {
     const auto color = ImGui::ColorConvertFloat4ToU32(connected ? (mode == 0 ? blue : green) : muted);
     for (int i = 0; i < 3; ++i) {
         const auto y = origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4;
-        draw->AddLine({origin.x, y}, {origin.x + size.x, y}, IM_COL32(42, 47, 49, 255));
+        draw->AddLineH(origin.x, origin.x + size.x, y, IM_COL32(42, 47, 49, 255));
     }
     std::vector<std::pair<double, double>> points;
     for (const auto& sample : samples) {
@@ -412,7 +421,7 @@ void graph(const Json& samples, int mode, bool connected, float height = 112) {
             const ImVec2 point{origin.x + 2 + static_cast<float>((points[i].first - start) / span) * (size.x - 4),
                 origin.y + bottom - static_cast<float>(points[i].second / maximum) * amplitude};
             if (mode == 2) {
-                draw->AddLine({point.x, origin.y + bottom}, point, IM_COL32(75, 140, 120, 180), 2);
+                draw->AddLineV(point.x, point.y, origin.y + bottom, IM_COL32(75, 140, 120, 180), 2);
                 draw->AddCircleFilled(point, 2.5f, color);
             } else if (i && points[i].first - points[i - 1].first < 3500) {
                 draw->AddQuadFilled(previous, point, {point.x, origin.y + bottom}, {previous.x, origin.y + bottom},
@@ -531,7 +540,7 @@ void metric_choice(const char* label, const std::string& value, int code, ImVec4
     const auto shown = clipped(value, width);
     draw->AddText({origin.x, origin.y + 21}, ImGui::ColorConvertFloat4ToU32(value == "—" ? muted : color), shown.c_str());
     ImGui::PopFont();
-    if (graph_mode == code || hovered) draw->AddLine({origin.x, origin.y + 55}, {origin.x + width, origin.y + 55},
+    if (graph_mode == code || hovered) draw->AddLineH(origin.x, origin.x + width, origin.y + 55,
         ImGui::ColorConvertFloat4ToU32(graph_mode == code ? color : muted), 2);
     if (hovered) ImGui::SetTooltip("%s: %s", label, value.c_str());
     ui_actions.push_back({label, "", origin, {width, 58}, code});
@@ -588,8 +597,7 @@ void history_chart(const Json& history, int hours, bool connected, int mode = 1,
         maximum = std::max(maximum, *value_of(row) * (mode == 1 ? 1 : 1.12));
         ++observed;
     }
-    for (int i = 0; i < 3; ++i) draw->AddLine({origin.x, origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4},
-        {origin.x + width, origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4}, IM_COL32(42, 47, 49, 255));
+    for (int i = 0; i < 3; ++i) draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4, IM_COL32(42, 47, 49, 255));
     ImVec2 previous{};
     double previous_at = 0;
     std::string previous_run;
@@ -627,7 +635,7 @@ void history_chart(const Json& history, int hours, bool connected, int mode = 1,
 void history_state(const Json& history, bool connected, bool partial) {
     ImGui::PushFont(nullptr, 11);
     const auto state = history.value("status", "disabled");
-    const bool gaps = history.value("dropped_current_run", 0ULL) || history.value("future_rows", 0ULL);
+    const bool gaps = history.value("dropped_current_run", 0ULL) || history.value("unconfirmed_current_run", 0ULL) || history.value("future_rows", 0ULL);
     const char* label = !connected ? shin::ui::tr("History: no fresh response") : state == "ready" ?
         (gaps ? shin::ui::tr("History: gaps present") : shin::ui::tr("History saved locally")) :
         state == "starting" ? shin::ui::tr("Connecting history") : shin::ui::tr("History unavailable");
@@ -805,9 +813,8 @@ void render_request_timing(const ViewState& view, const Json& telemetry) {
                 const auto value = ms(group.service);
                 draw->AddText({pos.x + width - ImGui::CalcTextSize(value.c_str()).x, pos.y},
                     ImGui::ColorConvertFloat4ToU32(ink), value.c_str());
-                draw->AddLine({pos.x, pos.y + 18}, {pos.x + width, pos.y + 18}, IM_COL32(42,47,49,255), 2);
-                if (const auto mean = group.service.value()) draw->AddLine({pos.x, pos.y + 18},
-                    {pos.x + width * static_cast<float>(*mean / maximum), pos.y + 18},
+                draw->AddLineH(pos.x, pos.x + width, pos.y + 18, IM_COL32(42,47,49,255), 2);
+                if (const auto mean = group.service.value()) draw->AddLineH(pos.x, pos.x + width * static_cast<float>(*mean / maximum), pos.y + 18,
                     ImGui::ColorConvertFloat4ToU32(i == 0 ? green : i == 1 ? amber : muted), 2);
                 ImGui::Dummy({width, 22});
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip(shin::ui::tr("%s · queries: %llu\nSearch: %s\nIncluding service: %s · samples: %llu"),
@@ -859,7 +866,7 @@ void usage_chart(const Json& days, bool fresh, float height) {
     const float width = ImGui::GetContentRegionAvail().x;
     auto* draw = ImGui::GetWindowDrawList();
     const float baseline = height - 8;
-    for (int i = 0; i < 3; ++i) draw->AddLine({origin.x, origin.y + static_cast<float>(i) * baseline / 2}, {origin.x + width, origin.y + static_cast<float>(i) * baseline / 2}, IM_COL32(42,47,49,255));
+    for (int i = 0; i < 3; ++i) draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(i) * baseline / 2, IM_COL32(42,47,49,255));
     if (!days.empty()) {
         const double day = 86400000, start = days.front().at("at_ms"), end = days.back().at("at_ms").get<double>() + day;
         double maximum = 1;
@@ -1560,15 +1567,11 @@ void render(const ViewState& view) {
     ImGui::PushFont(nullptr, 21); ImGui::TextUnformatted("Shin"); ImGui::PopFont();
     ImGui::SameLine(90); ImGui::SetNextItemWidth(130);
     std::array<std::string, 3> language_labels{shin::ui::tr("System"), "English", "Русский"};
-    const bool language_pending = language_preference != applied_language_preference;
-    if (language_pending) language_labels[static_cast<std::size_t>(language_preference)] += " *";
     const char* languages[]{language_labels[0].c_str(), language_labels[1].c_str(), language_labels[2].c_str()};
-    if (ImGui::Combo("##ui-language", &language_preference, languages, 3)) {
-        platform_save_language(language_preference); language_changed = Clock::now();
-    }
-    if (ImGui::IsItemHovered() || Clock::now() - language_changed < std::chrono::seconds(5))
-        ImGui::SetTooltip("%s", shin::ui::tr(language_preference != applied_language_preference ?
-            "Restart Monitor to apply the language." : "Language"));
+    int selected_language = language_preference;
+    if (ImGui::Combo("##ui-language", &selected_language, languages, 3))
+        select_language_preference(selected_language);
+    if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", shin::ui::tr("Language"));
     ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - 20);
     status_badge(!view.connected ? Icon::offline : attention || registry_problem ? Icon::blocked : Icon::current,
         !view.connected ? shin::ui::tr("No fresh service response") : attention || registry_problem ?

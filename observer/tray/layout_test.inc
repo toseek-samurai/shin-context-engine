@@ -5,7 +5,8 @@ int main(int argc, char** argv) {
     @autoreleasepool {
         try {
             if ((argc != 4 && argc != 5) || std::string(argv[2]) != "-ShinHome") throw std::runtime_error("output directory and test home required");
-            shin::ui::set_language(shin::ui::language_for(argc == 5 ? argv[4] : "ru"));
+            const auto initial_language = shin::ui::language_for(argc == 5 ? argv[4] : "ru");
+            shin::ui::set_language(initial_language);
             NSDictionary* arguments = [[NSUserDefaults standardUserDefaults] volatileDomainForName:NSArgumentDomain];
             if (![arguments[@"ShinHome"] isEqualToString:[NSString stringWithUTF8String:argv[3]]])
                 throw std::runtime_error("explicit development home argument was not read");
@@ -117,6 +118,8 @@ int main(int argc, char** argv) {
                 }
             }
             [storageApp.storageWindow close];
+            if (live_text(static_cast<NSTextField*>(nil), @"stringValue", "Finding agents and profiles…") != nil)
+                throw std::runtime_error("a not-yet-created setup label became an object");
             ShinApp* setupApp = [[ShinApp alloc] init];
             [setupApp showSetup:nil];
             if (!setupApp.setupChoose.enabled || setupApp.setupConnect.enabled || setupApp.setupCheck.enabled)
@@ -138,6 +141,40 @@ int main(int argc, char** argv) {
                 if (!png.length || ![png writeToFile:diagnostic_text_content(name.string()) atomically:YES])
                     throw std::runtime_error("setup snapshot failed");
             }
+            // Change language in place: retained Cocoa windows and draft state
+            // must survive without running setup discovery or service commands.
+            setupApp.setupRoot = @"/fixture/project";
+            setupApp.setupProject.stringValue = setupApp.setupRoot;
+            NSButton* choice = live_button("Connect selected agents", setupApp, @selector(selectSetupTarget:), true);
+            choice.state = NSControlStateValueOn;
+            [setupApp.setupAgents addArrangedSubview:choice];
+            const auto setup_epoch = setupApp.setupEpoch;
+            storageApp.storageAutoClean.state = NSControlStateValueOn;
+            storageApp.storageClean.enabled = NO;
+            storageApp.storageAutoClean.enabled = NO;
+            NSString* storage_path = storageApp.storageRows.firstObject[@"path"];
+            id saved_preference = [[NSUserDefaults standardUserDefaults] objectForKey:@"ShinLanguage"];
+            for (const int preference : {1, 2, 0, 2, 1}) {
+                select_language_preference(preference);
+                const auto expected = shin::ui::resolve_language(preference == 1 ? "en" : preference == 2 ? "ru" : "auto", platform_system_language());
+                [setupApp refreshLanguage:nil]; [storageApp refreshLanguage:nil];
+                if (shin::ui::language() != expected || language_preference != preference ||
+                    ![setupApp.setupWindow.title isEqualToString:ui_text("Set up Shin")] ||
+                    ![setupApp.setupChoose.title isEqualToString:ui_text("Choose project folder…")] ||
+                    ![storageApp.storageWindow.title isEqualToString:ui_text("Shin storage")] ||
+                    ![storageApp.storageTable.tableColumns[0].title isEqualToString:ui_text("Project")] ||
+                    [storageApp.storageText.stringValue rangeOfString:ui_text("Last cleanup: not run yet")].location == NSNotFound)
+                    throw std::runtime_error("retained native windows did not change language immediately");
+                if (storageApp.storageAutoClean.state != NSControlStateValueOn || storageApp.storageClean.enabled || storageApp.storageAutoClean.enabled)
+                    throw std::runtime_error("language switch changed a pending storage control");
+                if (choice.state != NSControlStateValueOn || ![setupApp.setupProject.stringValue isEqualToString:setupApp.setupRoot] ||
+                    setupApp.setupEpoch != setup_epoch || ![storage_path isEqualToString:storageApp.storageRows.firstObject[@"path"]])
+                    throw std::runtime_error("language switch changed draft selection, path or setup lifecycle");
+            }
+            if (saved_preference != [[NSUserDefaults standardUserDefaults] objectForKey:@"ShinLanguage"] &&
+                ![saved_preference isEqual:[[NSUserDefaults standardUserDefaults] objectForKey:@"ShinLanguage"]])
+                throw std::runtime_error("render test changed real language preferences");
+            shin::ui::set_language(initial_language);
             [setupApp.setupWindow close];
             auto device = MTLCreateSystemDefaultDevice();
             if (!device) return 77;
@@ -156,12 +193,12 @@ int main(int argc, char** argv) {
             for (const auto size : {ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 for (const auto* scenario : {"first-run", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "language-pending", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
-                    language_preference = kind == "language-pending" ? 1 : 0;
-                    applied_language_preference = 0;
+                    apply_language_preference(initial_language == shin::ui::Language::ru ? 2 : 1);
+
                     profile_review_open = kind.starts_with("profile-review-") || kind == "profile-review";
                     profile_review_root = "/fixture/workspace";
                     timing_open = kind.starts_with("timing-");
@@ -278,7 +315,13 @@ int main(int argc, char** argv) {
                     descriptor.usage = MTLTextureUsageRenderTarget | MTLTextureUsageShaderRead;
                     descriptor.storageMode = MTLStorageModeShared;
                     auto texture = [device newTextureWithDescriptor:descriptor];
+                    auto* retained_context = ImGui::GetCurrentContext();
+                    const int live_preference = kind == "language-live-en" ? 1 : kind == "language-live-ru" ? 2 : 0;
                     for (int frame = 0; frame < 3; ++frame) {
+                        if (kind.starts_with("language-live-")) {
+                            if (frame == 0) shin::ui::set_language(live_preference == 2 ? shin::ui::Language::en : shin::ui::Language::ru);
+                            if (frame == 1) select_language_preference(live_preference);
+                        }
                         auto pass = [MTLRenderPassDescriptor renderPassDescriptor];
                         pass.colorAttachments[0].texture = texture;
                         pass.colorAttachments[0].loadAction = MTLLoadActionClear;
@@ -296,6 +339,13 @@ int main(int argc, char** argv) {
                         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), command, encoder);
                         [encoder endEncoding]; [command commit]; [command waitUntilCompleted];
                         if (command.status == MTLCommandBufferStatusError) throw std::runtime_error("Metal render failed");
+                    }
+                    if (kind.starts_with("language-live-")) {
+                        const auto expected = shin::ui::resolve_language(live_preference == 1 ? "en" : live_preference == 2 ? "ru" : "auto", platform_system_language());
+                        const auto badge = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 50; });
+                        if (shin::ui::language() != expected || ImGui::GetCurrentContext() != retained_context ||
+                            selected != "fixture" || dashboard_view != 1 || badge == ui_actions.end() || badge->label != shin::ui::tr("Service connected"))
+                            throw std::runtime_error("live switch lost ImGui state or retained an old accessibility label");
                     }
                     const auto context = kind + " " + std::to_string(static_cast<int>(size.x)) + "x" + std::to_string(static_cast<int>(size.y));
                     if (kind == "secret-blocked") {

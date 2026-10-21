@@ -6,7 +6,7 @@
         NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 720, 620)
             styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskResizable
             backing:NSBackingStoreBuffered defer:NO];
-        window.title = ui_text("Set up Shin"); window.releasedWhenClosed = NO;
+        live_text(window, @"title", "Set up Shin"); window.releasedWhenClosed = NO;
         window.contentMinSize = NSMakeSize(660, 620);
         NSStackView* stack = [[NSStackView alloc] init];
         stack.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -18,15 +18,15 @@
             [stack.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-24],
             [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:24],
             [stack.bottomAnchor constraintEqualToAnchor:window.contentView.bottomAnchor constant:-24]]];
-        NSTextField* intro = [NSTextField wrappingLabelWithString:ui_text("Choose a project, then select the agents that may use its context. Shin keeps your existing projects and settings.")];
+        NSTextField* intro = live_label("Choose a project, then select the agents that may use its context. Shin keeps your existing projects and settings.");
         [stack addArrangedSubview:intro];
-        self.setupProject = [NSTextField wrappingLabelWithString:ui_text("1. Add your first project folder")];
+        self.setupProject = live_label("1. Add your first project folder");
         self.setupProject.selectable = YES; self.setupProject.maximumNumberOfLines = 2;
         self.setupProject.lineBreakMode = NSLineBreakByTruncatingMiddle;
         [stack addArrangedSubview:self.setupProject];
-        self.setupChoose = [NSButton buttonWithTitle:ui_text("Choose project folder…") target:self action:@selector(beginSetupProject:)];
+        self.setupChoose = live_button("Choose project folder…", self, @selector(beginSetupProject:));
         [stack addArrangedSubview:self.setupChoose];
-        [stack addArrangedSubview:[NSTextField labelWithString:ui_text("2. Select coding agents and profiles")]];
+        [stack addArrangedSubview:live_label("2. Select coding agents and profiles", false)];
         NSScrollView* scroll = [[NSScrollView alloc] init];
         scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
         self.setupAgents = [[NSStackView alloc] init];
@@ -39,16 +39,16 @@
         [stack addArrangedSubview:scroll];
         [scroll.heightAnchor constraintGreaterThanOrEqualToConstant:200].active = YES;
         NSStackView* actions = [NSStackView stackViewWithViews:@[]]; actions.spacing = 12;
-        self.setupConnect = [NSButton buttonWithTitle:ui_text("Connect selected agents") target:self action:@selector(connectSetupAgents:)];
-        self.setupCheck = [NSButton buttonWithTitle:ui_text("Check project") target:self action:@selector(checkSetup:)];
+        self.setupConnect = live_button("Connect selected agents", self, @selector(connectSetupAgents:));
+        self.setupCheck = live_button("Check project", self, @selector(checkSetup:));
         [actions addArrangedSubview:self.setupConnect]; [actions addArrangedSubview:self.setupCheck];
         [stack addArrangedSubview:actions];
-        self.setupStatus = [NSTextField wrappingLabelWithString:ui_text("Select a folder to begin.")];
+        self.setupStatus = live_label("Select a folder to begin.");
         self.setupStatus.selectable = YES; self.setupStatus.maximumNumberOfLines = 8;
         [stack addArrangedSubview:self.setupStatus];
-        NSTextField* note = [NSTextField wrappingLabelWithString:ui_text("Only checked agents are changed. A private backup is kept for existing files. Restart those agents after connecting; project-specific settings may override user settings.")];
+        NSTextField* note = live_label("Only checked agents are changed. A private backup is kept for existing files. Restart those agents after connecting; project-specific settings may override user settings.");
         [stack addArrangedSubview:note];
-        self.setupLogin = [NSButton buttonWithTitle:ui_text("Enable background service at login") target:self action:@selector(enableSetupLogin:)];
+        self.setupLogin = live_button("Enable background service at login", self, @selector(enableSetupLogin:));
         [stack addArrangedSubview:self.setupLogin];
         for (NSView* view in @[intro, self.setupProject, scroll, self.setupStatus, note])
             [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
@@ -82,10 +82,10 @@
     for (NSView* view in self.setupAgents.arrangedSubviews.copy) { [self.setupAgents removeArrangedSubview:view]; [view removeFromSuperview]; }
     self.setupTargets = [NSMutableArray array]; self.setupTargetButtons = [NSMutableArray array]; self.setupFileButtons = [NSMutableArray array];
     if (!self.setupRoot.length) {
-        [self.setupAgents addArrangedSubview:[NSTextField wrappingLabelWithString:ui_text("Available agents and profiles will appear after you choose a project.")]];
+        [self.setupAgents addArrangedSubview:live_label("Available agents and profiles will appear after you choose a project.")];
         return;
     }
-    self.setupStatus.stringValue = ui_text("Finding agents and profiles…");
+    live_text(self.setupStatus, @"stringValue", "Finding agents and profiles…");
     [self runCLI:@"client-targets" arguments:@[] completion:^(Json result, NSString* failure) {
         if (epoch != self.setupEpoch) return;
         if (failure || !result.value("ok", false)) { self.setupStatus.stringValue = failure ? failure : ui_text("Could not discover agent settings."); return; }
@@ -101,9 +101,11 @@
             NSStackView* controls = [NSStackView stackViewWithViews:@[]]; controls.spacing = 12;
             NSString* title = detected ? label : [NSString stringWithFormat:ui_text("%@ — not detected"), label];
             NSButton* check = [NSButton checkboxWithTitle:title target:self action:@selector(selectSetupTarget:)]; check.tag = index;
-            NSButton* file = [NSButton buttonWithTitle:ui_text("Choose settings file…") target:self action:@selector(chooseSetupConfig:)]; file.tag = index;
+            live_caption(check, @"title", ^{ return detected ? label : [NSString stringWithFormat:ui_text("%@ — not detected"), label]; });
+            NSButton* file = live_button("Choose settings file…", self, @selector(chooseSetupConfig:)); file.tag = index;
             [controls addArrangedSubview:check]; [controls addArrangedSubview:file];
             NSTextField* location = [NSTextField labelWithString:path.length ? path : ui_text("Choose a settings file for this custom installation.")]; location.selectable = YES; location.lineBreakMode = NSLineBreakByTruncatingMiddle;
+            if (!path.length) live_text(location, @"stringValue", "Choose a settings file for this custom installation.");
             location.font = [NSFont systemFontOfSize:11]; location.toolTip = path;
             [group addArrangedSubview:controls]; [group addArrangedSubview:location]; [self.setupAgents addArrangedSubview:group];
             [group.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
@@ -111,7 +113,7 @@
             target[@"pathLabel"] = location;
             [self.setupTargetButtons addObject:check]; [self.setupFileButtons addObject:file];
         }
-        self.setupStatus.stringValue = ui_text("Select the agents and profiles to connect. Undetected agents can also be configured for later use.");
+        live_text(self.setupStatus, @"stringValue", "Select the agents and profiles to connect. Undetected agents can also be configured for later use.");
     }];
 }
 - (void)selectSetupTarget:(id)sender {
@@ -124,7 +126,7 @@
     if (self.setupConnecting || sender.tag < 0 || static_cast<NSUInteger>(sender.tag) >= self.setupTargets.count) return;
     NSMutableDictionary* target = self.setupTargets[static_cast<NSUInteger>(sender.tag)];
     NSOpenPanel* panel = [NSOpenPanel openPanel]; panel.canChooseFiles = YES; panel.canChooseDirectories = NO;
-    panel.title = ui_text("Choose agent settings"); panel.prompt = ui_text("Select");
+    live_text(panel, @"title", "Choose agent settings"); panel.prompt = ui_text("Select");
     NSString* currentPath = target[@"config"];
     panel.directoryURL = [NSURL fileURLWithPath:currentPath.length ? currentPath.stringByDeletingLastPathComponent : NSHomeDirectory()];
     if ([panel runModal] != NSModalResponseOK || !panel.URL.path) return;
@@ -151,14 +153,14 @@
     for (NSButton* button in self.setupTargetButtons) if (button.state == NSControlStateValueOn) {
         NSDictionary* target = self.setupTargets[static_cast<NSUInteger>(button.tag)];
         if ([paths containsObject:target[@"config"]]) {
-            release_project_operation(); self.setupStatus.stringValue = ui_text("Choose a different settings file for each target."); return;
+            release_project_operation(); live_text(self.setupStatus, @"stringValue", "Choose a different settings file for each target."); return;
         }
         [paths addObject:target[@"config"]];
         [self.setupPlans addObject:[@{@"client": target[@"client"], @"label": target[@"label"], @"config": target[@"config"]} mutableCopy]];
     }
     ++self.setupEpoch;
     self.setupConnectRoot = self.setupRoot; self.setupReport = [NSMutableString string];
-    self.setupConnecting = YES; self.setupStatus.stringValue = ui_text("Checking existing settings…");
+    self.setupConnecting = YES; live_text(self.setupStatus, @"stringValue", "Checking existing settings…");
     [self continueSetupConnection:0 applying:NO];
 }
 - (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying {
@@ -189,12 +191,12 @@
     (void)sender;
     if (!self.setupRoot.length || !self.setupCheck.enabled) return;
     self.setupCheck.enabled = NO; const NSUInteger epoch = self.setupEpoch;
-    self.setupStatus.stringValue = ui_text("Checking project…");
+    live_text(self.setupStatus, @"stringValue", "Checking project…");
     [self runCLI:@"status" arguments:@[@"--root", self.setupRoot] completion:^(Json result, NSString* failure) {
         if (epoch != self.setupEpoch) return;
         self.setupCheck.enabled = YES;
         if (failure || !result.value("ok", false) || !result.value("local_ready", false)) {
-            self.setupStatus.stringValue = ui_text("Search is not ready yet. Open Projects for preparation progress or diagnostics, then check again."); return;
+            live_text(self.setupStatus, @"stringValue", "Search is not ready yet. Open Projects for preparation progress or diagnostics, then check again."); return;
         }
         const bool partial = result.contains("source_coverage") && result.at("source_coverage").value("state", "") == "partial";
         self.setupStatus.stringValue = partial ? ui_text("Search is ready with partial source coverage. Review Projects for excluded files. The agent connection still needs checking in the agent.") :

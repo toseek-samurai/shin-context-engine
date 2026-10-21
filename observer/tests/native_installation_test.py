@@ -109,6 +109,9 @@ with tempfile.TemporaryDirectory(prefix='shin-ins-', dir='/tmp') as temporary:
     state_file = Path(receipt['control']) / 'state.json'
     assert status()['integrity_verified']
 
+    # The installed command must infer its owned prefix, including via its link.
+    assert call('update-status', executable=bin_dir / 'shin-ce')['phase'] == 'idle'
+
     # Offline release-result review must not bypass an unfinished native journal.
     updates = data / 'updates'
     updates.mkdir(mode=0o700)

@@ -100,7 +100,7 @@ Json run(const fs::path& exe,const std::vector<std::string>& args,int timeout,st
     return result;
 }
 fs::path own_prefix() {
-    const auto exe=fs::canonical(current_executable_path());return exe.parent_path()/"..";
+    const auto exe=fs::canonical(current_executable_path());return exe.parent_path().parent_path();
 }
 Json installation(const fs::path& prefix,const fs::path& user) {
     std::vector<std::string> a{"shin-ce","installation","--prefix",prefix.string()};std::vector<char*> p;for(auto& s:a)p.push_back(s.data());

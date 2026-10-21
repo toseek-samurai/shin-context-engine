@@ -150,3 +150,21 @@ retain the model with the opaque session; `history.model_cohorts` summarizes up 
 rows. This additive history column preserves earlier rows and allows older readers
 to ignore it. Status calls remain current-run only. Token-usage records are separate;
 no join by timestamp, project or default model is used to claim attribution.
+
+### Release update checks (macOS, dev.18 source)
+
+`shin-ce update-check [--prefix DIR]` reads the public releases feed and returns
+an eligible newer kit with an opaque `revision`. It performs no installation.
+`shin-ce update-install --revision HASH [--prefix DIR]` revalidates that offer,
+verifies the download and calls the new kit's native updater. A changed offer
+requires a fresh review. `shin-ce update-status [--prefix DIR]` reads the saved
+outcome without networking. `update-download --revision HASH` verifies and stages
+a kit without applying it. These commands use the recorded data home, preserve
+client configuration and never change project authority. See the
+[local kit guide](local-kit.md) for Monitor checks and recovery boundaries.
+
+`update-acknowledge --revision REVIEW_HASH` explicitly acknowledges a saved result
+only after the installed payload is verified and its native recovery journal is
+complete. Monitor exposes this through **Last update result…**. Stale review
+hashes or a pending recovery remain refusals; acknowledgement never repairs an
+index or replays an installation.

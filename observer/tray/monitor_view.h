@@ -258,6 +258,7 @@ void platform_save_view(int view);
 void platform_save_language(int preference);
 std::string platform_system_language();
 int language_preference = 0;
+std::string release_update_version;
 void apply_language_preference(int preference) {
     language_preference = std::clamp(preference, 0, 2);
     shin::ui::set_language(shin::ui::resolve_language(language_preference == 1 ? "en" :
@@ -524,7 +525,7 @@ void activate(int code) {
         bool expected = false;
         if (project_management_busy.compare_exchange_strong(expected, true)) platform_action(code);
     } else if ((code == 39 && selected == diagnostic_project && !diagnostic_report_text.empty()) ||
-        code == 40 || code == 43 || code == 44 || code == 62 || code == 66 || code == 83 || code == 84 || code == 85) platform_action(code);
+        code == 40 || code == 43 || code == 44 || code == 62 || code == 66 || code == 83 || code == 84 || code == 85 || code == 86) platform_action(code);
 }
 
 void metric_choice(const char* label, const std::string& value, int code, ImVec4 color, float width) {
@@ -1608,7 +1609,13 @@ void render(const ViewState& view) {
     ImGui::EndChild();
     ImGui::SetCursorPosY(footer_y);
     ImGui::Separator();
-    if (dashboard_view != 2) history_state(history, view.connected,
+    if (!release_update_version.empty()) {
+        ImGui::PushFont(nullptr, 11);
+        const auto label=std::string(shin::ui::tr("Update available"))+" · "+release_update_version;
+        if(ImGui::Button(label.c_str(),{ImGui::GetContentRegionAvail().x,23}))activate(86);
+        ui_actions.push_back({label,"",ImGui::GetItemRectMin(),ImGui::GetItemRectSize(),86,true});
+        ImGui::PopFont();
+    } else if (dashboard_view != 2) history_state(history, view.connected,
         telemetry.value("projection", Json::object()).value("truncated", false));
     else {
         ImGui::PushFont(nullptr, 11);

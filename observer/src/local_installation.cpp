@@ -824,6 +824,11 @@ std::unique_ptr<LocalInstallationGuard> lock_local_installation(const fs::path& 
     return guard;
 }
 
+Json verify_local_kit(const fs::path& path) {
+    const auto kit = manifest(path);
+    verify_files(path, kit, false);
+    return kit;
+}
 Json local_installation(int argc, char** argv, const fs::path& user_home) {
 #ifndef __APPLE__
     throw Error("installation-platform-unsupported", "The native local kit installer is currently qualified only for macOS.");
@@ -906,6 +911,7 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
             links(receipt, false, false);
             return {{"ok", true}, {"command", command}, {"phase", "installed"}, {"prefix", prefix.string()},
                 {"home", receipt.at("home")}, {"bin_dir", receipt.at("bin_dir")}, {"integrity_verified", true},
+                {"recovery_pending", state.contains("resume_runtime") || state.contains("update")},
                 {"version", state.at("kit").at("version")}, {"core_version", state.at("kit").at("core_version")}};
         }
         // Fence new CLI operations before stopping the known service; data and grants remain untouched.

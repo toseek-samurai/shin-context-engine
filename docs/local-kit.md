@@ -302,3 +302,49 @@ readiness boundary. Existing private-bootstrap bindings are migrated through nat
 without new enrollment or changed identity/profile. Rollback uses the verified
 previous kit to restore their previous Core binding. Canonical publisher grants
 retain their original identity. No index deletion or profile change is used.
+
+### Release offers in Monitor (dev.18 source)
+
+The macOS Monitor checks the public GitHub Releases feed shortly after launch and
+then every six hours. No account, token, project names or source content are sent.
+GitHub sees a normal HTTPS request and its network metadata. Disable automatic
+checks or choose **Check for updates…** in the tray menu. Failed checks do not
+interrupt offline retrieval. Manual checks are limited to once per minute.
+
+A preview installation receives newer complete preview or stable kits; a stable
+installation receives stable releases only. Drafts, incomplete uploads, releases
+without a matching macOS ARM64 ZIP/checksum pair and invalid asset URLs are not
+offered. The badge and panel footer lead to a review showing the version and
+release notes. Nothing is installed until **Download and install** is selected.
+
+The helper rechecks the exact reviewed offer, waits for Monitor to close, downloads
+the archive over HTTPS and verifies its byte count, GitHub SHA-256 digest, checksum
+file, archive paths and complete native manifest before invoking the new kit's
+existing updater. That updater retains installation ownership, compatibility,
+project qualification, data preservation and rollback checks. The helper records
+an outcome and reopens Monitor. Persistent MCP clients still need to reconnect.
+Checksums protect download integrity; this preview is not Developer ID signed or
+notarized and does not provide an independent signature over a compromised release.
+
+For terminal use:
+
+```sh
+shin-ce update-check
+shin-ce update-install --revision HASH_FROM_CHECK
+shin-ce update-status
+```
+
+An update failure or missing acknowledgement is retained for review, including the
+candidate path when installation may have started. Monitor offers to copy the
+result; it does not silently retry. `update-status` reads the durable outcome. Use
+the native `installation` command and the saved candidate's `update` command to
+review/reconcile its journal before trying another installation. Project refresh
+under heavy machine load may still delay or refuse update activation.
+
+This is a source feature for the next preview. Existing dev.16/dev.17 binaries do
+not acquire it until an explicitly selected new kit is installed.
+
+**Last update result…** remains available in the tray menu. After resolving a
+native recovery, **Acknowledge verified result** verifies the installed payload
+and completed journal before clearing the review gate and cleaning its identified
+private staging folder. A stale review or unfinished native operation is refused.

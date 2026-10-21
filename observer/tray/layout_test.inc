@@ -191,12 +191,13 @@ int main(int argc, char** argv) {
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
             for (const auto size : {ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
-                for (const auto* scenario : {"first-run", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects",
+                for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "language-live-en", "language-live-ru", "language-live-auto", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
+                    release_update_version=kind=="update" ? "2.0.5-dev.18" : "";
                     apply_language_preference(initial_language == shin::ui::Language::ru ? 2 : 1);
 
                     profile_review_open = kind.starts_with("profile-review-") || kind == "profile-review";
@@ -392,6 +393,8 @@ int main(int argc, char** argv) {
                         });
                         if (setup == ui_actions.end()) throw std::runtime_error("fresh user cannot open setup without a service");
                     }
+                    if(kind=="update" && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& a){return a.chart==86 && a.enabled;}))
+                        throw std::runtime_error("release offer is not actionable");
                     for (const auto& action : ui_actions) {
                         if (action.chart == 50 && std::abs(action.origin.x + action.size.x -
                             (size.x - ImGui::GetStyle().WindowPadding.x)) > .5f)
@@ -445,7 +448,7 @@ int main(int argc, char** argv) {
                     ++rendered;
                 }
             }
-            selected.clear();
+            selected.clear(); release_update_version.clear();
             history_hours = 24; activate(60);
             if (!timing_open || !timing_retained) throw std::runtime_error("timing navigation failed");
             activate(67); activate(65);

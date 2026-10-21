@@ -6,6 +6,7 @@
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_registry.h"
 #include "shin/observer/local_installation.h"
+#include "shin/observer/local_updates.h"
 #include "shin/observer/local_client_setup.h"
 #include "shin/observer/model_usage.h"
 #include "context_internal.h"
@@ -74,6 +75,8 @@ int run(int argc, char** argv, char** environment) {
 #ifndef _WIN32
                      "shin-ce stats [--home DIR] [--usage-file FILE] [--language auto|en|ru] opens the interactive read-only monitor.\n"
 #endif
+                     "shin-ce update-check|update-status [--prefix DIR] checks public releases or the last update result (macOS).\n"
+                     "shin-ce update-install --revision HASH [--prefix DIR] installs an explicitly reviewed release (macOS).\n"
                      "shin-ce install [--prefix DIR] [--bin-dir DIR] [--home DIR] installs an extracted native kit.\n"
                      "shin-ce update [--prefix DIR] [--adopt-existing --home DIR --bin-dir DIR] updates from an extracted kit.\n"
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
@@ -112,6 +115,17 @@ int run(int argc, char** argv, char** environment) {
     }
     LocalProjectRequest request;
     request.command = argv[1];
+#ifdef __APPLE__
+    if (request.command == "update-check" || request.command == "update-download" ||
+        request.command == "update-install" || request.command == "update-status" || request.command == "update-acknowledge") {
+        const char* home = user_home(environment);
+        if (!home || !*home) throw Error("home-unavailable", "HOME is required for release updates.");
+        auto result = local_updates(argc, argv, fs::canonical(home));
+        result["tool"] = "shin-ce"; result["tool_version"] = SHIN_OBSERVER_VERSION;
+        std::cout << result.dump(2) << '\n';
+        return result.value("ok",false) ? 0 : 1;
+    }
+#endif
     if (request.command == "install" || request.command == "update" || request.command == "installation" || request.command == "uninstall") {
         const char* home = user_home(environment);
         if (!home || !*home) throw Error("home-unavailable", "HOME is required for a per-user installation.");

@@ -158,6 +158,9 @@ void platform_action(int code) {
     case 44: [NSApp sendAction:@selector(choosePeriod:) to:NSApp.delegate from:nil]; break;
     case 62: [NSApp sendAction:@selector(chooseTimingTraffic:) to:NSApp.delegate from:nil]; break;
     case 66: [NSApp sendAction:@selector(chooseTimingScope:) to:NSApp.delegate from:nil]; break;
+    case 86:
+        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showUpdateOffer:) to:NSApp.delegate from:nil]; });
+        break;
     case 85:
         dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showSetup:) to:NSApp.delegate from:nil]; });
         break;
@@ -336,6 +339,7 @@ static std::unique_ptr<Monitor> monitor;
 
 @interface ShinApp : NSObject<NSApplicationDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate> {
     Json _storageStatus;
+    Json _updateOffer;
 }
 @property(nonatomic, strong) NSStatusItem* item;
 @property(nonatomic, strong) NSPopover* popover;
@@ -373,6 +377,15 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSMutableString* setupReport;
 @property(nonatomic, copy) NSString* setupConnectRoot;
 @property(nonatomic) BOOL setupConnecting;
+@property(nonatomic) BOOL updateChecking;
+@property(nonatomic, strong) NSDate* lastUpdateCheck;
+@property(nonatomic, strong) NSDate* nextUpdateCheck;
+- (void)checkForUpdates:(id)sender;
+- (void)showUpdateOffer:(id)sender;
+- (void)beginUpdateCheck:(BOOL)manual;
+- (void)toggleAutomaticUpdates:(id)sender;
+- (void)showUpdateResult;
+- (void)showLastUpdateResult:(id)sender;
 - (void)refreshLanguage:(id)sender;
 - (void)toggle:(id)sender;
 - (void)showDiagnosticReport:(id)sender;
@@ -416,6 +429,7 @@ static std::unique_ptr<Monitor> monitor;
 
 @implementation ShinApp
 #include "setup_window.h"
+#include "updates_window.h"
 - (void)showProjectManagementMenu:(id)sender {
     (void)sender;
     if (diagnostic_root.empty()) return;
@@ -462,7 +476,7 @@ static std::unique_ptr<Monitor> monitor;
         return;
     }
     NSArray<NSString*>* argv = [@[command, @"--home", self.shinHome] arrayByAddingObjectsFromArray:arguments];
-    const auto timeout = [command isEqualToString:@"project-add"] ? std::chrono::seconds(120) :
+    const auto timeout = ([command isEqualToString:@"update-check"] || [command isEqualToString:@"update-install"]) ? std::chrono::seconds(20) : [command isEqualToString:@"project-add"] ? std::chrono::seconds(120) :
         [command isEqualToString:@"storage-clean"] ? std::chrono::seconds(90) :
         [command isEqualToString:@"detach"] ? std::chrono::seconds(90) : std::chrono::seconds(15);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -522,6 +536,14 @@ static std::unique_ptr<Monitor> monitor;
                                     oversized = YES; terminate_at = std::chrono::steady_clock::now();
                                     if (task.isRunning) [task terminate];
                                 } else if (!oversized) [bytes appendBytes:buffer.data() length:length];
+                                if ([command isEqualToString:@"update-install"] && !oversized) {
+                                    const auto ack=Json::parse(std::string((const char*)bytes.bytes,bytes.length),nullptr,false);
+                                    if(ack.is_object() && ack.value("accepted",false) && ack.value("pid",0)==task.processIdentifier) {
+                                        [reader closeFile];
+                                        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
+                                        return; // Native helper waits for this Monitor PID, records the outcome and reopens it.
+                                    }
+                                }
                             }
                         }
                     }
@@ -1010,9 +1032,16 @@ static std::unique_ptr<Monitor> monitor;
     self.popover.delegate = self;
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(activatedApplication:)
         name:NSWorkspaceDidActivateApplicationNotification object:nil];
+    self.nextUpdateCheck=[NSDate dateWithTimeIntervalSinceNow:15];
+    if([[NSUserDefaults standardUserDefaults] boolForKey:@"ShinUpdatePending"]) [self showUpdateResult];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer* timer) {
         (void)timer;
         if (!monitor) return;
+        if (![[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] &&
+            self.nextUpdateCheck.timeIntervalSinceNow<=0) [self beginUpdateCheck:NO];
+        self.item.button.title=release_update_version.empty() ? @"" : @"↑";
+        self.item.length=release_update_version.empty() ? NSSquareStatusItemLength : NSVariableStatusItemLength;
+        self.item.button.imagePosition=release_update_version.empty() ? NSImageOnly : NSImageLeading;
         NSWindow* statusWindow = self.item.button.window;
         NSScreen* screen = statusWindow.screen;
         if (!screen) screen = NSScreen.mainScreen;
@@ -1040,6 +1069,7 @@ static std::unique_ptr<Monitor> monitor;
         if (value.connected) self.item.button.toolTip = [NSString stringWithFormat:
             attention ? ui_text("Shin: projects: %lu, attention required") :
                         ui_text("Shin: observed projects: %lu"), static_cast<unsigned long>(count)];
+        if(!release_update_version.empty())self.item.button.toolTip=[NSString stringWithFormat:ui_text("Shin update available: %@"),diagnostic_text_content(release_update_version)];
         monitor->visible = self.popover.shown;
     }];
     [self toggle:nil];
@@ -1074,6 +1104,10 @@ static std::unique_ptr<Monitor> monitor;
         compact.target = self;
         NSMenuItem* storage = [menu addItemWithTitle:ui_text("Storage…") action:@selector(openStorageWindow:) keyEquivalent:@""];
         storage.target = self;
+        NSMenuItem* update=[menu addItemWithTitle:ui_text("Check for updates…") action:@selector(checkForUpdates:) keyEquivalent:@""];update.target=self;
+        NSMenuItem* automatic=[menu addItemWithTitle:ui_text("Automatically check for updates") action:@selector(toggleAutomaticUpdates:) keyEquivalent:@""];automatic.target=self;
+        NSMenuItem* result=[menu addItemWithTitle:ui_text("Last update result…") action:@selector(showLastUpdateResult:) keyEquivalent:@""];result.target=self;
+        automatic.state=[[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] ? NSControlStateValueOff : NSControlStateValueOn;
         compact.state = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"] ? NSControlStateValueOn : NSControlStateValueOff;
         [menu addItem:[NSMenuItem separatorItem]];
         [menu addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(terminate:) keyEquivalent:@""];

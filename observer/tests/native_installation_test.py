@@ -108,6 +108,38 @@ with tempfile.TemporaryDirectory(prefix='shin-ins-', dir='/tmp') as temporary:
     receipt = json.loads((prefix / '.shin-installation.json').read_text())
     state_file = Path(receipt['control']) / 'state.json'
     assert status()['integrity_verified']
+
+    # Offline release-result review must not bypass an unfinished native journal.
+    updates = data / 'updates'
+    updates.mkdir(mode=0o700)
+    update_state = updates / 'state.json'
+    review = {'ok': False, 'phase': 'review-required', 'from_version': status()['version'],
+              'version': status()['version'], 'error': {'code': 'fixture-outcome-unknown'}}
+    update_state.write_text(json.dumps(review)); update_state.chmod(0o600)
+    def update_status():
+        run = subprocess.run([str(tool), 'update-status', '--prefix', str(prefix)], env=env,
+                             capture_output=True, text=True, timeout=15)
+        assert run.returncode == 1 and not run.stderr, (run.stdout, run.stderr)
+        return json.loads(run.stdout)
+    result = update_status()
+    assert result['can_acknowledge'] and result['review_revision']
+    before_review = update_state.read_bytes()
+    call('update-acknowledge', '--prefix', prefix, '--revision', 'old-review', error='update-offer-changed')
+    assert update_state.read_bytes() == before_review
+    original_install_state = state_file.read_bytes()
+    pending = json.loads(original_install_state)
+    pending['resume_runtime'] = {'managed': False, 'running': False}
+    save_state(pending)
+    try:
+        assert status()['recovery_pending']
+        assert not update_status()['can_acknowledge']
+        call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'], error='update-outcome-unknown')
+        assert update_state.read_bytes() == before_review
+    finally:
+        state_file.write_bytes(original_install_state)
+    assert not status()['recovery_pending']
+    acknowledged = call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'])
+    assert acknowledged['phase'] == 'reviewed' and acknowledged['ok']
     again = call(*command)
     assert not again['changed']
     assert (bin_dir / 'shin-ce').is_symlink()

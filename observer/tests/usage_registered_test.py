@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Project enrollment must collect numerical usage without a second project list."""
 import datetime
+import fcntl
 import hashlib
 import json
 import os
@@ -125,5 +126,30 @@ class RegisteredUsage(unittest.TestCase):
         self.assertEqual(unavailable['snapshot']['sources']['codex']['state'],'unavailable')
         self.ce('service-start');self.stop()  # Collector cancellation must not delay shutdown.
         self.assertEqual((self.home/'usage/state.json').stat().st_mode & 0o777,0o600)
+
+    def test_repeat_enrollment_waits_for_busy_refresh_recovery(self):
+        root=self.project('busy',100)
+        self.ce('project-add',root)
+        workspace=self.home/'projects'/hashlib.sha256(str(root).encode()).hexdigest()
+        with (workspace/'observer.lock').open('rb') as lock:
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            (root/'example.cpp').write_text('int sampleLimit() { return 42; }\n')
+            deadline=time.monotonic()+5
+            while True:
+                status=self.ce('service-status')
+                row=status['telemetry']['project_states'][0]
+                if row.get('error_code')=='writer-busy':break
+                self.assertLess(time.monotonic(),deadline,status)
+                time.sleep(.02)
+            fcntl.flock(lock,fcntl.LOCK_UN)
+        # Bootstrap can finish before the watcher's normal failure backoff.
+        # Admission must wait for requalification, not accept the local build.
+        response=self.ce('project-add',root)
+        self.assertTrue(response['service_enrolled'],response)
+        self.assertTrue(response['local_ready'],response)
+        query=subprocess.run([str(CE),'query','sampleLimit','--service','--root',str(root),
+                              '--home',str(self.home)],env=self.env,capture_output=True,text=True,timeout=10)
+        self.assertEqual(query.returncode,0,query.stdout+query.stderr)
+        self.assertIn('return 42',json.loads(query.stdout)['source_context'])
 
 if __name__=='__main__':unittest.main()

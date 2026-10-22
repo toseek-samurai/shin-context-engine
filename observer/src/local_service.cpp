@@ -989,7 +989,11 @@ Json initialize_local_service(const LocalProjectRequest& input, const fs::path& 
                 wanted.command = "status";
                 try { (void)request_local_service(wanted, [&] { return Clock::now() >= deadline; }); }
                 catch (const Error& error) {
-                    if (error.code != "project-updating" && error.code != "project-busy" && error.code != "service-busy") throw;
+                    // A repeated initializer may have held the writer while the
+                    // watcher checked it. Let normal backoff requalify it within
+                    // this admission deadline; local readiness is not admission.
+                    if (error.code != "project-updating" && error.code != "project-busy" &&
+                        error.code != "service-busy" && error.code != "writer-busy") throw;
                 }
             }
             std::this_thread::sleep_for(std::chrono::milliseconds(20));

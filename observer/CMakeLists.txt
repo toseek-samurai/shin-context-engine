@@ -141,6 +141,10 @@ if(BUILD_TESTING AND NOT WIN32)
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_service_test.py
                 $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
         set_tests_properties(shin-ce-local-service PROPERTIES TIMEOUT 180)
+        add_test(NAME shin-ce-cold-admission
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_cold_admission_test.py
+                $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
+        set_tests_properties(shin-ce-cold-admission PROPERTIES TIMEOUT 90 COST 45)
         add_executable(shin-local-qualification-driver tests/local_qualification_driver.cpp)
         target_link_libraries(shin-local-qualification-driver PRIVATE shin-observer-native)
         add_test(NAME shin-ce-local-qualification

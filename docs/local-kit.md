@@ -253,6 +253,15 @@ workflow completes publication when qualification succeeds. It does not permit
 manual publication of a locally tested kit while CI is pending. Monitor reads
 published Releases; its checks do not expose draft releases or Actions artifacts.
 
+GitHub may briefly report a completed native job before its step metadata is
+complete. The publisher refetches missing package proof for up to 27 seconds;
+failed proof still refuses immediately, and no download or release mutation
+precedes qualification. If only the publication job failed, maintainers can run
+**Recover qualified preview publication** from `main` with the existing tag,
+source qualification run ID and exact attempt. It checks out that source and
+publishes its original CI archive after the same gates. It cannot recover failed
+native qualification, change a tag, rebuild binaries or replace release assets.
+
 ### Adopt a previous manually installed kit
 
 Older installations without a native installation receipt require an explicit,

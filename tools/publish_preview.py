@@ -7,6 +7,7 @@ from pathlib import Path
 import re
 import subprocess
 import tempfile
+import time
 import zipfile
 
 MATRIX = {f'native ({system}, {component})'
@@ -19,12 +20,22 @@ def require(condition, message):
         raise ValueError(message)
 
 
-def qualification(run, jobs, artifact, repo, sha, run_id, attempt):
+class PackageProofPending(ValueError):
+    """Completed-job step metadata has not reached the API yet."""
+
+
+def qualification(run, jobs, artifact, repo, sha, run_id, attempt, recover_publisher=False):
     require(run['head_sha'] == sha and run['id'] == run_id and run['run_attempt'] == attempt,
             'CI identity or attempt differs from the requested source')
     require(run['repository']['full_name'] == repo and run['head_repository']['full_name'] == repo
             and run['event'] == 'push' and run['path'] == '.github/workflows/ci.yml', 'Wrong CI provenance')
-    require(run['conclusion'] in (None, 'success') and run['status'] in ('in_progress', 'completed'),
+    publisher = [j for j in jobs if j['name'] == 'publish-preview']
+    recovered = (recover_publisher and run['status'] == 'completed' and run['conclusion'] == 'failure'
+                 and len(publisher) == 1 and publisher[0]['status'] == 'completed'
+                 and publisher[0]['conclusion'] == 'failure'
+                 and len(jobs) == len(MATRIX) + 1)
+    require((run['conclusion'] in (None, 'success') or recovered)
+            and run['status'] in ('in_progress', 'completed'),
             'CI run is not eligible for publication')
     # The publisher itself is still running; every native matrix job must finish.
     for name in MATRIX:
@@ -34,6 +45,8 @@ def qualification(run, jobs, artifact, repo, sha, run_id, attempt):
     mac = next(job for job in jobs if job['name'] == 'native (macos-15, observer)')
     for step in ('Exact macOS kit qualification', 'Upload qualified macOS kit'):
         matches = [row for row in mac['steps'] if row['name'] == step]
+        if not matches or (len(matches) == 1 and matches[0]['conclusion'] is None):
+            raise PackageProofPending(f'Package proof metadata is pending: {step}')
         require(len(matches) == 1 and matches[0]['conclusion'] == 'success', f'Missing package proof: {step}')
     require(not artifact['expired'] and artifact['name'] == f'shin-local-macos-ARM64-{run_id}-{attempt}'
             and artifact['workflow_run']['id'] == run_id and artifact['workflow_run']['head_sha'] == sha,
@@ -82,11 +95,11 @@ def command(*args):
     return result.stdout
 
 
-def publish(repo, sha, tag, run_id, attempt):
+def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher=False):
     require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo), 'Invalid repository')
     require(re.fullmatch(r'[0-9a-f]{40}', sha) and re.fullmatch('v' + VERSION, tag), 'Invalid source or preview tag')
     require(run_id > 0 and attempt > 0, 'Invalid CI operation')
-    root = Path(__file__).resolve().parents[1]
+    root = Path(source_root).resolve() if source_root else Path(__file__).resolve().parents[1]
     version = tag[1:]
     require((root / 'observer/VERSION').read_text().strip() == version, 'Tag differs from Observer VERSION')
     require(command('git', '-C', str(root), 'rev-parse', 'HEAD').strip() == sha, 'Checkout differs from CI source')
@@ -95,7 +108,7 @@ def publish(repo, sha, tag, run_id, attempt):
     def api(path):
         return json.loads(command('gh', 'api', f'repos/{repo}/{path}'))
 
-    def gate():
+    def gate_once():
         run = api(f'actions/runs/{run_id}')
         page = api(f'actions/runs/{run_id}/attempts/{attempt}/jobs?per_page=100')
         require(page['total_count'] == len(page['jobs']), 'CI job list is incomplete')
@@ -103,9 +116,19 @@ def publish(repo, sha, tag, run_id, attempt):
         require(artifacts['total_count'] == len(artifacts['artifacts']), 'Artifact list is incomplete')
         selected = [a for a in artifacts['artifacts'] if a['name'] == f'shin-local-macos-ARM64-{run_id}-{attempt}']
         require(len(selected) == 1, 'Qualified artifact is missing or ambiguous')
-        qualification(run, page['jobs'], selected[0], repo, sha, run_id, attempt)
+        require(run['head_branch'] == tag, 'Qualification did not run for this preview tag')
+        qualification(run, page['jobs'], selected[0], repo, sha, run_id, attempt, recover_publisher)
         require(api(f'commits/{tag}')['sha'] == sha, 'Release tag moved away from qualified source')
         return selected[0]['name']
+
+    def gate():
+        for retry in range(10):
+            try:
+                return gate_once()
+            except PackageProofPending:
+                if retry == 9:
+                    raise
+                time.sleep(3)  # Read-only metadata convergence; never retry mutations here.
 
     def receipt():
         result = subprocess.run(['gh', 'release', 'view', tag, '--repo', repo, '--json',
@@ -168,5 +191,9 @@ if __name__ == '__main__':
         parser.add_argument('--' + name, required=True)
     for name in ('run-id', 'attempt'):
         parser.add_argument('--' + name, type=int, required=True)
+    parser.add_argument('--source-root', type=Path, help='Checkout of the exact qualified source commit')
+    parser.add_argument('--recover-publisher', action='store_true',
+                        help='Recover a completed run whose only failing job was publication')
     args = parser.parse_args()
-    print(publish(args.repo, args.sha, args.tag, args.run_id, args.attempt))
+    print(publish(args.repo, args.sha, args.tag, args.run_id, args.attempt,
+                  args.source_root, args.recover_publisher))

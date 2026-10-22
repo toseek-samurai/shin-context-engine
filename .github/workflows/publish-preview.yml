@@ -1,0 +1,66 @@
+name: Recover qualified preview publication
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing preview tag whose native qualification passed
+        required: true
+        type: string
+      run_id:
+        description: Source qualification run ID
+        required: true
+        type: string
+      attempt:
+        description: Exact qualified run attempt
+        required: true
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: preview-publication-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+      actions: read
+    env:
+      GH_TOKEN: ${{ github.token }}
+      PREVIEW_TAG: ${{ inputs.tag }}
+      QUALIFIED_RUN: ${{ inputs.run_id }}
+      QUALIFIED_ATTEMPT: ${{ inputs.attempt }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Test guarded publisher
+        run: python3 -B tools/test_publish_preview.py
+      - name: Resolve qualified source
+        id: source
+        shell: bash
+        run: |
+          [[ "$QUALIFIED_RUN" =~ ^[1-9][0-9]*$ ]]
+          [[ "$QUALIFIED_ATTEMPT" =~ ^[1-9][0-9]*$ ]]
+          qualified_sha=$(gh api "repos/$GITHUB_REPOSITORY/actions/runs/$QUALIFIED_RUN" --jq .head_sha)
+          [[ "$qualified_sha" =~ ^[0-9a-f]{40}$ ]]
+          echo "sha=$qualified_sha" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          ref: ${{ steps.source.outputs.sha }}
+          path: qualified-source
+          persist-credentials: false
+      - name: Publish exact previously qualified archive
+        env:
+          QUALIFIED_SHA: ${{ steps.source.outputs.sha }}
+        run: |
+          python3 -B tools/publish_preview.py --repo "$GITHUB_REPOSITORY" \
+            --sha "$QUALIFIED_SHA" --tag "$PREVIEW_TAG" \
+            --run-id "$QUALIFIED_RUN" --attempt "$QUALIFIED_ATTEMPT" \
+            --source-root "$GITHUB_WORKSPACE/qualified-source" --recover-publisher

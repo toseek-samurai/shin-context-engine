@@ -20,7 +20,7 @@ TAG = 'v' + VERSION
 
 
 def fixtures():
-    run = dict(id=123, head_sha=SHA, run_attempt=1, event='push', path='.github/workflows/ci.yml',
+    run = dict(id=123, head_sha=SHA, head_branch=TAG, run_attempt=1, event='push', path='.github/workflows/ci.yml',
                repository={'full_name': REPO}, head_repository={'full_name': REPO},
                status='in_progress', conclusion=None)
     jobs = [dict(name=name, status='completed', conclusion='success', steps=[])
@@ -53,6 +53,7 @@ class GitHubFixture:
         self.state = None
         self.calls = []
         self.uncertain, self.lose_upload = uncertain, lose_upload
+        self.pending_steps = 0
 
     def command(self, *args):
         self.calls.append(args)
@@ -61,7 +62,11 @@ class GitHubFixture:
         if args[:2] == ('gh', 'api'):
             endpoint = args[2]
             if '/jobs?' in endpoint:
-                return json.dumps(dict(total_count=len(self.jobs), jobs=self.jobs))
+                jobs = copy.deepcopy(self.jobs)
+                if self.pending_steps:
+                    self.pending_steps -= 1
+                    next(j for j in jobs if j['name'] == 'native (macos-15, observer)')['steps'] = []
+                return json.dumps(dict(total_count=len(jobs), jobs=jobs))
             if '/artifacts?' in endpoint:
                 return json.dumps(dict(total_count=1, artifacts=[self.artifact]))
             if '/commits/' in endpoint:
@@ -150,6 +155,75 @@ class Publication(unittest.TestCase):
             with self.assertRaises(ValueError):
                 publisher.publish(REPO, SHA, TAG, 123, 1)
         self.assertFalse(any(c[:2] == ('gh', 'release') or c[:3] == ('gh','run','download') for c in github.calls))
+
+    def test_delayed_step_metadata_is_refetched_before_download(self):
+        github = GitHubFixture()
+        github.pending_steps = 2
+        with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt), \
+                patch.object(publisher.time, 'sleep') as sleep:
+            self.assertEqual(publisher.publish(REPO, SHA, TAG, 123, 1), 'fixture-release')
+        self.assertEqual(sleep.call_count, 2)
+        download = next(i for i,c in enumerate(github.calls) if c[:3] == ('gh','run','download'))
+        self.assertEqual(sum(c[:2] == ('gh','api') and '/jobs?' in c[2] for c in github.calls[:download]), 3)
+        self.assertEqual(sum(c[:3] == ('gh','release','create') for c in github.calls), 1)
+
+    def test_missing_step_metadata_expires_without_download_or_mutation(self):
+        github = GitHubFixture()
+        github.pending_steps = 20
+        with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt), \
+                patch.object(publisher.time, 'sleep') as sleep:
+            with self.assertRaises(publisher.PackageProofPending):
+                publisher.publish(REPO, SHA, TAG, 123, 1)
+        self.assertEqual(sleep.call_count, 9)
+        self.assertFalse(any(c[:2] == ('gh','release') or c[:3] == ('gh','run','download') for c in github.calls))
+
+    def test_failed_package_proof_is_not_retried(self):
+        github = GitHubFixture()
+        next(j for j in github.jobs if j['name'] == 'native (macos-15, observer)')['steps'][0]['conclusion'] = 'failure'
+        with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt), \
+                patch.object(publisher.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'Missing package proof'):
+                publisher.publish(REPO, SHA, TAG, 123, 1)
+        sleep.assert_not_called()
+        self.assertFalse(any(c[:2] == ('gh','release') or c[:3] == ('gh','run','download') for c in github.calls))
+
+    def test_recovery_requires_only_publisher_failed_and_all_native_jobs_passed(self):
+        run, jobs, artifact = fixtures()
+        run.update(status='completed', conclusion='failure')
+        jobs.append(dict(name='publish-preview', status='completed', conclusion='failure'))
+        with self.assertRaises(ValueError):
+            self.check_gate(run, jobs, artifact)
+        publisher.qualification(run, jobs, artifact, REPO, SHA, 123, 1, recover_publisher=True)
+        for name in publisher.MATRIX:
+            changed = copy.deepcopy(jobs)
+            next(j for j in changed if j['name'] == name)['conclusion'] = 'failure'
+            with self.assertRaises(ValueError):
+                publisher.qualification(run, changed, artifact, REPO, SHA, 123, 1, recover_publisher=True)
+        for change in [lambda j: j.pop(), lambda j: j.append(dict(name='foreign', conclusion='failure')),
+                       lambda j: j[-1].update(status='in_progress', conclusion=None)]:
+            changed = copy.deepcopy(jobs)
+            change(changed)
+            with self.assertRaises(ValueError):
+                publisher.qualification(run, changed, artifact, REPO, SHA, 123, 1, recover_publisher=True)
+
+    def test_source_tag_is_required_before_download(self):
+        github = GitHubFixture()
+        github.run['head_branch'] = 'main'
+        with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt):
+            with self.assertRaisesRegex(ValueError, 'preview tag'):
+                publisher.publish(REPO, SHA, TAG, 123, 1)
+        self.assertFalse(any(c[:2] == ('gh','release') or c[:3] == ('gh','run','download') for c in github.calls))
+
+    def test_recovery_publishes_exact_qualified_source_without_rebuilding(self):
+        github = GitHubFixture()
+        github.run.update(status='completed', conclusion='failure')
+        github.jobs.append(dict(name='publish-preview', status='completed', conclusion='failure'))
+        source = Path(publisher.__file__).parents[1]
+        with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt):
+            self.assertEqual(publisher.publish(REPO, SHA, TAG, 123, 1, source_root=source,
+                                              recover_publisher=True), 'fixture-release')
+        self.assertEqual(sum(c[:3] == ('gh','run','download') for c in github.calls), 1)
+        self.assertIn(('git', '-C', str(source.resolve()), 'rev-parse', 'HEAD'), github.calls)
 
     def test_uncertain_mutations_are_read_back_without_replay(self):
         github = GitHubFixture(uncertain=True)

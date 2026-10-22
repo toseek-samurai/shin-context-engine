@@ -267,6 +267,79 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         (stage / 'bin/shin-context').chmod(0o755)
         assert call(*update)['changed']
         assert call('installation', '--prefix', prefix)['version'] == manifest['version']
+
+        # A source edit and maintenance lock can arrive after candidate admission.
+        # Model that activation boundary with the verified payloads retained above.
+        completed = json.loads(state_file.read_text())
+        if (home / 'service/rpc.sock').exists():
+            stop_service()
+        pending = {**completed, 'phase': 'activating', 'update': {
+            'receipt': completed['receipt'], 'kit': completed['kit'],
+            'old_receipt': completed['previous']['receipt'], 'old_kit': completed['previous']['kit'],
+            'runtime': {'managed': managed, 'running': True},
+            'registry_sha256': hashlib.sha256(registry).hexdigest(), 'step': 'swapping'}}
+        pending.pop('previous')
+        write_json(state_file, pending, True)
+        with (binding_path.parent / 'observer.lock').open('r+') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+            (root / 'quota.cpp').write_text('int updateQuota() { return 43; }\n')
+            rejected = call(*update, error='installation-update-rolled-back')
+            diagnostic = rejected['error']['diagnostic']
+            assert diagnostic['schema_version'] == 'shin.validation-diagnostic.v1'
+            assert any(code in json.dumps(diagnostic) for code in ['project-busy', 'writer-busy']), diagnostic
+            assert str(root) not in json.dumps(diagnostic)
+            restored = json.loads(state_file.read_text())
+            assert 'resume_runtime' not in restored and 'update' not in restored
+            assert restored['last_rollback']['service_restored']
+            assert not restored['last_rollback']['all_projects_ready']
+            assert restored['last_rollback']['pending_projects'] == 1
+            receipt_status = call('installation', '--prefix', prefix)
+            assert not receipt_status['recovery_pending']
+            assert receipt_status['last_rollback']['pending_projects'] == 1
+            assert receipt_status['last_update_diagnostic'] == diagnostic
+            live = call('service-status', '--home', home, executable=prefix / 'bin/shin-ce')
+            assert live['service_running'] and live['enrollment_errors']
+            assert (home / 'registry/state.json').read_bytes() == registry
+            assert (home / 'identity/state.json').read_bytes() == identity
+            assert history.stat().st_ino == history_inode
+        # Ordinary background refresh, rather than the updater, repairs freshness.
+        until = time.monotonic() + 35
+        while True:
+            result = subprocess.run([str(prefix / 'bin/shin-ce'), 'query', 'updateQuota', '--home', str(home)],
+                                    cwd=root, env=env, capture_output=True, text=True, timeout=30)
+            if result.returncode == 0 and 'return 43;' in json.loads(result.stdout).get('source_context', ''):
+                break
+            assert time.monotonic() < until, (result.stdout, result.stderr)
+            time.sleep(0.2)
+        stop_service()
+
+        # A hard engine/identity refusal is not a transient readiness condition.
+        # Preserve the recovery journal until the test restores its own binding.
+        assert call(*update)['changed']
+        completed = json.loads(state_file.read_text())
+        pending = {**completed, 'phase': 'activating', 'update': {
+            'receipt': completed['receipt'], 'kit': completed['kit'],
+            'old_receipt': completed['previous']['receipt'], 'old_kit': completed['previous']['kit'],
+            'runtime': {'managed': managed, 'running': True},
+            'registry_sha256': hashlib.sha256(registry).hexdigest(), 'step': 'swapping'}}
+        pending.pop('previous')
+        write_json(state_file, pending, True)
+        binding_bytes = binding_path.read_bytes()
+        unsupported = json.loads(binding_bytes)
+        unsupported['core_version'] = 'unsupported-core'
+        write_json(binding_path, unsupported, True)
+        try:
+            rejected = call(*update, error='installation-update-recovery-required')
+            assert 'refresh-engine-changed' in json.dumps(rejected['error']['diagnostic']), rejected
+            assert 'resume_runtime' in json.loads(state_file.read_text())
+        finally:
+            binding_path.write_bytes(binding_bytes)
+        until = time.monotonic() + 35
+        while call('service-status', '--home', home, executable=prefix / 'bin/shin-ce')['enrollment_errors']:
+            assert time.monotonic() < until, 'Restored fixture binding did not readmit normally'
+            time.sleep(0.2)
+        call(*update, error='installation-update-rolled-back')
+        assert not call('installation', '--prefix', prefix)['recovery_pending']
         call('uninstall', '--prefix', prefix)
         assert not prefix.exists() and not stage.exists() and history.exists()
         assert (home / 'registry/state.json').read_bytes() == registry

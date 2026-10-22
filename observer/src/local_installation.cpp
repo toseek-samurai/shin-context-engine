@@ -2,6 +2,7 @@
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_registry.h"
+#include "shin/observer/local_update_diagnostics.h"
 #include <regex>
 #include <csignal>
 #include <spawn.h>
@@ -313,9 +314,22 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
     }
     if (runtime.at("running") || runtime.at("managed")) {
         request.command = "service-start";
-        const auto status = start_local_service(request, executable);
-        require(status.value("registry_error", std::string{}).empty() && status.at("enrollment_errors").empty(),
-            "installation-service-not-ready", "Updated service could not admit its registered projects.");
+        Json status;
+        try { status = start_local_service(request, executable); }
+        catch (const Error& error) {
+            // Capture any independently observable enrollment failure, while
+            // preserving the startup refusal and its original diagnostic.
+            auto diagnostic = error.diagnostic;
+            try {
+                request.command = "service-status";
+                diagnostic = merge_update_diagnostic(diagnostic,
+                    update_service_diagnostic(request_local_service(request), "activation"));
+            } catch (const Error&) { /* No status acknowledgement is not readiness. */ }
+            throw Error(error.code, error.what(), diagnostic);
+        }
+        if (!status.value("registry_error", std::string{}).empty() || !status.at("enrollment_errors").empty())
+            throw Error("installation-service-not-ready", "Updated service could not admit its registered projects.",
+                update_service_diagnostic(status, "activation"));
         qualify_update(home, executable);
         // A registered but deliberately stopped service stays stopped.
         if (!runtime.at("running").get<bool>()) {
@@ -388,9 +402,11 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
     if (WEXITSTATUS(status) != 0) {
         const auto code = result.contains("error") ? validation_identifier(result.at("error").value("code", "")) : "";
         if (allow_unready && std::string_view(command) == "status" && !root.empty() &&
-            (code == "refresh-validation-failed" || code == "project-check-failed" ||
+            (transient_update_project_error(code) || code == "refresh-validation-failed" || code == "project-check-failed" ||
              (result.contains("local_ready") && result.at("local_ready") == false))) return result;
-        throw Error("installation-recovery-command", "Previous CLI could not restore the service (" + code + ").");
+        throw Error("installation-recovery-command", "Previous CLI could not restore the service (" + code + ").",
+            merge_update_diagnostic(result.value("error", Json::object()).value("diagnostic", Json()),
+                update_service_diagnostic({{"registry_error", code}}, "previous-command")));
     }
     require(result.is_object() && (result.value("ok", false) ||
         (allow_unready && std::string_view(command) == "status" && !root.empty() && result.contains("local_ready") && result.at("local_ready") == false)),
@@ -461,33 +477,68 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         require(load().at("core_version") == target, "refresh-engine-changed", "Bootstrap migration did not confirm the target engine.");
     }
 }
-void resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
+Json resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
+    Json restored{{"service_restored", true}, {"readiness_assessed", false},
+        {"all_projects_ready", false}, {"pending_projects", 0}};
     if (runtime.at("managed")) (void)previous_cli(executable, home, "service-install");
     if (!runtime.at("running").get<bool>()) {
         if (runtime.at("managed")) {
             (void)previous_cli(executable, home, "service-stop");
             wait_update_service_stopped(home);
         }
-        return;
+        return restored;
     }
     const auto unready = runtime.value("unready_roots", Json::array());
     Json status;
     try { status = previous_cli(executable, home, "service-start"); }
     catch (const Error&) {
-        if (unready.empty()) throw;
-        // A previous kit may serve healthy projects while one route remains
-        // blocked as before. Require its live protocol, not a successful spawn.
+        // A lost/rejected startup acknowledgement does not establish whether
+        // the previous process is running. Read it back using its own protocol.
         status = previous_cli(executable, home, "service-status");
     }
-    require(status.value("registry_error", std::string{}).empty() && status.at("enrollment_errors").empty(),
-        "installation-service-not-ready", "Previous service could not admit its registered projects.");
-    if (runtime.at("running") && present(home / "registry")) for (const auto& project : registered_local_projects(home)) {
-        const auto result = unready.empty() ? previous_cli(executable, home, "status", project.root) :
-            previous_cli(executable, home, "status", project.root, true);
-        const bool was_unready = std::find(unready.begin(), unready.end(), Json(project.root.string())) != unready.end();
-        require(result.value("local_ready", false) || was_unready,
-            "installation-project-not-ready", "A previously ready project is not ready after rollback.");
+    require(status.value("service_running", false) && status.value("enrollment_mode", "") == "registry",
+        "installation-service-not-ready", "Previous service did not confirm a running registered runtime.");
+    if (!status.value("registry_error", std::string{}).empty())
+        throw Error("installation-service-not-ready", "Previous service could not read its registry.",
+            update_service_diagnostic(status, "rollback"));
+    const auto projects = registered_local_projects(home);
+    Json errors = status.at("enrollment_errors");
+    for (const auto& [root, code] : errors.items()) {
+        const bool enrolled = std::any_of(projects.begin(), projects.end(), [&](const auto& p) { return p.root == root; });
+        const bool was_unready = std::find(unready.begin(), unready.end(), Json(root)) != unready.end();
+        if (!enrolled || (!was_unready && !transient_update_project_error(code.get<std::string>())))
+            throw Error("installation-service-not-ready", "Previous service has an unresolved enrollment refusal.",
+                update_service_diagnostic(status, "rollback"));
     }
+    for (const auto& project : projects) {
+        // A rejected enrollment has no project RPC route yet. Its independently
+        // checked transient error is the readiness evidence; do not mistake the
+        // resulting service-project-denied response for failed process recovery.
+        if (errors.contains(project.root.string())) continue;
+        Json result;
+        try { result = previous_cli(executable, home, "status", project.root, true); }
+        catch (const Error&) {
+            const auto observed = previous_cli(executable, home, "service-status");
+            const auto code = observed.at("enrollment_errors").value(project.root.string(), "");
+            if (!observed.value("service_running", false) || observed.value("enrollment_mode", "") != "registry" ||
+                !observed.value("registry_error", std::string{}).empty() || !transient_update_project_error(code)) throw;
+            errors[project.root.string()] = code;
+            continue;
+        }
+        const bool was_unready = std::find(unready.begin(), unready.end(), Json(project.root.string())) != unready.end();
+        if (!result.value("local_ready", false)) {
+            const auto code = result.value("error", Json::object()).value("code", "project-not-ready");
+            errors[project.root.string()] = code;
+            if (!was_unready && !transient_update_project_error(code))
+                throw Error("installation-project-not-ready", "A previously ready project has an unresolved rollback refusal.",
+                    update_service_diagnostic({{"enrollment_errors", errors}}, "rollback"));
+        }
+    }
+    restored["readiness_assessed"] = true;
+    restored["all_projects_ready"] = errors.empty();
+    restored["pending_projects"] = errors.size();
+    restored["diagnostic"] = update_service_diagnostic({{"enrollment_errors", errors}}, "rollback");
+    return restored;
 }
 void verify_update_payload(const fs::path& path, const Json& kit, const Json& receipt) {
     require(directory_identity(path, true) == receipt.at("prefix_identity").get<std::string>() &&
@@ -633,11 +684,14 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
                 "installation-state-invalid", "Interrupted bootstrap rollback has an incompatible kit pair.");
         owner.reset();
         migrate_bootstrap_patch(home, migrations, prefix / "bin/shin-ce");
-        resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"));
+        const auto restored = resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Recovery state changed during restart.");
+        state["last_rollback"] = restored;
+        state["last_update_diagnostic"] = merge_update_diagnostic(state.value("last_update_diagnostic", Json()), restored.value("diagnostic", Json()));
         state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); owner->save(state);
-        throw Error("installation-update-rolled-back", "Interrupted rollback completed; the previous kit and service are restored.");
+        throw Error("installation-update-rolled-back", "Interrupted rollback completed; inspect installation and service-status for project readiness.",
+            state["last_update_diagnostic"]);
     }
     if (state.at("phase") == "installed" && !state.contains("update")) {
         require(record(prefix) == state.at("receipt"), "installation-ownership-changed", "Installed receipt changed.");
@@ -693,8 +747,10 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     if (state.at("phase") == "updating" && update.at("step") == "copying") {
         copy_update_payload(source, stage, state, *owner); update = state.at("update");
     }
+    auto failure_diagnostic = bounded_validation_diagnostic(state.value("last_update_diagnostic", Json()));
     const auto rollback = [&] {
         if (!owner) owner = std::make_unique<StateStore>(control, true);
+        state["last_update_diagnostic"] = failure_diagnostic;
         state["phase"] = "rolling-back"; owner->save(state);
         const auto current = directory_identity(prefix, true);
         const auto current_receipt = current == update.at("receipt").at("prefix_identity").get<std::string>() ? update.at("receipt") : update.at("old_receipt");
@@ -712,14 +768,17 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         state["previous"] = {{"receipt", update.at("receipt")}, {"kit", update.at("kit")}};
         owner->save(state); service_guard.reset(); owner.reset();
         migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()), prefix / "bin/shin-ce");
-        resume_previous_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
+        const auto restored = resume_previous_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Rollback state changed during restart.");
+        state["last_rollback"] = restored;
+        state["last_update_diagnostic"] = merge_update_diagnostic(failure_diagnostic, restored.value("diagnostic", Json()));
         state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); owner->save(state);
     };
     if (state.at("phase") == "rolling-back") {
         rollback();
-        throw Error("installation-update-rolled-back", "Interrupted rollback completed; the previous kit is active and project data was preserved.");
+        throw Error("installation-update-rolled-back", "Interrupted rollback completed; inspect installation and service-status for project readiness.",
+            state.value("last_update_diagnostic", Json()));
     }
     try {
         if (state.at("phase") == "updating") {
@@ -760,6 +819,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         require(owner->load() == state && registry_digest(home) == update.at("registry_sha256").get<std::string>(),
             "installation-ownership-changed", "Installation or enrollment changed during activation.");
         state["phase"] = "installed"; state.erase("update");
+        state.erase("last_update_diagnostic"); state.erase("last_rollback");
         state["previous"] = {{"receipt", update.at("old_receipt")}, {"kit", update.at("old_kit")}};
         owner->save(state);
         return {{"ok", true}, {"command", "update"}, {"phase", "installed"}, {"changed", true}, {"version", kit.at("version")},
@@ -768,13 +828,17 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     } catch (const std::exception& error) {
         const auto* typed = dynamic_cast<const Error*>(&error);
         const auto failure = typed ? validation_identifier(typed->code) : std::string("installation-update-failed");
+        failure_diagnostic = merge_update_diagnostic(typed ? typed->diagnostic : Json(),
+            update_service_diagnostic({{"registry_error", failure}}, "activation-result"));
         try { rollback(); }
         catch (const std::exception& recovery) {
             const auto* cause = dynamic_cast<const Error*>(&recovery);
             const auto recovery_code = cause ? validation_identifier(cause->code) : std::string("installation-recovery-failed");
-            throw Error("installation-update-recovery-required", "Update failed (" + failure + ") and recovery did not complete (" + recovery_code + "). Rerun update from the same extracted kit.");
+            throw Error("installation-update-recovery-required", "Update failed (" + failure + ") and recovery did not complete (" + recovery_code + "). Rerun update from the same extracted kit.",
+                merge_update_diagnostic(failure_diagnostic, cause ? cause->diagnostic : Json()));
         }
-        throw Error("installation-update-rolled-back", "New kit activation failed (" + failure + "); the previous kit and service were restored. Project data was preserved.");
+        throw Error("installation-update-rolled-back", "New kit activation failed (" + failure + "); the previous kit and service were restored. Inspect installation and service-status for project readiness. Project data was preserved.",
+            state.value("last_update_diagnostic", Json()));
     }
 }
 
@@ -909,10 +973,20 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         } else require(state.at("phase") == "removing", "installation-missing", "Installed kit is missing.");
         if (command == "installation") {
             links(receipt, false, false);
-            return {{"ok", true}, {"command", command}, {"phase", "installed"}, {"prefix", prefix.string()},
+            Json result{{"ok", true}, {"command", command}, {"phase", "installed"}, {"prefix", prefix.string()},
                 {"home", receipt.at("home")}, {"bin_dir", receipt.at("bin_dir")}, {"integrity_verified", true},
                 {"recovery_pending", state.contains("resume_runtime") || state.contains("update")},
                 {"version", state.at("kit").at("version")}, {"core_version", state.at("kit").at("core_version")}};
+            const auto diagnostic = bounded_validation_diagnostic(state.value("last_update_diagnostic", Json()));
+            if (!diagnostic.is_null()) result["last_update_diagnostic"] = diagnostic;
+            if (state.contains("last_rollback")) {
+                const auto& rollback = state.at("last_rollback");
+                result["last_rollback"] = {{"service_restored", rollback.value("service_restored", Json()) == true},
+                    {"readiness_assessed", rollback.value("readiness_assessed", Json()) == true},
+                    {"all_projects_ready", rollback.value("all_projects_ready", Json()) == true},
+                    {"pending_projects", std::clamp(rollback.value("pending_projects", 0), 0, 16)}};
+            }
+            return result;
         }
         // Fence new CLI operations before stopping the known service; data and grants remain untouched.
         links(receipt, false, false, true);

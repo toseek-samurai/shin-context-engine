@@ -9,14 +9,14 @@ Mac may require manual approval. This is not a stable release.
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.17).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.19).
 The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
 Public release downloads do not require a GitHub account.
 
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.17/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.19/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -216,6 +216,16 @@ previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
+Starting with the dev.20 source candidate, failed activation retains bounded
+enrollment error codes and opaque project hashes in `error.diagnostic` and
+`shin-ce installation` (`last_update_diagnostic`). Rollback checks the previous
+service independently if its startup acknowledgement fails. A restored service
+may have temporarily blocked projects: `last_rollback.service_restored` then stays
+separate from `all_projects_ready` and `pending_projects`. These fields describe
+the rollback observation, not current readiness; use `service-status` and project
+`status` for the current state. Identity, integrity and registry failures still
+leave recovery incomplete. The updater never repairs an index to clear a refusal.
+
 Updating with the exact installed archive is a no-op. A changed archive must have
 a newer version; downgrades and altered same-version kits are refused. The updater
 supports the same Core version and the qualified Core dev.1 → dev.2 transition
@@ -341,8 +351,8 @@ the native `installation` command and the saved candidate's `update` command to
 review/reconcile its journal before trying another installation. Project refresh
 under heavy machine load may still delay or refuse update activation.
 
-This is a source feature for the next preview. Existing dev.16/dev.17 binaries do
-not acquire it until an explicitly selected new kit is installed.
+Release update checks are included in dev.19 and newer kits. Existing dev.16/dev.17
+binaries acquire them only after an explicitly selected new kit is installed.
 
 **Last update result…** remains available in the tray menu. After resolving a
 native recovery, **Acknowledge verified result** verifies the installed payload

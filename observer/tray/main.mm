@@ -239,6 +239,21 @@ NSString* diagnostic_text_content(std::string_view value) {
     NSString* text = [[NSString alloc] initWithBytes:value.data() length:value.size() encoding:NSUTF8StringEncoding];
     return text ? text : ui_text("Cannot read the report text: invalid UTF-8 encoding.");
 }
+
+NSString* update_failure_text(const Json& result, NSString* failure) {
+    if (failure.length) return failure;
+    if (result.is_object()) {
+        const auto error = result.find("error");
+        if (error != result.end() && error->is_object()) {
+            if (error->value("code", Json()) == "update-offer-changed")
+                return ui_text("The release offer changed. Check for updates again before installing.");
+            const auto message = error->find("message");
+            if (message != error->end() && message->is_string() && !message->get_ref<const std::string&>().empty())
+                return diagnostic_text_content(message->get_ref<const std::string&>());
+        }
+    }
+    return ui_text("The release or installation could not be confirmed. Check again before retrying; the current kit is preserved.");
+}
 } // namespace
 
 @interface ShinAction : NSAccessibilityElement
@@ -382,6 +397,7 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSDate* nextUpdateCheck;
 - (void)checkForUpdates:(id)sender;
 - (void)showUpdateOffer:(id)sender;
+- (void)presentUpdateOffer;
 - (void)beginUpdateCheck:(BOOL)manual;
 - (void)toggleAutomaticUpdates:(id)sender;
 - (void)showUpdateResult;

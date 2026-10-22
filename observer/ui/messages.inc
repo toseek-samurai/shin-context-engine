@@ -588,6 +588,7 @@
     {"The project settings will change.", "Изменится состав настроек проекта."},
     {"The project was reconnected or is busy. Its search caches are preserved.", "Проект снова подключён или занят. Его поисковые кеши не очищаются."},
     {"The project was removed from observation. Sources, indexes, history and Shin settings were preserved.", "Проект удалён из списка наблюдения. Исходники, индексы, история и настройки Shin сохранены."},
+    {"The release offer changed. Check for updates again before installing.", "Предложение обновления изменилось. Перед установкой проверьте обновления снова."},
     {"The release or installation could not be confirmed. Check again before retrying; the current kit is preserved.", "Не удалось подтвердить выпуск или установку. Перед повтором проверьте обновления снова; текущий комплект сохранён."},
     {"The search cache is in use. Shin preserved it.", "Поисковый кеш сейчас используется. Shin сохранил его."},
     {"The selected project changed. This summary no longer applies; request a new one from the project view.", "Состав выбранного проекта изменился. Эта сводка больше не относится к нему; получите новую сводку из карточки проекта."},

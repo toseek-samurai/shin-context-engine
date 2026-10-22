@@ -1,5 +1,6 @@
 // Test-only entry point: real ImGui/Metal rendering, no IPC or user preferences.
 #include <iostream>
+#include "updates_window_test.inc"
 
 int main(int argc, char** argv) {
     @autoreleasepool {
@@ -7,6 +8,7 @@ int main(int argc, char** argv) {
             if ((argc != 4 && argc != 5) || std::string(argv[2]) != "-ShinHome") throw std::runtime_error("output directory and test home required");
             const auto initial_language = shin::ui::language_for(argc == 5 ? argv[4] : "ru");
             shin::ui::set_language(initial_language);
+            check_update_offer_actions();
             NSDictionary* arguments = [[NSUserDefaults standardUserDefaults] volatileDomainForName:NSArgumentDomain];
             if (![arguments[@"ShinHome"] isEqualToString:[NSString stringWithUTF8String:argv[3]]])
                 throw std::runtime_error("explicit development home argument was not read");

@@ -13,6 +13,7 @@
 #include "imgui_impl_metal.h"
 #include "imgui_impl_osx.h"
 #include "monitor_view.h"
+#include "../ui/update_window_macos.h"
 
 namespace {
 // Clang recognizes this adapter as returning text from the shared EN/RU catalog.
@@ -1281,8 +1282,16 @@ static std::unique_ptr<Monitor> monitor;
 #ifdef SHIN_TRAY_LAYOUT_TEST
 #include "layout_test.inc"
 #else
-int main() {
+int main(int argc, char** argv) {
     @autoreleasepool {
+        if (argc > 1 && std::string_view(argv[1]) == "--update-progress") {
+            if (argc != 4) return 2;
+            const std::string language = argv[3];
+            const std::string version = argv[2];
+            if ((language != "en" && language != "ru") || version.empty() || version.size() > 64 ||
+                version.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-") != std::string::npos) return 2;
+            return shin::observer::release_update_progress_viewer(argv[2], shin::ui::language_for(language));
+        }
         [NSApplication sharedApplication];
         initialize_language();
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];

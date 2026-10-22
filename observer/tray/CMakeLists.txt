@@ -19,7 +19,7 @@ add_library(shin-imgui STATIC
 target_include_directories(shin-imgui SYSTEM PUBLIC ${shin_imgui_SOURCE_DIR} ${shin_imgui_SOURCE_DIR}/backends)
 target_compile_options(shin-imgui PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
 target_link_libraries(shin-imgui PUBLIC "-framework Cocoa" "-framework Metal" "-framework MetalKit" "-framework QuartzCore" "-framework GameController")
-add_executable(shin-tray MACOSX_BUNDLE main.mm)
+add_executable(shin-tray MACOSX_BUNDLE main.mm ../ui/update_window_macos.mm)
 target_compile_definitions(shin-tray PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_sources(shin-tray PRIVATE assets/ShinTrayTemplate.png)
 set_source_files_properties(assets/ShinTrayTemplate.png PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
@@ -48,6 +48,9 @@ if(BUILD_TESTING)
     add_test(NAME shin-tray-layout-en COMMAND shin-tray-layout-tests "${CMAKE_CURRENT_BINARY_DIR}/layout-check-en"
         -ShinHome /shin-monitor-test-home en)
     set_tests_properties(shin-tray-layout-en PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
+    add_test(NAME shin-update-progress-transport COMMAND ${Python3_EXECUTABLE} -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/update_progress_transport_test.py" $<TARGET_FILE:shin-tray>)
+    set_tests_properties(shin-update-progress-transport PROPERTIES TIMEOUT 45 RESOURCE_LOCK shin-tray-render)
 endif()
 string(REGEX MATCH "^[0-9]+\\.[0-9]+\\.[0-9]+" SHIN_MONITOR_SHORT_VERSION "${SHIN_OBSERVER_VERSION}")
 set_target_properties(shin-tray PROPERTIES

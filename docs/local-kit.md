@@ -342,13 +342,14 @@ without new enrollment or changed identity/profile. Rollback uses the verified
 previous kit to restore their previous Core binding. Canonical publisher grants
 retain their original identity. No index deletion or profile change is used.
 
-### Release offers in Monitor (dev.18 source)
+### Release offers in Monitor
 
 The macOS Monitor checks the public GitHub Releases feed shortly after launch and
 then every six hours. No account, token, project names or source content are sent.
 GitHub sees a normal HTTPS request and its network metadata. Disable automatic
 checks or choose **Check for updates…** in the tray menu. Failed checks do not
-interrupt offline retrieval. Manual checks are limited to once per minute.
+interrupt offline retrieval. Manual checks fetch the current offer even after a
+recent check; concurrent checks are coalesced.
 
 A preview installation receives newer complete preview or stable kits; a stable
 installation receives stable releases only. Drafts, incomplete uploads, releases
@@ -362,6 +363,14 @@ file, archive paths and complete native manifest before invoking the new kit's
 existing updater. That updater retains installation ownership, compatibility,
 project qualification, data preservation and rollback checks. The helper records
 an outcome and reopens Monitor. Persistent MCP clients still need to reconnect.
+The helper's own progress window remains visible while Monitor is closed. It
+shows downloaded bytes and the download percentage, followed by named verification,
+unpacking, kit-checking, installation/restart and final-confirmation stages. Work
+without a measurable total uses an indeterminate indicator, not an estimated
+overall percentage. The window uses Monitor's selected EN/RU language and does
+not offer cancellation once the native operation has started. Terminal updates
+keep their JSON output and do not open a window. This window is supplied by the
+installed helper, so the change takes effect for updates started from the new kit.
 Checksums protect download integrity; this preview is not Developer ID signed or
 notarized and does not provide an independent signature over a compromised release.
 

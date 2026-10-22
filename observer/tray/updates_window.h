@@ -7,7 +7,7 @@
     if (!_updateOffer.value("available",false)) return;
     const auto offered=_updateOffer; // Pin the exact release shown during the modal review.
     NSAlert* alert=[NSAlert new];alert.messageText=ui_text("A Shin update is available");
-    alert.informativeText=[NSString stringWithFormat:ui_text("Version %@ is available. Monitor will close while the complete kit is downloaded and verified, then reopen. The Shin service may restart briefly. Projects, settings and history stay in place. Reconnect persistent MCP clients afterwards."),diagnostic_text_content(offered.at("version").get<std::string>())];
+    alert.informativeText=[NSString stringWithFormat:ui_text("Version %@ is available. An update window will show progress while Monitor closes and the kit is replaced. Projects, settings and history stay in place. Reconnect persistent MCP clients afterwards."),diagnostic_text_content(offered.at("version").get<std::string>())];
     [alert addButtonWithTitle:ui_text("Download and install")];[alert addButtonWithTitle:ui_text("Later")];[alert addButtonWithTitle:ui_text("Release notes")];
     const auto choice=[alert runModal];
     if(choice==NSAlertThirdButtonReturn) { [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:diagnostic_text_content(offered.at("release_url").get<std::string>())]];return; }
@@ -17,7 +17,7 @@
         NSAlert* busy=[NSAlert new];busy.messageText=ui_text("Finish the current Shin operation before updating.");[busy runModal];return;
     }
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"ShinUpdatePending"];
-    [self runCLI:@"update-install" arguments:@[@"--revision",diagnostic_text_content(offered.at("revision").get<std::string>()),@"--wait-pid",[NSString stringWithFormat:@"%d",getpid()]] completion:^(Json result,NSString* failure) {
+    [self runCLI:@"update-install" arguments:@[@"--revision",diagnostic_text_content(offered.at("revision").get<std::string>()),@"--wait-pid",[NSString stringWithFormat:@"%d",getpid()],@"--ui-language",shin::ui::language()==shin::ui::Language::ru ? @"ru" : @"en"] completion:^(Json result,NSString* failure) {
         release_project_operation();[[NSUserDefaults standardUserDefaults] removeObjectForKey:@"ShinUpdatePending"];
         const auto error=result.is_object() ? result.value("error",Json()) : Json();
         if(error.is_object() && error.value("code",Json())=="update-offer-changed") {

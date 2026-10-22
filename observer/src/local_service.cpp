@@ -26,6 +26,7 @@ using local_rpc::string_field;
 constexpr std::size_t request_limit = 8192, response_limit = 128 * 1024, connection_limit = 8, worker_limit = 2;
 constexpr std::size_t resident_limit = kLocalResidentProjectLimit;
 constexpr std::size_t waiting_limit = 4;
+constexpr auto admission_wait_limit = std::chrono::seconds(5);
 constexpr const char* refresh_retry_advice =
     " Continue useful work with direct sources. If Shin would help at a later task checkpoint, "
     "try one fresh query for the same project and use its new snapshot for inspect/read. "
@@ -221,7 +222,8 @@ public:
                 discard_resident(request.root.string(), "project-updating");
             qualified[request.root.string()] = {request.maintenance_root_identity, request.maintenance_workspace_identity, snapshot};
             resident_errors.erase(request.root.string());
-            prepare_resident(request, snapshot);
+            const auto demand = reader_requests.find(request.root.string());
+            prepare_resident(request, snapshot, demand != reader_requests.end() && demand->second > Clock::now());
         } else {
             qualified.erase(request.root.string());
             discard_resident(request.root.string(), "project-updating");
@@ -253,6 +255,7 @@ public:
         resident_errors.erase(root.string());
         project_blockers.erase(root.string());
         qualified.erase(root.string());
+        reader_requests.erase(root.string());
         telemetry.detach(root);
     }
     void project_state(const fs::path& root, const Json& state) {
@@ -330,6 +333,14 @@ public:
         for (const auto& root : retired) retire_project(root);
     }
     std::set<fs::path> preparing_projects;
+    std::vector<fs::path> reader_demand() {
+        std::erase_if(reader_requests, [&](const auto& entry) {
+            return entry.second <= Clock::now() || qualified.contains(entry.first) || !bindings.contains(entry.first);
+        });
+        std::vector<fs::path> roots;
+        for (const auto& [root, until] : reader_requests) { (void)until; roots.emplace_back(root); }
+        return roots;
+    }
 private:
     void record_result(Connection& client, Json metric) {
         if (client.metric_recorded) return;
@@ -484,6 +495,7 @@ private:
                 {"ok", true}, {"command", command}, {"service_running", true},
                 {"query_workers", active_workers()}, {"max_query_workers", worker_limit},
                 {"waiting_requests", waiting_requests()}, {"max_waiting_requests", waiting_limit},
+                {"admission_wait_limit_ms", std::chrono::duration_cast<std::chrono::milliseconds>(admission_wait_limit).count()},
                 {"max_connections", connection_limit}, {"projects", Json::array()},
                 {"resident_projects", Json::array()}, {"max_resident_projects", resident_limit},
                 {"max_registered_projects", kLocalServiceProjectLimit}, {"qualified_projects", Json::array()},
@@ -581,9 +593,14 @@ private:
         }
         const auto resident = residents.find(found->first);
         if (resident == residents.end() || !resident->second->ready) {
+            // Retain one bounded scheduling hint after a caller times out or
+            // disconnects, so qualification can finish once another refresh ends.
+            // The 100ms admission retries must not extend this lifetime.
+            if (!qualified.contains(found->first))
+                reader_requests.try_emplace(found->first, client.received + std::chrono::seconds(30));
             if (!client.warm_pending) {
                 ++resident_warm_requests;
-                client.deadline = client.received + std::chrono::seconds(30);
+                client.deadline = client.received + admission_wait_limit;
             }
             client.warm_pending = true;
             client.next_admission = Clock::now() + std::chrono::milliseconds(100);
@@ -611,7 +628,7 @@ private:
         reader.last_used = Clock::now();
         client.request_id = id;
         client.resident_pending = true;
-        if (!client.warm_pending) client.deadline = Clock::now() + std::chrono::seconds(30);
+        client.deadline = client.received + std::chrono::seconds(30);
         client.warm_pending = false;
         client.method = command;
         client.root = found->first;
@@ -719,6 +736,7 @@ private:
     std::map<std::string, std::string> enrollment_errors;
     std::map<std::string, std::unique_ptr<Resident>> residents;
     std::map<std::string, QualifiedProject> qualified;
+    std::map<std::string, Clock::time_point> reader_requests;
     std::uint64_t resident_evictions = 0, resident_warm_requests = 0, resident_memory_evictions = 0;
     bool resident_memory_limited = false;
     Clock::time_point next_memory_check{};
@@ -827,7 +845,8 @@ Json serve_local_projects(const LocalProjectRequest& request, const std::vector<
     auto result = watch_local_projects(request, roots, 0, [&] { return stopped() || service.stopping; },
                                       [&] { service.poll(); }, enrollment,
                                       [&](const auto& root, const auto& state) { service.project_state(root, state); },
-                                      [&](const auto& project) { return service.refresh(project, stopped); });
+                                      [&](const auto& project) { return service.refresh(project, stopped); },
+                                      [&] { return service.reader_demand(); });
     service.drain_stop_replies();
     result["command"] = "serve";
     result["service_stopped"] = true;

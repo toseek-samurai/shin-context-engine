@@ -1655,6 +1655,13 @@ public:
         return now >= due;
     }
 
+    void wake_for_reader() {
+        // A lost reader is not a source notification. Wake an idle controller,
+        // retaining its normal coalescing floor and all failure/storage backoff.
+        if (controller && !failures && !storage_retry)
+            due = std::min(due, last_completed + std::chrono::seconds(1));
+    }
+
     void sample(const std::function<void()>& checking = {}) {
         const auto start = std::chrono::steady_clock::now();
         if (!changes->healthy()) last_monitor_error = changes->failure_reason();
@@ -1840,7 +1847,7 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
                           std::uint64_t samples, const std::function<bool()>& stopped,
                           const std::function<void()>& service_poll, const LocalEnrollmentHooks& enrollment,
                           const std::function<void(const fs::path&, const Json&)>& report,
-                          const LocalRefresh& refresh) {
+                          const LocalRefresh& refresh, const LocalReaderDemand& reader_demand) {
     if ((roots.empty() && !enrollment.read) || roots.size() > 16 || samples > 3600)
         throw Error("invalid-arguments", "Watch permits 1..16 projects and at most 3600 samples per project.");
     std::vector<fs::path> canonical;
@@ -1869,6 +1876,8 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
     }
     std::map<fs::path, std::pair<std::string, std::string>> admitted;
     auto next_enrollment = std::chrono::steady_clock::time_point{};
+    std::size_t next_watch = 0;
+    bool demand_served = false;
     while (!stopped()) {
         for (auto it = watches.begin(); it != watches.end();) {
             const fs::path root = (*it)->state.at("root").get<std::string>();
@@ -1940,18 +1949,41 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
         }
         if (service_poll) service_poll();
         bool pending = static_cast<bool>(enrollment.read);
-        for (auto& watch : watches) {
-            if (service_poll) service_poll();
-            if (stopped()) break;
-            if (!watch->pending(samples)) continue;
-            pending = true;
-            if (!watch->ready()) continue;
+        std::vector<LocalWatch*> due;
+        for (std::size_t offset = 0; offset < watches.size(); ++offset) {
+            auto& watch = watches[(next_watch + offset) % watches.size()];
+            if (watch->pending(samples)) {
+                pending = true;
+                if (watch->ready()) due.push_back(watch.get());
+            }
+        }
+        LocalWatch* selected = nullptr;
+        const auto requested = reader_demand ? reader_demand() : std::vector<fs::path>{};
+        for (const auto& root : requested) {
+            const auto watch = std::find_if(watches.begin(), watches.end(), [&](const auto& entry) {
+                return entry->state.at("root") == root.string();
+            });
+            if (watch == watches.end() || !(*watch)->pending(samples)) continue;
+            (*watch)->wake_for_reader();
+            if (!selected && !demand_served && (*watch)->ready()) selected = watch->get();
+        }
+        const bool prioritized = selected != nullptr;
+        if (!selected && !due.empty()) selected = due.front();
+        if (selected && !stopped()) {
+            // One completion returns to polling/selection so a newly waiting
+            // reader need not sit behind an entire round of unrelated refreshes.
+            // Alternate priority with due round-robin work to preserve fairness.
+            demand_served = prioritized;
+            const auto position = std::find_if(watches.begin(), watches.end(), [&](const auto& entry) {
+                return entry.get() == selected;
+            });
+            next_watch = (static_cast<std::size_t>(position - watches.begin()) + 1) % watches.size();
             const auto report_state = [&] {
-                if (report) report(fs::path(watch->state.at("root").get<std::string>()), watch->state);
+                if (report) report(fs::path(selected->state.at("root").get<std::string>()), selected->state);
             };
-            try { watch->sample([&] { report_state(); if (service_poll) service_poll(); }); }
-            catch (const Error& error) { watch->storage_failed(&error); }
-            catch (const std::exception&) { watch->storage_failed(); }
+            try { selected->sample([&] { report_state(); if (service_poll) service_poll(); }); }
+            catch (const Error& error) { selected->storage_failed(&error); }
+            catch (const std::exception&) { selected->storage_failed(); }
             report_state();
         }
         if (!pending) break;
@@ -1964,7 +1996,7 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
     auto result = envelope("watch", true);
     if (watches.size() == 1) result["watch"] = watches.front()->state;
     else {
-        result["scheduler"] = {{"policy", "serial-due-round-robin-v1"}, {"max_active_refreshes", 1},
+        result["scheduler"] = {{"policy", "serial-demand-and-due-round-robin-v2"}, {"max_active_refreshes", 1},
             {"project_count", watches.size()}, {"project_limit", 16}, {"samples_per_project", samples},
             {"query_transport", "independent-local-cli"}};
         result["projects"] = Json::array();

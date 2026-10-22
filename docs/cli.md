@@ -57,6 +57,17 @@ Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.
 
+A pending read wakes an idle project's background qualification and receives
+priority between refreshes. Only one refresh runs at a time; due background work
+still receives round-robin turns. Existing source checks, failure backoff and
+publication authority remain enforced. Reader admission waits at most five
+seconds, within the existing 30-second request budget. If preparation is still in
+progress, the call returns `project-updating` while background work continues.
+`service-status` reports this bound as `admission_wait_limit_ms`.
+A reader scheduling hint remains valid for at most 30 seconds after the initial
+request, allowing qualification to finish after an unrelated refresh releases the
+publisher. It neither extends the caller's wait nor overrides failure backoff.
+
 ## Monitor and CLI
 
 | In Monitor | In the CLI today |
@@ -150,6 +161,13 @@ retain the model with the opaque session; `history.model_cohorts` summarizes up 
 rows. This additive history column preserves earlier rows and allows older readers
 to ignore it. Status calls remain current-run only. Token-usage records are separate;
 no join by timestamp, project or default model is used to claim attribution.
+
+If sessions are present but every call has an unknown model, check the actual
+tool arguments: a client can supply `session_id` while omitting `model_id`.
+This is missing per-call metadata, not a failure to retain the supplied label.
+The native usage collector can separately read model names from client history;
+those names do not identify the model behind a particular MCP call. Supplying a
+default model in shared client configuration would also mislabel model switches.
 
 ### Release update checks (macOS, dev.18 source)
 

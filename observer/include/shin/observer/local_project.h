@@ -56,9 +56,12 @@ struct LocalEnrollmentHooks {
     std::function<void(const fs::path&, bool)> preparing;
 };
 using LocalRefresh = std::function<Json(const LocalProjectRequest&)>;
+// Validated pending reads may wake the ordinary background publisher. This is
+// scheduling only; no query executes refresh or grants publication authority.
+using LocalReaderDemand = std::function<std::vector<fs::path>()>;
 Json watch_local_projects(const LocalProjectRequest& request, const std::vector<fs::path>& roots,
                           std::uint64_t samples, const std::function<bool()>& stopped,
                           const std::function<void()>& service_poll = {}, const LocalEnrollmentHooks& enrollment = {},
                           const std::function<void(const fs::path&, const Json&)>& report = {},
-                          const LocalRefresh& refresh = {});
+                          const LocalRefresh& refresh = {}, const LocalReaderDemand& reader_demand = {});
 } // namespace shin::observer

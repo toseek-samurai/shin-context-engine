@@ -192,6 +192,9 @@ recorded data home and service preference.
 
 ## Update an existing kit
 
+Monitor displays its installed version beneath the panel title, including while
+offline. An available newer version appears separately in the update offer.
+
 Download and verify the new complete kit, then extract it outside the installed
 folder. Close Monitor and run the **new kit's** executable:
 
@@ -232,6 +235,23 @@ supports the same Core version and the qualified Core dev.1 → dev.2 transition
 described in [Core patch compatibility](#core-patch-compatibility). Other Core changes
 require an explicit migration. It does not download releases or change shell,
 client, project or model-usage configuration.
+
+### Preview publication and CI
+
+Only a CI-qualified published Release is offered to users. Maintainers prepare
+`docs/releases/<tag>.md`, commit the matching Observer version, and push its
+reviewed `vX.Y.Z-dev.N` tag. The tag workflow waits for all four Linux/macOS Core
+and Observer jobs, including exact macOS kit qualification, before publishing.
+`tools/publish_preview.py` independently checks the source commit, workflow,
+attempt, job results and artifact provenance, then downloads that run's exact
+archive, checksum and installer. Local binaries cannot be substituted. A pending
+or failed qualification leaves no published offer; a mismatched existing release
+is preserved for review rather than overwritten.
+
+"Do not wait for CI" means the maintainer can finish after pushing the tag. The
+workflow completes publication when qualification succeeds. It does not permit
+manual publication of a locally tested kit while CI is pending. Monitor reads
+published Releases; its checks do not expose draft releases or Actions artifacts.
 
 ### Adopt a previous manually installed kit
 

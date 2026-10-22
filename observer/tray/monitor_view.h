@@ -1565,7 +1565,20 @@ void render(const ViewState& view) {
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Shin", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
-    ImGui::PushFont(nullptr, 21); ImGui::TextUnformatted("Shin"); ImGui::PopFont();
+    const auto title_origin = ImGui::GetCursorScreenPos();
+    const float title_height = std::max(21.0f, ImGui::GetFrameHeight());
+    ImGui::PushFont(nullptr, std::min(16.0f, title_height - 9));
+    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), title_origin,
+        ImGui::GetColorU32(ImGuiCol_Text), "Shin");
+    ImGui::PopFont();
+    const std::string installed_version = "v" SHIN_OBSERVER_VERSION;
+    const ImVec2 version_origin{title_origin.x, title_origin.y + title_height - 9};
+    ImGui::PushFont(nullptr, 9);
+    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), version_origin,
+        ImGui::GetColorU32(muted), installed_version.c_str());
+    ui_actions.push_back({installed_version, "", version_origin, ImGui::CalcTextSize(installed_version.c_str()), 87, true, true});
+    ImGui::PopFont();
+    ImGui::Dummy({70, title_height});
     ImGui::SameLine(90); ImGui::SetNextItemWidth(130);
     std::array<std::string, 3> language_labels{shin::ui::tr("System"), "English", "Русский"};
     const char* languages[]{language_labels[0].c_str(), language_labels[1].c_str(), language_labels[2].c_str()};

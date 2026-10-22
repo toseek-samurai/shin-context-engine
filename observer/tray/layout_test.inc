@@ -395,6 +395,9 @@ int main(int argc, char** argv) {
                     }
                     if(kind=="update" && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& a){return a.chart==86 && a.enabled;}))
                         throw std::runtime_error("release offer is not actionable");
+                    if (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                        return action.chart == 87 && action.informational && action.label == "v" SHIN_OBSERVER_VERSION;
+                    })) throw std::runtime_error("installed version is not visible and accessible: " + context);
                     for (const auto& action : ui_actions) {
                         if (action.chart == 50 && std::abs(action.origin.x + action.size.x -
                             (size.x - ImGui::GetStyle().WindowPadding.x)) > .5f)

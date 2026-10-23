@@ -8,6 +8,7 @@
 #include "shin/observer/model_usage.h"
 #include "shin/observer/local_telemetry.h"
 #include "shin/observer/resident_retention.h"
+#include "local_startup.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -885,17 +886,18 @@ Json start_local_service(const LocalProjectRequest& input, const fs::path& execu
         const bool started = status.at("started");
         // Socket availability precedes registry admission. An explicit restart
         // must settle enrollment before a caller's first project request.
-        const auto deadline = Clock::now() + std::chrono::seconds(60);
-        while (!std::all_of(projects.begin(), projects.end(), [&](const auto& project) {
-            return resident_ready(status, project.root) || status.at("enrollment_errors").contains(project.root.string()) ||
-                ((projects.size() > resident_limit || status.value("resident_memory_limited", false)) &&
-                    std::any_of(status.at("qualified_projects").begin(), status.at("qualified_projects").end(),
-                    [&](const Json& entry) { return entry.at("root") == project.root.string(); }));
-        })) {
-            if (Clock::now() >= deadline)
-                throw Error("service-enrollment-timeout", "Registered project preparation remains pending; the service stays available for diagnostics.");
-            std::this_thread::sleep_for(std::chrono::milliseconds(20));
-            status = request_local_service(control, [&] { return Clock::now() >= deadline; });
+        std::vector<fs::path> roots;
+        for (const auto& project : projects) roots.push_back(project.root);
+        LocalStartupAdmission admission(std::move(roots), resident_limit);
+        while (!admission.observe(status)) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            try { status = request_local_service(control, [&] { return admission.expired(); }); }
+            catch (const Error& error) {
+                // Cancellation of this bounded wait is a startup timeout, not
+                // a user cancellation or a failed project validation.
+                if (error.code == "service-request-cancelled" && admission.expired()) LocalStartupAdmission::timeout();
+                throw;
+            }
         }
         status["started"] = started;
         status.erase("telemetry"); // Startup acknowledgement is not a dashboard/history response.

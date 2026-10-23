@@ -229,6 +229,12 @@ the rollback observation, not current readiness; use `service-status` and projec
 `status` for the current state. Identity, integrity and registry failures still
 leave recovery incomplete. The updater never repairs an index to clear a refusal.
 
+Startup keeps a 60-second no-progress budget while admitting registered projects.
+The first admission or readiness outcome of each selected project renews that
+budget, up to a five-minute total startup bound. Repeated status replies, changed
+snapshots and unrelated projects do not extend it. All project readiness and
+rollback checks still apply; an expired wait reports `service-enrollment-timeout`.
+
 Updating with the exact installed archive is a no-op. A changed archive must have
 a newer version; downgrades and altered same-version kits are refused. The updater
 supports the same Core version and the qualified Core dev.1 → dev.2 transition

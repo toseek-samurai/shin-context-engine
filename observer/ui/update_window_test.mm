@@ -48,13 +48,18 @@ int main(int argc, char** argv) {
                     const auto captured=std::make_shared<Capture>();
                     progress(value);
                     const auto path = output / filename;
-                    dispatch_after(dispatch_time(DISPATCH_TIME_NOW, 300 * NSEC_PER_MSEC), dispatch_get_main_queue(), ^{
+                    // Start observing immediately, including before the UI's
+                    // first paint. A fixed sleep races cold AppKit startup.
+                    dispatch_async(dispatch_get_main_queue(), ^{
+                      NSTimer* observer = [NSTimer timerWithTimeInterval:.01 repeats:YES block:^(NSTimer* tick) {
+                      if (captured->done) { [tick invalidate]; return; }
                       try {
                         @try {
                             NSWindow* window = nil;
                             for (NSWindow* candidate in NSApp.windows)
                                 if (candidate.visible && [candidate.title isEqualToString:[NSString stringWithUTF8String:shin::ui::tr("Updating Shin")]]) window=candidate;
-                            check(window != nil && !(window.styleMask & NSWindowStyleMaskClosable), "progress window missing or offers unsafe close");
+                            if (!window) return;
+                            check(!(window.styleMask & NSWindowStyleMaskClosable), "progress window offers unsafe close");
                             auto* labels = [NSMutableArray<NSTextField*> array];
                             auto* bars = [NSMutableArray<NSProgressIndicator*> array];
                             collect(window.contentView, labels, bars);
@@ -64,9 +69,15 @@ int main(int argc, char** argv) {
                             bool title_found = false;
                             for (NSTextField* label in labels) if ([label.stringValue isEqualToString:expected]) title_found = true;
                             check(title_found, "update version or selected language missing");
-                            if (value.step == ReleaseUpdateStep::downloading)
-                                check(!bars[0].indeterminate && bars[0].doubleValue == 50, "real byte progress not displayed");
-                            else check(bars[0].indeterminate, "unmeasured stage displayed a percentage");
+                            const char* stage_key = value.step == ReleaseUpdateStep::downloading ? "Downloading the update…" :
+                                value.step == ReleaseUpdateStep::installing ? "Installing and restarting Shin…" : "Confirming the installed version…";
+                            NSString* expected_stage = [NSString stringWithUTF8String:shin::ui::tr(stage_key)];
+                            bool stage_found = false;
+                            for (NSTextField* label in labels) if ([label.stringValue isEqualToString:expected_stage]) stage_found = true;
+                            if (!stage_found) return;
+                            if (value.step == ReleaseUpdateStep::downloading) {
+                                if (bars[0].indeterminate || bars[0].doubleValue != 50) return;
+                            } else if (!bars[0].indeterminate) return;
                             [window displayIfNeeded];
                             NSBitmapImageRep* bitmap = [window.contentView bitmapImageRepForCachingDisplayInRect:window.contentView.bounds];
                             [window.contentView cacheDisplayInRect:window.contentView.bounds toBitmapImageRep:bitmap];
@@ -77,11 +88,17 @@ int main(int argc, char** argv) {
                             captured->failure=reason ? reason : "progress capture exception";
                         }
                       } catch (const std::exception& error) { captured->failure=error.what(); }
+                      [tick invalidate];
                       captured->done=true;
+                      }];
+                      [NSRunLoop.mainRunLoop addTimer:observer forMode:NSRunLoopCommonModes];
                     });
                     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
                     while (!captured->done && std::chrono::steady_clock::now() < deadline) std::this_thread::sleep_for(std::chrono::milliseconds(10));
-                    check(captured->done, "progress window did not stay responsive");
+                    if (!captured->done) {
+                        captured->done=true; // Retire a delayed observer without stack/UI captures.
+                        throw std::runtime_error("progress window did not display the requested stage and byte state within five seconds");
+                    }
                     check(captured->failure.empty(),captured->failure.c_str());
                 };
                 capture({ReleaseUpdateStep::downloading, 12 * 1024 * 1024, 24 * 1024 * 1024}, "download.png");

@@ -267,7 +267,9 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
     RelaunchMonitor relaunch{prefix};
     // Display-only hint from the review. The release revision is still rechecked below.
     UpdateProgressViewer viewer(prefix,display_version,language,parent!=0);
-    const auto progress=[&](ReleaseUpdateProgress value) {terminal.report(value);report_update(viewer.sink(),value);};
+    const auto progress=[terminal_sink=terminal.sink(),viewer_sink=viewer.sink()](ReleaseUpdateProgress value) {
+        report_update(terminal_sink,value);report_update(viewer_sink,value);
+    };
     report_update(progress,{ReleaseUpdateStep::checking_release});
     auto selected=offer(current);selected["prefix"]=prefix.string();
     if(command=="update-check")return selected;

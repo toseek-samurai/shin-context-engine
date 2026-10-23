@@ -55,6 +55,13 @@ inline std::string update_detail(ReleaseUpdateProgress value) {
 // stderr is a presenter only; stdout remains the native JSON receipt.
 // A redirected invocation stays silent unless --progress is explicitly selected.
 class TerminalUpdateProgress {
+    struct Connection {
+        std::mutex mutex;
+        TerminalUpdateProgress* owner;
+        explicit Connection(TerminalUpdateProgress* value) : owner(value) {}
+    };
+    // Async producers may retain a sink after the presenter has retired.
+    std::shared_ptr<Connection> connection_ = std::make_shared<Connection>(this);
     std::mutex mutex_;
     bool enabled_, tty_, json_, release_, reported_ = false;
     ReleaseUpdateProgress current_;
@@ -112,8 +119,14 @@ public:
         } else draw();
         written_ = now;
     }
-    ReleaseUpdateProgressSink sink() { return [this](auto value) { report(value); }; }
+    ReleaseUpdateProgressSink sink() {
+        return [connection = connection_](auto value) {
+            std::lock_guard lock(connection->mutex);
+            if (connection->owner) connection->owner->report(value);
+        };
+    }
     ~TerminalUpdateProgress() {
+        { std::lock_guard lock(connection_->mutex); connection_->owner = nullptr; }
         if (heartbeat_.joinable()) { heartbeat_.request_stop(); heartbeat_.join(); }
         if (reported_ && tty_) std::fputc('\n', stderr);
     }

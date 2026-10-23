@@ -18,6 +18,12 @@ int main(int argc, char** argv) try {
     check(!parse_update_progress(Json{{"step", 2U}, {"received", 0U}, {"total", "wrong"}}));
     check(parse_update_progress(update_progress_frame({ReleaseUpdateStep::checking_projects, 2, 3}))->received == 2);
     report_update([](auto) { throw std::runtime_error("unavailable observer"); }, {ReleaseUpdateStep::staging});
+    ReleaseUpdateProgressSink retired;
+    {
+        TerminalUpdateProgress terminal(false, false, false);
+        retired = terminal.sink();
+    }
+    retired({ReleaseUpdateStep::starting_service}); // Late network delivery has no presenter to access.
     if (argc > 1) {
         TerminalUpdateProgress terminal(std::string_view(argv[1]) == "force", std::string_view(argv[1]) == "json");
         terminal.report({ReleaseUpdateStep::downloading, 5 * 1048576, 10 * 1048576});

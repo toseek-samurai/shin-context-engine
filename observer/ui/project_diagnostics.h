@@ -71,13 +71,16 @@ struct ProjectTableLayout {
     float table_height;
 };
 
-inline ProjectTableLayout project_table_layout(float available_height, int count) {
+inline ProjectTableLayout project_table_layout(float available_height, int count,
+        float row_height = ProjectTableLayout::row_height) {
     const auto height = std::isfinite(available_height) ? std::clamp(available_height, 0.0f, 1000.0f) : 0.0f;
+    if (!std::isfinite(row_height)) row_height = ProjectTableLayout::row_height;
+    row_height = std::clamp(row_height, ProjectTableLayout::row_height, 44.0f);
     const int capacity = std::clamp(static_cast<int>(std::floor(std::max(0.0f,
         height - ProjectTableLayout::header_height - ProjectTableLayout::controls_height) /
-        ProjectTableLayout::row_height)), 1, 16);
+        row_height)), 1, 16);
     return {capacity, std::max(1, (std::clamp(count, 0, 16) + capacity - 1) / capacity),
-        ProjectTableLayout::header_height + static_cast<float>(capacity) * ProjectTableLayout::row_height};
+        ProjectTableLayout::header_height + static_cast<float>(capacity) * row_height};
 }
 
 inline std::optional<double> resident_memory(const Json& residents, const std::string& root, bool connected) {

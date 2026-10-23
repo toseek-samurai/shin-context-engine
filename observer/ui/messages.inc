@@ -369,7 +369,7 @@
     {"Other history read error", "Другая ошибка чтения истории"},
     {"Other settings", "Другие настройки"},
     {"Output", "Выход"},
-    {"Overview", "Пульс"},
+    {"Overview", "Обзор"},
     {"PageUp / PageDown          Scroll a page", "PageUp / PageDown          Прокрутка страницы"},
     {"Partial detail", "Неполная детализация"},
     {"Partial measurements; omitted/invalid rows are not treated as zero.", "Измерения неполные; пропуски и неверные строки не считаются нулём."},

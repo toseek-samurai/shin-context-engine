@@ -192,8 +192,8 @@ int main(int argc, char** argv) {
                 {"publications", 12}, {"preparations", 12}, {"recoveries", 0}, {"last_tick_ms", 42},
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
-            for (const auto size : {ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
-                for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects",
+            for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
+                for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "language-live-en", "language-live-ru", "language-live-auto", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
@@ -260,15 +260,40 @@ int main(int argc, char** argv) {
                     view.received = Clock::now();
                     view.error = view.connected ? "" : "service-disconnected";
                     Json projects = kind == "first-run" ? Json::array() : Json::array({project});
-                    if (kind == "projects") for (int i = 1; i < 9; ++i) {
+                    if (kind == "projects" || kind == "project-states") for (int i = 1; i < 9; ++i) {
                         auto other = base; other["id"] = "project-" + std::to_string(i);
-                        other["name"] = "Project " + std::to_string(i); projects.push_back(other);
+                        other["name"] = "Project " + std::to_string(i);
+                        if (kind == "project-states") {
+                            if (i == 1) other.update({{"query_ready", false}, {"query_phase", "preparing"}});
+                            if (i == 2) other["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2}};
+                            if (i == 3) other.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
+                            if (i == 4) other["query_phase"] = "standby";
+                        }
+                        projects.push_back(other);
                     }
                     view.data = {{"version", "2.0.4"}, {"core_version", "2.0.4"},
                         {"registry_error", ""}, {"enrollment_errors", Json::object()}, {"query_workers", 0},
                         {"resident_projects", Json::array()}, {"telemetry", {{"project_states", projects},
                         {"history", {{"status", kind == "unknown-history" ? "unavailable" : "ready"}, {"rows", 14000},
                         {"projects", Json::array({{{"id", "fixture"}, {"requests", 1543}, {"errors", 5}, {"unobserved", 0}}})}}}}}};
+                    if (kind == "overview") {
+                        // A real retained-memory curve, including an unknown interval and a service restart.
+                        graph_mode = 0; history_hours = 1;
+                        auto& telemetry = view.data["telemetry"];
+                        auto& history = telemetry["history"];
+                        constexpr std::int64_t captured = 1792756800000;
+                        history["captured_at_ms"] = captured;
+                        history["oldest_at_ms"] = captured - 3600000;
+                        history["minute_timeline"] = Json::array();
+                        for (int minute = 0; minute <= 60; ++minute) {
+                            const double rss = (174 + minute * .7 + (minute > 35 ? 17 : 0) + (minute % 7 < 3 ? 2 : 0)) * 1048576;
+                            const bool missing = minute >= 24 && minute <= 27;
+                            history["minute_timeline"].push_back(Json::array({captured - (60 - minute) * 60000,
+                                12 + minute % 9, 0, 0, 350, 10, missing ? Json(nullptr) : Json(rss),
+                                missing ? Json(nullptr) : Json(rss), missing ? 0 : 30, 1,
+                                minute < 45 ? "run-a" : "run-b"}));
+                        }
+                    }
                     if (kind == "projection-partial" || kind == "timing-live-partial")
                         view.data["telemetry"]["projection"] = {{"truncated", true}};
                     if (timing_open && kind != "timing-missing") {
@@ -305,7 +330,7 @@ int main(int argc, char** argv) {
                             {"projects", Json::array({{{"id", ""}, {"name", "Все проекты"}, {"totals", totals},
                                 {"models", models}, {"days", Json::array({day})}}})}});
                     }
-                    selected = kind == "projects" ? "" : "fixture";
+                    selected = kind == "projects" || kind == "project-states" ? "" : "fixture";
                     if (kind == "cold") { view = ViewState{}; selected.clear(); }
                     profile_accept_within_parent_clip = false;
                     profile_accept_origin = ImVec2{};

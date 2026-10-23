@@ -7,9 +7,9 @@ is read. Displayed metrics are fixture values, not performance measurements.
 
 | README asset | Native fixture output |
 | --- | --- |
-| `monitor-projects.png` | `projects-432x460.png` |
-| `monitor-project.png` | `current-432x460.png` |
-| `monitor-timing.png` | `timing-retained-432x460.png` |
+| `monitor-projects.png` | `projects-448x620.png` |
+| `monitor-project.png` | `current-448x620.png` |
+| `monitor-timing.png` | `timing-retained-448x620.png` |
 
 After building the macOS kit with testing enabled, render again:
 
@@ -22,6 +22,9 @@ Metal must be available; a skipped render is not a new screenshot. Inspect the
 outputs visually, then copy only the three selected PNGs here without modifying
 their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
+The images show the Sand appearance at the standard 448×620 panel size; the
+compact layout remains available. Memory curves retain observation gaps and
+service-run boundaries.
 
 ## Terminal view
 

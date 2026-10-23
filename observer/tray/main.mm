@@ -134,9 +134,14 @@ void platform_save_language(int preference) {
     apply_language_preference(static_cast<int>([[NSUserDefaults standardUserDefaults] integerForKey:@"ShinLanguage"]));
 }
 void platform_save_view(int view) {
+#if defined(SHIN_TRAY_LAYOUT_TEST)
+    (void)view;
+#else
     [[NSUserDefaults standardUserDefaults] setInteger:view forKey:@"ShinView"];
+#endif
 }
 std::string platform_font() { return "/System/Library/Fonts/SFNS.ttf"; }
+bool platform_reduce_motion() { return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion; }
 std::string platform_version() {
     NSString* value = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];
     return value.UTF8String ? value.UTF8String : "unknown";
@@ -174,10 +179,11 @@ void platform_action(int code) {
     }
 }
 std::array<id<MTLTexture>, static_cast<std::size_t>(Icon::count)> icon_textures;
+id<MTLTexture> brand_texture;
 
 void load_icons(id<MTLDevice> device) {
-    const std::array names{@"checkmark.circle.fill", @"arrow.triangle.2.circlepath", @"clock",
-        @"wrench.and.screwdriver", @"exclamationmark.triangle.fill", @"moon.zzz",
+    const std::array names{@"checkmark.circle", @"arrow.triangle.2.circlepath", @"clock",
+        @"wrench.and.screwdriver", @"exclamationmark.triangle", @"moon.zzz",
         @"pause.circle", @"wifi.slash", @"questionmark.circle", @"clock.arrow.circlepath",
         @"arrow.left.arrow.right", @"memorychip", @"doc.on.doc", @"folder", @"chevron.left", @"doc.text.magnifyingglass", @"ellipsis"};
     constexpr std::size_t pixels = 48;
@@ -208,6 +214,40 @@ void load_icons(id<MTLDevice> device) {
         [texture replaceRegion:MTLRegionMake2D(0, 0, pixels, pixels) mipmapLevel:0 withBytes:bytes.data() bytesPerRow:pixels * 4];
         icon_textures[i] = texture;
     }
+    NSURL* url = [NSBundle.mainBundle URLForResource:@"shin-logo" withExtension:@"png"];
+#if defined(SHIN_TRAY_LAYOUT_TEST)
+    url = [NSURL fileURLWithPath:@SHIN_TRAY_TEST_LOGO];
+#endif
+    CGImageSourceRef source = url ? CGImageSourceCreateWithURL((__bridge CFURLRef)url, nullptr) : nullptr;
+    if (!source) return;
+    NSDictionary* options = @{(__bridge NSString*)kCGImageSourceCreateThumbnailFromImageAlways:@YES,
+        (__bridge NSString*)kCGImageSourceThumbnailMaxPixelSize:@64,
+        (__bridge NSString*)kCGImageSourceShouldCacheImmediately:@YES};
+    CGImageRef image = CGImageSourceCreateThumbnailAtIndex(source, 0, (__bridge CFDictionaryRef)options);
+    CFRelease(source);
+    if (!image) return;
+    std::array<unsigned char, 64 * 64 * 4> bytes{};
+    auto space = CGColorSpaceCreateDeviceRGB();
+    auto bitmap = CGBitmapContextCreate(bytes.data(), 64, 64, 8, 64 * 4, space,
+        static_cast<CGBitmapInfo>(kCGImageAlphaPremultipliedLast) | kCGBitmapByteOrder32Big);
+    CGColorSpaceRelease(space);
+    if (bitmap) {
+        CGContextDrawImage(bitmap, CGRectMake(0, 0, 64, 64), image);
+        CGContextRelease(bitmap);
+        for (std::size_t p = 0; p < bytes.size(); p += 4) bytes[p] = bytes[p + 1] = bytes[p + 2] = 255;
+        auto descriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+            width:64 height:64 mipmapped:NO];
+        descriptor.usage = MTLTextureUsageShaderRead;
+        brand_texture = [device newTextureWithDescriptor:descriptor];
+        [brand_texture replaceRegion:MTLRegionMake2D(0, 0, 64, 64) mipmapLevel:0 withBytes:bytes.data() bytesPerRow:64 * 4];
+    }
+    CGImageRelease(image);
+}
+
+void draw_brand(ImVec2 origin, float size) {
+    if (brand_texture) ImGui::GetWindowDrawList()->AddImage(
+        ImTextureRef(reinterpret_cast<ImTextureID>(brand_texture)), origin, {origin.x + size, origin.y + size},
+        {0, 0}, {1, 1}, ImGui::GetColorU32(sand));
 }
 
 void draw_icon(Icon icon, ImVec2 origin, float size, ImVec4 color) {
@@ -215,7 +255,7 @@ void draw_icon(Icon icon, ImVec2 origin, float size, ImVec4 color) {
     if (!texture) return;
     const ImTextureID id = reinterpret_cast<ImTextureID>(texture);
     ImGui::GetWindowDrawList()->AddImage(ImTextureRef(id), origin, {origin.x + size, origin.y + size},
-        {0, 0}, {1, 1}, ImGui::ColorConvertFloat4ToU32(color));
+        {0, 0}, {1, 1}, ImGui::GetColorU32(color));
 }
 
 NSImage* tray_logo() {
@@ -309,6 +349,8 @@ static std::unique_ptr<Monitor> monitor;
     ImGui_ImplOSX_NewFrame(view);
     ImGui::NewFrame();
     try { render(snapshot); } catch (...) { ImGui::EndFrame(); return; }
+    const NSInteger frame_rate = monitor_motion.active ? 60 : 20;
+    if (view.preferredFramesPerSecond != frame_rate) view.preferredFramesPerSecond = frame_rate;
     NSMutableArray* accessible = [NSMutableArray array];
     NSMutableSet* activeKeys = [NSMutableSet set];
     for (const auto& action : ui_actions) {
@@ -343,7 +385,7 @@ static std::unique_ptr<Monitor> monitor;
         if (![activeKeys containsObject:key]) [self.actionElements removeObjectForKey:key];
     view.accessibilityChildren = accessible;
     ImGui::Render();
-    pass.colorAttachments[0].clearColor = MTLClearColorMake(.094, .102, .118, 1);
+    pass.colorAttachments[0].clearColor = MTLClearColorMake(background.x, background.y, background.z, 1);
     auto encoder = [command renderCommandEncoderWithDescriptor:pass];
     ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), command, encoder);
     [encoder endEncoding];
@@ -1096,8 +1138,8 @@ static std::unique_ptr<Monitor> monitor;
     if (!screen) screen = NSScreen.mainScreen;
     const NSSize available = screen ? screen.visibleFrame.size : NSMakeSize(800, 600);
     const bool compact = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"];
-    self.popover.contentSize = NSMakeSize(std::min(compact ? 360.0 : 432.0, std::max(280.0, available.width - 24)),
-        std::min(compact ? 440.0 : 460.0, std::max(240.0, available.height - 40)));
+    self.popover.contentSize = NSMakeSize(std::min(compact ? 360.0 : 448.0, std::max(280.0, available.width - 24)),
+        std::min(compact ? 440.0 : 620.0, std::max(240.0, available.height - 40)));
 }
 - (void)closePanel:(id)sender {
     (void)sender;
@@ -1251,6 +1293,7 @@ static std::unique_ptr<Monitor> monitor;
 - (void)popoverDidClose:(NSNotification*)notification {
     (void)notification;
     ((MTKView*)self.content.view).paused = YES;
+    monitor_motion.initialized = false;
     monitor->visible = false;
     NSLog(@"ShinMonitor panel-close: rendering paused");
     if (self.outsideMonitor) { [NSEvent removeMonitor:self.outsideMonitor]; self.outsideMonitor = nil; }

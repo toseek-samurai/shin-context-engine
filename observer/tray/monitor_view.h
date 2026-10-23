@@ -9,6 +9,7 @@
 #include "../ui/request_timing.h"
 #include "../ui/service_activity.h"
 #include "profile_review.h"
+#include "monitor_motion.h"
 #include <atomic>
 #include <chrono>
 #include <mutex>
@@ -270,10 +271,55 @@ void select_language_preference(int preference) {
 }
 std::string platform_font();
 std::string platform_version();
+bool platform_reduce_motion();
+void draw_brand(ImVec2 origin, float size);
 
-constexpr ImVec4 ink{0.92f, 0.93f, 0.94f, 1}, muted{0.53f, 0.56f, 0.60f, 1};
-constexpr ImVec4 green{0.35f, 0.83f, 0.64f, 1}, amber{0.97f, 0.71f, 0.36f, 1};
-constexpr ImVec4 red{0.98f, 0.43f, 0.48f, 1}, blue{0.40f, 0.68f, 0.99f, 1};
+// Sand: warm graphite surfaces, the original mark's sand accent, quiet data ink.
+constexpr ImVec4 background{.114f, .122f, .110f, 1}, raised{.145f, .157f, .137f, 1};
+constexpr ImVec4 hover_surface{.173f, .188f, .161f, 1}, rule{.220f, .243f, .196f, 1};
+constexpr ImVec4 sand{.839f, .776f, .635f, 1}, ink{.914f, .914f, .867f, 1}, muted{.627f, .647f, .584f, 1};
+constexpr ImVec4 green{.647f, .741f, .596f, 1}, amber{.863f, .757f, .549f, 1};
+constexpr ImVec4 red{.863f, .635f, .596f, 1}, blue{.647f, .725f, .643f, 1};
+
+ImU32 alpha_color(ImVec4 color, float alpha) {
+    color.w *= alpha;
+    return ImGui::GetColorU32(color);
+}
+
+struct MonitorMotion {
+    struct Hover { ImGuiID id = 0; shin::ui::MonitorTween tween; };
+    std::array<Hover, 32> hovers{};
+    shin::ui::MonitorTween nav_left, nav_width, reveal;
+    std::string page;
+    bool initialized = false, reduced = true, active = false;
+    float delta = 0;
+    void begin(const std::string& next) {
+        delta = ImGui::GetIO().DeltaTime;
+        reduced = platform_reduce_motion(); active = false;
+        if (!initialized || delta > .5f) { reveal.snap(1); initialized = false; }
+        else if (page != next) reveal.snap(.82f);
+        page = next;
+        reveal.step(1, delta, reduced);
+        active = reveal.moving();
+    }
+    float hover(ImGuiID id, bool hovered) {
+        auto found = std::find_if(hovers.begin(), hovers.end(), [id](const auto& item) { return item.id == id || item.id == 0; });
+        auto* slot = found == hovers.end() ? &hovers[id % hovers.size()] : &*found;
+        if (slot->id != id) { slot->id = id; slot->tween.snap(0); }
+        const float result = slot->tween.step(hovered ? 1.0f : 0.0f, delta, reduced, .12f);
+        active = active || slot->tween.moving();
+        return result;
+    }
+} monitor_motion;
+
+void preparation_indicator(ImVec2 origin, float size, ImVec4 color) {
+    const auto center = ImVec2{origin.x + size / 2, origin.y + size / 2};
+    const float turn = monitor_motion.reduced ? -1.5707963f :
+        static_cast<float>(std::fmod(ImGui::GetTime(), 1.4) / 1.4) * 6.2831853f;
+    auto* draw = ImGui::GetWindowDrawList();
+    draw->PathArcTo(center, size * .34f, turn, turn + 4.6f, 20);
+    draw->PathStroke(ImGui::GetColorU32(color), 1.4f);
+}
 
 enum class Icon { current, checking, pending, recovering, blocked, standby, stopped, offline, unknown,
                   history, requests, memory, copy, folder, back, details, more, count };
@@ -400,10 +446,10 @@ void graph(const Json& samples, int mode, bool connected, float height = 112) {
     const float bottom = height - 12, amplitude = std::max(1.0f, bottom - 15);
     const auto origin = ImGui::GetCursorScreenPos();
     auto* draw = ImGui::GetWindowDrawList();
-    const auto color = ImGui::ColorConvertFloat4ToU32(connected ? (mode == 0 ? blue : green) : muted);
+    const auto color = ImGui::GetColorU32(connected ? (mode == 0 ? blue : green) : muted);
     for (int i = 0; i < 3; ++i) {
         const auto y = origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4;
-        draw->AddLineH(origin.x, origin.x + size.x, y, IM_COL32(42, 47, 49, 255));
+        draw->AddLineH(origin.x, origin.x + size.x, y, ImGui::GetColorU32(rule));
     }
     std::vector<std::pair<double, double>> points;
     for (const auto& sample : samples) {
@@ -422,11 +468,11 @@ void graph(const Json& samples, int mode, bool connected, float height = 112) {
             const ImVec2 point{origin.x + 2 + static_cast<float>((points[i].first - start) / span) * (size.x - 4),
                 origin.y + bottom - static_cast<float>(points[i].second / maximum) * amplitude};
             if (mode == 2) {
-                draw->AddLineV(point.x, point.y, origin.y + bottom, IM_COL32(75, 140, 120, 180), 2);
+                draw->AddLineV(point.x, point.y, origin.y + bottom, alpha_color(green, .7f), 2);
                 draw->AddCircleFilled(point, 2.5f, color);
             } else if (i && points[i].first - points[i - 1].first < 3500) {
                 draw->AddQuadFilled(previous, point, {point.x, origin.y + bottom}, {previous.x, origin.y + bottom},
-                    mode == 0 ? IM_COL32(85, 161, 219, 25) : IM_COL32(86, 198, 154, 25));
+                    alpha_color(mode == 0 ? blue : green, .09f));
                 draw->AddLine(previous, point, color, 1.5f);
             }
             else draw->AddCircleFilled(point, 2, color);
@@ -434,7 +480,7 @@ void graph(const Json& samples, int mode, bool connected, float height = 112) {
         }
         char label[64];
         std::snprintf(label, sizeof(label), "%.0f %s", maximum, mode == 0 ? shin::ui::tr("MiB") : mode == 2 ? shin::ui::tr("ms") : "");
-        draw->AddText({origin.x + 3, origin.y + 2}, IM_COL32(145, 150, 158, 255), label);
+        draw->AddText({origin.x + 3, origin.y + 2}, ImGui::GetColorU32(muted), label);
     }
     ImGui::Dummy(size);
     ImGui::PushFont(nullptr, 11);
@@ -535,14 +581,14 @@ void metric_choice(const char* label, const std::string& value, int code, ImVec4
     const bool hovered = ImGui::IsItemHovered();
     auto* draw = ImGui::GetWindowDrawList();
     ImGui::PushFont(nullptr, 11);
-    draw->AddText(origin, ImGui::ColorConvertFloat4ToU32(graph_mode == code ? ink : muted), clipped(label, width).c_str());
+    draw->AddText(origin, ImGui::GetColorU32(graph_mode == code ? ink : muted), clipped(label, width).c_str());
     ImGui::PopFont();
     ImGui::PushFont(nullptr, 24);
     const auto shown = clipped(value, width);
-    draw->AddText({origin.x, origin.y + 21}, ImGui::ColorConvertFloat4ToU32(value == "—" ? muted : color), shown.c_str());
+    draw->AddText({origin.x, origin.y + 21}, ImGui::GetColorU32(value == "—" ? muted : color), shown.c_str());
     ImGui::PopFont();
     if (graph_mode == code || hovered) draw->AddLineH(origin.x, origin.x + width, origin.y + 55,
-        ImGui::ColorConvertFloat4ToU32(graph_mode == code ? color : muted), 2);
+        ImGui::GetColorU32(graph_mode == code ? color : muted), 2);
     if (hovered) ImGui::SetTooltip("%s: %s", label, value.c_str());
     ui_actions.push_back({label, "", origin, {width, 58}, code});
     ImGui::PopID();
@@ -550,15 +596,30 @@ void metric_choice(const char* label, const std::string& value, int code, ImVec4
 
 void view_tab(const char* label, int code, bool active, float width) {
     const auto origin = ImGui::GetCursorScreenPos();
+    const bool navigation = code >= 10 && code <= 12;
+    const float height = navigation && ImGui::GetIO().DisplaySize.x >= 340 ? 32.0f : 26.0f;
     ImGui::PushID(code);
-    if (ImGui::InvisibleButton("tab", {width, 26})) activate(code);
+    if (ImGui::InvisibleButton("tab", {width, height})) activate(code);
+    const bool hovered = ImGui::IsItemHovered();
     auto* draw = ImGui::GetWindowDrawList();
-    if (active || ImGui::IsItemHovered()) draw->AddRectFilled(origin, {origin.x + width, origin.y + 26},
-        active ? IM_COL32(50, 56, 58, 255) : IM_COL32(36, 41, 43, 255), 5);
+    const float fade = monitor_motion.hover(ImGui::GetID("tab-hover"), hovered);
+    if (fade > 0) draw->AddRectFilled(origin, {origin.x + width, origin.y + height},
+        alpha_color(hover_surface, fade), 4);
+    if (!navigation && active) draw->AddRectFilled(origin, {origin.x + width, origin.y + height},
+        ImGui::GetColorU32(raised), 4);
     const auto text_size = ImGui::CalcTextSize(label);
-    draw->AddText({origin.x + (width - text_size.x) / 2, origin.y + (26 - text_size.y) / 2},
-        ImGui::ColorConvertFloat4ToU32(active ? ink : muted), label);
-    ui_actions.push_back({label, "", origin, {width, 26}, code});
+    draw->AddText({origin.x + (width - text_size.x) / 2, origin.y + (height - text_size.y) / 2},
+        ImGui::GetColorU32(active ? sand : hovered ? ink : muted), label);
+    if (navigation && active) {
+        const float left = monitor_motion.nav_left.step(origin.x, monitor_motion.delta,
+            monitor_motion.reduced || !monitor_motion.initialized);
+        const float line_width = monitor_motion.nav_width.step(width, monitor_motion.delta,
+            monitor_motion.reduced || !monitor_motion.initialized);
+        monitor_motion.active = monitor_motion.active || monitor_motion.nav_left.moving() || monitor_motion.nav_width.moving();
+        draw->AddLineH(left + 4, left + line_width - 4, origin.y + height - 1, ImGui::GetColorU32(sand), 2);
+    }
+    if (ImGui::IsItemFocused()) draw->AddRect(origin, {origin.x + width, origin.y + height}, ImGui::GetColorU32(sand), 4);
+    ui_actions.push_back({label, "", origin, {width, height}, code});
     ImGui::PopID();
 }
 
@@ -598,7 +659,7 @@ void history_chart(const Json& history, int hours, bool connected, int mode = 1,
         maximum = std::max(maximum, *value_of(row) * (mode == 1 ? 1 : 1.12));
         ++observed;
     }
-    for (int i = 0; i < 3; ++i) draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4, IM_COL32(42, 47, 49, 255));
+    for (int i = 0; i < 3; ++i) draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(i) * (bottom - 4) / 2 + 4, ImGui::GetColorU32(rule));
     ImVec2 previous{};
     double previous_at = 0;
     std::string previous_run;
@@ -609,12 +670,12 @@ void history_chart(const Json& history, int hours, bool connected, int mode = 1,
         const auto x = std::clamp(static_cast<float>((at - start) / (now - start)), 0.0f, 1.0f) * width;
         const float bar = std::max(1.0f, width * static_cast<float>(interval / (now - start)) - 1);
         const float value = static_cast<float>(*measurement / maximum) * amplitude;
-        const auto color = ImGui::ColorConvertFloat4ToU32(!connected ? muted : mode == 0 ? blue : row.at(2).get<double>() + row.at(3).get<double>() > 0 ? amber : green);
+        const auto color = ImGui::GetColorU32(!connected ? muted : mode == 0 ? blue : row.at(2).get<double>() + row.at(3).get<double>() > 0 ? amber : green);
         const ImVec2 point{origin.x + x, origin.y + bottom - value};
         if (mode == 0 && hours == 1) {
             const auto run = row.at(10).is_string() ? row.at(10).get<std::string>() : "";
             if (!run.empty() && run == previous_run && at - previous_at <= interval * 1.5) {
-                draw->AddQuadFilled(previous, point, {point.x, origin.y + bottom}, {previous.x, origin.y + bottom}, IM_COL32(85, 161, 219, 25));
+                draw->AddQuadFilled(previous, point, {point.x, origin.y + bottom}, {previous.x, origin.y + bottom}, alpha_color(blue, .09f));
                 draw->AddLine(previous, point, color, 1.6f);
             } else draw->AddCircleFilled(point, 2, color);
             previous = point; previous_at = at; previous_run = run;
@@ -623,9 +684,29 @@ void history_chart(const Json& history, int hours, bool connected, int mode = 1,
     }
     char scale[32];
     std::snprintf(scale, sizeof(scale), "%.0f %s", maximum, mode == 0 ? shin::ui::tr("MiB") : mode == 2 ? shin::ui::tr("ms") : hours == 1 ? shin::ui::tr("/ min") : shin::ui::tr("/ h"));
-    draw->AddText({origin.x + 3, origin.y + 2}, ImGui::ColorConvertFloat4ToU32(muted), scale);
-    if (!observed) draw->AddText({origin.x + 8, origin.y + bottom / 2}, ImGui::ColorConvertFloat4ToU32(muted), shin::ui::tr("No measurements for this period"));
+    draw->AddText({origin.x + 3, origin.y + 2}, ImGui::GetColorU32(muted), scale);
+    if (!observed) draw->AddText({origin.x + 8, origin.y + bottom / 2}, ImGui::GetColorU32(muted), shin::ui::tr("No measurements for this period"));
     ImGui::Dummy({width, height});
+    if (observed && now > start && ImGui::IsItemHovered()) {
+        const double at = start + std::clamp((ImGui::GetIO().MousePos.x - origin.x) / width, 0.0f, 1.0f) * (now - start);
+        const Json* bucket = nullptr;
+        for (const auto& row : rows) {
+            const double time = row.at(0).get<double>();
+            if (at >= time && at < time + interval) { bucket = &row; break; }
+        }
+        const auto value = bucket ? value_of(*bucket) : std::nullopt;
+        ImGui::BeginTooltip();
+        if (value) {
+            const double time = bucket->at(0).get<double>();
+            const char* unit = mode == 0 ? shin::ui::tr("MiB") : mode == 2 ? shin::ui::tr("ms") : "";
+            ImGui::Text("%s · %s", clock_label(static_cast<std::int64_t>(time)).c_str(), number(*value, unit).c_str());
+            const float x = origin.x + std::clamp(static_cast<float>((time - start) / (now - start)), 0.0f, 1.0f) * width;
+            const float y = origin.y + bottom - static_cast<float>(*value / maximum) * amplitude;
+            draw->AddLineV(x, origin.y + 4, origin.y + bottom, alpha_color(muted, .5f));
+            draw->AddCircleFilled({x, y}, 2.5f, ImGui::GetColorU32(connected ? sand : muted));
+        } else ImGui::Text("%s · %s", clock_label(static_cast<std::int64_t>(at)).c_str(), shin::ui::tr("Not measured"));
+        ImGui::EndTooltip();
+    }
     ImGui::PushFont(nullptr, 11);
     if (hours == 1) ImGui::TextColored(muted, shin::ui::tr("%s–%s · %zu min"), clock_label(static_cast<std::int64_t>(start)).c_str(), clock_label(static_cast<std::int64_t>(now)).c_str(), observed);
     else ImGui::TextColored(muted, shin::ui::tr("%s · hours with data: %zu"), hours == 24 ? shin::ui::tr("24 hours") : shin::ui::tr("7 days"), observed);
@@ -810,13 +891,13 @@ void render_request_timing(const ViewState& view, const Json& telemetry) {
                 const auto& group = summary.readers[i];
                 const auto pos = ImGui::GetCursorScreenPos();
                 auto* draw = ImGui::GetWindowDrawList();
-                draw->AddText(pos, ImGui::ColorConvertFloat4ToU32(muted), labels[i]);
+                draw->AddText(pos, ImGui::GetColorU32(muted), labels[i]);
                 const auto value = ms(group.service);
                 draw->AddText({pos.x + width - ImGui::CalcTextSize(value.c_str()).x, pos.y},
-                    ImGui::ColorConvertFloat4ToU32(ink), value.c_str());
-                draw->AddLineH(pos.x, pos.x + width, pos.y + 18, IM_COL32(42,47,49,255), 2);
+                    ImGui::GetColorU32(ink), value.c_str());
+                draw->AddLineH(pos.x, pos.x + width, pos.y + 18, ImGui::GetColorU32(rule), 2);
                 if (const auto mean = group.service.value()) draw->AddLineH(pos.x, pos.x + width * static_cast<float>(*mean / maximum), pos.y + 18,
-                    ImGui::ColorConvertFloat4ToU32(i == 0 ? green : i == 1 ? amber : muted), 2);
+                    ImGui::GetColorU32(i == 0 ? green : i == 1 ? amber : muted), 2);
                 ImGui::Dummy({width, 22});
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip(shin::ui::tr("%s · queries: %llu\nSearch: %s\nIncluding service: %s · samples: %llu"),
                     labels[i], group.requests, ms(group.worker).c_str(), value.c_str(), group.service.count);
@@ -830,12 +911,12 @@ void render_request_timing(const ViewState& view, const Json& telemetry) {
             for (const std::size_t i : {1U, 2U, 4U}) {
                 const auto pos = ImGui::GetCursorScreenPos();
                 auto* draw = ImGui::GetWindowDrawList();
-                draw->AddText(pos, ImGui::ColorConvertFloat4ToU32(muted), labels[i]);
+                draw->AddText(pos, ImGui::GetColorU32(muted), labels[i]);
                 if (const auto value = summary.phases[i].value()) draw->AddRectFilled({pos.x + 88, pos.y + 3},
                     {pos.x + 88 + (width - 160) * static_cast<float>(*value / maximum), pos.y + 11},
-                    ImGui::ColorConvertFloat4ToU32(i == 2 ? blue : green), 2);
+                    ImGui::GetColorU32(i == 2 ? blue : green), 2);
                 const auto value = ms(summary.phases[i]);
-                draw->AddText({pos.x + width - ImGui::CalcTextSize(value.c_str()).x, pos.y}, ImGui::ColorConvertFloat4ToU32(ink), value.c_str());
+                draw->AddText({pos.x + width - ImGui::CalcTextSize(value.c_str()).x, pos.y}, ImGui::GetColorU32(ink), value.c_str());
                 ImGui::Dummy({width, 15});
                 if (ImGui::IsItemHovered()) ImGui::SetTooltip(shin::ui::tr("%s: %s · samples: %llu\nAdmission: %s\nSource collection (within source): %s"),
                     labels[i], value.c_str(), summary.phases[i].count, ms(summary.phases[0]).c_str(), ms(summary.phases[3]).c_str());
@@ -867,7 +948,7 @@ void usage_chart(const Json& days, bool fresh, float height) {
     const float width = ImGui::GetContentRegionAvail().x;
     auto* draw = ImGui::GetWindowDrawList();
     const float baseline = height - 8;
-    for (int i = 0; i < 3; ++i) draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(i) * baseline / 2, IM_COL32(42,47,49,255));
+    for (int i = 0; i < 3; ++i) draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(i) * baseline / 2, ImGui::GetColorU32(rule));
     if (!days.empty()) {
         const double day = 86400000, start = days.front().at("at_ms"), end = days.back().at("at_ms").get<double>() + day;
         double maximum = 1;
@@ -879,11 +960,11 @@ void usage_chart(const Json& days, bool fresh, float height) {
             for (const auto* key : {"input_tokens", "output_tokens"}) {
                 const float value = static_cast<float>(row.at(key).get<double>() / maximum) * (baseline - 14);
                 if (value > 0) draw->AddRectFilled({origin.x + x + static_cast<float>(index) * (bar + 1), origin.y + baseline - value},
-                    {origin.x + x + static_cast<float>(index) * (bar + 1) + bar, origin.y + baseline}, ImGui::ColorConvertFloat4ToU32(!fresh ? muted : index == 0 ? blue : amber));
+                    {origin.x + x + static_cast<float>(index) * (bar + 1) + bar, origin.y + baseline}, ImGui::GetColorU32(!fresh ? muted : index == 0 ? blue : amber));
                 ++index;
             }
         }
-        draw->AddText({origin.x + 2, origin.y + 1}, ImGui::ColorConvertFloat4ToU32(muted), compact_number(maximum).c_str());
+        draw->AddText({origin.x + 2, origin.y + 1}, ImGui::GetColorU32(muted), compact_number(maximum).c_str());
     }
     ImGui::Dummy({width, height});
 }
@@ -1013,13 +1094,13 @@ void icon_button(Icon icon, const std::string& label, int code, bool enabled, Im
     ImGui::EndDisabled();
     const bool hovered = ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled);
     if (hovered && enabled && !informational) ImGui::GetWindowDrawList()->AddRectFilled(origin,
-        {origin.x + size.x, origin.y + size.y}, IM_COL32(43, 49, 52, 255), 4);
+        {origin.x + size.x, origin.y + size.y}, ImGui::GetColorU32(hover_surface), 4);
     if (!informational && ImGui::IsItemFocused()) ImGui::GetWindowDrawList()->AddRect(origin,
-        {origin.x + size.x, origin.y + size.y}, ImGui::ColorConvertFloat4ToU32(blue), 4);
+        {origin.x + size.x, origin.y + size.y}, ImGui::GetColorU32(blue), 4);
     draw_icon(icon, {origin.x + (value.empty() ? (size.x - 17) / 2 : 4), origin.y + shin::ui::centered_item_y(size.y, 17)},
         17, enabled ? ink : muted);
     if (!value.empty()) ImGui::GetWindowDrawList()->AddText({origin.x + 25, origin.y + shin::ui::centered_item_y(size.y, ImGui::GetFontSize())},
-        ImGui::ColorConvertFloat4ToU32(muted), clipped(value, size.x - 25).c_str());
+        ImGui::GetColorU32(muted), clipped(value, size.x - 25).c_str());
     if (hovered) ImGui::SetTooltip("%s", label.c_str());
     ui_actions.push_back({label, selected, origin, size, code, enabled, informational});
     ImGui::PopID();
@@ -1257,6 +1338,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         platform_version());
     const auto state = project_state(project, view.connected);
     const auto overview = diagnostic_overview(project, view.connected);
+    const bool partial_coverage = overview.title == shin::ui::tr("Context partially available");
     const auto name = text_field(project, "name");
     const auto prior_code = historical_code(project);
     auto current_code = view.connected ? error_code(project, "error_code") : error_code(Json{{"code", view.error}}, "code");
@@ -1281,6 +1363,12 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     const float top = ImGui::GetCursorPosY(), height = ImGui::GetContentRegionAvail().y;
     const float footer = top + height - 32;
     const bool compact_diagnostics = height < 230, minimal = height < 165;
+    const auto bounded_text = [&](const std::string& text, float text_width, float font_size,
+                                  ImVec4 color, int max_lines, int accessible_id) {
+        const float line_height = font_size + ImGui::GetStyle().ItemSpacing.y;
+        const int fitting = std::max(0, static_cast<int>((footer - ImGui::GetCursorPosY() - 8) / line_height));
+        if (fitting > 0) diagnostic_text(text, text_width, font_size, color, std::min(max_lines, fitting), accessible_id);
+    };
 
     icon_button(Icon::back, diagnostic_history_first ? shin::ui::tr("Back to project status") : shin::ui::tr("Back to project list"),
         diagnostic_history_first ? 35 : 32, true, {28, 28});
@@ -1296,16 +1384,19 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
 
     if (!diagnostic_history_first) {
         const auto origin = ImGui::GetCursorScreenPos();
-        draw_icon(state_icon(state), {origin.x, origin.y + 1}, 24, project_color(state));
+        const auto color = partial_coverage ? amber : project_color(state);
+        draw_icon(partial_coverage ? Icon::blocked : state_icon(state), {origin.x, origin.y + 1}, 24, color);
         ImGui::SetCursorPosX(32);
-        diagnostic_text(overview.title, width - 32, minimal ? 14.0f : compact_diagnostics ? 16.0f : 18.0f, project_color(state), minimal ? 1 : 2, 54);
+        bounded_text(overview.title, width - 32, minimal ? 14.0f : compact_diagnostics ? 16.0f : 18.0f, color, minimal ? 1 : 2, 54);
         ImGui::SetCursorPosX(0);
         if (!minimal) {
             ImGui::Spacing();
-            diagnostic_text(overview.summary, width, 14, ink, compact_diagnostics ? 2 : 3, 55);
+            bounded_text(overview.summary, width, 14, ink, compact_diagnostics ? 2 : 3, 55);
             ImGui::Spacing();
-            diagnostic_text(shin::ui::tr("Next step"), width, 12, muted, 1, 56);
-            diagnostic_text(overview.next, width, 14, ink, 2, 57);
+            if (footer - ImGui::GetCursorPosY() >= 12 + 14 + 2 * ImGui::GetStyle().ItemSpacing.y + 8) {
+                bounded_text(shin::ui::tr("Next step"), width, 12, muted, 1, 56);
+                bounded_text(overview.next, width, 14, ink, 2, 57);
+            }
             if (footer - ImGui::GetCursorPosY() >= 48) {
                 ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
                 const auto success_origin = ImGui::GetCursorScreenPos();
@@ -1336,7 +1427,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
             }
         }
     } else {
-        diagnostic_text(shin::ui::tr("Project history"), width, compact_diagnostics ? 16.0f : 18.0f, ink, 1, 54);
+        bounded_text(shin::ui::tr("Project history"), width, compact_diagnostics ? 16.0f : 18.0f, ink, 1, 54);
         if (!minimal) {
             ImGui::Spacing();
             const auto counts_origin = ImGui::GetCursorScreenPos();
@@ -1367,11 +1458,11 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
                 shin::ui::tr(". Check failures this service run: ") + failures, selected, counts_origin,
                 {width, ImGui::GetCursorScreenPos().y - counts_origin.y}, 55, true, true});
             ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-            diagnostic_text(diagnostic_history_status(project, view.connected), width, 14,
+            bounded_text(diagnostic_history_status(project, view.connected), width, 14,
                 view.connected && active_issue(project) ? amber : ink, 2, 56);
             if (footer - ImGui::GetCursorPosY() >= 40) {
                 const auto line = prior_code.empty() ? shin::ui::tr("Historical counters do not imply a current error.") : shin::ui::tr("Last failure: ") + explain(prior_code).cause;
-                diagnostic_text(line, width, 13, muted, compact_diagnostics ? 2 : 3, 57);
+                bounded_text(line, width, 13, muted, compact_diagnostics ? 2 : 3, 57);
             }
         }
     }
@@ -1389,13 +1480,13 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         if (ImGui::InvisibleButton(review_action ? "profile-review" : "project-history", {action_width, 28}, ImGuiButtonFlags_EnableNav))
             activate(review_action ? 70 : 34);
         const bool hovered = ImGui::IsItemHovered();
-        if (hovered) ImGui::GetWindowDrawList()->AddRectFilled(origin, {origin.x + action_width, origin.y + 28}, IM_COL32(43,49,52,255), 4);
+        if (hovered) ImGui::GetWindowDrawList()->AddRectFilled(origin, {origin.x + action_width, origin.y + 28}, ImGui::GetColorU32(hover_surface), 4);
         if (ImGui::IsItemFocused()) ImGui::GetWindowDrawList()->AddRect(origin,
-            {origin.x + action_width, origin.y + 28}, ImGui::ColorConvertFloat4ToU32(blue), 4);
+            {origin.x + action_width, origin.y + 28}, ImGui::GetColorU32(blue), 4);
         draw_icon(review_action ? Icon::details : Icon::history, {origin.x + 2, origin.y + 5}, 18, review_action ? amber : muted);
         ImGui::PushFont(nullptr, 13);
         ImGui::GetWindowDrawList()->AddText({origin.x + 27, origin.y + centered_item_y(28, 13)},
-            ImGui::ColorConvertFloat4ToU32(ink), review_action ? shin::ui::tr("Review changes") : shin::ui::tr("Project history"));
+            ImGui::GetColorU32(ink), review_action ? shin::ui::tr("Review changes") : shin::ui::tr("Project history"));
         ImGui::PopFont();
         ui_actions.push_back({review_action ? shin::ui::tr("Review changes") : shin::ui::tr("Project history"), selected, origin,
             {action_width, 28}, review_action ? 70 : 34, true});
@@ -1436,7 +1527,9 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 80, !project_busy});
     ImGui::EndDisabled();
 #endif
-    const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y, static_cast<int>(projects.size()));
+    const bool detailed = width >= 310 && ImGui::GetIO().DisplaySize.y >= 400;
+    const float row_height = detailed ? 44.0f : 26.0f;
+    const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y, static_cast<int>(projects.size()), row_height);
     project_page = std::clamp(project_page, 0, layout.pages - 1);
     const auto residents = view.data.is_object() ? view.data.value("resident_projects", Json::array()) : Json::array();
     const bool history_known = history.value("status", "") == "ready";
@@ -1444,18 +1537,17 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::PushFont(nullptr, 12);
     ImGui::PushStyleVar(ImGuiStyleVar_CellPadding, {5, 4});
-    if (ImGui::BeginTable("projects-table", 4, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg |
+    if (ImGui::BeginTable("projects-table", 3, ImGuiTableFlags_SizingStretchProp | ImGuiTableFlags_RowBg |
         ImGuiTableFlags_BordersInnerH | ImGuiTableFlags_NoSavedSettings)) {
         ImGui::TableSetupColumn(shin::ui::tr("Project"), ImGuiTableColumnFlags_WidthStretch);
-        ImGui::TableSetupColumn("##state", ImGuiTableColumnFlags_WidthFixed, 20);
-        ImGui::TableSetupColumn("RAM", ImGuiTableColumnFlags_WidthFixed, 42);
-        ImGui::TableSetupColumn(shin::ui::tr("Requests"), ImGuiTableColumnFlags_WidthFixed, 48);
+        ImGui::TableSetupColumn("RAM", ImGuiTableColumnFlags_WidthFixed, 45);
+        ImGui::TableSetupColumn(shin::ui::tr("Requests"), ImGuiTableColumnFlags_WidthFixed, 55);
         ImGui::TableNextRow(ImGuiTableRowFlags_Headers, layout.header_height);
-        for (int column = 0; column < 4; ++column) {
+        for (int column = 0; column < 3; ++column) {
             ImGui::TableSetColumnIndex(column);
             ImGui::TableHeader(ImGui::TableGetColumnName(column));
-            if (ImGui::IsItemHovered() && column == 2) ImGui::SetTooltip("%s", shin::ui::tr("Search worker RSS, MiB. Background tasks and Monitor are separate. No worker or sample: —."));
-            if (ImGui::IsItemHovered() && column == 3) ImGui::SetTooltip("%s", shin::ui::tr("Retained requests, not an assessment of answer quality."));
+            if (ImGui::IsItemHovered() && column == 1) ImGui::SetTooltip("%s", shin::ui::tr("Search worker RSS, MiB. Background tasks and Monitor are separate. No worker or sample: —."));
+            if (ImGui::IsItemHovered() && column == 2) ImGui::SetTooltip("%s", shin::ui::tr("Retained requests, not an assessment of answer quality."));
         }
         int index = 0;
         for (const auto& p : projects) {
@@ -1464,8 +1556,13 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             const auto name = p.at("name").get<std::string>();
             const auto root = shin::ui::text_field(p, "root", 4096);
             const auto state = shin::ui::project_state(p, view.connected);
-            const auto state_label = state == shin::ui::ProjectState::blocked
-                ? shin::ui::diagnostic_overview(p, true).title : std::string(shin::ui::state_text(state));
+            const auto overview = shin::ui::diagnostic_overview(p, view.connected);
+            const bool partial = overview.title == shin::ui::tr("Context partially available");
+            const bool preparing = state == shin::ui::ProjectState::checking || state == shin::ui::ProjectState::recovering ||
+                (state == shin::ui::ProjectState::pending && shin::ui::text_field(p, "query_phase") == "preparing");
+            const auto state_label = state == shin::ui::ProjectState::blocked || partial || preparing
+                ? overview.title : std::string(shin::ui::state_text(state));
+            const auto state_color = partial ? amber : project_color(state);
             const auto elapsed = view.received == Clock::time_point{} ? 0 : std::chrono::duration<double, std::milli>(Clock::now() - view.received).count();
             const auto success = shin::ui::age_ms(p, "last_success_age_ms", elapsed);
             const auto age = shin::ui::tr("Successful: ") + shin::ui::age_text(success);
@@ -1475,24 +1572,45 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             for (const auto& row : history.value("projects", Json::array()))
                 if (row.at("id") == id) calls = shin::ui::count(row, "requests");
             const auto calls_text = history_known ? compact_number(static_cast<double>(calls)) : "—";
-            ImGui::TableNextRow(ImGuiTableRowFlags_None, layout.row_height);
+            ImGui::TableNextRow(ImGuiTableRowFlags_None, row_height);
             ImGui::TableSetColumnIndex(0);
             const auto origin = ImGui::GetCursorScreenPos();
             const float name_width = ImGui::GetContentRegionAvail().x;
+            ImGui::PushStyleColor(ImGuiCol_HeaderHovered, ImVec4{0, 0, 0, 0});
             if (ImGui::Selectable(("##project-" + id).c_str(), false, ImGuiSelectableFlags_SpanAllColumns,
-                {0, layout.row_height - 8})) select_project(id);
+                {0, row_height - 8})) select_project(id);
+            ImGui::PopStyleColor();
             const bool hovered = ImGui::IsItemHovered();
-            ImGui::GetWindowDrawList()->AddText({origin.x, origin.y + 1}, ImGui::ColorConvertFloat4ToU32(ink), clipped(name, name_width).c_str());
+            const float hover = monitor_motion.hover(ImGui::GetID(("project-hover-" + id).c_str()), hovered);
+            ImGui::TableSetBgColor(ImGuiTableBgTarget_RowBg0, alpha_color(hover_surface, hover));
+            auto* draw = ImGui::GetWindowDrawList();
+            const float text_x = origin.x + (detailed ? 33.0f : 22.0f);
+            if (detailed) {
+                draw->AddRectFilled({origin.x, origin.y + 3}, {origin.x + 24, origin.y + 31}, ImGui::GetColorU32(raised), 4);
+                draw_icon(Icon::folder, {origin.x + 4, origin.y + 9}, 16, muted);
+            }
+            draw->AddText({text_x, origin.y + 1}, ImGui::GetColorU32(ink), clipped(name, name_width - (text_x - origin.x)).c_str());
+            const ImVec2 status_origin{detailed ? text_x : origin.x, origin.y + (detailed ? 19.0f : 0.0f)};
+            const float status_size = detailed ? 12.0f : 17.0f;
+            if (preparing)
+                preparation_indicator(status_origin, status_size, state_color);
+            else draw_icon(partial ? Icon::blocked : state_icon(state), status_origin, status_size, state_color);
+            if (detailed) {
+                ImGui::PushFont(nullptr, 10);
+                draw->AddText({text_x + 16, origin.y + 18}, ImGui::GetColorU32(state_color),
+                    clipped(state_label, name_width - (text_x - origin.x) - 16).c_str());
+                ImGui::PopFont();
+            }
             ui_actions.push_back({name + ": " + state_label + "; " + age +
-                "; RAM " + memory_text + shin::ui::tr(" MiB; requests: ") + calls_text, id, {origin.x - 5, origin.y - 4}, {width, layout.row_height}, -1});
-            ImGui::TableSetColumnIndex(1);
-            draw_icon(state_icon(state), ImGui::GetCursorScreenPos(), 17, project_color(state));
-            const auto right_text = [](const std::string& value) {
+                "; RAM " + memory_text + shin::ui::tr(" MiB; requests: ") + calls_text, id,
+                {origin.x - 5, origin.y - 4}, {width, row_height}, -1});
+            const auto right_text = [detailed](const std::string& value) {
+                ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (detailed ? 9.0f : 0.0f));
                 ImGui::SetCursorPosX(ImGui::GetCursorPosX() + std::max(0.0f, ImGui::GetContentRegionAvail().x - ImGui::CalcTextSize(value.c_str()).x));
                 ImGui::TextColored(muted, "%s", value.c_str());
             };
-            ImGui::TableSetColumnIndex(2); right_text(memory_text);
-            ImGui::TableSetColumnIndex(3); right_text(calls_text);
+            ImGui::TableSetColumnIndex(1); right_text(memory_text);
+            ImGui::TableSetColumnIndex(2); right_text(calls_text);
             if (hovered) ImGui::SetTooltip(shin::ui::tr("%s\n%s\n%s\n%s\nRAM: %s MiB · Retained requests: %s\nRetained check failures: %llu"),
                 name.c_str(), root.c_str(), state_label.c_str(), age.c_str(), memory_text.c_str(), calls_text.c_str(),
                 static_cast<unsigned long long>(shin::ui::count(p, "failures")));
@@ -1523,6 +1641,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
 void configure_imgui() {
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
+    monitor_motion = MonitorMotion{};
     ImGuiIO& io = ImGui::GetIO();
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
@@ -1530,19 +1649,50 @@ void configure_imgui() {
     if (auto* font = io.Fonts->AddFontFromFileTTF(platform_font().c_str(), 13)) io.FontDefault = font;
     ImGui::StyleColorsDark();
     auto& style = ImGui::GetStyle();
-    style.WindowPadding = {16, 14};
+    style.WindowPadding = {18, 14};
     style.WindowRounding = 0;
-    style.FrameRounding = 4;
-    style.ItemSpacing = {7, 5};
-    style.Colors[ImGuiCol_WindowBg] = {0.091f, 0.106f, 0.11f, 1};
-    style.Colors[ImGuiCol_ChildBg] = style.Colors[ImGuiCol_WindowBg];
+    style.FrameRounding = 5;
+    style.PopupRounding = 7;
+    style.ChildRounding = 5;
+    style.ScrollbarRounding = 4;
+    style.FramePadding = {7, 5};
+    style.ItemSpacing = {7, 6};
+    style.Colors[ImGuiCol_WindowBg] = background;
+    style.Colors[ImGuiCol_ChildBg] = background;
+    style.Colors[ImGuiCol_PopupBg] = raised;
     style.Colors[ImGuiCol_Text] = ink;
-    style.Colors[ImGuiCol_CheckMark] = green;
-    style.Colors[ImGuiCol_FrameBg] = {0.18f, 0.20f, 0.22f, 1};
+    style.Colors[ImGuiCol_TextDisabled] = muted;
+    style.Colors[ImGuiCol_Border] = rule;
+    style.Colors[ImGuiCol_Separator] = rule;
+    style.Colors[ImGuiCol_CheckMark] = sand;
+    style.Colors[ImGuiCol_FrameBg] = raised;
+    style.Colors[ImGuiCol_FrameBgHovered] = hover_surface;
+    style.Colors[ImGuiCol_FrameBgActive] = hover_surface;
+    style.Colors[ImGuiCol_Button] = raised;
+    style.Colors[ImGuiCol_ButtonHovered] = hover_surface;
+    style.Colors[ImGuiCol_ButtonActive] = rule;
+    style.Colors[ImGuiCol_Header] = raised;
+    style.Colors[ImGuiCol_HeaderHovered] = hover_surface;
+    style.Colors[ImGuiCol_HeaderActive] = rule;
+    style.Colors[ImGuiCol_TableHeaderBg] = background;
+    style.Colors[ImGuiCol_TableRowBg] = {0, 0, 0, 0};
+    style.Colors[ImGuiCol_TableRowBgAlt] = {0, 0, 0, 0};
+    style.Colors[ImGuiCol_TableBorderLight] = rule;
+    style.Colors[ImGuiCol_TableBorderStrong] = rule;
+    style.Colors[ImGuiCol_NavCursor] = sand;
+    style.Colors[ImGuiCol_SliderGrab] = sand;
+    style.Colors[ImGuiCol_SliderGrabActive] = ink;
+    style.Colors[ImGuiCol_ScrollbarBg] = background;
+    style.Colors[ImGuiCol_ScrollbarGrab] = rule;
+    style.Colors[ImGuiCol_ScrollbarGrabHovered] = muted;
+    style.Colors[ImGuiCol_ScrollbarGrabActive] = sand;
+    style.Colors[ImGuiCol_TextSelectedBg] = {sand.x, sand.y, sand.z, .25f};
 }
 
 void render(const ViewState& view) {
     ui_actions.clear();
+    monitor_motion.begin(std::to_string(dashboard_view) + ":" + selected + ":" + model_project +
+        (timing_open ? ":timing" : "") + (profile_review_open ? ":review" : ""));
     active_profile_review = view.profile_review;
     const Json object = Json::object();
     const auto& data = view.data.is_object() ? view.data : object;
@@ -1563,48 +1713,63 @@ void render(const ViewState& view) {
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
+    const bool compact_height = ImGui::GetIO().DisplaySize.y < 400;
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{7, compact_height ? 5.0f : 6.0f});
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{7, compact_height ? 3.0f : 5.0f});
     ImGui::Begin("Shin", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
     const auto title_origin = ImGui::GetCursorScreenPos();
-    const float title_height = std::max(21.0f, ImGui::GetFrameHeight());
-    ImGui::PushFont(nullptr, std::min(16.0f, title_height - 9));
-    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), title_origin,
-        ImGui::GetColorU32(ImGuiCol_Text), "Shin");
+    const bool short_panel = ImGui::GetIO().DisplaySize.y < 300 || ImGui::GetIO().DisplaySize.x < 340;
+    const float title_height = short_panel ? 29.0f : 46.0f;
+    const float mark_size = short_panel ? 24.0f : 32.0f;
+    draw_brand({title_origin.x, title_origin.y + (title_height - mark_size) / 2}, mark_size);
+    const float title_x = title_origin.x + mark_size + 9;
+    ImGui::PushFont(nullptr, short_panel ? 17.0f : 22.0f);
+    ImGui::GetWindowDrawList()->AddText({title_x, title_origin.y}, ImGui::GetColorU32(ink), "Shin");
     ImGui::PopFont();
     const std::string installed_version = "v" SHIN_OBSERVER_VERSION;
-    const ImVec2 version_origin{title_origin.x, title_origin.y + title_height - 9};
+    const ImVec2 version_origin{title_x, title_origin.y + (short_panel ? 20 : 27)};
+    const float language_x = ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - 76;
     ImGui::PushFont(nullptr, 9);
-    ImGui::GetWindowDrawList()->AddText(ImGui::GetFont(), ImGui::GetFontSize(), version_origin,
-        ImGui::GetColorU32(muted), installed_version.c_str());
-    ui_actions.push_back({installed_version, "", version_origin, ImGui::CalcTextSize(installed_version.c_str()), 87, true, true});
+    const auto version = clipped(ImGui::GetIO().DisplaySize.x >= 400 ? "Context Engine · " + installed_version : installed_version,
+        language_x - title_x - 8);
+    ImGui::GetWindowDrawList()->AddText(version_origin, ImGui::GetColorU32(muted), version.c_str());
+    ui_actions.push_back({installed_version, "", version_origin, ImGui::CalcTextSize(version.c_str()), 87, true, true});
     ImGui::PopFont();
     ImGui::Dummy({70, title_height});
-    ImGui::SameLine(90); ImGui::SetNextItemWidth(130);
-    std::array<std::string, 3> language_labels{shin::ui::tr("System"), "English", "Русский"};
-    const char* languages[]{language_labels[0].c_str(), language_labels[1].c_str(), language_labels[2].c_str()};
-    int selected_language = language_preference;
-    if (ImGui::Combo("##ui-language", &selected_language, languages, 3))
-        select_language_preference(selected_language);
+    ImGui::SameLine(language_x);
+    ImGui::PushFont(nullptr, 11);
+    const char* language_label = shin::ui::language() == shin::ui::Language::ru ? "RU" : "EN";
+    if (ImGui::Button(language_label, {43, 24})) ImGui::OpenPopup("ui-language");
     if (ImGui::IsItemHovered()) ImGui::SetTooltip("%s", shin::ui::tr("Language"));
+    if (ImGui::BeginPopup("ui-language")) {
+        const std::array<std::string, 3> language_labels{shin::ui::tr("System"), "English", "Русский"};
+        for (int i = 0; i < 3; ++i) if (ImGui::Selectable(language_labels[i].c_str(), language_preference == i)) select_language_preference(i);
+        ImGui::EndPopup();
+    }
+    ImGui::PopFont();
     ImGui::SameLine(ImGui::GetWindowWidth() - ImGui::GetStyle().WindowPadding.x - 20);
     status_badge(!view.connected ? Icon::offline : attention || registry_problem ? Icon::blocked : Icon::current,
         !view.connected ? shin::ui::tr("No fresh service response") : attention || registry_problem ?
         shin::ui::tr("Service connected; projects need attention") : shin::ui::tr("Service connected"), accent, 50, 20);
-    ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+    ImGui::Spacing();
     if (!profile_review_open) {
         const float tab_width = (ImGui::GetContentRegionAvail().x - 14) / 3;
         view_tab(shin::ui::tr("Overview"), 10, dashboard_view == 0, tab_width); ImGui::SameLine();
         view_tab(shin::ui::tr("Projects"), 11, dashboard_view == 1, tab_width); ImGui::SameLine();
         view_tab(shin::ui::tr("Models"), 12, dashboard_view == 2, tab_width);
-        ImGui::PushFont(nullptr, 11);
-        if (!view.connected) ImGui::TextColored(amber, "%s", view.data.is_null() ? shin::ui::tr("Waiting for connection") : shin::ui::tr("Offline · last received data"));
-        else if (attention) ImGui::TextColored(amber, shin::ui::tr("Context blocked: %d"), attention);
-        else if (registry_problem) ImGui::TextColored(amber, "%s", shin::ui::tr("Project connection error"));
-        else if (dashboard_view == 2) ImGui::TextColored(muted, shin::ui::tr("Connected projects: %zu of %zu"), shin::ui::mapped_model_projects(*view.usage, projects), projects.size());
-        else ImGui::TextColored(muted, shin::ui::tr("Projects: %zu · Active requests: %llu"), projects.size(), data.value("query_workers", 0ULL));
-        ImGui::PopFont();
+        if (ImGui::GetIO().DisplaySize.y >= 300) {
+            ImGui::PushFont(nullptr, 11);
+            if (!view.connected) ImGui::TextColored(amber, "%s", view.data.is_null() ? shin::ui::tr("Waiting for connection") : shin::ui::tr("Offline · last received data"));
+            else if (attention) ImGui::TextColored(amber, shin::ui::tr("Context blocked: %d"), attention);
+            else if (registry_problem) ImGui::TextColored(amber, "%s", shin::ui::tr("Project connection error"));
+            else if (dashboard_view == 2) ImGui::TextColored(muted, shin::ui::tr("Connected projects: %zu of %zu"), shin::ui::mapped_model_projects(*view.usage, projects), projects.size());
+            else ImGui::TextColored(muted, shin::ui::tr("Projects: %zu · Active requests: %llu"), projects.size(), data.value("query_workers", 0ULL));
+            ImGui::PopFont();
+        }
     }
     const float footer_y = ImGui::GetWindowHeight() - 34;
+    ImGui::PushStyleVar(ImGuiStyleVar_Alpha, monitor_motion.reveal.value());
     ImGui::BeginChild("view-content", {0, std::max(1.0f, footer_y - ImGui::GetCursorPosY() - 5)}, ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 #if defined(__APPLE__)
@@ -1620,6 +1785,7 @@ void render(const ViewState& view) {
     else if (dashboard_view == 1) render_projects(view, telemetry, history);
     else render_models(view, telemetry, history);
     ImGui::EndChild();
+    ImGui::PopStyleVar();
     ImGui::SetCursorPosY(footer_y);
     ImGui::Separator();
     if (!release_update_version.empty()) {
@@ -1639,5 +1805,7 @@ void render(const ViewState& view) {
         ImGui::PopFont();
     }
     ImGui::End();
+    ImGui::PopStyleVar(2);
+    monitor_motion.initialized = true;
 }
 } // namespace

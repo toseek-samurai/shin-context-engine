@@ -25,6 +25,7 @@ ComPtr<ID3D11Device> device;
 ComPtr<ID3D11DeviceContext> context;
 ComPtr<IDXGISwapChain> swap_chain;
 ComPtr<ID3D11RenderTargetView> target;
+ComPtr<ID3D11ShaderResourceView> brand_texture;
 ImFont* symbols = nullptr;
 NOTIFYICONDATAW tray{};
 UINT taskbar_created = 0;
@@ -59,6 +60,15 @@ void platform_save_language(int preference) {
 void platform_save_view(int view) { settings["view"] = view; save_settings(); }
 std::string platform_font() { return (known_folder(FOLDERID_Fonts) / "segoeui.ttf").string(); }
 std::string platform_version() { return SHIN_OBSERVER_VERSION; }
+bool platform_reduce_motion() {
+    BOOL enabled = FALSE;
+    return !SystemParametersInfoW(SPI_GETCLIENTAREAANIMATION, 0, &enabled, 0) || !enabled;
+}
+void draw_brand(ImVec2 origin, float size) {
+    if (brand_texture) ImGui::GetWindowDrawList()->AddImage(
+        ImTextureRef(reinterpret_cast<ImTextureID>(brand_texture.Get())), origin, {origin.x + size, origin.y + size},
+        {0, 0}, {1, 1}, ImGui::GetColorU32(sand));
+}
 bool platform_copy(const std::string& value) {
     const auto text = wide(value);
     const auto bytes = (text.size() + 1) * sizeof(wchar_t);
@@ -149,7 +159,33 @@ void draw_icon(Icon icon, ImVec2 origin, float size, ImVec4 color) {
         0xe73e,0xe72c,0xe823,0xe90f,0xe7ba,0xe708,0xe769,0xeb55,0xe897,0xe81c,0xe8ab,0xe964,0xe8c8,0xe8b7,0xe76b,0xe9d9,0xe712};
     const unsigned cp = glyphs.at(static_cast<std::size_t>(icon));
     const char text[]{static_cast<char>(0xe0 | (cp >> 12)), static_cast<char>(0x80 | ((cp >> 6) & 63)), static_cast<char>(0x80 | (cp & 63)), 0};
-    ImGui::GetWindowDrawList()->AddText(symbols, size, origin, ImGui::ColorConvertFloat4ToU32(color), text);
+    ImGui::GetWindowDrawList()->AddText(symbols, size, origin, ImGui::GetColorU32(color), text);
+}
+void load_brand() {
+    ComPtr<IWICImagingFactory> factory;
+    checked(CoCreateInstance(CLSID_WICImagingFactory, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&factory)), "Cannot load the Shin mark.");
+    const auto resource = FindResourceW(nullptr, MAKEINTRESOURCEW(102), RT_RCDATA);
+    if (!resource) throw std::runtime_error("Shin mark resource is missing.");
+    const auto loaded = LoadResource(nullptr, resource);
+    ComPtr<IWICStream> stream; checked(factory->CreateStream(&stream), "Cannot load mark stream.");
+    checked(stream->InitializeFromMemory(static_cast<BYTE*>(LockResource(loaded)), SizeofResource(nullptr, resource)), "Cannot decode mark stream.");
+    ComPtr<IWICBitmapDecoder> decoder; checked(factory->CreateDecoderFromStream(stream.Get(), nullptr, WICDecodeMetadataCacheOnDemand, &decoder), "Cannot decode mark.");
+    ComPtr<IWICBitmapFrameDecode> frame; checked(decoder->GetFrame(0, &frame), "Cannot decode mark frame.");
+    ComPtr<IWICBitmapScaler> scaler; checked(factory->CreateBitmapScaler(&scaler), "Cannot size mark.");
+    checked(scaler->Initialize(frame.Get(), 64, 64, WICBitmapInterpolationModeFant), "Cannot resize mark.");
+    ComPtr<IWICFormatConverter> converted; checked(factory->CreateFormatConverter(&converted), "Cannot convert mark.");
+    checked(converted->Initialize(scaler.Get(), GUID_WICPixelFormat32bppRGBA, WICBitmapDitherTypeNone, nullptr, 0, WICBitmapPaletteTypeCustom), "Cannot convert mark pixels.");
+    std::array<BYTE, 64 * 64 * 4> pixels{};
+    checked(converted->CopyPixels(nullptr, 64 * 4, static_cast<UINT>(pixels.size()), pixels.data()), "Cannot read mark pixels.");
+    for (std::size_t i = 0; i < pixels.size(); i += 4) pixels[i] = pixels[i + 1] = pixels[i + 2] = 255;
+    D3D11_TEXTURE2D_DESC description{};
+    description.Width = description.Height = 64; description.MipLevels = description.ArraySize = 1;
+    description.Format = DXGI_FORMAT_R8G8B8A8_UNORM; description.SampleDesc.Count = 1;
+    description.Usage = D3D11_USAGE_IMMUTABLE; description.BindFlags = D3D11_BIND_SHADER_RESOURCE;
+    const D3D11_SUBRESOURCE_DATA initial{pixels.data(), 64 * 4, 0};
+    ComPtr<ID3D11Texture2D> texture;
+    checked(device->CreateTexture2D(&description, &initial, &texture), "Cannot create mark texture.");
+    checked(device->CreateShaderResourceView(texture.Get(), nullptr, &brand_texture), "Cannot display Shin mark.");
 }
 HICON logo() {
     ComPtr<IWICImagingFactory> factory;
@@ -190,12 +226,12 @@ void register_icon() {
     if (!Shell_NotifyIconW(NIM_ADD,&tray)) return; // Explorer may be restarting; the timer retries.
     tray.uVersion=NOTIFYICON_VERSION_4; Shell_NotifyIconW(NIM_SETVERSION,&tray);
 }
-void close_panel() { ShowWindow(panel,SW_HIDE); if(monitor) monitor->visible=false; }
+void close_panel() { ShowWindow(panel,SW_HIDE); monitor_motion.initialized=false; if(monitor) monitor->visible=false; }
 void show_panel() {
     POINT point{}; GetCursorPos(&point); MONITORINFO info{sizeof(info)};
     GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&info);
-    const int width=std::min(compact?360:432,static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
-    const int height=std::min(compact?440:460,static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
+    const int width=std::min(compact?360:448,static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
+    const int height=std::min(compact?440:620,static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
     const int x=std::clamp(static_cast<int>(point.x)-width/2,static_cast<int>(info.rcWork.left)+12,static_cast<int>(info.rcWork.right)-width-12);
     const int y=std::clamp(static_cast<int>(point.y)-height,static_cast<int>(info.rcWork.top)+12,static_cast<int>(info.rcWork.bottom)-height-12);
     SetWindowPos(panel,HWND_TOPMOST,x,y,width,height,SWP_SHOWWINDOW); SetForegroundWindow(panel);
@@ -203,7 +239,7 @@ void show_panel() {
 }
 void render_frame(const ViewState& state) {
     ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame(); render(state); ImGui::Render();
-    constexpr float clear[]{.091f,.106f,.11f,1};
+    constexpr float clear[]{background.x,background.y,background.z,1};
     context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr); context->ClearRenderTargetView(target.Get(),clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
 }
@@ -310,7 +346,7 @@ int render_test(const fs::path& output) {
         {"query_workers",0},{"telemetry",{{"project_states",Json::array({project})},{"history",{{"status","ready"}}}}}};
     unsigned frames=0;
     unsigned cold_frames=0;
-    for(const auto size: {ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
+    for(const auto size: {ImVec2{448,620},ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
         SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
         // No successful reply has ever arrived: different from a disconnected
         // monitor that still holds its last good snapshot.
@@ -404,7 +440,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         const auto driver=test_mode?D3D_DRIVER_TYPE_WARP:D3D_DRIVER_TYPE_HARDWARE;
         auto result=D3D11CreateDeviceAndSwapChain(nullptr,driver,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&desc,&swap_chain,&device,nullptr,&context);
         if(FAILED(result) && !test_mode) result=D3D11CreateDeviceAndSwapChain(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&desc,&swap_chain,&device,nullptr,&context);
-        checked(result,shin::ui::tr("Direct3D 11 is unavailable."));make_target();
+        checked(result,shin::ui::tr("Direct3D 11 is unavailable."));make_target();load_brand();
         configure_imgui();
         ImFontConfig fallback;fallback.MergeMode=true;
         ImGui::GetIO().Fonts->AddFontFromFileTTF((known_folder(FOLDERID_Fonts)/"seguisym.ttf").string().c_str(),13,&fallback);
@@ -422,7 +458,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                 }
                 if(!running) break;
                 if(IsWindowVisible(panel)) {render_frame(monitor->snapshot());checked(swap_chain->Present(1,0),shin::ui::tr("Monitor graphics device was lost."));}
-                MsgWaitForMultipleObjectsEx(0,nullptr,IsWindowVisible(panel)?50:INFINITE,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+                MsgWaitForMultipleObjectsEx(0,nullptr,IsWindowVisible(panel)?(monitor_motion.active?16:50):INFINITE,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
             }
             exit_code=0;
         }

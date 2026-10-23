@@ -1,11 +1,21 @@
 #include "../ui/project_diagnostics.h"
 #include "../ui/model_projects.h"
+#include "monitor_motion.h"
 #include <cassert>
 #include <iostream>
 #include <limits>
 
 int check_language() try {
     using namespace shin::ui;
+    MonitorTween tween;
+    tween.snap(0);
+    const float first = tween.step(1, .04f, false);
+    assert(first > 0 && first < 1 && tween.moving());
+    for (int i = 0; i < 4; ++i) tween.step(1, .04f, false);
+    assert(tween.value() == 1 && !tween.moving());
+    assert(tween.step(0, .01f, false) < 1);
+    assert(tween.step(1, .01f, true) == 1 && !tween.moving());
+    assert(tween.step(0, 2, false) == 0 && !tween.moving()); // Hidden-window resume snaps.
     const auto expected = [](const char* en, const char* ru) { return shin::ui::language() == shin::ui::Language::en ? en : ru; };
     const auto coverage = model_usage_coverage({{"status", "available"}, {"fresh", true}, {"complete", false},
         {"unassigned_sessions", 42}, {"skipped_sessions", 93}, {"sources", {{"codex", {{"state", "partial"},
@@ -45,6 +55,9 @@ int check_language() try {
     assert(project_table_layout(296, 16).pages == 2);
     assert(project_table_layout(296, 1).table_height == project_table_layout(296, 16).table_height);
     assert(project_table_layout(0, 0).page_size == 1);
+    const auto detailed = project_table_layout(296, 16, 44);
+    assert(detailed.page_size == 5 && detailed.pages == 4);
+    assert(detailed.table_height + ProjectTableLayout::controls_height <= 296);
     assert(project_table_layout(std::numeric_limits<float>::quiet_NaN(), 16).page_size == 1);
     assert(centered_item_y(24, 17) == 3);
     assert(centered_item_y(24, 13) == 5);

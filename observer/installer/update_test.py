@@ -79,15 +79,45 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             state['kit'] = value
             write_json(state_file, state, True)
 
-    def call(*words, executable=tool, error=None):
-        result = subprocess.run([str(executable), *map(str, words)], cwd=root, env=env,
+    def call(*words, executable=tool, error=None, progress=None, language=None):
+        if progress:
+            words = (*words, "--progress-json" if progress == "json" else "--progress")
+        call_env = {**env, **({"LC_ALL": language} if language else {})}
+        result = subprocess.run([str(executable), *map(str, words)], cwd=root, env=call_env,
                                 capture_output=True, text=True, timeout=90)
         if error:
             assert result.returncode == 2, (words, result.stdout, result.stderr)
-            value = json.loads(result.stderr)
+            receipt_lines, observed = [], []
+            for line in result.stderr.splitlines(keepends=True):
+                try:
+                    row = json.loads(line)
+                except ValueError:
+                    row = None
+                if progress == 'json' and isinstance(row, dict) and set(row) == {'step', 'received', 'total'}:
+                    observed.append(row['step'])
+                else:
+                    receipt_lines.append(line)
+            value = json.loads(''.join(receipt_lines))
             assert value['error']['code'] == error, value
+            if progress == 'json':
+                assert 16 in observed and observed[-1] == 18 and 17 not in observed, observed
         else:
-            assert result.returncode == 0 and not result.stderr, (words, result.stdout, result.stderr)
+            assert result.returncode == 0, (words, result.stdout, result.stderr)
+            if progress == 'json':
+                frames = [json.loads(line) for line in result.stderr.splitlines()]
+                assert frames and all(set(row) == {'step', 'received', 'total'} for row in frames)
+                stages = [row['step'] for row in frames]
+                assert stages[0] == 0 and stages[-1] == 17, stages
+                if '--adopt-existing' in words:
+                    for step in (5, 9, 10, 11, 12, 7):
+                        assert step in stages, (step, stages)
+                    assert any(row['step'] == 9 and row['received'] == row['total'] == 1 for row in frames), frames
+                    assert any(row['step'] == 10 and row['received'] == row['total'] > 0 for row in frames), frames
+            elif progress:
+                assert ('Обновление завершено' if language else 'Update completed') in result.stderr, result.stderr
+                assert '\x1b' not in result.stderr, 'redirected human progress contains terminal controls'
+            else:
+                assert not result.stderr, result.stderr
             value = json.loads(result.stdout)
             assert value['ok'], value
         return value
@@ -126,7 +156,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         call(*adoption, error='installation-extra-file')
         assert extra.read_text() == 'preserve'
         extra.unlink()
-        migrated = call(*adoption)
+        migrated = call(*adoption, progress="json")
         assert migrated['changed'] and migrated['data_preserved'] and migrated['service_restored']
         receipt = json.loads((prefix / '.shin-installation.json').read_text())
         state_file = Path(receipt['control']) / 'state.json'
@@ -134,7 +164,8 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         assert call('installation', '--prefix', prefix)['integrity_verified']
         assert not (home / 'service/rpc.sock').exists()
         call('service-start', executable=prefix / 'bin/shin-ce')
-        assert not call(*update)['changed']
+        assert not call(*update, progress='text')['changed']
+        assert not call(*update, progress='text', language='ru_RU.UTF-8')['changed']
         assert (prefix / asset_name).read_bytes() == asset.read_bytes()
         call('update', executable=prefix / 'bin/shin-ce', error='installation-update-source')
         with (Path(receipt['control']) / 'operation/observer.lock').open('r+') as lock:
@@ -252,7 +283,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         pending.pop('previous')
         write_json(state_file, pending, True)
         (prefix / 'bin/shin-context').chmod(0o600)
-        call(*update, error='installation-update-rolled-back')
+        call(*update, error='installation-update-rolled-back', progress='json')
         assert call('installation', '--prefix', prefix)['version'] == old['kit']['version']
         assert call('query', 'updateQuota', executable=prefix / 'bin/shin-ce')['local_ready']
         assert (home / 'registry/state.json').read_bytes() == registry

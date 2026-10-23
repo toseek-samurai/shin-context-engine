@@ -79,7 +79,8 @@ std::string fetch(const std::string& url,std::size_t limit,const fs::path& outpu
     require(!timedOut && !receiver.refused && receiver.status==200,"update-network-unavailable","GitHub could not be checked or the download failed. The current installation is unchanged.");
     return receiver.bytes.length ? std::string((const char*)receiver.bytes.bytes,receiver.bytes.length) : "";
 }
-Json run(const fs::path& exe,const std::vector<std::string>& args,int timeout,std::string* text=nullptr) {
+Json run(const fs::path& exe,const std::vector<std::string>& args,int timeout,std::string* text=nullptr,
+         const ReleaseUpdateProgressSink& progress={}) {
     NSTask* task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:ns(exe.string())];
     NSMutableArray* argv=[NSMutableArray array];for(const auto& a:args)[argv addObject:ns(a)];task.arguments=argv;
     task.environment=@{@"PATH":@"/usr/bin:/bin",@"LC_ALL":@"C",@"HOME":NSHomeDirectory()};task.standardInput=[NSFileHandle fileHandleWithNullDevice];
@@ -88,21 +89,50 @@ Json run(const fs::path& exe,const std::vector<std::string>& args,int timeout,st
     require(fd>=0,"update-process-failed","Cannot prepare the updater output.");
     const auto transcript=fs::canonical(pattern);
     NSFileHandle* output=[[NSFileHandle alloc] initWithFileDescriptor:fd closeOnDealloc:YES];task.standardOutput=output;task.standardError=output;
+    // The child's stdout remains an independent native receipt. Read-only
+    // stderr frames are drained while it works, never interpreted as success.
+    NSPipe* channel=progress ? [NSPipe pipe] : nil;
+    const int progress_fd=channel ? channel.fileHandleForReading.fileDescriptor : -1;
+    if(channel) {
+        require(::fcntl(progress_fd,F_SETFL,O_NONBLOCK)==0,"update-process-failed","Cannot prepare update observation.");
+        task.standardError=channel;
+    }
+    std::string pending,errors;
+    const auto drain=[&] {
+        if(progress_fd<0)return;
+        char chunk[4096];ssize_t count;std::size_t read=0;
+        while(read<64*1024 && (count=::read(progress_fd,chunk,sizeof(chunk)))>0) {
+            read+=static_cast<std::size_t>(count);
+            pending.append(chunk,static_cast<std::size_t>(count));
+            for(auto end=pending.find('\n');end!=std::string::npos;end=pending.find('\n')) {
+                const auto line=pending.substr(0,end);pending.erase(0,end+1);
+                if(const auto value=parse_update_progress(Json::parse(line,nullptr,false))) {
+                    // Only the outer independent readback can finish the update.
+                    if(value->step!=ReleaseUpdateStep::completed && value->step!=ReleaseUpdateStep::failed)
+                        report_update(progress,*value);
+                } else if(errors.size()+line.size()<256*1024) errors+=line+"\n";
+            }
+            if(pending.size()>8192)pending.clear(); // Malformed observation is bounded, never a cancellation.
+        }
+    };
     NSError* error=nil;
     if(![task launchAndReturnError:&error]) {::unlink(pattern);throw Error("update-process-failed","Cannot start the native update tool.");}
+    if(channel)[channel.fileHandleForWriting closeFile];
     const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(timeout);
     bool exceeded=false;
     while(task.running) {
+        drain();
         if(std::chrono::steady_clock::now()>=until || fs::file_size(transcript)>256U*1024) {exceeded=true;[task terminate];break;}
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     if(exceeded) {std::this_thread::sleep_for(std::chrono::milliseconds(200));if(task.running)::kill(task.processIdentifier,SIGKILL);}
-    [task waitUntilExit];[output synchronizeFile];
+    [task waitUntilExit];[output synchronizeFile];drain();errors+=pending;
     std::string bytes;
     try {bytes=read_text(transcript,256U*1024,true);} catch(...) {::unlink(pattern);throw;}
     ::unlink(pattern);
     require(!exceeded,"update-outcome-unknown","The updater did not acknowledge completion. Review installation status before retrying.");
     if(text) {*text=bytes;require(task.terminationStatus==0,"update-archive-invalid","Cannot inspect or extract the release archive.");return Json();}
+    if(bytes.empty() && progress)bytes=errors;
     Json result;try{result=parse_json(bytes);}catch(...){throw Error("update-outcome-unknown","The native updater returned no valid completion receipt. Review installation status before retrying.");}
     return result;
 }
@@ -152,7 +182,7 @@ public:
                 const auto now=std::chrono::steady_clock::now();
                 if(value.step==ReleaseUpdateStep::downloading && pipe->last==value.step && value.received<value.total &&
                     now-pipe->written<std::chrono::milliseconds(100))return;
-                const auto line=Json{{"step",static_cast<unsigned>(value.step)},{"received",value.received},{"total",value.total}}.dump()+"\n";
+                const auto line=update_progress_frame(value).dump()+"\n";
                 // A slow/closed window must never block or abort the updater.
                 (void)::write(pipe->descriptor,line.data(),line.size());
                 pipe->last=value.step;pipe->written=now;
@@ -190,16 +220,24 @@ struct RelaunchMonitor {
 Json local_updates(int argc,char** argv,const fs::path& user) {
  @autoreleasepool {
     const std::string command=argv[1];fs::path prefix=fs::absolute(own_prefix()).lexically_normal(),home;
-    std::string revision,language;int parent=0;std::set<std::string> seen;
+    std::string revision,language,display_version;int parent=0;bool force_progress=false;std::set<std::string> seen;
     for(int i=2;i<argc;++i) {
-        const std::string key=argv[i];require((key=="--prefix" || key=="--home" || key=="--revision" || key=="--wait-pid" || key=="--ui-language") && seen.insert(key).second && i+1<argc,"invalid-arguments","Invalid update option.");
+        const std::string key=argv[i];
+        if(key=="--progress" && seen.insert(key).second) {force_progress=true;continue;}
+        require((key=="--prefix" || key=="--home" || key=="--revision" || key=="--wait-pid" || key=="--ui-language" || key=="--ui-version") && seen.insert(key).second && i+1<argc,"invalid-arguments","Invalid update option.");
         const std::string value=argv[++i];
         if(key=="--prefix")prefix=fs::absolute(value).lexically_normal();else if(key=="--home")home=fs::absolute(value).lexically_normal();else if(key=="--revision")revision=value;
+        else if(key=="--ui-version") {
+            require(!value.empty() && value.size()<=64 && value.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-")==std::string::npos,"invalid-arguments","Invalid display version.");display_version=value;
+        }
         else if(key=="--ui-language") {require(value=="en" || value=="ru","invalid-arguments","Choose en or ru for the update window.");language=value;}
         else {try{std::size_t used=0;parent=std::stoi(value,&used);require(used==value.size() && parent>1 && parent==getppid(),"invalid-arguments","Only the launching Monitor may be awaited.");}catch(const Error&){throw;}catch(...){throw Error("invalid-arguments","Invalid launching Monitor PID.");}}
     }
     require(!parent || command=="update-install","invalid-arguments","Only an explicit Monitor installation may await its parent.");
-    require(language.empty() || parent,"invalid-arguments","Update window language requires the launching Monitor.");
+    require((language.empty() && display_version.empty()) || parent,"invalid-arguments","Update window language requires the launching Monitor.");
+    require(!force_progress || (!parent && (command=="update-install" || command=="update-download")),"invalid-arguments","--progress is available for terminal downloads and updates.");
+    TerminalUpdateProgress terminal(force_progress,false,!parent && (command=="update-install" || command=="update-download"));
+    terminal.report({ReleaseUpdateStep::preparing});
     const auto installed=installation(prefix,user);require(installed.value("integrity_verified",false),"installation-integrity-failed","Verify the owned installation before checking updates.");
     const auto current=installed.at("version").get<std::string>();
     if(home.empty())home=installed.at("home").get<std::string>();
@@ -225,15 +263,18 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
         }
         state["phase"]="reviewed";state["ok"]=true;review.save(state);return state;
     }
+    // The viewer must exit before LaunchServices reopens this bundle.
+    RelaunchMonitor relaunch{prefix};
+    // Display-only hint from the review. The release revision is still rechecked below.
+    UpdateProgressViewer viewer(prefix,display_version,language,parent!=0);
+    const auto progress=[&](ReleaseUpdateProgress value) {terminal.report(value);report_update(viewer.sink(),value);};
+    report_update(progress,{ReleaseUpdateStep::checking_release});
     auto selected=offer(current);selected["prefix"]=prefix.string();
     if(command=="update-check")return selected;
     require(command=="update-download" || command=="update-install","invalid-command","Unknown update command.");
     require(selected.at("available")==true && !revision.empty() && selected.at("revision")==revision,"update-offer-changed","The release offer changed. Check for updates again before installing.");
-    // The progress instance must exit before LaunchServices reopens this bundle.
-    // It must not consume the open request intended for the normal Monitor.
-    RelaunchMonitor relaunch{prefix};
-    const auto operation=[&](const ReleaseUpdateProgressSink& progress) -> Json {
-    const auto report=[&](ReleaseUpdateStep step) {if(progress)progress({step});};
+    const auto operation=[&](const ReleaseUpdateProgressSink& sink) -> Json {
+    const auto report=[&](ReleaseUpdateStep step) {report_update(sink,{step});};
     const auto directory=home/"updates";ensure_private_directory(directory);
     StateStore owner(directory,true);owner.recover_pending();
     if(auto prior=owner.load();prior && prior->value("phase","")!="installed" && prior->value("phase","")!="reviewed" && prior->value("phase","")!="failed")throw Error("update-outcome-unknown","A previous update has no completion receipt. Review its saved candidate and installation status before retrying.");
@@ -253,8 +294,8 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
             state["phase"]="downloading";owner.save(state);
         }
         const auto archive=stage/selected.at("archive_name").get<std::string>();
-        if(progress)progress({ReleaseUpdateStep::downloading,0,selected.at("bytes").get<std::uint64_t>()});
-        fetch(selected.at("archive_url"),128U*1024*1024,archive,progress,selected.at("bytes").get<std::uint64_t>());
+        report_update(sink,{ReleaseUpdateStep::downloading,0,selected.at("bytes").get<std::uint64_t>()});
+        fetch(selected.at("archive_url"),128U*1024*1024,archive,sink,selected.at("bytes").get<std::uint64_t>());
         report(ReleaseUpdateStep::verifying_archive);
         const auto hash=digest(read_text(archive,128U*1024*1024,true));
         const auto checksum=fetch(selected.at("checksum_url"),512);
@@ -272,7 +313,7 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
         if(command=="update-download")return state;
         installing=true;state["phase"]="installing";owner.save(state);
         report(ReleaseUpdateStep::installing);
-        const auto result=run(kit/"bin/shin-ce",{"update","--prefix",prefix.string()},600);
+        const auto result=run(kit/"bin/shin-ce",{"update","--prefix",prefix.string(),"--progress-json"},600,nullptr,sink);
         state["result"]=result;state["ok"]=result.value("ok",false);state["phase"]=state.at("ok")==true ? "installed" : "review-required";
         owner.save(state);
         if(state.at("ok")==true) {report(ReleaseUpdateStep::confirming);const auto confirmed=installation(prefix,user);require(confirmed.at("version")==selected.at("version") && confirmed.value("integrity_verified",false),"update-outcome-unknown","The installed version did not confirm the update receipt.");state.erase("candidate");state.erase("staging");state.erase("stage_identity");owner.save(state);fs::remove_all(stage);}
@@ -281,10 +322,10 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
         state["ok"]=false;state["phase"]=installing ? "review-required" : "failed";state["error"]=typed ? error_json(*typed) : error_json(Error(installing ? "update-outcome-unknown" : "update-preparation-failed","The operation did not complete. Review the saved result before retrying."));state["staging"]=stage.string();owner.save(state);
         if(!installing) {require(directory_identity(stage,true)==state.at("stage_identity").get<std::string>(),"update-staging-changed","Private staging changed; preserve it for review.");fs::remove_all(stage);state.erase("candidate");state.erase("staging");state.erase("stage_identity");owner.save(state);}
     }
+    report(state.value("ok",false) && state.value("phase","")=="installed" ? ReleaseUpdateStep::completed : ReleaseUpdateStep::failed);
     return state;
     };
-    UpdateProgressViewer viewer(prefix,selected.at("version"),language,parent!=0);
-    return operation(viewer.sink());
+    return operation(progress);
  }
 }
 } // namespace shin::observer

@@ -208,6 +208,10 @@ checks current projects under the new engine, stages complete files, stops the
 owned service and atomically exchanges the payload directories. It restores the
 previous service/autostart preference and checks readiness before reporting success.
 Project bindings, indexes, identity and history remain in their existing data home.
+Terminal updates show each stage and elapsed time on stderr, with real byte counts
+for copying and completed/total project counts for qualification. stdout retains
+the JSON receipt. Redirected commands stay quiet by default; add `--progress` to
+include readable stages in a log. No desktop window opens for a terminal command.
 Restart Monitor after completion. Restart persistent MCP connections in your coding
 agent as well: already-running adapters retain the old version and cannot query
 the new service until relaunched. Client configuration paths stay the same.
@@ -370,13 +374,19 @@ existing updater. That updater retains installation ownership, compatibility,
 project qualification, data preservation and rollback checks. The helper records
 an outcome and reopens Monitor. Persistent MCP clients still need to reconnect.
 The helper's own progress window remains visible while Monitor is closed. It
-shows downloaded bytes and the download percentage, followed by named verification,
-unpacking, kit-checking, installation/restart and final-confirmation stages. Work
-without a measurable total uses an indeterminate indicator, not an estimated
-overall percentage. The window uses Monitor's selected EN/RU language and does
-not offer cancellation once the native operation has started. Terminal updates
-keep their JSON output and do not open a window. This window is supplied by the
-installed helper, so the change takes effect for updates started from the new kit.
+opens before the reviewed release is rechecked. It shows the complete list of
+steps, the current step and its elapsed time, and marks observed completed steps.
+Download and staging percentages use real byte counts. Project compatibility and
+readiness checks show completed/total project counts. Service shutdown, kit swap,
+startup, final confirmation and rollback each have their own status. Work without
+a measurable total uses an indeterminate indicator, not an estimated overall
+percentage. The window uses Monitor's selected EN/RU language and does not offer
+cancellation once the native operation has started. CLI updates show the same
+stages on a terminal, in the language selected by LC_ALL/LC_MESSAGES/LANG. stdout
+retains the JSON result; `--progress` enables readable stderr output in redirected
+runs. The helper filters child progress separately from the native receipt, and
+only the independent installed-kit readback confirms completion. This window is
+supplied by the installed helper, so the change takes effect for updates started from the new kit.
 Checksums protect download integrity; this preview is not Developer ID signed or
 notarized and does not provide an independent signature over a compromised release.
 

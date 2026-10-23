@@ -1331,7 +1331,7 @@ int main(int argc, char** argv) {
             if (argc != 4) return 2;
             const std::string language = argv[3];
             const std::string version = argv[2];
-            if ((language != "en" && language != "ru") || version.empty() || version.size() > 64 ||
+            if ((language != "en" && language != "ru") || version.size() > 64 ||
                 version.find_first_not_of("0123456789abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ.-") != std::string::npos) return 2;
             return shin::observer::release_update_progress_viewer(argv[2], shin::ui::language_for(language));
         }

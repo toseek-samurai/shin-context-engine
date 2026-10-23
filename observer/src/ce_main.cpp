@@ -102,6 +102,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce serve --registered [--home DIR]\n"
                      "shin-ce service-start|service-status|service-stop [--home DIR]\n"
                      "shin-ce service-status --text [--home DIR] shows a read-only headless overview.\n"
+                     "Kit updates show progress on a terminal; add --progress for readable stderr in logs.\n"
                      "shin-ce service-definition [--home DIR] (read-only OS manager definition)\n"
                      "shin-ce service-install|service-update|service-uninstall|service-installation [--home DIR]\n"
                      "Registered projects use the resident service automatically; no silent fallback.\n"

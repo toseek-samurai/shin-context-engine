@@ -69,15 +69,33 @@ int main(int argc, char** argv) {
                             bool title_found = false;
                             for (NSTextField* label in labels) if ([label.stringValue isEqualToString:expected]) title_found = true;
                             check(title_found, "update version or selected language missing");
-                            const char* stage_key = value.step == ReleaseUpdateStep::downloading ? "Downloading the update…" :
-                                value.step == ReleaseUpdateStep::installing ? "Installing and restarting Shin…" : "Confirming the installed version…";
+                            const char* stage_key = update_stage_key(value.step);
                             NSString* expected_stage = [NSString stringWithUTF8String:shin::ui::tr(stage_key)];
                             bool stage_found = false;
                             for (NSTextField* label in labels) if ([label.stringValue isEqualToString:expected_stage]) stage_found = true;
                             if (!stage_found) return;
-                            if (value.step == ReleaseUpdateStep::downloading) {
+                            if (value.step == ReleaseUpdateStep::downloading || value.step == ReleaseUpdateStep::staging) {
                                 if (bars[0].indeterminate || bars[0].doubleValue != 50) return;
+                            } else if (value.step == ReleaseUpdateStep::failed) {
+                                if (bars[0].indeterminate || bars[0].doubleValue != 0) return;
                             } else if (!bars[0].indeterminate) return;
+                            for (const auto planned : update_steps) {
+                                bool found = false;
+                                for (NSTextField* label in labels) {
+                                    if ([label.stringValue hasSuffix:[NSString stringWithUTF8String:shin::ui::tr(update_stage_key(planned))]] &&
+                                        ([label.stringValue hasPrefix:@"○  "] || [label.stringValue hasPrefix:@"●  "] || [label.stringValue hasPrefix:@"✓  "] || [label.stringValue hasPrefix:@"×  "] || [label.stringValue hasPrefix:@"↶  "])) found = true;
+                                    check(NSContainsRect(window.contentView.bounds, [label convertRect:label.bounds toView:window.contentView]), "update label clipped outside window");
+                                }
+                                check(found, "full update plan missing");
+                            }
+                            if (value.step == ReleaseUpdateStep::checking_projects) {
+                                bool counts = false, completed = false;
+                                for (NSTextField* label in labels) {
+                                    if ([label.stringValue containsString:@"2 / 3"]) counts = true;
+                                    if ([label.stringValue isEqualToString:[@"✓  " stringByAppendingString:[NSString stringWithUTF8String:shin::ui::tr("Verifying the download…")]]]) completed = true;
+                                }
+                                check(counts && completed, "project counts or fast completed stages lost");
+                            }
                             [window displayIfNeeded];
                             NSBitmapImageRep* bitmap = [window.contentView bitmapImageRepForCachingDisplayInRect:window.contentView.bounds];
                             [window.contentView cacheDisplayInRect:window.contentView.bounds toBitmapImageRep:bitmap];
@@ -101,9 +119,18 @@ int main(int argc, char** argv) {
                     }
                     check(captured->failure.empty(),captured->failure.c_str());
                 };
+                capture({ReleaseUpdateStep::checking_release}, "preparing.png");
                 capture({ReleaseUpdateStep::downloading, 12 * 1024 * 1024, 24 * 1024 * 1024}, "download.png");
-                capture({ReleaseUpdateStep::installing}, "installing.png");
+                // Several stages can finish between GUI timer ticks.
+                for (const auto step : {ReleaseUpdateStep::verifying_archive, ReleaseUpdateStep::extracting, ReleaseUpdateStep::verifying_kit}) progress({step});
+                progress({ReleaseUpdateStep::qualifying_projects, 3, 3});
+                capture({ReleaseUpdateStep::staging, 5, 10}, "staging.png");
+                progress({ReleaseUpdateStep::stopping_service}); progress({ReleaseUpdateStep::switching_kit});
+                capture({ReleaseUpdateStep::starting_service}, "starting.png");
+                capture({ReleaseUpdateStep::checking_projects, 2, 3}, "projects.png");
+                capture({ReleaseUpdateStep::rolling_back}, "rollback.png");
                 capture({ReleaseUpdateStep::confirming}, "confirming.png");
+                capture({ReleaseUpdateStep::failed}, "failed.png");
                 return {{"ok", false}, {"phase", "review-required"}, {"error", {{"code", "fixture-rollback"}}}};
             });
             check(attempts == 1 && !result.at("ok").get<bool>() && result.at("error").at("code") == "fixture-rollback",

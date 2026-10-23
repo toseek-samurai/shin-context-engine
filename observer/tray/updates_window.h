@@ -17,7 +17,7 @@
         NSAlert* busy=[NSAlert new];busy.messageText=ui_text("Finish the current Shin operation before updating.");[busy runModal];return;
     }
     [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"ShinUpdatePending"];
-    [self runCLI:@"update-install" arguments:@[@"--revision",diagnostic_text_content(offered.at("revision").get<std::string>()),@"--wait-pid",[NSString stringWithFormat:@"%d",getpid()],@"--ui-language",shin::ui::language()==shin::ui::Language::ru ? @"ru" : @"en"] completion:^(Json result,NSString* failure) {
+    [self runCLI:@"update-install" arguments:@[@"--ui-version",diagnostic_text_content(offered.at("version").get<std::string>()),@"--revision",diagnostic_text_content(offered.at("revision").get<std::string>()),@"--wait-pid",[NSString stringWithFormat:@"%d",getpid()],@"--ui-language",shin::ui::language()==shin::ui::Language::ru ? @"ru" : @"en"] completion:^(Json result,NSString* failure) {
         release_project_operation();[[NSUserDefaults standardUserDefaults] removeObjectForKey:@"ShinUpdatePending"];
         const auto error=result.is_object() ? result.value("error",Json()) : Json();
         if(error.is_object() && error.value("code",Json())=="update-offer-changed") {

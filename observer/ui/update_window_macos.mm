@@ -11,23 +11,11 @@
 namespace shin::observer {
 namespace {
 NSString* ui_text(const char* value) { return [NSString stringWithUTF8String:shin::ui::tr(value)]; }
-NSString* stage_text(ReleaseUpdateStep step) {
-    switch (step) {
-        case ReleaseUpdateStep::preparing: return ui_text("Preparing the update…");
-        case ReleaseUpdateStep::waiting_for_monitor: return ui_text("Closing Shin Monitor…");
-        case ReleaseUpdateStep::downloading: return ui_text("Downloading the update…");
-        case ReleaseUpdateStep::verifying_archive: return ui_text("Verifying the download…");
-        case ReleaseUpdateStep::extracting: return ui_text("Unpacking the update…");
-        case ReleaseUpdateStep::verifying_kit: return ui_text("Checking the new kit…");
-        case ReleaseUpdateStep::installing: return ui_text("Installing and restarting Shin…");
-        case ReleaseUpdateStep::confirming: return ui_text("Confirming the installed version…");
-    }
-    return ui_text("Preparing the update…");
-}
-NSString* megabytes(std::uint64_t bytes) {
-    char buffer[64]; std::snprintf(buffer, sizeof(buffer), "%.1f", static_cast<double>(bytes) / (1024 * 1024));
-    return [NSString stringWithUTF8String:shin::ui::decimal(buffer).c_str()];
-}
+NSString* stage_text(ReleaseUpdateStep step) { return ui_text(update_stage_key(step)); }
+NSColor* sand_ink() { return [NSColor colorWithCalibratedRed:.914 green:.914 blue:.867 alpha:1]; }
+NSColor* sand_muted() { return [NSColor colorWithCalibratedRed:.627 green:.647 blue:.584 alpha:1]; }
+NSColor* sand_accent() { return [NSColor colorWithCalibratedRed:.839 green:.776 blue:.635 alpha:1]; }
+
 }
 
 Json run_release_update_window(const std::string& version, shin::ui::Language language,
@@ -35,7 +23,8 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
     shin::ui::set_language(language);
     struct Mailbox {
         std::mutex mutex;
-        ReleaseUpdateProgress progress;
+        UpdateTimeline timeline;
+        std::chrono::steady_clock::time_point changed = std::chrono::steady_clock::now(), finished_at;
         bool reported = false, finished = false;
     };
     // Producers retain only this mailbox, never a window or a stack reference.
@@ -47,10 +36,11 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
             try {
                 result = operation([mailbox](ReleaseUpdateProgress value) {
                     std::lock_guard lock(mailbox->mutex);
-                    mailbox->progress = value; mailbox->reported = true;
+                    if (!mailbox->reported || mailbox->timeline.current.step != value.step) mailbox->changed = std::chrono::steady_clock::now();
+                    mailbox->timeline.observe(value); mailbox->reported = true;
                 });
             } catch (...) { failure = std::current_exception(); }
-            std::lock_guard lock(mailbox->mutex); mailbox->finished = true;
+            std::lock_guard lock(mailbox->mutex); mailbox->finished = true; mailbox->finished_at = std::chrono::steady_clock::now();
         }
     });
     // Do not initialize a GUI for a refused/empty progress stream.
@@ -71,17 +61,22 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
     NSTextField* stage = nil;
     NSTextField* detail = nil;
     NSProgressIndicator* bar = nil;
+    NSMutableArray<NSTextField*>* rows = [NSMutableArray new];
     @try {
         app = [NSApplication sharedApplication];
         if (!NSScreen.screens.count) @throw [NSException exceptionWithName:@"ShinNoScreen" reason:nil userInfo:nil];
         [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
         [app finishLaunching];
-        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 560, 230)
+        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 580, 526)
             styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable
             backing:NSBackingStoreBuffered defer:NO];
         window.releasedWhenClosed = NO;
         window.restorable = NO;
         window.title = ui_text("Updating Shin");
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
+        window.contentView.wantsLayer = YES;
+        window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
         NSStackView* stack = [NSStackView new];
         stack.orientation = NSUserInterfaceLayoutOrientationVertical;
         stack.alignment = NSLayoutAttributeLeading; stack.spacing = 14;
@@ -91,20 +86,29 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
             [stack.leadingAnchor constraintEqualToAnchor:window.contentView.leadingAnchor constant:24],
             [stack.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-24],
             [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:24]]];
-        NSTextField* title = [NSTextField labelWithString:[NSString stringWithFormat:ui_text("Updating Shin to %@"),
-            [NSString stringWithUTF8String:version.c_str()]]];
+        NSTextField* title = [NSTextField labelWithString:version.empty() ? ui_text("Updating Shin") :
+            [NSString stringWithFormat:ui_text("Updating Shin to %@"), [NSString stringWithUTF8String:version.c_str()]]];
+        title.textColor = sand_ink();
         title.font = [NSFont systemFontOfSize:18 weight:NSFontWeightSemibold];
         stage = [NSTextField labelWithString:stage_text(ReleaseUpdateStep::preparing)];
-        stage.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
+        stage.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium]; stage.textColor = sand_accent();
         bar = [NSProgressIndicator new]; bar.style = NSProgressIndicatorStyleBar;
         bar.indeterminate = YES; bar.displayedWhenStopped = YES; bar.usesThreadedAnimation = YES; bar.minValue = 0; bar.maxValue = 100;
         bar.accessibilityLabel = ui_text("Update progress");
         [bar.heightAnchor constraintEqualToConstant:14].active = YES;
-        detail = [NSTextField labelWithString:@""]; detail.textColor = NSColor.secondaryLabelColor;
+        detail = [NSTextField labelWithString:@""]; detail.textColor = sand_muted();
         detail.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightRegular];
         NSTextField* footer = [NSTextField wrappingLabelWithString:ui_text("Shin Monitor will reopen when the update finishes.")];
-        footer.font = [NSFont systemFontOfSize:12]; footer.textColor = NSColor.secondaryLabelColor;
-        for (NSView* view in @[title, stage, bar, detail, footer]) [stack addArrangedSubview:view];
+        footer.font = [NSFont systemFontOfSize:12]; footer.textColor = sand_muted();
+        for (NSView* view in @[title, stage, bar, detail]) [stack addArrangedSubview:view];
+        NSStackView* steps = [NSStackView new]; steps.orientation = NSUserInterfaceLayoutOrientationVertical;
+        steps.alignment = NSLayoutAttributeLeading; steps.spacing = 7;
+        for (const auto step : update_steps) {
+            NSTextField* row = [NSTextField labelWithString:[@"○  " stringByAppendingString:stage_text(step)]];
+            row.font = [NSFont systemFontOfSize:12]; row.textColor = sand_muted();
+            [rows addObject:row]; [steps addArrangedSubview:row];
+        }
+        [stack addArrangedSubview:steps]; [stack addArrangedSubview:footer];
         [bar.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
         [window center]; [window makeKeyAndOrderFront:nil]; [app activate];
         [bar startAnimation:nil]; [window displayIfNeeded];
@@ -115,10 +119,12 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
     if (visible) {
         __block BOOL drawing = YES;
         NSTimer* timer = [NSTimer timerWithTimeInterval:.05 repeats:YES block:^(NSTimer* tick) {
-            ReleaseUpdateProgress current;
-            bool done;
-            { std::lock_guard lock(mailbox->mutex); done = mailbox->finished; current = mailbox->progress; }
-            if (done) {
+            UpdateTimeline timeline;
+            bool done; std::chrono::steady_clock::time_point changed, finished_at;
+            { std::lock_guard lock(mailbox->mutex); done = mailbox->finished; timeline = mailbox->timeline;
+                changed = mailbox->changed; finished_at = mailbox->finished_at; }
+            const auto current = timeline.current;
+            if (done && std::chrono::steady_clock::now() - finished_at >= std::chrono::milliseconds(400)) {
                 [tick invalidate]; [app stop:nil];
                 [app postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint
                     modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];
@@ -127,14 +133,34 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
             if (!drawing) return;
             @try {
                 stage.stringValue = stage_text(current.step);
-                if (const auto percent = release_download_percent(current)) {
+                auto percent = release_download_percent(current);
+                if (current.step == ReleaseUpdateStep::staging && current.total)
+                    percent = static_cast<double>(std::min(100.0L, 100.0L * current.received / current.total));
+                if (percent) {
                     if (bar.indeterminate) [bar stopAnimation:nil];
                     bar.indeterminate = NO; bar.doubleValue = *percent;
-                    detail.stringValue = [NSString stringWithFormat:ui_text("%@ / %@ MB · %d%%"),
-                        megabytes(current.received), megabytes(current.total), static_cast<int>(*percent)];
-                } else {
-                    if (!bar.indeterminate) { bar.indeterminate = YES; [bar startAnimation:nil]; }
-                    detail.stringValue = @"";
+                } else if (current.step == ReleaseUpdateStep::completed || current.step == ReleaseUpdateStep::failed) {
+                    [bar stopAnimation:nil]; bar.indeterminate = NO;
+                    bar.doubleValue = current.step == ReleaseUpdateStep::completed ? 100 : 0;
+                } else if (!bar.indeterminate) { bar.indeterminate = YES; [bar startAnimation:nil]; }
+                const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(std::chrono::steady_clock::now() - changed).count();
+                char counter[128]; const auto index = update_step_index(current.step);
+                if (index < update_steps.size()) std::snprintf(counter, sizeof(counter), shin::ui::tr("Step %zu of %zu · %lld s"),
+                    index + 1, update_steps.size(), static_cast<long long>(elapsed));
+                else std::snprintf(counter, sizeof(counter), "%lld%s", static_cast<long long>(elapsed), shin::ui::tr(" s"));
+                const auto values = update_detail(current);
+                const auto summary = values.empty() ? std::string(counter) : values + " · " + counter;
+                detail.stringValue = [NSString stringWithUTF8String:summary.c_str()];
+                for (std::size_t i = 0; i < update_steps.size(); ++i) {
+                    const bool failed = current.step == ReleaseUpdateStep::failed;
+                    const bool recovery = current.step == ReleaseUpdateStep::rolling_back;
+                    const bool active = index == i || ((failed || recovery) && timeline.active == i);
+                    NSString* marker = active && failed ? @"×  " : active && recovery ? @"↶  " :
+                        timeline.done[i] ? @"✓  " : active ? @"●  " : current.step == ReleaseUpdateStep::completed ? @"—  " : @"○  ";
+                    rows[i].stringValue = [marker stringByAppendingString:stage_text(update_steps[i])];
+                    rows[i].textColor = active && failed ? [NSColor colorWithCalibratedRed:.863 green:.635 blue:.596 alpha:1] :
+                        active ? sand_accent() : timeline.done[i] ? sand_ink() : sand_muted();
+                    rows[i].font = [NSFont systemFontOfSize:12 weight:active ? NSFontWeightSemibold : NSFontWeightRegular];
                 }
             } @catch (NSException*) { drawing = NO; }
         }];
@@ -161,12 +187,7 @@ int release_update_progress_viewer(const std::string& version, shin::ui::Languag
             for (auto end = pending.find('\n'); end != std::string::npos; end = pending.find('\n')) {
                 const auto row = Json::parse(pending.substr(0, end), nullptr, false);
                 pending.erase(0, end + 1);
-                if (!row.is_object() || row.size() != 3 || !row.contains("step") || !row["step"].is_number_unsigned() ||
-                    !row.contains("received") || !row["received"].is_number_unsigned() ||
-                    !row.contains("total") || !row["total"].is_number_unsigned()) continue;
-                const auto step = row["step"].get<std::uint64_t>();
-                if (step <= static_cast<unsigned>(ReleaseUpdateStep::confirming))
-                    report({static_cast<ReleaseUpdateStep>(step), row["received"], row["total"]});
+                if (const auto value = parse_update_progress(row)) report(*value);
             }
         }
         return {{"ok", true}}; // End of observation, never an installation receipt.

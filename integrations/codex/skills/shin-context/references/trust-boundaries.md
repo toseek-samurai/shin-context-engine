@@ -83,8 +83,9 @@ The current Core2.0 generator is `shin-generator-v22-compact-lexical`;
 publication. Unsupported formats require an explicitly authorized migration
 with the current binary at the same canonical external index, preserving the
 managed publisher's ownership. Release approval is separate from installation,
-deployment and consumer cutover. Keep freshness checks and the reviewed index;
-do not overlay live files or infer compatibility from the product version alone.
+deployment and consumer cutover. Keep the release-approved source policy,
+freshness checks and the reviewed index; do not overlay live files or infer
+compatibility from the product version alone.
 
 ## Host Boundaries
 

@@ -10,10 +10,10 @@ struct Snapshot {
     std::string error = "connecting", storage_error;
     Clock::time_point received{};
 };
-enum class Tone { normal, heading, good, warning, selected };
+enum class Tone { normal, heading, good, warning, selected, muted, info, error, idle };
 struct Line { std::string text; Tone tone = Tone::normal; };
 struct State {
-    int tab = 0, scroll = 0, traffic = 0;
+    int tab = 0, scroll = 0, traffic = 0, metric = 0, range = 0;
     bool detail = false, retained = true, help = false;
     std::string project;
     std::size_t usage_project = 0;
@@ -22,5 +22,7 @@ struct State {
 std::vector<Line> lines(const Snapshot& snapshot, State& state);
 void select_project(const Snapshot& snapshot, State& state, int direction);
 std::string terminal_text(std::string_view text, int columns, bool pad = false);
+bool fresh(const Snapshot& snapshot);
+Line project_status(const Json& project, bool connected);
 int run(const LocalProjectRequest& request, const fs::path& usage_file, std::string_view language);
 } // namespace shin::observer::tui

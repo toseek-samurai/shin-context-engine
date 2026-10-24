@@ -21,14 +21,15 @@ tool, profiles = map(lambda p: str(Path(p).resolve()), sys.argv[1:])
 
 
 class Terminal:
-    def __init__(self, home, *options):
+    def __init__(self, home, *options, environment=None):
         self.master, self.slave = pty.openpty()
         self.before = termios.tcgetattr(self.slave)
         self.resize(28, 100)
         self.child = subprocess.Popen([tool, 'stats', '--home', str(home), *options],
                                       stdin=self.slave, stdout=self.slave, stderr=self.slave,
                                       env={**os.environ, 'TERM': 'xterm-256color',
-                                           'LC_ALL': 'en_US.UTF-8' if sys.platform == 'darwin' else 'C.UTF-8'},
+                                           'LC_ALL': 'en_US.UTF-8' if sys.platform == 'darwin' else 'C.UTF-8',
+                                           **(environment or {})},
                                       start_new_session=True)
         self.data = b''
 
@@ -56,7 +57,7 @@ class Terminal:
 
     def key(self, value):
         self.data = b''
-        # Request a full repaint after the action. Otherwise curses can emit
+        # Request a full repaint after the action. Otherwise the UI can emit
         # only a changed suffix, which is not a complete visible screen.
         os.write(self.master, value + b'\x0c')
         self.pump()
@@ -123,6 +124,13 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
     finally:
         offline.close(signal.SIGINT)
     assert not missing.exists(), 'viewing an absent service created state'
+    for no_color in ('', '1'):
+        colored = Terminal(missing, environment={'NO_COLOR': no_color, 'COLORTERM': 'truecolor'})
+        try:
+            colored.expect('SHIN')
+            assert (b'38;2;228;204;162' in colored.data) == (not no_color), 'Sand color capability / NO_COLOR mismatch'
+        finally:
+            colored.close()
     for sig in (signal.SIGTERM, signal.SIGHUP, signal.SIGQUIT):
         process = Terminal(missing)
         process.expect('SHIN')
@@ -170,7 +178,8 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
         terminal = Terminal(home, '--usage-file', str(usage_file))
         try:
             terminal.expect('LIVE')
-            terminal.key(b'2')
+            # Left-click Projects in the fixed top navigation row (SGR mouse).
+            terminal.key(b'\x1b[<0;25;4M')
             terminal.expect('Example Project')
             terminal.expect('Пример')
             terminal.key(b'\n')
@@ -187,7 +196,15 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
             terminal.key(b'p')
             terminal.expect('Demo usage')
             terminal.key(b'1')
-            terminal.expect('Service overview')
+            terminal.expect('Memory (service + workers)')
+            terminal.key(b'l')
+            terminal.expect('Память')
+            terminal.key(b'l')
+            terminal.expect('Memory (service + workers)')
+            terminal.key(b'g')
+            terminal.expect('Active queries')
+            terminal.key(b'h')
+            terminal.expect('Requests per interval')
         finally:
             terminal.close()
         after = ce(home, 'service-status')

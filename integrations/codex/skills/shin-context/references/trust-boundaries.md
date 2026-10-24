@@ -69,21 +69,22 @@ replace, or publish a cache, lock, index, or generated snapshot. A cache hit is
 an optimization after the bounded physical layout and cache identity checks;
 it is not extra authority.
 
-Use an explicit `build` when current source bytes must become a generated
-publication and its cache may be warmed. A snapshot-republishing `vacuum
---apply` may also prepare its explicitly requested cache state. Review the
+Let Observer refresh managed publications. For an explicitly unmanaged output,
+an authorized `build` publishes current source bytes and may warm its cache. A
+snapshot-republishing `vacuum --apply` may also prepare its explicitly requested
+cache state. Review the
 resulting output and run the required strict checks; retrieval, `ready`,
 `brief`, `pack`, and diagnostics do not publish implicitly.
 
 ## Generator Compatibility
 
-The Core2.0 release-approved source policy uses generator identity
-`shin-generator-v21-cpp-syntax`. A publication made by a different or
-different generator is not migrated by a reader and must be rebuilt explicitly
-with the current binary at the same canonical external index before it is treated
-as current. Release approval is not an installation, deployment, or consumer
-cutover receipt. Do not weaken `--require-current`, switch indexes, overlay live
-files, or infer compatibility from the product version alone.
+The current Core2.0 generator is `shin-generator-v22-compact-lexical`;
+`shin-generator-v21-cpp-syntax` remains readable. A read never migrates a
+publication. Unsupported formats require an explicitly authorized migration
+with the current binary at the same canonical external index, preserving the
+managed publisher's ownership. Release approval is separate from installation,
+deployment and consumer cutover. Keep freshness checks and the reviewed index;
+do not overlay live files or infer compatibility from the product version alone.
 
 ## Host Boundaries
 

@@ -982,6 +982,101 @@ class LocalRouteTests(unittest.TestCase):
         self.f.profile_path.write_text(json.dumps(self.profile))
         self.assertEqual(self.ce('watch', '--samples', '2')['watch']['last_result']['phase'], 'current')
 
+    def check_source_limit_retains_verified_context(self, oversized):
+        self.profile.update(sourceFactMaxFiles=8 if oversized else 1, sourceFactMaxFileBytes=128)
+        growth = self.f.root / 'src/zz-growth.js'
+        if oversized:
+            growth.write_text('export function growth() { return 1; }\n')
+        self.build()
+        self.managed()
+        grant = self.grant_path().read_bytes()
+        manifest = self.generated_manifest().read_bytes()
+        profile = self.f.profile_path.read_bytes()
+        if oversized:
+            growth.write_text('export function growth() { return 1; }\n' + ' ' * 160)
+        else:
+            growth.write_text('export function growth() { return 1; }\n')
+        report = self.ce('watch', '--samples', '1')
+        last = report['watch']['last_result']
+        self.assertEqual(last['phase'], 'partial')
+        self.assertTrue(last['retrieval_ready'])
+        self.assertFalse(last['canonical_ready'])
+        self.assertEqual(last['profile_revision']['state'], 'approved')
+        self.assertEqual(last['source_coverage']['reason'], 'source-observation-limited')
+        self.assertEqual(last['source_coverage']['source_counts']['skipped_files' if oversized else 'capped_files'], 1)
+        self.assertEqual(grant, self.grant_path().read_bytes())
+        self.assertEqual(manifest, self.generated_manifest().read_bytes())
+        self.assertEqual(profile, self.f.profile_path.read_bytes())
+        status = self.ce('status')
+        snapshot = status['snapshot_id']
+        self.assertEqual(status['source_coverage']['reason'], 'source-observation-limited')
+        # Old installed controllers persisted only the refusal, without counts.
+        # Read-only qualification by a candidate kit must also recover safely.
+        state_path = self.workspace() / 'watch/state.json'
+        saved = json.loads(state_path.read_text())
+        legacy = dict(saved)
+        legacy['last_result'] = {'ok': False, 'error': {'code': 'incomplete-source-observation'}}
+        write_private_json(state_path, legacy)
+        self.assertTrue(self.ce('status')['retrieval_ready'])
+        write_private_json(state_path, saved)
+        self.assertIn('return 7;', self.ce('read', 'src/limits.js', '--snapshot', snapshot)['source_context'])
+        (self.f.root / 'src/limits.js').write_text('export function readLimit() { return 991; }\n')
+        withheld = self.ce('read', 'src/limits.js', '--snapshot', snapshot)
+        self.assertFalse(withheld['native_read_complete'])
+        self.assertNotIn('return 7', withheld['source_context'])
+        self.assertNotIn('return 991', withheld['source_context'])
+        query = self.ce('query', 'retry ceiling')
+        self.assertIn('README.md', json.dumps(query['document_context']))
+        self.assertEqual(query['source_coverage']['reason'], 'source-observation-limited')
+        self.assertFalse(query['canonical_ready'])
+        self.assertFalse(self.ce('read', 'src/zz-growth.js', '--snapshot', snapshot)['native_read_complete'])
+        if oversized:
+            growth.write_text('export function growth() { return 1; }\n')
+        else:
+            growth.unlink()
+        restored = self.ce('watch', '--samples', '2')['watch']['last_result']
+        self.assertEqual(restored['phase'], 'current')
+        current = self.ce('status')
+        self.assertTrue(current['canonical_ready'])
+        ready_query = self.ce('query', 'retry ceiling')
+        self.assertIn('return 991;', self.ce('read', 'src/limits.js', '--snapshot', ready_query['snapshot_id'])['source_context'])
+        self.assertEqual(profile, self.f.profile_path.read_bytes())
+
+    def test_source_file_cap_keeps_verified_partial_context(self):
+        self.check_source_limit_retains_verified_context(False)
+
+    def test_oversized_source_keeps_verified_partial_context(self):
+        self.check_source_limit_retains_verified_context(True)
+
+    def test_source_limit_service_reports_partial_and_refreshes_counts(self):
+        self.profile['sourceFactMaxFiles'] = 1
+        self.build()
+        self.managed(service=True)
+        before = self.generated_manifest().read_bytes()
+        growth = self.f.root / 'src/zz-growth.js'
+        growth.write_text('export function growth() { return 1; }\n')
+        def wait_coverage(capped):
+            deadline = time.monotonic() + 15
+            last = {}
+            while time.monotonic() < deadline:
+                service = self.ce('service-status')
+                last = next(p for p in service['telemetry']['project_states'] if p['root'] == str(self.f.root))
+                coverage = last.get('source_coverage') or {}
+                if (last.get('query_ready') and coverage.get('reason') == 'source-observation-limited' and
+                        coverage.get('source_counts', {}).get('capped_files') == capped):
+                    self.assertFalse(last['active_issue'])
+                    return
+                time.sleep(0.05)
+            self.fail(json.dumps(last))
+        wait_coverage(1)
+        self.assertTrue(self.ce('query', 'retry ceiling')['retrieval_ready'])
+        (self.f.root / 'src/zz-second.js').write_text('export function second() { return 2; }\n')
+        wait_coverage(2)
+        status = self.ce('status')
+        self.assertEqual(status['source_coverage']['source_counts']['capped_files'], 2)
+        self.assertIn('return 7;', self.ce('read', 'src/limits.js', '--snapshot', status['snapshot_id'])['source_context'])
+        self.assertEqual(before, self.generated_manifest().read_bytes())
+
     def test_removed_module_without_profile_edit_keeps_safe_context(self):
         self.managed()
         (self.f.root / 'src/limits.js').unlink()
@@ -1546,9 +1641,16 @@ class LocalRouteTests(unittest.TestCase):
         active = (self.f.out / 'docs/kb/generated/manifest.json').read_bytes()
         (self.f.root / 'src/large.js').write_text(' ' * (1024 * 1024 + 1))
         failed = self.ce('watch', '--samples', '2')
-        self.assertFalse(failed['watch']['last_result']['ok'])
+        retained = failed['watch']['last_result']
+        self.assertTrue(retained['ok'])
+        self.assertEqual(retained['phase'], 'partial')
+        self.assertFalse(retained['canonical_ready'])
+        self.assertEqual(retained['source_coverage']['source_counts']['skipped_files'], 1)
         self.assertEqual(failed['watch']['publications'], 0)
         self.assertEqual(active, (self.f.out / 'docs/kb/generated/manifest.json').read_bytes())
+        snapshot = self.ce('query', 'readLimit')['snapshot_id']
+        self.assertIn('return 53;', self.ce('read', 'src/limits.js', '--snapshot', snapshot)['source_context'])
+        self.assertFalse(self.ce('read', 'src/large.js', '--snapshot', snapshot)['native_read_complete'])
 
     def test_managed_live_release_and_interrupted_release(self):
         self.managed(service=True)

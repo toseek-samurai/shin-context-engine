@@ -23,7 +23,7 @@
     "durations": "scan_duration_ms last/total/max use local monotonic sampling durations. They exclude state serialization, fsync, idle sleep and client transport. They are not latency percentiles, rates or a historical time-series store.",
     "queue": "Compact pending count/bytes, configured bounds, oldest retained capture, coalesced count, capacity rejections and resync requirement. server_acknowledged is false and delivery is not-implemented. A queue at capacity is separate from a fresh local source snapshot.",
     "readOnly": "No source scan, publication, recovery, send or state mutation. Output also includes observation age and observed writer-lock presence, neither of which proves current source truth or process progress. Empty state returns unavailable metrics, not invented zero history.",
-    "futureUI": "Desktop Dashboard and tray are planned separately. This CLI envelope is a native operational foundation, not a selected IPC or GUI framework. CPU/RSS, phase timings, rates and bounded time-series retention need explicit sampling contracts."
+    "futureUI": "Historical scope of this envelope: it does not select an IPC or GUI framework. Native Monitor and terminal stats are now implemented separately using the local service telemetry, bounded history and compiled UI presentation contracts; this outbox format does not define their sampling or retention."
   },
   "successor": "P3E5 dev.13 uses state v3/outbox v2 and explicit native delivery; shin-observer-delivery-v1 is the current contract. Fields and unavailable-delivery statements below describe the retained P3E3/P3E4 baseline, not the current command surface.",
   "configuration": {

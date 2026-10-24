@@ -32,7 +32,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           sudo apt-get update
-          sudo apt-get install -y cmake ninja-build ccache jq python3 libsqlite3-dev libssl-dev libncurses-dev
+          sudo apt-get install -y cmake ninja-build ccache jq python3 libsqlite3-dev libssl-dev
       - name: macOS prerequisites
         if: runner.os == 'macOS'
         run: |

@@ -1,4 +1,4 @@
-#include "view.h"
+#include "sand.h"
 #include "../ui/language.h"
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_supervision.h"
@@ -18,7 +18,10 @@
 #include <termios.h>
 #include <thread>
 #include <unistd.h>
-#include <curses.h>
+#include <ftxui/component/component.hpp>
+#include <ftxui/component/event.hpp>
+#include <ftxui/component/screen_interactive.hpp>
+#include <ftxui/screen/terminal.hpp>
 
 extern char** environ;
 namespace shin::observer::tui {
@@ -26,30 +29,24 @@ namespace {
 volatile std::sig_atomic_t interrupted = 0;
 void interrupt(int signal) { interrupted = signal; }
 struct Terminal {
-    SCREEN* screen = nullptr;
     termios original{};
+    bool ascii = false, monochrome = false;
     Terminal() {
         const char* term = nullptr;
-        for (auto** item = environ; item && *item; ++item)
-            if (std::string_view(*item).starts_with("TERM=")) { term = *item + 5; break; }
+        for (auto** item = environ; item && *item; ++item) {
+            if (std::string_view(*item).starts_with("TERM=")) term = *item + 5;
+            if (std::string_view(*item).starts_with("NO_COLOR=")) monochrome = *(*item + 9) != '\0';
+        }
         if (!::isatty(STDIN_FILENO) || !::isatty(STDOUT_FILENO) || !term || !*term || std::string_view(term) == "dumb")
             throw Error("tui-terminal-required", "Use shin-ce stats in an interactive terminal; use service-status --text in pipes.");
         if (::tcgetattr(STDIN_FILENO, &original) != 0)
             throw Error("tui-terminal-unavailable", "Cannot read terminal settings.");
+        ascii = std::string_view(term) == "vt100" || std::string_view(term) == "ansi";
         // One-time CLI startup, before either poller thread exists. No later
         // locale changes; multibyte conversion runs only on this terminal thread.
         std::setlocale(LC_CTYPE, ""); // NOLINT(concurrency-mt-unsafe)
-        screen = ::newterm(nullptr, stdout, stdin);
-        if (!screen) throw Error("tui-terminal-unavailable", "Terminal type is unsupported; check TERM and terminfo.");
-        ::cbreak(); ::noecho(); ::keypad(stdscr, true); ::wtimeout(stdscr, 100); ::curs_set(0);
-        if (::has_colors()) {
-            ::start_color(); const short background = ::use_default_colors() == OK ? -1 : COLOR_BLACK;
-            ::init_pair(1, COLOR_CYAN, background); ::init_pair(2, COLOR_GREEN, background);
-            ::init_pair(3, COLOR_YELLOW, background);
-        }
     }
     ~Terminal() {
-        if (screen) { ::endwin(); ::delscreen(screen); }
         ::tcsetattr(STDIN_FILENO, TCSANOW, &original);
     }
 };
@@ -200,14 +197,6 @@ private:
     std::jthread storage_worker_;
 };
 
-void put(int row, const std::string& text, int columns, Tone tone = Tone::normal) {
-    const attr_t style = tone == Tone::selected ? A_REVERSE : tone == Tone::heading ? A_BOLD : A_NORMAL;
-    const auto color = static_cast<short>(::has_colors() ? (tone == Tone::heading ? 1 : tone == Tone::good ? 2 : tone == Tone::warning ? 3 : 0) : 0);
-    ::wattr_set(stdscr, style, color, nullptr);
-    const auto safe = terminal_text(text, std::max(0, columns - 2));
-    mvaddnstr(row, 1, safe.c_str(), static_cast<int>(safe.size()));
-    ::wattr_set(stdscr, A_NORMAL, 0, nullptr);
-}
 }
 
 int run(const LocalProjectRequest& request, const fs::path& usage_file, std::string_view language) {
@@ -216,58 +205,86 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
     Signals signals;
     Poller poller(request, usage_file);
     State state;
-    while (!interrupted) {
+    HitTargets hits;
+    auto screen = ftxui::ScreenInteractive::Fullscreen();
+    screen.HandlePipedInput(false);
+    screen.ForceHandleCtrlC(true);
+    auto component = ftxui::Renderer([&] {
+        const auto dimensions = ftxui::Terminal::Size();
+        return sand_view(poller.snapshot(), state, dimensions.dimx, dimensions.dimy, hits, terminal.ascii, terminal.monochrome);
+    });
+    component = ftxui::CatchEvent(component, [&](ftxui::Event event) {
+        using ftxui::Event;
         const auto snapshot = poller.snapshot();
-        int height, width; getmaxyx(stdscr, height, width);
-        ::erase();
-        if (height < 12 || width < 60) {
-            if (height > 0 && width > 2) put(0, ui::tr("Shin: resize to at least 60 x 12. q quits."), width, Tone::warning);
-        } else {
-            const bool online = snapshot.connected && Clock::now() - snapshot.received < std::chrono::seconds(6);
-            put(0, "SHIN  /  " + std::string(online ? ui::tr("LIVE") : ui::tr("OFFLINE")) + ui::tr("  /  read-only monitor"), width, online ? Tone::good : Tone::warning);
-            std::string tabs;
-            const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Timing"), ui::tr("Storage"), ui::tr("Models")};
-            for (std::size_t i = 0; i < names.size(); ++i)
-                tabs += std::string(static_cast<int>(i) == state.tab ? "[" : " ") + std::to_string(i + 1) + " " + names[i] + (static_cast<int>(i) == state.tab ? "]" : " ");
-            put(2, tabs, width, Tone::heading);
-            auto body = lines(snapshot, state);
-            const int available = height - 6;
-            state.scroll = std::clamp(state.scroll, 0, std::max(0, static_cast<int>(body.size()) - available));
-            if (state.tab == 1 && !state.detail && !state.help) {
-                const auto at = std::find_if(body.begin(), body.end(), [](const auto& line) { return line.tone == Tone::selected; });
-                if (at != body.end()) {
-                    const auto selected = static_cast<int>(at - body.begin());
-                    state.scroll = std::clamp(state.scroll, std::max(0, selected - available + 1), selected);
-                }
-            }
-            for (int i = 0; i < available && state.scroll + i < static_cast<int>(body.size()); ++i) {
-                const auto& line = body[static_cast<std::size_t>(state.scroll) + static_cast<std::size_t>(i)]; put(i + 4, line.text, width, line.tone);
-            }
-            put(height - 1, ui::tr("1-5 tabs  j/k scroll  Enter details  r refresh  ? help  q quit"), width);
-        }
-        ::refresh();
-        const int input = ::wgetch(stdscr);
-        if (input == 'l') ui::set_language(ui::language() == ui::Language::en ? ui::Language::ru : ui::Language::en);
-        if (input == 12) ::clearok(stdscr, true);
-        if (input == 'q' || input == 'Q' || input == 4) break;
         const int prior = state.tab;
-        if (input >= '1' && input <= '5') state.tab = input - '1';
-        else if (input == '\t' || input == KEY_RIGHT) state.tab = (state.tab + 1) % 5;
-        else if (input == KEY_BTAB || input == KEY_LEFT) state.tab = (state.tab + 4) % 5;
-        else if (input == '?') { state.help = !state.help; state.scroll = 0; }
-        else if (input == 27 || input == KEY_BACKSPACE || input == 127) { state.detail = false; state.help = false; state.scroll = 0; }
-        else if ((input == '\n' || input == KEY_ENTER) && state.tab == 1) { state.detail = true; state.scroll = 0; }
-        else if (input == KEY_DOWN || input == 'j' || input == KEY_UP || input == 'k') {
-            const int direction = input == KEY_UP || input == 'k' ? -1 : 1;
-            if (state.tab == 1 && !state.detail && !state.help) select_project(snapshot, state, direction);
+        bool handled = true;
+        const auto toggle_language = [] {
+            ui::set_language(ui::language() == ui::Language::en ? ui::Language::ru : ui::Language::en);
+        };
+        if (event == Event::q || event == Event::Q || event == Event::CtrlD) screen.Exit();
+        else if (event == Event::l || event == Event::L) toggle_language();
+        else if (event == Event::CtrlL) screen.Clear();
+        else if (event.is_character() && event.character().size() == 1 && event.character()[0] >= '1' && event.character()[0] <= '5') {
+            state.tab = event.character()[0] - '1'; state.detail = false; state.help = false; state.scroll = 0;
+        }
+        else if (event == Event::Tab || event == Event::ArrowRight) state.tab = (state.tab + 1) % 5;
+        else if (event == Event::TabReverse || event == Event::ArrowLeft) state.tab = (state.tab + 4) % 5;
+        else if (event == Event::Character('?')) { state.help = !state.help; state.scroll = 0; }
+        else if (event == Event::Escape || event == Event::Backspace) { state.detail = false; state.help = false; state.scroll = 0; }
+        else if (event == Event::Return && (state.tab == 0 || state.tab == 1)) {
+            state.tab = 1; state.detail = true; state.scroll = 0;
+        } else if (event == Event::ArrowDown || event == Event::j || event == Event::ArrowUp || event == Event::k) {
+            const int direction = event == Event::ArrowUp || event == Event::k ? -1 : 1;
+            if ((state.tab == 0 || state.tab == 1) && !state.detail && !state.help) select_project(snapshot, state, direction);
             else state.scroll += direction;
-        } else if (input == KEY_NPAGE || input == KEY_PPAGE) state.scroll += (input == KEY_NPAGE ? 1 : -1) * std::max(1, height - 6);
-        else if (input == 't' && state.tab == 2) state.retained = !state.retained;
-        else if (input == 'f' && state.tab == 2) state.traffic = (state.traffic + 1) % 3;
-        else if (input == 'p' && state.tab == 4) { ++state.usage_project; state.scroll = 0; }
-        if (state.tab != prior) { state.scroll = 0; state.detail = false; state.help = false; }
-        if (input == 'r' || (state.tab != prior && state.tab == 3)) poller.refresh(state.tab == 3);
-    }
+        } else if (event == Event::PageDown || event == Event::PageUp)
+            state.scroll += (event == Event::PageDown ? 1 : -1) * std::max(1, ftxui::Terminal::Size().dimy - 8);
+        else if (event == Event::t && state.tab == 2) state.retained = !state.retained;
+        else if (event == Event::f && state.tab == 2) state.traffic = (state.traffic + 1) % 3;
+        else if (event == Event::p && state.tab == 4) { ++state.usage_project; state.scroll = 0; }
+        else if (event == Event::g && state.tab == 0) state.metric = (state.metric + 1) % 3;
+        else if (event == Event::h && state.tab == 0) state.range = (state.range + 1) % 3;
+        else if (event.is_mouse()) {
+            const auto& mouse = event.mouse();
+            if (mouse.button == ftxui::Mouse::WheelUp || mouse.button == ftxui::Mouse::WheelDown) {
+                const int direction = mouse.button == ftxui::Mouse::WheelUp ? -1 : 1;
+                if ((state.tab == 0 || state.tab == 1) && !state.detail && !state.help) select_project(snapshot, state, direction);
+                else state.scroll += direction * 3;
+            }
+            else if (mouse.button == ftxui::Mouse::Left && mouse.motion == ftxui::Mouse::Pressed) {
+                const auto contains = [&](const ftxui::Box& box) { return box.Contain(mouse.x, mouse.y); };
+                if (contains(hits.language)) toggle_language();
+                if (contains(hits.back)) { state.detail = false; state.scroll = 0; }
+                for (std::size_t i = 0; i < hits.tabs.size(); ++i) if (contains(hits.tabs[i])) {
+                    state.tab = static_cast<int>(i); state.detail = false; state.help = false; state.scroll = 0;
+                }
+                for (std::size_t i = 0; i < hits.metrics.size(); ++i) if (contains(hits.metrics[i])) state.metric = static_cast<int>(i);
+                for (std::size_t i = 0; i < hits.ranges.size(); ++i) if (contains(hits.ranges[i])) state.range = static_cast<int>(i);
+                for (std::size_t i = 0; i < hits.project_count; ++i) if (contains(hits.projects[i])) {
+                    state.project = hits.roots[i]; state.tab = 1; state.detail = true; state.scroll = 0;
+                }
+            } else handled = false;
+        } else if (event != Event::r) handled = false;
+        if (state.tab != prior) {
+            state.scroll = 0; state.help = false;
+            if (event != Event::Return && !event.is_mouse()) state.detail = false;
+        }
+        if (event == Event::r || (state.tab != prior && state.tab == 3)) poller.refresh(state.tab == 3);
+        return handled;
+    });
+    // UI ages change between service observations. A bounded, low-rate wakeup
+    // keeps them honest without running IPC or collectors on the render thread.
+    std::jthread repaint([&](std::stop_token stop) {
+        std::mutex mutex;
+        std::condition_variable_any changed;
+        std::unique_lock lock(mutex);
+        while (!stop.stop_requested()) {
+            screen.PostEvent(ftxui::Event::Custom);
+            changed.wait_for(lock, stop, std::chrono::milliseconds(500), [] { return false; });
+        }
+    });
+    screen.Loop(component);
+    repaint.request_stop();
     return interrupted ? 128 + interrupted : 0;
 }
 } // namespace shin::observer::tui

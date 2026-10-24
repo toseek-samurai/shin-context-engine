@@ -11,17 +11,32 @@ shin-ce query "Where are requests validated?"
 
 ## Interactive terminal monitor
 
-On macOS and Linux, open a full-screen, read-only dashboard:
+On macOS and Linux, open the Sand terminal dashboard:
 
 ```sh
 shin-ce stats
 ```
+
+The Sand layout and controls below describe the current source for the next
+preview. The published dev.36 kit has the previous terminal interface.
+See the [native screen gallery](tui.md), including EN/RU and compact layouts.
 
 For a portable kit, pass `--home /absolute/path/to/private-data`. An installed
 kit uses its recorded home. The monitor reconnects automatically when the
 service returns, and labels retained observations as stale while disconnected.
 It does not start a service or enroll projects. It requires an interactive
 terminal with at least 60 columns and 12 rows; text/JSON commands work in pipes.
+An 80×24 terminal shows a compact dashboard; wider windows add the observer
+column. The header always shows the kit version and observation age.
+
+Overview combines memory, active queries and search p50 with a selectable line
+chart and project table. Choose a metric with the mouse or `g`; `h` cycles Live,
+one hour and 24 hours. Retained request counts are per minute/hour, while memory
+and search time are interval averages. Missing observations stay gaps. Memory
+across unverified service-run boundaries is shown as isolated measurements.
+Colors, symbols and text distinguish ready, on-demand, preparing and blocked
+search; partial source coverage has its own column. Enter opens the cause,
+next step and any reported excluded file paths.
 
 | Key | Action |
 | --- | --- |
@@ -29,11 +44,18 @@ terminal with at least 60 columns and 12 rows; text/JSON commands work in pipes.
 | Up/Down or `j`/`k` | Select a project; scroll other views |
 | Enter, Esc | Open project details; return |
 | PageUp/PageDown | Scroll a page |
+| `g`, `h` | Overview chart metric; Live / 1 hour / 24 hours |
+| Mouse | Select tabs, metrics, periods and projects; wheel scrolls text |
 | `t`, `f` | Toggle recent/retained timings; filter query traffic |
 | `p` | Next usage project in Models |
 | `r` | Refresh observations; explicitly rescan storage in Storage |
 | `?`, `q` | Keyboard help; quit |
 | Ctrl-L | Redraw the screen |
+
+The FTXUI renderer uses the same service telemetry and normalized usage data
+as Monitor. It requires no curses/terminfo package. Colors adapt to the terminal;
+`NO_COLOR` keeps a monochrome view. Basic `vt100`/`ansi` terminals use a simple
+character plot instead of Braille.
 
 Service observations refresh every two seconds. Storage is inspected when you
 open its tab or press `r`, not continuously. Usage is read every 30 seconds or
@@ -43,8 +65,10 @@ on refresh, using the same normalized file and parser as Monitor:
 shin-ce stats --usage-file /absolute/path/to/usage/state.json
 ```
 
-The usage file must be a private collector snapshot, not a configuration file.
-Without it, Models shows setup guidance. No client-session scanning or usage
+By default, Models reads the automatically collected `usage/state.json` in the
+selected data home. `--usage-file` overrides that path; it must point to a private
+collector snapshot, not a configuration file. If no snapshot is available,
+Models shows setup guidance. No client-session scanning or usage
 collection is performed by the TUI. Partial, stale, and missing measurements
 remain explicit. Project management and cleanup use the existing CLI commands;
 the first TUI version is for observation.
@@ -56,6 +80,18 @@ active queries, and request counters for the current run. Omit `--text` for JSON
 Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.
+
+The current source keeps verified partial context available when a previously
+qualified canonical route exceeds its approved source-file count or per-file byte limit. The
+response has `retrieval_ready=true`, `canonical_ready=false` and
+`source_coverage.reason=source-observation-limited`, with source counts from the
+background observation. Only unchanged files from the approved snapshot are
+returned; new, changed, deleted or unverified files are withheld. This does not
+publish an incomplete candidate, enlarge a limit or change a profile. When the
+inventory fits again, normal background refresh and quality checks resume.
+Snapshot corruption, changed authority and unsupported policy remain refusals.
+Monitor and the terminal explain this partial state; the copied diagnostic
+includes the bounded inventory counts.
 
 A pending read wakes an idle project's background qualification and receives
 priority between refreshes. Only one refresh runs at a time; due background work
@@ -78,7 +114,7 @@ publisher. It neither extends the caller's wait nor overrides failure backoff.
 | Add a project from a folder | `shin-ce project-add --root /absolute/path/to/project` |
 | Storage inventory and cleanup plan | TUI Storage or `shin-ce storage-status` JSON; cleanup remains a separate command requiring the reported revision |
 | Profile changes requiring review | `shin-ce profile-review`; acceptance is a separate explicit action |
-| Model usage | TUI Models uses automatic enrolled-project collection in dev.12; `--usage-file` remains an explicit override |
+| Model usage | TUI Models reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
 
 The TUI shares Monitor's project-state and request-timing calculations. It uses
 native service status for observations and the existing read-only storage
@@ -169,7 +205,7 @@ The native usage collector can separately read model names from client history;
 those names do not identify the model behind a particular MCP call. Supplying a
 default model in shared client configuration would also mislabel model switches.
 
-### Release update checks (macOS, dev.18 source)
+### Release update checks (macOS)
 
 `shin-ce update-check [--prefix DIR]` reads the public releases feed and returns
 an eligible newer kit with an opaque `revision`. It performs no installation.

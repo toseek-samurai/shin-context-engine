@@ -14,6 +14,7 @@ the referenced build files; system-library versions depend on the build host.
 | cpp-httplib | 0.54.1, `shared/cmake/Http.cmake` | Upstream MIT `LICENSE` |
 | MCP C++ SDK | Commit pinned in `shared/cmake/Mcp.cmake` | Upstream MIT `LICENSE` |
 | Dear ImGui | 1.92.9b, `observer/tray/CMakeLists.txt` | Upstream MIT `LICENSE.txt` |
+| FTXUI | 7.0.3, `shared/cmake/Ftxui.cmake` | Upstream MIT `LICENSE` |
 | mimalloc | Optional Linux 3.5.3, `shared/cmake/CoreAllocator.cmake` | Upstream MIT `LICENSE` |
 
 The vendored Tree-sitter source also includes its wasm libc license files.
@@ -26,11 +27,9 @@ release. The macOS local kit copies its runtime Crypto dependency and its licens
 other component packages may require provisioned system libraries. Do not assume
 that one package's dependency inventory describes another package.
 
-The macOS/Linux terminal monitor uses the platform curses/ncurses library via
-CMake FindCurses. The macOS kit links the OS-provided library; it does not copy
-ncurses into the archive. Linux builds require a provisioned system library.
-See the [upstream ncurses documentation](https://invisible-island.net/ncurses/)
-for its copyright and licensing information.
+The macOS/Linux Sand terminal monitor links FTXUI statically; it needs no
+curses/ncurses or terminfo runtime library. Native installations include FTXUI's
+MIT notice at `share/shin-observer/licenses/ftxui/LICENSE`.
 
 CMake installs applicable license texts below each component's `share` directory.
 Package qualification checks the extracted payload, including notices and dynamic

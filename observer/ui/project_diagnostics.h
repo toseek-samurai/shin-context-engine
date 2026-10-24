@@ -209,6 +209,12 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
     const auto state = project_state(project, connected);
     if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
         project.at("source_coverage").is_object() &&
+        text_field(project.at("source_coverage"), "reason") == "source-observation-limited")
+        return {shin::ui::tr("Context partially available"),
+            shin::ui::tr("Configured source limits were reached. Only unchanged, verified files from the approved context are available."),
+            shin::ui::tr("You can use the available context. Review source scope and limits to restore full coverage.")};
+    if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
+        project.at("source_coverage").is_object() &&
         text_field(project.at("source_coverage"), "reason") == "profile-revision-pending")
         return {shin::ui::tr("Context partially available"), shin::ui::tr("The new file inventory has not passed checks yet. Verifiable files from the previous version remain available."),
             shin::ui::tr("You can use the available context. See profile diagnostics for the coverage gap.")};
@@ -296,8 +302,16 @@ inline std::string diagnostic_summary(const Json& project, const Json& service, 
         {"authority", text_field(project, "authority", 96)}};
     const auto validation = shin::observer::bounded_validation_diagnostic(project.value("validation_diagnostic", Json()));
     if (!validation.is_null()) summary["validation_diagnostic"] = validation;
-    if (project.contains("source_coverage") && project.at("source_coverage").is_object())
-        summary["quarantined_files"] = count(project.at("source_coverage"), "quarantined_files");
+    if (project.contains("source_coverage") && project.at("source_coverage").is_object()) {
+        const auto& coverage = project.at("source_coverage");
+        summary["quarantined_files"] = count(coverage, "quarantined_files");
+        summary["source_coverage"] = {{"state", text_field(coverage, "state", 64)},
+            {"reason", text_field(coverage, "reason", 64)}};
+        const auto counts = coverage.find("source_counts");
+        if (counts != coverage.end() && counts->is_object())
+            for (const auto* key : {"documents", "source_facts", "candidate_files", "capped_files", "skipped_files"})
+                summary["source_coverage"]["source_counts"][key] = count(*counts, key);
+    }
     for (const auto* key : {"ticks", "publications", "preparations", "failures", "recoveries", "superseded_refreshes"})
         summary[key] = project.contains(key) ? Json(count(project, key)) : Json(nullptr);
     const auto history = telemetry.value("history", Json::object());

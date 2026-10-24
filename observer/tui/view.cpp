@@ -25,7 +25,6 @@ std::string number(const Json& value, double divisor = 1) {
 std::string mean(const ui::TimingMean& value) { return value.value() ? number(*value.value(), 1.0) + " ms" : shin::ui::tr("unknown"); }
 const Json& projects(const Snapshot& snapshot) { return field(field(snapshot.service, "telemetry"), "project_states"); }
 std::string key(const Json& project) { return text(field(project, "root")); }
-bool fresh(const Snapshot& s) { return s.connected && Clock::now() - s.received < std::chrono::seconds(6); }
 std::string state_name(const Json& row, bool connected) {
     using ui::ProjectState;
     switch (ui::project_state(row, connected)) {
@@ -40,6 +39,20 @@ std::string state_name(const Json& row, bool connected) {
     default: return shin::ui::tr("unknown");
     }
 }
+}
+
+bool fresh(const Snapshot& s) { return s.connected && Clock::now() - s.received < std::chrono::seconds(6); }
+
+Line project_status(const Json& row, bool connected) {
+    using ui::ProjectState;
+    const auto state = ui::project_state(row, connected);
+    const auto tone = state == ProjectState::current ? Tone::good : state == ProjectState::blocked ? Tone::error :
+        state == ProjectState::standby || state == ProjectState::stopped ? Tone::idle :
+        state == ProjectState::checking || state == ProjectState::pending || state == ProjectState::recovering ? Tone::info : Tone::muted;
+    const char* symbol = state == ProjectState::current ? "● " : state == ProjectState::blocked ? "× " :
+        state == ProjectState::standby || state == ProjectState::stopped ? "○ " :
+        tone == Tone::info ? "↻ " : "? ";
+    return {std::string(symbol) + state_name(row, connected), tone};
 }
 
 std::string terminal_text(std::string_view input, int columns, bool pad) {
@@ -89,6 +102,8 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         {shin::ui::tr("f                         All / unclassified / diagnostic queries")},
         {shin::ui::tr("p                         Next model-usage project")},
         {shin::ui::tr("r                         Refresh (storage is refreshed on demand)")},
+        {shin::ui::tr("g / h                     Chart metric / Live, 1 h, 24 h")},
+        {shin::ui::tr("Mouse                     Select tabs, metrics, periods and projects")},
         {shin::ui::tr("? / Ctrl-L                Help / redraw screen")}, {shin::ui::tr("q / Ctrl-C                Quit")}, {shin::ui::tr("l                         Switch English / Russian")}, {},
         {shin::ui::tr("Read-only monitor. No service startup, enrollment, cleanup or usage collection.")},
         {shin::ui::tr("Service observations are not new source audits or answer-quality scores.")}};
@@ -139,23 +154,34 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
             const auto found = std::find_if(rows.begin(), rows.end(), [&](const auto& row) { return key(row) == state.project; });
             if (found != rows.end()) {
                 const auto& row = *found;
-                for (const auto& line : ui::service_activity_lines(row)) out.push_back({line});
                 out.push_back({text(field(row, "name")), Tone::heading}); out.push_back({state.project});
+                const auto status = project_status(row, connected);
+                out.push_back(status);
                 out.push_back({shin::ui::tr("Search: ") + state_name(row, connected) + shin::ui::tr(" | Observer: ") + shin::ui::tr(text(field(row, "phase")).c_str())});
+                const auto explanation = ui::diagnostic_overview(row, connected);
+                out.push_back({explanation.title, status.tone});
+                out.push_back({explanation.summary});
+                out.push_back({explanation.next, Tone::muted});
                 out.push_back({shin::ui::tr("Last successful check (at observation): ") + number(field(row, "last_success_age_ms"), 1000) + shin::ui::tr(" s ago")});
                 out.push_back({shin::ui::tr("Published updates: ") + number(field(row, "publications"))});
                 out.push_back({shin::ui::tr("Active issue: ") + std::string(ui::active_issue(row) ? shin::ui::tr("yes") : shin::ui::tr("no"))});
                 out.push_back({shin::ui::tr("Issue code: ") + ui::error_code(row, "error_code")});
                 const auto& coverage = field(row, "source_coverage");
                 out.push_back({std::string(shin::ui::tr("Coverage: ")) + shin::ui::tr(text(field(coverage, "state")).c_str()) + shin::ui::tr(" | Quarantined files: ") + number(field(coverage, "quarantined_files"))});
+                const auto& excluded = field(coverage, "files");
+                if (excluded.is_array()) for (std::size_t i = 0; i < std::min<std::size_t>(excluded.size(), 8); ++i) {
+                    const auto& file = excluded[i];
+                    out.push_back({"! " + text(field(file, "path")), Tone::warning});
+                    out.push_back({"  " + text(field(file, "reason")), Tone::muted});
+                }
                 const auto& histories = field(field(telemetry, "history"), "projects");
                 if (histories.is_array()) for (const auto& item : histories) if (field(item, "id") == field(row, "id"))
                     out.push_back({shin::ui::tr("Retained requests: ") + number(field(item, "requests")) + shin::ui::tr(" | Errors: ") + number(field(item, "errors"))});
                 out.push_back({}); out.push_back({shin::ui::tr("Esc back  |  shin-ce profile-review --root PATH for pending configuration changes")});
+                for (const auto& line : ui::service_activity_lines(row)) out.push_back({line});
             }
         }
     } else if (state.tab == 2) {
-        for (const auto& line : ui::service_activity_lines(telemetry)) out.push_back({line});
         out.push_back({shin::ui::tr("Request timing"), Tone::heading});
         const std::array filters{shin::ui::tr("all queries"), shin::ui::tr("unclassified queries"), shin::ui::tr("diagnostic queries")};
         out.push_back({std::string(state.retained ? shin::ui::tr("Retained history") : shin::ui::tr("Recent requests")) + " | " + filters[static_cast<std::size_t>(state.traffic)]});
@@ -171,15 +197,13 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 out.push_back({std::string(names[i]) + ": " + mean(timing.readers[i].service) + " (" + std::to_string(timing.readers[i].requests) + shin::ui::tr(" queries)")});
             out.push_back({});
             const std::array phases{shin::ui::tr("Admission"), shin::ui::tr("Documents"), shin::ui::tr("Source"), shin::ui::tr("Collection"), shin::ui::tr("Verification")};
-            double maximum = 1;
-            for (const auto& phase : timing.phases) maximum = std::max(maximum, phase.value().value_or(0));
             for (std::size_t i = 0; i < phases.size(); ++i) {
                 std::ostringstream line; line << std::left << terminal_text(phases[i], 16, true) << terminal_text(mean(timing.phases[i]), 12, true);
-                if (const auto value = timing.phases[i].value()) line << std::string(static_cast<std::size_t>(24 * *value / maximum), '#');
                 out.push_back({line.str()});
             }
         }
         out.push_back({}); out.push_back({shin::ui::tr("t recent/history  |  f traffic filter  |  Means are measured samples, not SLA guarantees.")});
+        for (const auto& line : ui::service_activity_lines(telemetry)) out.push_back({line});
     } else if (state.tab == 3) {
         out.push_back({shin::ui::tr("Storage"), Tone::heading});
         if (snapshot.storage_loading) out.push_back({shin::ui::tr("Reading storage inventory..."), Tone::warning});

@@ -1,8 +1,9 @@
 # Change-Aware Impact
 
-Use Shin2.0 with a generator-v21 publication. Another generator requires an
-explicitly authorized migration of the same canonical output; it is not a reason
-to select a compatibility reader or manually rebuild a managed index.
+Use a supported Shin2.0 publication: the current generator is
+`shin-generator-v22-compact-lexical`; `shin-generator-v21-cpp-syntax` remains
+readable. An unsupported format requires an authorized migration of the same
+canonical output. A read does not migrate or manually rebuild a managed index.
 
 Use the reviewed profile, root and canonical external index:
 
@@ -40,5 +41,7 @@ Inspect unlocalized changes separately. `--require-current`
 additionally requires the published snapshot to match the worktree, so normally
 omit it when explicitly investigating unpublished changes.
 
-After reviewing the differences, explicitly build the same index and rerun
-normal `ready --strict` before ordinary current Brief/Pack retrieval.
+After reviewing the differences, let Observer refresh a managed publication and
+confirm native readiness before a fresh query. For an explicitly unmanaged
+publication, rebuild the same reviewed output only with publication authority,
+then rerun `ready --strict` before current Brief/Pack retrieval.

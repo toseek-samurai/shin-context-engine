@@ -8,6 +8,7 @@
   "release": {
     "productVersion": "2.0.4",
     "generator": "shin-generator-v21-cpp-syntax",
+    "identityScope": "Historical contract baseline, not the current binary identity. Current generator and readable snapshot policy are declared in lexical-retrieval-v1.json and shin-development-v1.json.",
     "compatibility": "The historical v1.25 authority cutover requires an explicit generator-v17 rebuild. Native CF2 additionally requires an explicit generator-v20 rebuild for bounded searchable text and redaction before clipping. No compatibility reader or implicit migration is retained."
   },
   "axes": {

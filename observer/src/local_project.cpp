@@ -13,6 +13,8 @@
 #include "worktree_state.h"
 #include "local_refresh_guard.h"
 #include "local_profile_revision.h"
+#include "local_partial_context.h"
+#include "local_route_guard.h"
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -21,39 +23,9 @@ namespace shin::observer {
 namespace {
 namespace core = shin::context;
 
-bool present(const fs::path& path) {
-    std::error_code error;
-    const auto status = fs::symlink_status(path, error);
-    if (error && error != std::errc::no_such_file_or_directory)
-        throw Error("path-unavailable", "Cannot inspect a local project path.");
-    return fs::exists(status);
-}
-
 bool overlaps(const fs::path& a, const fs::path& b) {
     const auto [left, right] = std::mismatch(a.begin(), a.end(), b.begin(), b.end());
     return left == a.end() || right == b.end();
-}
-
-void guard_ancestor_bindings(const fs::path& root, const fs::path& home) {
-    unsigned depth = 0;
-    for (auto current = root.parent_path(); current != current.root_path(); current = current.parent_path()) {
-        if (++depth > 128) throw Error("root-too-deep", "Project ancestry exceeds the local admission limit.");
-        // Even pending or damaged bindings own their directory until reviewed.
-        if (present(home / "projects" / digest(current.string())))
-            throw Error("ancestor-project-binding", "A parent project already has CLI state; select its root explicitly: " + current.string());
-    }
-}
-
-void guard_existing_routes(const fs::path& root, const fs::path& home) {
-    guard_ancestor_bindings(root, home);
-    unsigned depth = 0;
-    for (auto current = root; current != current.root_path(); current = current.parent_path()) {
-        if (++depth > 128) throw Error("root-too-deep", "Project ancestry exceeds the local admission limit.");
-        if (core::find_existing_adoption_marker(current))
-            throw Error("existing-project-adoption", "Existing Shin settings found. Connect them once with shin-ce init --observer-config FILE; the existing index will not be replaced.");
-        if (present(current / "docs/kb/generated/manifest.json") || present(current / "docs/kb/.shin-context.lock"))
-            throw Error("existing-project-publication", "Existing Shin index found. Connect it with shin-ce init --observer-config FILE; automatic replacement is disabled: " + current.string());
-    }
 }
 
 void guard_unbound_workspace(const fs::path& workspace, const std::optional<Json>& binding) {
@@ -801,7 +773,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
                 if ((!error || error == std::errc::no_such_file_or_directory) && !fs::exists(entry)) missing_members = true;
             }
     }
-    const bool partial_allowed = automatic_revision || missing_members;
+    bool partial_allowed = automatic_revision || missing_members;
     auto quality_binding = binding;
     quality_binding["observer_config_hash"] = digest(config_text);
     const auto quality_key = qualification_key(quality_binding, options.profile.config_hash, marker_hash);
@@ -818,8 +790,14 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     bool repaired = false;
     std::optional<RefreshQualification> published_qualification;
     Json managed_observation;
+    bool source_limit_partial = false;
+    if (!refresh && !partial_allowed && approved_text && grant.active() &&
+        options.profile.config_hash == grant.approved_profile_hash() && present(workspace / "watch")) {
+        managed_observation = retained_source_limit_observation(config, workspace, binding.at("root_identity"), options.profile.config_hash);
+        partial_allowed = source_limit_partial = !managed_observation.is_null();
+    }
     const auto partial_response = [&](Json diagnostic = Json()) -> Json {
-        if (diagnostic.is_null()) diagnostic = revision.rejection(options.profile.config_hash, "");
+        if (diagnostic.is_null() && !source_limit_partial) diagnostic = revision.rejection(options.profile.config_hash, "");
         if (!partial_allowed || !approved_text || !grant.active())
             throw Error("profile-baseline-invalid", "Partial context requires an approved profile baseline.");
         managed_authority();
@@ -850,17 +828,8 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             guard_ancestor_bindings(root, home);
         };
         auto result = envelope(request.command, true);
-        result.update({{"root", root.string()}, {"profile", config.profile}, {"snapshot_id", prior.snapshot_id},
-            {"index", config.out_dir.string()}, {"local_ready", true}, {"canonical_ready", false}, {"retrieval_ready", true},
-            {"state", "partial-ready"}, {"readiness_scope", "approved-snapshot-selected-files"},
-            {"project_quality", "candidate-not-qualified"}, {"publication", "managed"},
-            {"profile_revision", {{"state", diagnostic.is_null() ? "pending" : "rejected"},
-                {"approved_hash", approved_hash}, {"proposed_hash", options.profile.config_hash}}},
-            {"source_coverage", {{"state", "partial"}, {"reason", "profile-revision-pending"},
-                {"omissions_scope", "selected-results"},
-                {"notice", "The current file scope is not fully qualified. Only unchanged verified files from the approved snapshot are returned; report partial coverage."}}},
-            {"readiness", {{"ready", false}, {"ok", false}, {"scope", "retained-approved-publication"}}},
-            {"next_action", "use-verified-partial-context-review-profile-diagnostic"}});
+        result.update(retained_context_status(config, prior.snapshot_id, approved_hash, options.profile.config_hash, diagnostic,
+            source_limit_partial ? managed_observation : Json()));
         if (!diagnostic.is_null()) result["candidate_diagnostic"] = diagnostic;
         if (refresh) {
             result.update({{"command", "watch-tick"}, {"phase", "partial"}, {"rebuilt", false},
@@ -879,6 +848,9 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         authority();
         refresh_stage(request, "observation");
         managed_observation = sample_worktree(config, binding.at("root_identity"), repair.has_value());
+        if (!partial_allowed && !repair && approved_text &&
+            options.profile.config_hash == grant.approved_profile_hash() && source_observation_limited(managed_observation))
+            partial_allowed = source_limit_partial = true;
         auto pending_tick = envelope("watch-tick", true);
         pending_tick.update({{"index", config.out_dir.string()}, {"observation", managed_observation},
             {"rebuilt", false}, {"recovery_pending", repair.has_value()},
@@ -1739,11 +1711,11 @@ public:
         state["observed_at_ms"] = now_ms();
         const auto& result = state.at("last_result");
         const bool monitor_stable = changes->healthy() && changes->sequence() == epoch;
-        if (monitor_requalification && state.at("phase") == "current" && result.value("ok", false) && monitor_stable) {
+        if (monitor_requalification && (state.at("phase") == "current" || state.at("phase") == "partial") && result.value("ok", false) && monitor_stable) {
             monitor_requalification = false;
             ++monitor_recoveries;
         }
-        const bool idle = !monitor_requalification && state.at("phase") == "current" && result.value("ok", false) &&
+        const bool idle = !monitor_requalification && (state.at("phase") == "current" || state.at("phase") == "partial") && result.value("ok", false) &&
             !result.value("rebuilt", false) && !result.value("recovery_pending", false) &&
             !result.contains("error") && changes->healthy() && changes->sequence() == epoch;
         idle_checks = idle ? std::min(4U, idle_checks + 1) : 0;

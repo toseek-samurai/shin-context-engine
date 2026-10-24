@@ -2,7 +2,7 @@
   "schemaVersion": "shin.context-engine.manifest.v1",
   "project": {
     "name": "Shin Context Engine",
-    "version": "2.0.5-dev.1",
+    "version": "2.0.5-dev.5",
     "language": "C++20",
     "status": "development",
     "goal": "One fast typed KB and context engine for documented, source-only, and profile-selected structured projects so agents can load verified task context without repeated broad repository scans.",

@@ -6,6 +6,7 @@
   "summary": "A correctness milestone: retrieval optimization cannot strengthen a claim, discard its supporting metadata, or introduce implicit writes.",
   "version": "2.0.4",
   "generator": "shin-generator-v21-cpp-syntax",
+  "identityScope": "Version and generator identify this contract's historical baseline. Current source and reader identities are declared in shin-development-v1.json and lexical-retrieval-v1.json; the invariants below remain applicable.",
   "scope": [
     "Canonical-record-only Pack deduplication; every match remains bound to the full transported record and exact verification range.",
     "Explicit lifecycle metadata with independent path/type authority ranking; incidental prose does not infer supersession, rejection or acceptance.",

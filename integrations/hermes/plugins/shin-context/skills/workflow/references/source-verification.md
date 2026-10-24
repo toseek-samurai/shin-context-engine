@@ -23,13 +23,15 @@ resolved Core contract directory. In this workflow:
   does not permit merging records with different stable metadata. Preserve all
   match edges and exact verification ranges.
 - Missing or malformed cache state is a read-only verification fallback. Hermes
-  never repairs or publishes it. An explicit Core `build` is required to warm a
-  current publication, followed by the consumer's strict validation route.
-- Older-generator publications require an explicit rebuild with the current
-  binary at the same canonical external index. The current generator is
-  `shin-generator-v21-cpp-syntax`; release approval is separate from an
-  installation, deployment, or consumer-cutover receipt. Do not silently switch
-  indexes, overlay files, execute commands, compact context, or publish implicitly.
+  never repairs or publishes it. Observer refreshes managed publications; an
+  explicitly unmanaged output requires authorized Core publication and the
+  consumer's strict validation route.
+- The current generator is `shin-generator-v22-compact-lexical`;
+  `shin-generator-v21-cpp-syntax` remains readable. A reader never migrates a
+  publication. Unsupported formats require authorized migration with the
+  current binary at the same canonical external index, preserving publisher
+  ownership. Release approval is separate from installation, deployment and
+  consumer cutover. Keep the reviewed index, freshness and execution boundaries.
 
 ## MCP Failure Guidance
 

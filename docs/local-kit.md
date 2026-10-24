@@ -9,14 +9,14 @@ Mac may require manual approval. This is not a stable release.
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.19).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.36).
 The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
 Public release downloads do not require a GitHub account.
 
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.19/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.36/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -100,7 +100,7 @@ compiled into the kit and need no downloads.
 Click the Shin icon in the menu bar. Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
-For an interactive terminal dashboard, run `shin-ce stats`. Use Tab or 1–5 for
+For the Sand terminal dashboard with line charts, run `shin-ce stats`. Use Tab or 1–5 for
 Overview, Projects, Timing, Storage and Models; Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
 service. Model counters are collected automatically
@@ -109,6 +109,9 @@ pass starts in the background; enrollment changes are checked within five second
 and counters refresh every five minutes. Missing or unreadable client history is
 reported as incomplete, not as proof of zero usage. Storage inspection happens on demand;
 management and cleanup remain explicit CLI commands.
+Click a metric or press `g` to change its graph; `h` cycles Live, one hour and
+24 hours. `L` switches EN/RU immediately. An 80-column terminal uses a compact
+layout; project readiness and partial coverage remain distinct.
 
 The installer refuses an unowned destination, conflicting command links, or an
 existing data home it cannot safely adopt. Read the reported error and choose
@@ -325,9 +328,12 @@ changing the publisher or binding.
 ## Build the package
 
 From a macOS source checkout, use a C++20 compiler, CMake 3.24+, SQLite with FTS5
-3.38+, OpenSSL Crypto, and the SDK's curses library for the terminal monitor.
+3.38+ and OpenSSL Crypto.
 Python 3.11+, Bash, and jq are needed for the checks.
-CMake downloads pinned dependencies with checked hashes.
+CMake downloads pinned dependencies with checked hashes, including FTXUI 7.0.3
+(MIT) for the terminal monitor. FTXUI is linked statically; users need no
+additional terminal UI library. Its license ships under
+`share/shin-observer/licenses/ftxui/`.
 
 ```sh
 cmake -S observer -B /tmp/shin-observer-kit \
@@ -372,10 +378,10 @@ Monitor offer are separate checks.
 
 ## Core patch compatibility
 
-The dev.32 kit supports explicit forward transitions from Core `2.0.5-dev.1`,
-`2.0.5-dev.2` and `2.0.5-dev.3` to `2.0.5-dev.4`, along with the previously
-qualified dev.1 → dev.2/dev.3 and dev.2 → dev.3 transitions. These retrieval
-corrections preserve generator-v22 evidence and storage formats.
+The dev.36 kit supports explicit forward transitions from Core `2.0.5-dev.1`
+through `2.0.5-dev.4` to `2.0.5-dev.5`. The previously qualified forward
+transitions among dev.1–dev.4 remain supported. These retrieval corrections
+preserve generator-v22 evidence and storage formats.
 The updater still qualifies every enrolled project and preserves its
 ownership and rollback checks; other Core transitions remain refused.
 For this transition, stale or validation-blocked publications are refreshed by

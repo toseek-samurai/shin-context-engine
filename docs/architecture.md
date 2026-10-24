@@ -6,7 +6,7 @@ Shin is split into components with distinct responsibilities. The current source
 
 **Core** owns profiles, indexing, retrieval, evidence formatting, and the command-line interface. A profile selects the paths and file families that belong in a project context. Use `--out-dir` to keep generated output apart from source; the low-level CLI defaults to the project root when this option is omitted. Core reads do not grant authority to publish or execute anything.
 
-**Observer** owns local project observation, bounded local state, and persisted observation formats. Optional native tools include the `shin-ce` project CLI, the stdio `shin-mcp` adapter, usage collection, and the desktop Monitor. Observer can use Core source discovery for local source queries. The optional macOS local kit is described in its packaged `local-kit.md` and `native-client-setup.md`.
+**Observer** owns local project observation, bounded local state, and persisted observation formats. Optional native tools include the `shin-ce` project CLI and terminal monitor, the stdio `shin-mcp` adapter, usage collection, and the desktop Monitor. Observer can use Core source discovery for local source queries. The optional macOS local kit is described in its packaged `local-kit.md` and `native-client-setup.md`.
 
 **Shared code** contains versioned protocols and operating-system support. It does not grant project, publication, or execution authority by itself.
 
@@ -54,6 +54,9 @@ source scope, and `docs/machine/` holds versioned contracts.
 Observer's `ui/` owns the shared status, timing, usage presentation and compiled
 EN/RU catalog. `tray/` adapts it to macOS/Windows and `tui/` adapts it to the
 terminal. Language preferences never change protocol fields or project data.
+The Sand TUI uses statically linked FTXUI for layout, input and line charts.
+It reads the existing local service, usage snapshot and storage inventory; opening
+it does not enroll projects, start another service or publish an index.
 The former optional web query panel and its HTTP adapter have been removed;
 its numeric history, metrics and portfolio producers remain independent tools.
 

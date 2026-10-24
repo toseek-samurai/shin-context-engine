@@ -219,9 +219,11 @@ public:
             const bool partial = result.value("phase", "") == "partial";
             if (existing != residents.end() && existing->second->ready &&
                 (existing->second->preparation.value("retained_profile", false) != partial ||
-                 (partial && existing->second->preparation.value("profile_revision", Json()) != result.value("profile_revision", Json()))))
+                 (partial && (existing->second->preparation.value("profile_revision", Json()) != result.value("profile_revision", Json()) ||
+                              existing->second->preparation.value("source_coverage", Json()) != result.value("source_coverage", Json())))))
                 discard_resident(request.root.string(), "project-updating");
-            qualified[request.root.string()] = {request.maintenance_root_identity, request.maintenance_workspace_identity, snapshot};
+            qualified[request.root.string()] = {request.maintenance_root_identity, request.maintenance_workspace_identity, snapshot,
+                result.value("source_coverage", Json())};
             resident_errors.erase(request.root.string());
             const auto demand = reader_requests.find(request.root.string());
             prepare_resident(request, snapshot, demand != reader_requests.end() && demand->second > Clock::now());

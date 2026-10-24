@@ -44,6 +44,10 @@ are atomic and retain file permission bits; changed revisions, symlinks, hardlin
 foreign ownership and writable-by-others files are refused. Invalid or ambiguous
 formats, including YAML anchors, aliases and merge keys, are preserved for manual
 review. Configuration files are bounded to 256 KiB.
+Settings folders must also be owned by the user and writable only by that user.
+For an `unsafe-directory` refusal, review the folder's ownership and write
+permissions or choose a private settings location, then preview again. Shin
+does not change existing folder permissions automatically.
 If a file changes during the write phase, earlier successful targets stay configured
 and the UI reports where it stopped. Retry safely after reviewing that conflict;
 already configured targets are not duplicated. Restore a backup only after stopping

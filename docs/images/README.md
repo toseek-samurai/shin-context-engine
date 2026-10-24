@@ -1,4 +1,4 @@
-# Monitor screenshots
+# UI screenshots
 
 These PNGs are rendered by the actual macOS ImGui/Metal Monitor UI using the
 synthetic scenarios in [layout_test.inc](../../observer/tray/layout_test.inc).
@@ -29,20 +29,33 @@ The blocked project and displayed counters are synthetic examples. The
 compact layout remains available. Memory curves retain observation gaps and
 service-run boundaries.
 
-## Terminal view
+## Terminal views
 
-`tui-projects.svg` captures a real `shin-ce stats` session in a 96-column,
-18-row pseudo-terminal. Two disposable folders, Example API and Example Web,
-each contain a synthetic `requestLimit` function and are enrolled in a separate
-temporary data home. The Projects tab is captured after a query makes each
-reader ready. No installed service or private project is used.
+`tui-overview.svg` is the native FTXUI Overview renderer at 120×36 cells,
+using the independent synthetic fixture in
+[`sand_test.cpp`](../../observer/tui/sand_test.cpp). The same view is used by
+`shin-ce stats`; no browser approximation, live service or private project is
+used. The screenshot demonstrates ready, partial, preparing, blocked and
+on-demand states. Its counters are fixture values.
 
-The ANSI screen is decoded with pyte 0.8.2 and exported as SVG text and cell
-colors. Pyte is a capture-time tool, not a Shin runtime or test dependency.
-The dark palette and monospace font represent one terminal theme; actual colors
-and fonts depend on the user's terminal. To refresh the image, repeat the same
-disposable setup, open `shin-ce stats --home /absolute/path/to/demo-state`, choose
-Projects, and capture the terminal view. Stop only the demo service afterward.
+The [screen gallery](../tui.md) also includes Projects, partial-coverage details,
+Timing, Storage, Models, Russian, compact and disconnected views. These show
+the current source for the next preview, rather than the published dev.36 TUI.
+All names, paths, tokens and counts are synthetic; example model labels do not
+represent real client attribution.
+
+After building Observer with testing enabled, refresh the gallery with:
+
+```sh
+/path/to/build/shin-tui-render-tests /path/to/disposable-captures
+python3 observer/tui/capture.py --gallery /path/to/disposable-captures docs/images
+```
+
+The exporter preserves native cell text, colors, selection and weight.
+Its only dependency is Python's standard library. Inspect the result visually;
+terminal font and color capabilities still affect the actual application.
+The JSON, plain-text and ANSI frame exports stay in the disposable capture
+directory; only the selected SVGs belong in this documentation.
 
 ## Project logo
 

@@ -27,7 +27,8 @@ Read the current `lexical-retrieval-v1.json` in the resolved Core contract direc
 ## Build One Pack
 
 For an implementation task with several explicit evidence needs, place a bounded
-`shin.task-request.v1` document under the Shin `build` tree, not in the consumer:
+`shin.task-request.v1` document in a private external task directory, separate
+from source and the generated index:
 
 ```json
 {

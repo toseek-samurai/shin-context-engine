@@ -206,6 +206,17 @@ int check_language() try {
         {"source_coverage", {{"state", "partial"}, {"reason", "profile-revision-pending"}}}};
     assert(project_state(pending_profile, true) == ProjectState::current);
     assert(project_state(pending_profile, false) == ProjectState::offline);
+    auto limited = pending_profile;
+    limited["source_coverage"]["reason"] = "source-observation-limited";
+    const auto limited_view = diagnostic_overview(limited, true);
+    assert(limited_view.title == shin::ui::tr("Context partially available"));
+    assert(limited_view.summary == shin::ui::tr("Configured source limits were reached. Only unchanged, verified files from the approved context are available."));
+    assert(diagnostic_overview(limited, false).title == shin::ui::tr("Service offline"));
+    limited["source_coverage"]["source_counts"] = {{"candidate_files", 11}, {"capped_files", 1},
+        {"source_facts", 10}, {"raw", "SENTINEL_SOURCE_BODY"}};
+    const auto limited_report = Json::parse(diagnostic_summary(limited, Json::object(), true, "", "2.0.5"));
+    assert(limited_report.at("source_coverage").at("source_counts").at("capped_files") == 1);
+    assert(limited_report.dump().find("SENTINEL") == std::string::npos);
     assert(error_code(Json{{"code", "NEW_UNRECOGNIZED_CODE"}}, "code") == "NEW_UNRECOGNIZED_CODE");
     assert(error_code(Json{{"code", "token=secret\nsource body"}}, "code") == "unclassified");
     assert(error_code(Json{{"code", std::string(1000, 'x')}}, "code") == "unclassified");

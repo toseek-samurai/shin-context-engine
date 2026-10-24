@@ -1,7 +1,8 @@
 # Building from source
 
 For the complete macOS application, follow the [local kit guide](local-kit.md).
-The commands below build Core alone, for development or embedding.
+Core can be built alone for development or embedding. Linux and WSL2 can also
+build the local service, CLI, terminal monitor and MCP without the desktop app.
 
 ## Dependencies
 
@@ -15,9 +16,10 @@ macOS CI uses Xcode 26.3 on macOS 15. The C++20 standard library must provide
 the intended Xcode installation before configuring CMake so its compiler and
 SDK headers are used together.
 
-The native terminal monitor links curses: macOS uses the SDK/system library;
-Linux Observer builds need the ncurses development package (`libncurses-dev` on
-Debian/Ubuntu). No Python or JavaScript runtime is required to run the TUI.
+The native Sand terminal monitor links the pinned FTXUI 7.0.3 statically.
+CMake fetches its checked archive; macOS/Linux need no curses or terminfo
+development package. Its MIT license is included in native installations.
+No Python or JavaScript runtime is required to run the TUI.
 
 ## Core
 
@@ -42,6 +44,43 @@ To build an index directly, choose an external, unmanaged output directory:
 The low-level Core CLI defaults to the project root if `--out-dir` is omitted.
 Native CE instead enforces separate source and state directories. An index
 managed by Observer must be refreshed by its publisher, not by a manual build.
+
+## Linux and WSL2 terminal tools
+
+On Ubuntu 24.04, including WSL2, install the build and test prerequisites:
+
+```sh
+sudo apt-get update
+sudo apt-get install -y build-essential cmake ninja-build pkg-config \
+  libssl-dev libsqlite3-dev python3 jq git
+```
+
+From the source checkout:
+
+```sh
+cmake -S observer -B /tmp/shin-observer-build -G Ninja \
+  -DCMAKE_BUILD_TYPE=Release \
+  -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON \
+  -DSHIN_OBSERVER_MCP=ON \
+  -DSHIN_OBSERVER_TRAY=OFF \
+  -DSHIN_OBSERVER_LOCAL_KIT=OFF
+cmake --build /tmp/shin-observer-build --parallel 4
+ctest --test-dir /tmp/shin-observer-build --parallel 4 --output-on-failure
+```
+
+This produces `shin-ce`, `shin-observer`, `shin-mcp` and `shin-usage` in the
+build directory. For a new project, use an explicit private data home:
+
+```sh
+/tmp/shin-observer-build/shin-ce init --root /path/to/project \
+  --home /path/to/private-data --profile-dir ./profiles
+/tmp/shin-observer-build/shin-ce stats --home /path/to/private-data
+```
+
+The project folder stays separate from that home. A source build does not
+install the commands, replace another kit or enable login startup. In WSL, use
+a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
+native desktop Monitor or prebuilt local-kit download yet.
 
 ## Continuous integration
 

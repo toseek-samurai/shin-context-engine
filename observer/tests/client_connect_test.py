@@ -10,6 +10,9 @@ import tempfile
 import tomllib
 
 ce = Path(sys.argv[1]).resolve()
+# This standalone test models private per-user settings regardless of host umask.
+# Explicit unsafe-permission cases below retain the refusal boundary.
+os.umask(0o077)
 
 def run(*args, ok=True, env=None):
     p = subprocess.run([str(ce), *map(str,args)], capture_output=True, text=True, timeout=20, env=env)
@@ -124,6 +127,11 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
     saved=json.loads(config.read_text())['mcpServers']['shin']['args']
     assert all(saved.count(str(p))==1 for p in [old,root,other])
     # Do not follow links or replace shared inodes.
+    unsafe_parent=base/'group-writable';unsafe_parent.mkdir();config=unsafe_parent/'config.json';config.write_text('{}')
+    plan=run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config)
+    unsafe_parent.chmod(0o770)
+    error=run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config,'--revision',plan['revision'],ok=False)
+    assert error['error']['code']=='unsafe-directory' and config.read_text()=='{}'
     config=base/'linked.json';target=base/'target.json';target.write_text('{}');config.symlink_to(target)
     run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config,ok=False)
     assert target.read_text()=='{}'

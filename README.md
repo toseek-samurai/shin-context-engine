@@ -51,22 +51,31 @@ English and Russian; these examples use English. Names, counts, and timings abov
 
 ## Also in your terminal
 
-<img src="docs/images/tui-projects.svg" width="864" alt="Shin TUI with Overview, Projects, Timing, Storage and Models tabs; two example projects are ready">
+<img src="docs/images/tui-overview.svg" width="864" alt="Shin Sand TUI with a memory line graph, metrics and five example projects showing distinct search and coverage states">
 
-`shin-ce stats` on two disposable example projects. This is a captured terminal
-view; colors and fonts follow your terminal. [Keyboard controls and usage
-setup](docs/cli.md#interactive-terminal-monitor).
+`shin-ce stats` uses the same Sand palette as Monitor. This native FTXUI render
+uses synthetic example data; fonts and color support follow your terminal.
+These Sand TUI screens show the current source for the next preview. The
+published dev.36 kit has the previous terminal interface.
+
+<p>
+  <img src="docs/images/tui-project.svg" width="428" alt="Terminal project details explain partial coverage and name the excluded example file">
+  <img src="docs/images/tui-timing.svg" width="428" alt="Terminal timing separates retained query latency, cold readers and preparation phases">
+</p>
+
+[All terminal screens, including Russian and compact layouts](docs/tui.md) ·
+[Keyboard controls and usage setup](docs/cli.md#interactive-terminal-monitor).
 
 ## Get started on macOS
 
 The preview includes a first-run setup window, automatic agent connections
 and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.19)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.36)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.19/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.36/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it
@@ -115,6 +124,7 @@ project data and restores the previous kit if activation fails.
 | --- | --- | --- |
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS and Linux source builds; [build instructions](docs/building.md) |
+| Observer tools | Local service, CLI, terminal monitor, and MCP | macOS and Linux source builds; [Linux/WSL instructions](docs/building.md#linux-and-wsl2-terminal-tools) |
 
 Linux desktop packaging, Windows distribution, and macOS Intel package
 qualification remain pending. Configuring an AI client may send the context it retrieves to that

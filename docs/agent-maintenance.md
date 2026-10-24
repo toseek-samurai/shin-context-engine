@@ -16,6 +16,11 @@ For release version changes, synchronize `developmentLane.coreVersion` and
 `developmentLane.observerSourceVersion` in `docs/machine/shin-development-v1.json`
 with the component version files. Run `shin-context-universality` before tagging.
 
+Installation examples must point to a published release with its complete kit,
+checksum and installer assets. Update those pins after publication, not when a
+candidate is tagged. Label screenshots and controls from unreleased source
+explicitly so the current preview's capabilities stay clear.
+
 Profiles classify current product contracts and source by component. Preserve
 the declared source, byte, output and quality bounds. Fixture changes must retain
 the positive and negative behaviors that motivated each test. Historical

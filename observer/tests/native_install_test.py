@@ -50,6 +50,8 @@ def main():
                      'tree-sitter-java/LICENSE', 'tree-sitter-typescript/LICENSE', 'tree-sitter-cpp/LICENSE',
                      'pugixml/LICENSE.MIT'):
             assert (share / 'licenses' / name).stat().st_size > 0, name
+        if os.name != 'nt':
+            assert (share / 'licenses/ftxui/LICENSE').stat().st_size > 0
         if args.mcp:
             assert (relocated / 'bin' / ('shin-mcp' + suffix)).stat().st_size > 0
             assert (share / 'licenses/mcp-cpp-sdk/LICENSE').stat().st_size > 0

@@ -235,9 +235,13 @@ public:
             if (errno == EINTR || errno == EAGAIN || errno == EWOULDBLOCK) return {};
             throw Error("service-io", "Local connection acceptance failed.");
         }
-        auto channel = std::make_unique<PosixChannel>(fd);
-        try { require_peer(fd); } catch (const Error&) { return {}; }
-        return channel;
+        try {
+            // A peer can reset the accepted socket before signal-safety or
+            // credential setup. Reject that owned channel, not the listener.
+            auto channel = std::make_unique<PosixChannel>(fd);
+            require_peer(fd);
+            return channel;
+        } catch (const Error&) { return {}; }
     }
 private:
     fs::path directory, path;

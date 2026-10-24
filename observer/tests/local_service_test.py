@@ -10,6 +10,7 @@ import signal
 import shutil
 import socket
 import sqlite3
+import struct
 import subprocess
 import tempfile
 import time
@@ -104,6 +105,44 @@ class LocalServiceTests(unittest.TestCase):
         missing = self.base / 'missing-home'
         self.assertEqual(text_status('service-status', home=missing).returncode, 2)
         self.assertFalse(missing.exists())
+
+    def test_reset_clients_cannot_stop_shared_service(self):
+        child = self.start()
+        before = self.raw('service-status')['result']
+        frame = (json.dumps(self.frame('service-status')) + '\n').encode()
+        for index in range(256):
+            with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as client:
+                client.settimeout(1)
+                try:
+                    client.connect(str(self.endpoint))
+                    # Exercise peers leaving before a request, during framing,
+                    # and before their reply is consumed.
+                    if index % 3:
+                        client.sendall(frame if index % 3 == 1 else frame[:len(frame) // 2])
+                    client.setsockopt(socket.SOL_SOCKET, socket.SO_LINGER, struct.pack('ii', 1, 0))
+                except OSError:
+                    # A bounded backlog may reject an individual connection.
+                    # It must not terminate the service or replace its identity.
+                    pass
+            if index % 8 == 0:
+                time.sleep(0.01)
+                self.assertIsNone(child.poll(), 'a reset client terminated the shared service')
+        deadline = time.monotonic() + 5
+        while time.monotonic() < deadline:
+            self.assertIsNone(child.poll(), 'a reset client terminated the shared service')
+            status = subprocess.run([str(fixtures.TOOL), 'service-status', '--home', str(self.home)],
+                                    text=True, capture_output=True, timeout=3)
+            if status.returncode == 0:
+                after = json.loads(status.stdout)
+                break
+            self.assertEqual(status.returncode, 2, status.stderr)
+            self.assertIn(json.loads(status.stderr)['error']['code'], ('service-unavailable', 'service-disconnected'))
+            time.sleep(0.01)
+        else:
+            self.fail('service did not become reachable after the reset-client burst')
+        self.assertEqual(before['instance_id'], after['instance_id'])
+        self.assertIsNone(child.poll())
+        self.assertIn('return 7;', self.raw('query', query='readLimit')['result']['source_context'])
 
     def connect(self):
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)

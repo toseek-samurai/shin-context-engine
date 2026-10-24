@@ -193,7 +193,7 @@ int main(int argc, char** argv) {
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
             for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
-                for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "project-states",
+                for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "language-live-en", "language-live-ru", "language-live-auto", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
@@ -260,7 +260,7 @@ int main(int argc, char** argv) {
                     view.received = Clock::now();
                     view.error = view.connected ? "" : "service-disconnected";
                     Json projects = kind == "first-run" ? Json::array() : Json::array({project});
-                    if (kind == "projects" || kind == "project-states") for (int i = 1; i < 9; ++i) {
+                    if (kind.starts_with("projects") || kind == "project-states") for (int i = 1; i < (kind == "projects-last-page" ? 10 : 9); ++i) {
                         auto other = base; other["id"] = "project-" + std::to_string(i);
                         other["name"] = "Project " + std::to_string(i);
                         if (kind == "project-states") {
@@ -330,7 +330,8 @@ int main(int argc, char** argv) {
                             {"projects", Json::array({{{"id", ""}, {"name", "Все проекты"}, {"totals", totals},
                                 {"models", models}, {"days", Json::array({day})}}})}});
                     }
-                    selected = kind == "projects" || kind == "project-states" ? "" : "fixture";
+                    selected = kind.starts_with("projects") || kind == "project-states" ? "" : "fixture";
+                    project_page = kind == "projects-last-page" ? 100 : 0;
                     if (kind == "cold") { view = ViewState{}; selected.clear(); }
                     profile_accept_within_parent_clip = false;
                     profile_accept_origin = ImVec2{};
@@ -443,6 +444,14 @@ int main(int argc, char** argv) {
                         const auto errors = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 37; });
                         if (add == ui_actions.end() || !add->enabled || request == ui_actions.end() || errors == ui_actions.end() || std::abs(request->origin.y - errors->origin.y) > .5f ||
                             request->size.y != errors->size.y) throw std::runtime_error("counter baseline mismatch: " + context);
+                    }
+                    if (kind == "projects-last-page") {
+                        const auto range = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 88; });
+                        const auto last = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.project == "project-9"; });
+                        const auto first = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.project == "fixture"; });
+                        if (range == ui_actions.end() || !range->informational || !range->label.ends_with(" 10") ||
+                            last == ui_actions.end() || first != ui_actions.end())
+                            throw std::runtime_error("last project page hides its total or rows: " + context);
                     }
                     if (kind == "current") {
                         const auto actions = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 84; });

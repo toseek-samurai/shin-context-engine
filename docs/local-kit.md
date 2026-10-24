@@ -233,6 +233,19 @@ the rollback observation, not current readiness; use `service-status` and projec
 `status` for the current state. Identity, integrity and registry failures still
 leave recovery incomplete. The updater never repairs an index to clear a refusal.
 
+The dev.33 source candidate also handles a registered project that the previous
+service could not admit after rollback. During a qualified Core patch transition,
+the installer checks the previous service using its exact Observer/Core versions
+and verifies the registered root and its enrollment error. A known quality or
+temporary refusal records an unready baseline; an unknown root, registry conflict,
+identity change or integrity failure still stops recovery. The target must qualify
+every project under the existing publication grants before installation succeeds.
+Qualification errors retain the failing project's opaque hash and bounded gate
+diagnostics, including failures before service startup.
+
+Monitor's project list shows the visible range and total in EN/RU. A short final
+page does not mean the remaining projects were removed.
+
 Startup keeps a 60-second no-progress budget while admitting registered projects.
 The first admission or readiness outcome of each selected project renews that
 budget, up to a five-minute total startup bound. Repeated status replies, changed
@@ -335,6 +348,26 @@ client settings, or project state. The build does not qualify other CPU
 architectures or macOS versions. Stable distribution still needs Developer ID signing/notarization and a
 first-launch check on a clean machine; an ad-hoc signature alone does not
 establish that experience.
+
+To reproduce recovery against real previous executables in a disposable home,
+extract the official dev.28 kit (Core dev.3) and the candidate kit (Core dev.4), then
+run:
+
+```sh
+python3 -B observer/installer/previous_update_test.py \
+  --previous-kit /tmp/shin-previous-kit \
+  --candidate-kit /tmp/shin-candidate-kit \
+  --report /tmp/shin-previous-update-proof.json
+```
+
+The fixture enrolls one canonical project and one bootstrap project, forces a
+native activation rollback, then retries while the old service is running with a
+rejected project. It checks target readiness, service restoration, registry,
+identity, grants and existing history. No live installation or managed index is
+repaired. For the regression baseline, use the unmodified dev.32 kit as candidate
+and add `--expected-error installation-recovery-command`. This exercises the
+native installation child used by automatic updates; HTTPS delivery and the
+Monitor offer are separate checks.
 
 
 ## Core patch compatibility

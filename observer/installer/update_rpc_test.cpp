@@ -39,6 +39,37 @@ int main() {
         check(diagnostic.dump().find("project-busy") != std::string::npos);
         check(transient_update_project_error("project-busy") && transient_update_project_error("refresh-timeout"));
         check(!transient_update_project_error("binding-identity-changed") && !transient_update_project_error("index-integrity-failed"));
+        check(!transient_update_project_error("project-check-failed") && recoverable_update_project_error("project-check-failed"));
+        // Only a separately confirmed registry enrollment failure can explain
+        // a denied project route. The caller additionally validates membership
+        // and pins the previous Observer/Core protocol identities.
+        Json previous{{"ok", true}, {"service_running", true}, {"enrollment_mode", "registry"}, {"registry_error", ""},
+            {"enrollment_errors", {{"/fixture/root", "project-check-failed"}}}};
+        check(previous_update_project_unready(previous, "/fixture/root"));
+        check(!previous_update_project_unready(previous, "/fixture/unknown"));
+        for (const auto* code : {"refresh-validation-failed", "project-busy", "refresh-timeout"}) {
+            previous["enrollment_errors"]["/fixture/root"] = code;
+            check(previous_update_project_unready(previous, "/fixture/root"));
+        }
+        for (const auto* code : {"binding-identity-changed", "refresh-engine-changed", "index-integrity-failed", "unknown-refusal"}) {
+            previous["enrollment_errors"]["/fixture/root"] = code;
+            check(!previous_update_project_unready(previous, "/fixture/root"));
+        }
+        previous["enrollment_errors"]["/fixture/root"] = "project-check-failed";
+        const Json invalid_status_fields{{"ok", false}, {"service_running", false}, {"enrollment_mode", "explicit"},
+                  {"registry_error", "registry-binding-changed"}, {"enrollment_errors", Json::array()}};
+        for (const auto& [key, bad] : invalid_status_fields.items()) {
+            auto invalid = previous; invalid[key] = bad;
+            check(!previous_update_project_unready(invalid, "/fixture/root"));
+        }
+        check(!previous_update_project_unready(Json(), "/fixture/root"));
+        const Json failed_gate{{"id", "eval"}, {"status", "failed"}, {"error", {{"code", "project-check-failed"}}}};
+        const Json failed_step{{"id", "validate"}, {"status", "failed"}, {"result", {{"gates", Json::array({failed_gate})}}}};
+        const auto project_diagnostic = update_project_diagnostic("/private/fixture-root", "installation-project-not-ready",
+            {{"steps", Json::array({failed_step})}});
+        check(project_diagnostic.dump().find(digest("/private/fixture-root")) != std::string::npos);
+        check(project_diagnostic.dump().find("project-check-failed") != std::string::npos);
+        check(project_diagnostic.dump().find("/private/") == std::string::npos && project_diagnostic.dump().size() <= 1024);
         const auto merged = merge_update_diagnostic(diagnostic,
             update_service_diagnostic({{"registry_error", "installation-recovery-command"}}, "rollback"));
         check(merged.dump().find("installation-recovery-command") != std::string::npos);

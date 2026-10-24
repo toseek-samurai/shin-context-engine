@@ -416,6 +416,7 @@
     {"Project statistics not connected", "Статистика проекта не подключена"},
     {"Project status report", "Отчёт о состоянии проекта"},
     {"Projects", "Проекты"},
+    {"Projects %d–%d of %d", "Проекты %d–%d из %d"},
     {"Projects checked: %llu / %llu", "Проверено проектов: %llu / %llu"},
     {"Projects: %zu · Active requests: %llu", "Проектов: %zu · Активных запросов: %llu"},
     {"Published updates: ", "Опубликовано обновлений: "},

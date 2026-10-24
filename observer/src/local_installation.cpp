@@ -264,17 +264,22 @@ void qualify_update(const fs::path& home, const fs::path& executable,
         project.command = "status";
         const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
         for (;;) {
+            Json result;
             try {
-                const auto result = qualify_local_project(project, executable);
-                require(result.value("ok", false) && result.value("local_ready", false),
-                    "installation-project-not-ready", "A project is not ready under the new engine; the current kit was preserved.");
-                report_update(progress, {step, ++checked, projects.size()});
-                break;
+                result = qualify_local_project(project, executable);
             } catch (const Error& error) {
                 if ((error.code != "project-busy" && error.code != "binding-changed") ||
-                    std::chrono::steady_clock::now() >= deadline) throw;
+                    std::chrono::steady_clock::now() >= deadline)
+                    throw Error(error.code, error.what(), merge_update_diagnostic(
+                        update_project_diagnostic(project.root.string(), error.code), error.diagnostic));
                 std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                continue;
             }
+            if (!result.value("ok", false) || !result.value("local_ready", false))
+                throw Error("installation-project-not-ready", "A project is not ready under the new engine; the current kit was preserved.",
+                    update_project_diagnostic(project.root.string(), "installation-project-not-ready", result.value("readiness", Json::object())));
+            report_update(progress, {step, ++checked, projects.size()});
+            break;
         }
     }
 }
@@ -409,12 +414,28 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
     require(WIFEXITED(status), "installation-recovery-process", "Previous CLI terminated unexpectedly.");
     const auto result = parse_json(output);
     if (WEXITSTATUS(status) != 0) {
-        const auto code = result.contains("error") ? validation_identifier(result.at("error").value("code", "")) : "";
-        if (allow_unready && std::string_view(command) == "status" && !root.empty() &&
-            (transient_update_project_error(code) || code == "refresh-validation-failed" || code == "project-check-failed" ||
-             (result.contains("local_ready") && result.at("local_ready") == false))) return result;
+        const auto code = result.contains("error") ? validation_identifier(result.at("error").value("code", "")) :
+            validation_identifier(result.value("state_error_code", Json()));
+        auto diagnostic = result.value("error", Json::object()).value("diagnostic", Json());
+        if (allow_unready && std::string_view(command) == "status" && !root.empty()) {
+            if (recoverable_update_project_error(code) ||
+                (code.empty() && result.value("local_ready", Json()) == false)) return result;
+            if (code == "service-project-denied") {
+                // A registered root may have no RPC route after rollback. Read
+                // its enrollment verdict from the verified previous service;
+                // an arbitrary denied root or a hard authority error is not a
+                // degraded baseline and must still abort before replacement.
+                const auto projects = registered_local_projects(home);
+                if (std::any_of(projects.begin(), projects.end(), [&](const auto& p) { return p.root == root; })) {
+                    const auto previous_kit = manifest(executable.parent_path().parent_path());
+                    const auto service = control_local_service_for_update(home, previous_kit.at("version"), false, previous_kit.at("core_version"));
+                    diagnostic = merge_update_diagnostic(diagnostic, update_service_diagnostic(service, "previous-project"));
+                    if (previous_update_project_unready(service, root.string())) return result;
+                }
+            }
+        }
         throw Error("installation-recovery-command", "Previous CLI could not restore the service (" + code + ").",
-            merge_update_diagnostic(result.value("error", Json::object()).value("diagnostic", Json()),
+            merge_update_diagnostic(diagnostic,
                 update_service_diagnostic({{"registry_error", code}}, "previous-command")));
     }
     require(result.is_object() && (result.value("ok", false) ||
@@ -516,7 +537,8 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
     for (const auto& [root, code] : errors.items()) {
         const bool enrolled = std::any_of(projects.begin(), projects.end(), [&](const auto& p) { return p.root == root; });
         const bool was_unready = std::find(unready.begin(), unready.end(), Json(root)) != unready.end();
-        if (!enrolled || (!was_unready && !transient_update_project_error(code.get<std::string>())))
+        if (!enrolled || !(transient_update_project_error(code.get<std::string>()) ||
+            (was_unready && recoverable_update_project_error(code.get<std::string>()))))
             throw Error("installation-service-not-ready", "Previous service has an unresolved enrollment refusal.",
                 update_service_diagnostic(status, "rollback"));
     }

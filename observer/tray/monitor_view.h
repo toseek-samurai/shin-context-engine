@@ -1529,8 +1529,17 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
 #endif
     const bool detailed = width >= 310 && ImGui::GetIO().DisplaySize.y >= 400;
     const float row_height = detailed ? 44.0f : 26.0f;
-    const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y, static_cast<int>(projects.size()), row_height);
+    const float count_height = projects.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing();
+    const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y - count_height, static_cast<int>(projects.size()), row_height);
     project_page = std::clamp(project_page, 0, layout.pages - 1);
+    if (!projects.empty()) {
+        char range[128];
+        std::snprintf(range, sizeof(range), shin::ui::tr("Projects %d–%d of %d"),
+            project_page * layout.page_size + 1,
+            std::min((project_page + 1) * layout.page_size, static_cast<int>(projects.size())), static_cast<int>(projects.size()));
+        ImGui::TextColored(muted, "%s", range);
+        ui_actions.push_back({range, "", ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 88, true, true});
+    }
     const auto residents = view.data.is_object() ? view.data.value("resident_projects", Json::array()) : Json::array();
     const bool history_known = history.value("status", "") == "ready";
     ImGui::BeginChild("projects-table-region", {0, layout.table_height}, ImGuiChildFlags_None,

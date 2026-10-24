@@ -246,14 +246,14 @@ every project under the existing publication grants before installation succeeds
 Qualification errors retain the failing project's opaque hash and bounded gate
 diagnostics, including failures before service startup.
 
-The dev.40 source candidate records the previous readiness baseline for every
+The dev.41 source candidate records the previous readiness baseline for every
 kit update, including updates that keep the same Core. A source-limit refusal is
 an explicit degraded baseline, not a transient failure or target readiness.
 Cold admission can verify retained partial context without a saved limit
 observation; the first controller check preserves its admitted partial result.
 
 An older failed update may retain a runtime journal without that baseline. The
-following recovery option is included in the dev.40 source candidate; it is not in dev.39.
+following recovery option is included in the dev.41 source candidate; it is not in dev.39.
 After reviewing the verified previous kit and its known content refusals, run
 from a new complete extracted kit:
 

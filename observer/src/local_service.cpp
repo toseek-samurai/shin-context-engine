@@ -981,10 +981,11 @@ Json initialize_local_service(const LocalProjectRequest& input, const fs::path& 
             }
             if (status.at("enrollment_errors").contains(request.root.string())) {
                 const auto code = status.at("enrollment_errors").at(request.root.string()).get<std::string>();
-                // Registry polling may still report the previous detached phase.
-                // Wait only for this unchanged explicit activation; readiness still
-                // requires a fresh service admission, never this local observation.
-                if (code != "project-detached" || local_project_lifecycle(workspace) != lifecycle)
+                // Registry polling can retain a detached phase or a controller
+                // lock refusal while this initializer prepares the binding.
+                // Wait only for the same activation; local readiness is not admission.
+                const bool pending = code == "project-detached" || code == "writer-busy" || code == "project-busy";
+                if (!pending || local_project_lifecycle(workspace) != lifecycle)
                     throw Error("service-enrollment-failed", "Service rejected project enrollment: " + code);
             }
             if (Clock::now() >= deadline) throw Error("service-enrollment-timeout", "Project enrollment remains pending; inspect service-status.");

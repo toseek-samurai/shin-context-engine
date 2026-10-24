@@ -152,4 +152,38 @@ class RegisteredUsage(unittest.TestCase):
         self.assertEqual(query.returncode,0,query.stdout+query.stderr)
         self.assertIn('return 42',json.loads(query.stdout)['source_context'])
 
+    def test_new_enrollment_waits_for_busy_controller(self):
+        self.ce('project-add',self.project('first',100))
+        root=self.project('second',200)
+        prepared=subprocess.run([str(CE),'init','--offline','--no-service','--root',str(root),
+                                 '--home',str(self.home),'--profile-dir',str(PROFILES)],
+                                env=self.env,capture_output=True,text=True,timeout=30)
+        self.assertEqual(prepared.returncode,0,prepared.stdout+prepared.stderr)
+        workspace=self.home/'projects'/hashlib.sha256(str(root).encode()).hexdigest()
+        watch=workspace/'watch';watch.mkdir(mode=0o700,exist_ok=True)
+        with (watch/'observer.lock').open('a+b') as lock:
+            os.chmod(lock.name,0o600)
+            fcntl.flock(lock,fcntl.LOCK_EX)
+            child=subprocess.Popen([str(CE),'project-add','--root',str(root),'--home',str(self.home),
+                                    '--profile-dir',str(PROFILES)],env=self.env,
+                                   stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
+            try:
+                deadline=time.monotonic()+10
+                while True:
+                    status=self.ce('service-status')
+                    if status['enrollment_errors'].get(str(root))=='writer-busy':break
+                    self.assertLess(time.monotonic(),deadline,status)
+                    time.sleep(.02)
+                self.assertIsNone(child.poll(),'initializer rejected a temporary controller lock')
+                fcntl.flock(lock,fcntl.LOCK_UN)
+                out,err=child.communicate(timeout=30)
+                self.assertEqual(child.returncode,0,out+err)
+                self.assertTrue(json.loads(out)['service_enrolled'])
+            finally:
+                if child.poll() is None:child.kill();child.wait(timeout=5)
+        query=subprocess.run([str(CE),'query','sampleLimit','--service','--root',str(root),
+                              '--home',str(self.home)],env=self.env,capture_output=True,text=True,timeout=10)
+        self.assertEqual(query.returncode,0,query.stdout+query.stderr)
+        self.assertIn('return 7',json.loads(query.stdout)['source_context'])
+
 if __name__=='__main__':unittest.main()

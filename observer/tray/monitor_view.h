@@ -274,12 +274,13 @@ std::string platform_version();
 bool platform_reduce_motion();
 void draw_brand(ImVec2 origin, float size);
 
-// Sand: warm graphite surfaces, the original mark's sand accent, quiet data ink.
+// Sand stays warm; status hues remain distinct from the navigation accent.
 constexpr ImVec4 background{.114f, .122f, .110f, 1}, raised{.145f, .157f, .137f, 1};
-constexpr ImVec4 hover_surface{.173f, .188f, .161f, 1}, rule{.220f, .243f, .196f, 1};
-constexpr ImVec4 sand{.839f, .776f, .635f, 1}, ink{.914f, .914f, .867f, 1}, muted{.627f, .647f, .584f, 1};
-constexpr ImVec4 green{.647f, .741f, .596f, 1}, amber{.863f, .757f, .549f, 1};
-constexpr ImVec4 red{.863f, .635f, .596f, 1}, blue{.647f, .725f, .643f, 1};
+constexpr ImVec4 hover_surface{.188f, .204f, .169f, 1}, rule{.267f, .286f, .235f, 1};
+constexpr ImVec4 sand{.894f, .800f, .635f, 1}, ink{.941f, .937f, .890f, 1}, muted{.690f, .710f, .651f, 1};
+constexpr ImVec4 green{.510f, .831f, .608f, 1}, amber{.957f, .753f, .384f, 1};
+constexpr ImVec4 red{.961f, .549f, .514f, 1}, blue{.510f, .753f, .941f, 1};
+constexpr ImVec4 idle_ink{.647f, .718f, .792f, 1};
 
 ImU32 alpha_color(ImVec4 color, float alpha) {
     color.w *= alpha;
@@ -363,15 +364,18 @@ ImVec4 phase_color(const std::string& phase, bool connected) {
     if (!connected) return muted;
     if (phase == "current") return green;
     if (phase == "blocked") return red;
-    if (phase == "checking" || phase == "stopped") return muted;
+    if (phase == "checking") return blue;
+    if (phase == "stopped") return muted;
     return amber;
 }
 
-ImVec4 project_color(shin::ui::ProjectState state) {
+ImVec4 project_color(shin::ui::ProjectState state, const Json& project) {
     if (state == shin::ui::ProjectState::blocked) return red;
+    if (state == shin::ui::ProjectState::checking || state == shin::ui::ProjectState::recovering ||
+        (state == shin::ui::ProjectState::pending && shin::ui::text_field(project, "query_phase") == "preparing")) return blue;
     if (state == shin::ui::ProjectState::pending) return amber;
-    if (state == shin::ui::ProjectState::recovering) return blue;
     if (state == shin::ui::ProjectState::current) return green;
+    if (state == shin::ui::ProjectState::standby) return idle_ink;
     return muted;
 }
 
@@ -510,6 +514,8 @@ void icon_button(Icon icon, const std::string& label, int code, bool enabled, Im
 
 void status_badge(Icon icon, const std::string& label, ImVec4 color, int accessible_id, float size = 17) {
     const auto origin = ImGui::GetCursorScreenPos();
+    ImGui::GetWindowDrawList()->AddCircleFilled({origin.x + size / 2, origin.y + size / 2}, size / 2,
+        alpha_color(color, .12f));
     draw_icon(icon, origin, size, color);
     ImGui::Dummy({size, size});
     if (ImGui::IsItemHovered()) {
@@ -607,6 +613,8 @@ void view_tab(const char* label, int code, bool active, float width) {
         alpha_color(hover_surface, fade), 4);
     if (!navigation && active) draw->AddRectFilled(origin, {origin.x + width, origin.y + height},
         ImGui::GetColorU32(raised), 4);
+    if (navigation && active) draw->AddRectFilled(origin, {origin.x + width, origin.y + height},
+        alpha_color(sand, .07f), 4);
     const auto text_size = ImGui::CalcTextSize(label);
     draw->AddText({origin.x + (width - text_size.x) / 2, origin.y + (height - text_size.y) / 2},
         ImGui::GetColorU32(active ? sand : hovered ? ink : muted), label);
@@ -1384,7 +1392,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
 
     if (!diagnostic_history_first) {
         const auto origin = ImGui::GetCursorScreenPos();
-        const auto color = partial_coverage ? amber : project_color(state);
+        const auto color = partial_coverage ? amber : project_color(state, project);
         draw_icon(partial_coverage ? Icon::blocked : state_icon(state), {origin.x, origin.y + 1}, 24, color);
         ImGui::SetCursorPosX(32);
         bounded_text(overview.title, width - 32, minimal ? 14.0f : compact_diagnostics ? 16.0f : 18.0f, color, minimal ? 1 : 2, 54);
@@ -1521,15 +1529,24 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     const float width = ImGui::GetContentRegionAvail().x;
 #if defined(__APPLE__)
     const bool project_busy = project_management_busy.load();
+    const bool compact_actions = ImGui::GetIO().DisplaySize.y < 300;
     ImGui::BeginDisabled(project_busy);
-    if (ImGui::Button(project_busy ? shin::ui::tr("Operation in progress…") : shin::ui::tr("Add project folder…"), {width, 28})) activate(80);
+    if (ImGui::Button(compact_actions ? "+##add-project" :
+        project_busy ? shin::ui::tr("Operation in progress…") : shin::ui::tr("Add project folder…"),
+        {compact_actions ? 24.0f : width, compact_actions ? 24.0f : 28.0f})) activate(80);
+    if (compact_actions && ImGui::IsItemHovered(ImGuiHoveredFlags_AllowWhenDisabled))
+        ImGui::SetTooltip("%s", project_busy ? shin::ui::tr("Project operation in progress") : shin::ui::tr("Add project folder…"));
     ui_actions.push_back({project_busy ? shin::ui::tr("Project operation in progress") : shin::ui::tr("Add project folder…"), "",
         ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 80, !project_busy});
     ImGui::EndDisabled();
+    if (compact_actions && !projects.empty()) ImGui::SameLine();
 #endif
     const bool detailed = width >= 310 && ImGui::GetIO().DisplaySize.y >= 400;
     const float row_height = detailed ? 44.0f : 26.0f;
-    const float count_height = projects.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing();
+    float count_height = projects.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing();
+#if defined(__APPLE__)
+    if (compact_actions && !projects.empty()) count_height = 24.0f + ImGui::GetStyle().ItemSpacing.y;
+#endif
     const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y - count_height, static_cast<int>(projects.size()), row_height);
     project_page = std::clamp(project_page, 0, layout.pages - 1);
     if (!projects.empty()) {
@@ -1537,6 +1554,9 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         std::snprintf(range, sizeof(range), shin::ui::tr("Projects %d–%d of %d"),
             project_page * layout.page_size + 1,
             std::min((project_page + 1) * layout.page_size, static_cast<int>(projects.size())), static_cast<int>(projects.size()));
+#if defined(__APPLE__)
+        if (compact_actions) ImGui::AlignTextToFramePadding();
+#endif
         ImGui::TextColored(muted, "%s", range);
         ui_actions.push_back({range, "", ImGui::GetItemRectMin(), ImGui::GetItemRectSize(), 88, true, true});
     }
@@ -1571,7 +1591,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
                 (state == shin::ui::ProjectState::pending && shin::ui::text_field(p, "query_phase") == "preparing");
             const auto state_label = state == shin::ui::ProjectState::blocked || partial || preparing
                 ? overview.title : std::string(shin::ui::state_text(state));
-            const auto state_color = partial ? amber : project_color(state);
+            const auto state_color = partial ? amber : project_color(state, p);
             const auto elapsed = view.received == Clock::time_point{} ? 0 : std::chrono::duration<double, std::milli>(Clock::now() - view.received).count();
             const auto success = shin::ui::age_ms(p, "last_success_age_ms", elapsed);
             const auto age = shin::ui::tr("Successful: ") + shin::ui::age_text(success);
@@ -1595,19 +1615,28 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             auto* draw = ImGui::GetWindowDrawList();
             const float text_x = origin.x + (detailed ? 33.0f : 22.0f);
             if (detailed) {
-                draw->AddRectFilled({origin.x, origin.y + 3}, {origin.x + 24, origin.y + 31}, ImGui::GetColorU32(raised), 4);
-                draw_icon(Icon::folder, {origin.x + 4, origin.y + 9}, 16, muted);
+                draw->AddRectFilled({origin.x, origin.y + 3}, {origin.x + 24, origin.y + 31}, alpha_color(state_color, .10f), 4);
+                draw->AddRect({origin.x, origin.y + 3}, {origin.x + 24, origin.y + 31}, alpha_color(state_color, .25f), 4);
+                draw_icon(Icon::folder, {origin.x + 4, origin.y + 9}, 16, state_color);
             }
             draw->AddText({text_x, origin.y + 1}, ImGui::GetColorU32(ink), clipped(name, name_width - (text_x - origin.x)).c_str());
-            const ImVec2 status_origin{detailed ? text_x : origin.x, origin.y + (detailed ? 19.0f : 0.0f)};
+            std::string status_text;
+            if (detailed) {
+                ImGui::PushFont(nullptr, 11);
+                status_text = clipped(state_label, name_width - (text_x - origin.x) - 26);
+                const float badge_width = ImGui::CalcTextSize(status_text.c_str()).x + 25;
+                draw->AddRectFilled({text_x - 3, origin.y + 17}, {text_x - 3 + badge_width, origin.y + 35},
+                    alpha_color(state_color, .10f), 3);
+                ImGui::PopFont();
+            }
+            const ImVec2 status_origin{detailed ? text_x : origin.x, origin.y + (detailed ? 20.0f : 0.0f)};
             const float status_size = detailed ? 12.0f : 17.0f;
             if (preparing)
                 preparation_indicator(status_origin, status_size, state_color);
             else draw_icon(partial ? Icon::blocked : state_icon(state), status_origin, status_size, state_color);
             if (detailed) {
-                ImGui::PushFont(nullptr, 10);
-                draw->AddText({text_x + 16, origin.y + 18}, ImGui::GetColorU32(state_color),
-                    clipped(state_label, name_width - (text_x - origin.x) - 16).c_str());
+                ImGui::PushFont(nullptr, 11);
+                draw->AddText({text_x + 16, origin.y + 19}, ImGui::GetColorU32(state_color), status_text.c_str());
                 ImGui::PopFont();
             }
             ui_actions.push_back({name + ": " + state_label + "; " + age +
@@ -1718,7 +1747,7 @@ void render(const ViewState& view) {
     for (const auto& p : projects) if (shin::ui::active_issue(p)) ++attention;
     const bool registry_problem = view.connected && (!data.value("registry_error", "").empty() ||
         !data.value("enrollment_errors", Json::object()).empty());
-    const auto accent = !view.connected ? muted : attention || registry_problem ? amber : green;
+    const auto accent = !view.connected ? muted : attention || registry_problem ? red : green;
 
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
@@ -1770,8 +1799,8 @@ void render(const ViewState& view) {
         if (ImGui::GetIO().DisplaySize.y >= 300) {
             ImGui::PushFont(nullptr, 11);
             if (!view.connected) ImGui::TextColored(amber, "%s", view.data.is_null() ? shin::ui::tr("Waiting for connection") : shin::ui::tr("Offline · last received data"));
-            else if (attention) ImGui::TextColored(amber, shin::ui::tr("Context blocked: %d"), attention);
-            else if (registry_problem) ImGui::TextColored(amber, "%s", shin::ui::tr("Project connection error"));
+            else if (attention) ImGui::TextColored(red, shin::ui::tr("Context blocked: %d"), attention);
+            else if (registry_problem) ImGui::TextColored(red, "%s", shin::ui::tr("Project connection error"));
             else if (dashboard_view == 2) ImGui::TextColored(muted, shin::ui::tr("Connected projects: %zu of %zu"), shin::ui::mapped_model_projects(*view.usage, projects), projects.size());
             else ImGui::TextColored(muted, shin::ui::tr("Projects: %zu · Active requests: %llu"), projects.size(), data.value("query_workers", 0ULL));
             ImGui::PopFont();

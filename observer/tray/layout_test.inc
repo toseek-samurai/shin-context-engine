@@ -268,6 +268,8 @@ int main(int argc, char** argv) {
                             if (i == 2) other["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2}};
                             if (i == 3) other.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
                             if (i == 4) other["query_phase"] = "standby";
+                            if (i == 5) other.update({{"phase", "coalescing"}, {"query_ready", false}});
+                            if (i == 6) other["recovering"] = true;
                         }
                         projects.push_back(other);
                     }
@@ -444,6 +446,10 @@ int main(int argc, char** argv) {
                         const auto errors = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 37; });
                         if (add == ui_actions.end() || !add->enabled || request == ui_actions.end() || errors == ui_actions.end() || std::abs(request->origin.y - errors->origin.y) > .5f ||
                             request->size.y != errors->size.y) throw std::runtime_error("counter baseline mismatch: " + context);
+                        for (const auto& action : ui_actions)
+                            if ((action.chart == 80 || action.chart == 53 || action.chart == 37 || action.chart == 30 || action.chart == 31) &&
+                                action.origin.y + action.size.y > size.y - 39)
+                                throw std::runtime_error("project controls clipped by footer: " + context + " " + action.label);
                     }
                     if (kind == "projects-last-page") {
                         const auto range = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 88; });

@@ -7,7 +7,7 @@ is read. Displayed metrics are fixture values, not performance measurements.
 
 | README asset | Native fixture output |
 | --- | --- |
-| `monitor-projects.png` | `projects-448x620.png` |
+| `monitor-projects.png` | `project-states-448x620.png` |
 | `monitor-project.png` | `current-448x620.png` |
 | `monitor-timing.png` | `timing-retained-448x620.png` |
 
@@ -22,7 +22,10 @@ Metal must be available; a skipped render is not a new screenshot. Inspect the
 outputs visually, then copy only the three selected PNGs here without modifying
 their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
-The images show the Sand appearance at the standard 448×620 panel size; the
+The images show the dev.34 Sand appearance at the standard 448×620 panel size.
+The project list deliberately mixes ready, preparing, partial, blocked, on-demand,
+waiting and recovering states to demonstrate their distinct colors and symbols.
+The blocked project and displayed counters are synthetic examples. The
 compact layout remains available. Memory curves retain observation gaps and
 service-run boundaries.
 

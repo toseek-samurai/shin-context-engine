@@ -28,12 +28,13 @@ its CLI and MCP integrations, and the Monitor interface.
 ## See your project's state
 
 <p>
-  <img src="docs/images/monitor-projects.png" width="280" alt="Shin Monitor lists projects and their current search and observer status">
+  <img src="docs/images/monitor-projects.png" width="280" alt="Shin Monitor's Sand theme distinguishes ready, preparing, partial, blocked and on-demand projects">
   <img src="docs/images/monitor-project.png" width="280" alt="Project detail shows current context, the last check, updates and query history">
   <img src="docs/images/monitor-timing.png" width="280" alt="Request timing separates search time from total service time and preparation">
 </p>
 
-Real Monitor screens rendered with synthetic sample data. Monitor supports
+Sand appearance with distinct status colors, shown in real Monitor screens
+rendered with synthetic sample data. Monitor supports
 English and Russian; these examples use English. Names, counts, and timings above are examples, not benchmark results.
 [Screenshot sources and reproduction](docs/images/README.md).
 

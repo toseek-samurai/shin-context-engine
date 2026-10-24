@@ -6,7 +6,7 @@
 <key>CFBundleExecutable</key>
 <string>Shin Monitor</string>
 <key>CFBundleIdentifier</key><string>org.shin.context.monitor</string>
-<key>CFBundleVersion</key><string>57</string>
+<key>CFBundleVersion</key><string>58</string>
 <key>CFBundleShortVersionString</key><string>@SHIN_MONITOR_SHORT_VERSION@</string>
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSUIElement</key><true/>

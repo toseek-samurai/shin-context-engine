@@ -696,8 +696,11 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
         !can_relax_query(request)) {
         if (has_results && groups >= 4 &&
             brief_distinct_path_count(result) >= 2 &&
-            brief_returned_count(result, request) < request.limit) {
-            // Keep terse and focused results stable; supplement ambiguous multi-part requests only.
+            (groups >= kCompoundQueryCoverageThreshold ||
+             brief_returned_count(result, request) < request.limit)) {
+            // A saturated row budget does not prove document coverage. Compound
+            // requests still admit complete document units under the same caps.
+            // Keep the existing spare-budget policy for shorter queries.
             BriefResult planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
                 options, request, true, groups, true,
                 prepared_groups ? &*prepared_groups : nullptr, manifest,

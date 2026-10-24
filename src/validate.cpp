@@ -228,6 +228,7 @@ Json validation_gate_summary_json(const ValidationGate& gate,
             std::vector<std::pair<std::string, const Json*>> detail_sources;
             std::size_t eligible_details = 0;
             std::size_t retained_details = 0;
+            std::size_t header_fallbacks = 0;
             for (const char* field : {"failures", "cases", "issues", "actions"}) {
                 const Json* values = find_json_field(gate.result, field);
                 if (values == nullptr || !values->is_array()) {
@@ -242,13 +243,14 @@ Json validation_gate_summary_json(const ValidationGate& gate,
             auto update_budget = [&](Json& document, std::size_t returned,
                                      bool metadata_omitted = false) {
                 document["diagnostic_budget"] = {
-                    {"policy", "whole-record-byte-budget-v1"},
+                    {"policy", "whole-record-byte-budget-with-header-v2"},
                     {"max_bytes", kValidationGateDiagnosticBytes},
                     {"eligible_records", eligible_details},
                     {"returned_records", returned},
                     {"omitted_records", eligible_details - returned},
+                    {"detail_records_omitted", header_fallbacks},
                     {"metadata_omitted", metadata_omitted},
-                    {"truncated", metadata_omitted || eligible_details != returned}};
+                    {"truncated", metadata_omitted || eligible_details != returned || header_fallbacks != 0}};
             };
             compact["detail_command"] =
                 validation_gate_detail_command(gate, options, validate_options);
@@ -265,6 +267,35 @@ Json validation_gate_summary_json(const ValidationGate& gate,
                     if (candidate.dump().size() <= kValidationGateDiagnosticBytes) {
                         compact = std::move(candidate);
                         ++retained_details;
+                    } else if (field == "failures" || field == "cases") {
+                        // Nested failure projections have a larger budget than
+                        // validate. Preserve the failure identity when its full
+                        // diagnostic/remediation record cannot fit this envelope.
+                        const auto& detail = (*values)[index];
+                        Json header = Json::object();
+                        for (const char* key : {"diagnostic_id", "id", "failure_reasons", "primary_path"})
+                            if (detail.contains(key)) header[key] = detail.at(key);
+                        if (!header.contains("primary_path")) {
+                            for (const char* key : {"missing_paths", "missing_top_paths", "unexpected_paths"}) {
+                                const auto paths = detail.find(key);
+                                if (paths != detail.end() && paths->is_array() && !paths->empty()) {
+                                    header["primary_path"] = paths->front();
+                                    break;
+                                }
+                            }
+                        }
+                        header["detail_level"] = "header";
+                        header["details_omitted"] = true;
+                        if (field == "cases") header["passed"] = false;
+                        candidate[field].back() = std::move(header);
+                        ++header_fallbacks;
+                        update_budget(candidate, retained_details + 1);
+                        if (candidate.dump().size() <= kValidationGateDiagnosticBytes) {
+                            compact = std::move(candidate);
+                            ++retained_details;
+                        } else {
+                            --header_fallbacks;
+                        }
                     }
                 }
             }

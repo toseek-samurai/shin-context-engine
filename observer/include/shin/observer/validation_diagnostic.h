@@ -197,6 +197,7 @@ inline nlohmann::json validation_diagnostic(const nlohmann::json& validation) {
                     if (found != failure.end() && found->is_array())
                         for (const auto& path : *found) paths.push_back(path);
                 }
+                if (failure.contains("primary_path")) paths.push_back(failure.at("primary_path"));
                 entry["expected_paths"] = std::move(paths);
                 row["cases"].push_back(std::move(entry));
             }
@@ -211,10 +212,15 @@ inline nlohmann::json validation_diagnostic(const nlohmann::json& validation) {
                         if (found != item.end() && found->is_array())
                             for (const auto& path : *found) paths.push_back(path);
                     }
+                    if (item.contains("primary_path")) paths.push_back(item.at("primary_path"));
                     entry["expected_paths"] = std::move(paths);
                     row["cases"].push_back(std::move(entry));
                 }
             if (detail.value("failures_truncated", 0) > 0) result["truncated"] = true;
+            if (detail.value("cases_truncated", 0) > 0 ||
+                detail.value("diagnostic_budget", J::object()).value("truncated", false) ||
+                detail.value("failure_budget", J::object()).value("truncated", false))
+                result["truncated"] = true;
         }
         result["gates"].push_back(std::move(row));
     }

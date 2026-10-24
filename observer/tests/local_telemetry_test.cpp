@@ -109,6 +109,20 @@ int telemetry_scenario() {
         const auto specific_over_summary = validation_diagnostic({{"gates", Json::array({eval_gate})}});
         if (validation_failure_reason(specific_over_summary) != "missing-required-path" ||
             validation_failure_expected_paths(specific_over_summary) != std::vector<std::string>{"docs/expected.md"}) return 34;
+        for (const char* budget : {"diagnostic_budget", "failure_budget"}) {
+            const Json header{{"id", "missing-owner"}, {"passed", false},
+                {"detail_level", "header"}, {"details_omitted", true},
+                {"failure_reasons", Json::array({"missing-required-path"})},
+                {"primary_path", "docs/expected.md"}};
+            const auto header_detail = validation_diagnostic({{"gates", Json::array({
+                {{"id", "pack-eval"}, {"status", "failed"}, {"result", {
+                    {"cases", Json::array({header})}, {budget, {{"truncated", true}}}}}}
+            })}});
+            if (header_detail["gates"][0]["cases"][0]["id"] != "missing-owner" ||
+                validation_failure_reason(header_detail) != "missing-required-path" ||
+                validation_failure_expected_paths(header_detail) != std::vector<std::string>{"docs/expected.md"} ||
+                !header_detail.value("truncated", false)) return 40;
+        }
         const Json doctor_failure{{"id", "doctor"}, {"reasons", Json::array({"secret-like-source-content"})},
             {"cases", Json::array()}};
         const Json eval_failure{{"id", "eval"}, {"reasons", Json::array({"query-failures"})},

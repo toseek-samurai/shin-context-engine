@@ -452,6 +452,38 @@ class LexicalRetrievalTests(unittest.TestCase):
                     if row["path"] == "docs/manual.md":
                         self.assertLess(len(row["matched_group_indices"]), count)
 
+    def test_saturated_strict_rows_do_not_hide_split_contract(self):
+        words = "alpha beta gamma delta epsilon zeta eta theta iota".split()
+        query = " ".join(words)
+        profile_path = self.profiles / "lexical.json"
+        profile = json.loads(profile_path.read_text())
+        profile.update(sourceExtensions=[".md", ".json", ".jsonl"], jsonKeySections=True,
+                       jsonKeyMaxDepth=0, jsonKeyMaxSectionsPerFile=64)
+        profile_path.write_text(json.dumps(profile))
+        for index in range(4):
+            self.document(f"other-{index}.md", f"# Other {index}\n\n"
+                          f"## First\n\n{query}.\n\n## Second\n\n{query}.\n")
+        self.document("policy.json", json.dumps({
+            "document": "neutral-policy", "status": "accepted",
+            "summary": " ".join(words[:-1]), "operations": {"last": words[-1]},
+        }, indent=2))
+        self.document("partial.json", json.dumps({
+            "document": "partial-policy", "summary": " ".join(words[:-1]),
+        }, indent=2))
+        self.document("independent.jsonl", "\n".join(json.dumps({
+            "id": str(index), "type": "contract", "title": value,
+        }) for index, value in enumerate((" ".join(words[:-1]), words[-1]))) + "\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+        paths = [row["path"] for row in result["ranked_paths"]]
+        self.assertIn("docs/policy.json", paths)
+        self.assertNotIn("docs/partial.json", paths)
+        self.assertNotIn("docs/independent.jsonl", paths)
+        self.assertTrue(result["query_diagnostics"]["query_planner_used"])
+        self.assertLessEqual(result["evidence_budget"]["returned_records"], 8)
+        for group in result["query_coverage"]["groups"]:
+            self.assertIn("docs/policy.json", group["selected_document_paths"])
+
     def test_short_supplement_preserves_terse_and_multiple_strict_owners(self):
         for query, owners, limit in (("alpha beta gamma", 2, 8),
                                      ("alpha beta gamma delta epsilon", 2, 2),
@@ -466,7 +498,7 @@ class LexicalRetrievalTests(unittest.TestCase):
                               ".\n\n## Second\n\n" + " ".join(words[2:]) + ".\n")
                 self.invoke("build")
                 result = self.invoke("brief", query, "--require-current", "--limit", str(limit), "--per-doc", "2")
-                self.assertFalse(result["query_diagnostics"]["planner_attempted"])
+                self.assertEqual(result["query_diagnostics"]["planner_attempted"], len(words) >= 8)
                 self.assertEqual({row["path"] for row in result["ranked_paths"]},
                                  {f"docs/other-{index}.md" for index in range(owners)})
 

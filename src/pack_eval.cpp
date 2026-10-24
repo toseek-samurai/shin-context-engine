@@ -308,6 +308,7 @@ Json pack_eval_failure_header_json(const PackEvalCaseResult& result) {
     return {{"diagnostic_id", fnv1a64(result.id)},
             {"detail_level", "header"},
             {"id", result.id},
+            {"passed", false},
             {"failure_reasons", result.failure_reasons},
             {"primary_path", std::move(primary_path)},
             {"details_omitted", true}};

@@ -754,7 +754,29 @@ assert_json "$work_root/pack-eval-failure-header.json" \
    .failure_budget.omitted_records == 0 and .failure_budget.detail_records_omitted == 1 and
    .failure_budget.truncated and .failure_budget.used_bytes <= .failure_budget.max_bytes and
    .cases[0].id == "missing-pack-owner" and .cases[0].detail_level == "header" and
-   .cases[0].details_omitted'
+   .cases[0].passed == false and .cases[0].details_omitted'
+
+# Both reductions must preserve case identity: Pack's own header fallback and
+# validate's smaller gate envelope around an otherwise full Pack failure.
+for query_bytes in 2000 14000; do
+  profile_id="gate-header-$query_bytes"
+  "$jq_bin" --arg id "$profile_id" --argjson bytes "$query_bytes" '
+    .id = $id | .evalCases = [] |
+    .packEvalCases[0].request.task.must[0].query = ("q" * $bytes)
+  ' "$profiles/failing.json" >"$profiles/$profile_id.json"
+  header_out="$work_root/$profile_id-out"
+  shin_for "$profile_id" "$root" "$header_out" build >"$work_root/$profile_id-build.json"
+  expect_failure "$work_root/$profile_id.json" \
+    shin_for "$profile_id" "$root" "$header_out" validate --summary --require-current
+  assert_json "$work_root/$profile_id.json" \
+    '(.gates[] | select(.id == "pack-eval") | .result) |
+     (.cases | length) == 1 and .cases[0].id == "missing-pack-owner" and
+     .cases[0].passed == false and .cases[0].detail_level == "header" and
+     (.cases[0].failure_reasons | index("missing-required-path")) != null and
+     .cases[0].primary_path == "docs/operations.md" and
+     .diagnostic_budget.returned_records == 1 and .diagnostic_budget.omitted_records == 0 and
+     (tojson | utf8bytelength) <= .diagnostic_budget.max_bytes'
+done
 
 stale_root="$work_root/stale-root"
 stale_out="$work_root/stale-out"

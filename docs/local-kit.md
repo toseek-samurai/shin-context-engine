@@ -241,7 +241,7 @@ rollback checks still apply; an expired wait reports `service-enrollment-timeout
 
 Updating with the exact installed archive is a no-op. A changed archive must have
 a newer version; downgrades and altered same-version kits are refused. The updater
-supports the same Core version and the qualified Core dev.1 → dev.2 transition
+supports the same Core version and the qualified Core patch transitions
 described in [Core patch compatibility](#core-patch-compatibility). Other Core changes
 require an explicit migration. It does not download releases or change shell,
 client, project or model-usage configuration.
@@ -339,9 +339,11 @@ establish that experience.
 
 ## Core patch compatibility
 
-The dev.13 kit qualifies the explicit Core `2.0.5-dev.1 → 2.0.5-dev.2`
-transition. This recall correction preserves generator-v22 evidence and storage
-formats. The updater still qualifies every enrolled project and preserves its
+The dev.32 kit supports explicit forward transitions from Core `2.0.5-dev.1`,
+`2.0.5-dev.2` and `2.0.5-dev.3` to `2.0.5-dev.4`, along with the previously
+qualified dev.1 → dev.2/dev.3 and dev.2 → dev.3 transitions. These retrieval
+corrections preserve generator-v22 evidence and storage formats.
+The updater still qualifies every enrolled project and preserves its
 ownership and rollback checks; other Core transitions remain refused.
 For this transition, stale or validation-blocked publications are refreshed by
 the ordinary Observer under existing grants during journaled activation. All

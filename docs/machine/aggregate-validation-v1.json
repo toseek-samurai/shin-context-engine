@@ -132,7 +132,7 @@
       "envelopeBudgetBytes": 65536,
       "evalProjection": "shin.eval-failures.v1",
       "packEvalProjection": "shin.pack-eval-failures.v1",
-      "truncationPolicy": "The complete failed-gate result, including counters, diagnostic_budget, and detail_command, must fit gateDetailBudgetBytes. Whole evidence records are admitted by exact serialized-envelope measurement; no record is byte-sliced. Counts expose eligible, returned, omitted, detail-omitted, and metadata-omitted diagnostics.",
+      "truncationPolicy": "The complete failed-gate result, including counters, diagnostic_budget, and detail_command, must fit gateDetailBudgetBytes. Whole evidence records are admitted by exact serialized-envelope measurement; no record is byte-sliced. When an eval or Pack failure exceeds the gate budget, a header preserves its identity, reasons and primary path. Pack headers carry passed=false. Counts expose eligible, returned, omitted, detail-omitted, and metadata-omitted diagnostics. Observer retains safe case identifiers, reasons and relative primary paths and reports truncation from either nested budget.",
       "failureProjections": {
         "policy": "whole-record-byte-budget-with-header-v2",
         "evalBudgetBytes": 24576,

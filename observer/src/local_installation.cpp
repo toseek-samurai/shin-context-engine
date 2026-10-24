@@ -445,9 +445,10 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
 }
 bool compatible_core_patch(const std::string& from, const std::string& to) {
     // Explicit format-preserving v22 transitions, never a generic version range.
-    return (from == "2.0.5-dev.1" && (to == "2.0.5-dev.2" || to == "2.0.5-dev.3" || to == "2.0.5-dev.4")) ||
-           (from == "2.0.5-dev.2" && (to == "2.0.5-dev.3" || to == "2.0.5-dev.4")) ||
-           (from == "2.0.5-dev.3" && to == "2.0.5-dev.4");
+    return (from == "2.0.5-dev.1" && (to == "2.0.5-dev.2" || to == "2.0.5-dev.3" || to == "2.0.5-dev.4" || to == "2.0.5-dev.5")) ||
+           (from == "2.0.5-dev.2" && (to == "2.0.5-dev.3" || to == "2.0.5-dev.4" || to == "2.0.5-dev.5")) ||
+           (from == "2.0.5-dev.3" && (to == "2.0.5-dev.4" || to == "2.0.5-dev.5")) ||
+           (from == "2.0.5-dev.4" && to == "2.0.5-dev.5");
 }
 Json bootstrap_identity(Json binding) {
     binding.erase("core_version");

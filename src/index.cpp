@@ -1877,6 +1877,28 @@ std::vector<CandidateRows> load_generated_query_group_candidates(
     return groups;
 }
 
+std::optional<std::vector<CandidateRows>> recover_document_coverage_candidates(
+    const RuntimeOptions& options, const PreparedTermGroups& groups, int required,
+    const std::set<std::string>& documents, const CandidateRows* ordinary) {
+    const auto generated = options.out_root / kGeneratedDir;
+    const auto wanted = term_lookup_set(groups);
+    auto loaded = compact_lexical_index(options)
+        ? load_compact_term_postings(options, wanted, prefix_lookup_set(groups))
+        : load_term_postings_from_offsets(options, generated / "terms.jsonl", generated / "terms.index.tsv",
+                                         wanted, prefix_lookup_set(groups));
+    if (!loaded.coverage_complete) return std::nullopt;
+    // Independent source records cannot contribute whole-document coverage.
+    // Drop their postings before materializing any candidate sets. Retain only
+    // one raw document group at a time; qualify owners before the final cap.
+    for (auto& [term, posting] : loaded.lookup) { (void)term; posting.facts.clear(); }
+    return filter_document_coverage_postings(options, groups.size(), [&](std::size_t group) {
+        auto rows = candidates_for_term_group(groups[group], loaded.lookup);
+        rows.from_terms_index = true;
+        rows.term_index_coverage_complete = true;
+        return rows;
+    }, required, documents, ordinary);
+}
+
 static std::map<int, RowOffset> load_wanted_row_offsets(const RuntimeOptions& options, const fs::path& offsets_path,
                                                  const std::set<int>& wanted_rows) {
     std::map<int, RowOffset> offsets;

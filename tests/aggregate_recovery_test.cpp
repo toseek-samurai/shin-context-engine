@@ -165,6 +165,16 @@ void check_recovery_and_fallback(const fs::path& parent) {
     expect(baseline_metrics.at("attempts") == 0, "disabled recovery attempted an aggregate retry");
     const Json recovered_strict = run_brief(session, options.profile, kStrictQuery, true);
     const Json strict_metrics = aggregate_metrics();
+    // More than 20,000 common-term section postings still describe only four
+    // documents covering the entire query. Filter those owners before the cap,
+    // rather than rejecting all document evidence because a raw group is broad.
+    const auto document_request = request_for(options.profile, kStrictQuery);
+    const auto document_plan = collect_brief_from_index_document_coverage_plan(
+        session.options(), document_request, true, 8, false);
+    expect(document_plan.planner_rejection_reason.empty() && document_plan.query_planner_used &&
+               !document_plan.planner_unit_coverage.empty() &&
+               document_plan.candidate_rows <= kMaxIndexedCandidateRows,
+           "broad section postings disabled bounded document coverage");
     expect(normalized_brief(recovered_strict) == normalized_brief(baseline_strict),
            "strict recovery changed ranking, fields, provenance, or other brief output");
     expect(recovered_strict.at("query_diagnostics").at("candidate_index_used") == true,
@@ -186,8 +196,11 @@ void check_recovery_and_fallback(const fs::path& parent) {
     // must fail on the true indexed count even though a scan fallback reports 0.
     const Json baseline_eval = run_profile_eval(session, false);
     const Json candidate_eval = run_profile_eval(session, true);
-    expect(baseline_eval.at("resource_failed_queries") == 0,
-           "baseline scan unexpectedly failed the candidate-row resource assertion");
+    // Document coverage recovery now independently obtains the bounded strict
+    // intersection, even with the experimental ordinary-row retry disabled.
+    // Both paths must report its real size and enforce the same resource ceiling.
+    expect(baseline_eval.at("resource_failed_queries") == 1,
+           "document recovery did not enforce the candidate-row resource assertion");
     expect(candidate_eval.at("resource_failed_queries") == 1,
            "recovered candidate count did not drive the resource assertion");
 

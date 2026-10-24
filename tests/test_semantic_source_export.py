@@ -272,7 +272,8 @@ class SourceExportTests(unittest.TestCase):
         self.assertTrue(all(row["redacted"] for row in self.rows()))
 
     def test_sensitive_assignment_after_other_statements_is_redacted(self):
-        secret = "R7b9F2w8K4d6S1m5P3c0A9n2"
+        # Assemble the synthetic value so this test file remains safe to index.
+        secret = "R7b9F2w8K4d6" "S1m5P3c0A9n2"
         self.source.write_text("export function cacheScope() {\n"
                                "  const ordinary = 1;\n"
                                '  const api_key = "' + secret + '"; // gitleaks:allow\n'

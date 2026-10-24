@@ -254,16 +254,23 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
         prepared_groups ? *prepared_groups :
         load_generated_query_group_candidates(options, request.prepared_term_groups);
     if (std::any_of(group_rows.begin(), group_rows.end(), [](const auto& group) {
-            return !group.from_terms_index || !group.term_index_coverage_complete;
+            return !group.term_index_coverage_complete;
         })) {
         result.planner_rejection_reason = "document-postings-incomplete";
         return result;
     }
+    const bool capped_group = std::any_of(group_rows.begin(), group_rows.end(), [](const auto& group) {
+        return !group.from_terms_index;
+    });
     CandidateRows candidates;
     if (preserve_row_ranking) {
-        candidates = select_generated_group_candidates(group_rows, required_group_matches);
+        candidates = capped_group
+            ? load_generated_query_candidates(options, request.prepared_term_groups, required_group_matches)
+            : select_generated_group_candidates(group_rows, required_group_matches);
         if (!candidates.from_terms_index || !candidates.term_index_coverage_complete) {
-            result.planner_rejection_reason = "document-postings-incomplete";
+            result.candidate_rows = candidates.discovered_row_count;
+            result.planner_rejection_reason = candidates.term_index_coverage_complete
+                ? "document-candidate-budget-exceeded" : "document-postings-incomplete";
             return result;
         }
     }
@@ -271,10 +278,13 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
     const bool supplement_near = preserve_row_ranking && include_near_complete_sections &&
         required_group_matches >= 4;
     if (supplement_near) {
-        auto near = select_generated_group_candidates(group_rows, required_group_matches - 1);
+        auto near = capped_group
+            ? load_generated_query_candidates(options, request.prepared_term_groups, required_group_matches - 1)
+            : select_generated_group_candidates(group_rows, required_group_matches - 1);
         if (!near.from_terms_index || !near.term_index_coverage_complete) {
             result.candidate_rows = near.discovered_row_count;
-            result.planner_rejection_reason = "document-postings-incomplete";
+            result.planner_rejection_reason = near.term_index_coverage_complete
+                ? "document-candidate-budget-exceeded" : "document-postings-incomplete";
             return result;
         }
         candidates.sections = std::move(near.sections);
@@ -282,16 +292,27 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
     }
     result.planner_document_paths = whole_document_paths(options, manifest);
     const std::size_t ordinary_candidate_count = candidate_row_count(strict_candidates);
-    if (preserve_row_ranking) {
-        auto qualified = filter_document_coverage_candidates(options, group_rows,
-                                                             supplement_near ? required_group_matches - 1 : required_group_matches,
-                                                             result.planner_document_paths,
-                                                             missing_documents_only ? &strict_candidates : nullptr);
+    if (preserve_row_ranking || capped_group) {
+        const auto threshold = preserve_row_ranking
+            ? (supplement_near ? required_group_matches - 1 : required_group_matches) : 1;
+        const auto* ordinary = missing_documents_only ? &strict_candidates : nullptr;
+        auto qualified = capped_group
+            ? recover_document_coverage_candidates(options, request.prepared_term_groups, threshold,
+                                                   result.planner_document_paths, ordinary)
+            : filter_document_coverage_candidates(options, group_rows, threshold,
+                                                  result.planner_document_paths, ordinary);
         if (!qualified.has_value()) {
             result.planner_rejection_reason = "document-postings-incomplete";
             return result;
         }
         group_rows = std::move(*qualified);
+        for (const auto& group : group_rows) {
+            if (!group.from_terms_index) {
+                result.candidate_rows = group.discovered_row_count;
+                result.planner_rejection_reason = "document-candidate-budget-exceeded";
+                return result;
+            }
+        }
     }
     std::vector<CandidateGroup> candidate_groups;
     candidate_groups.reserve(group_rows.size());

@@ -196,12 +196,11 @@ std::string render_document_row_index(const GeneratedRows& rows) {
     return output;
 }
 
-std::optional<std::vector<CandidateRows>> filter_document_coverage_candidates(
-    const RuntimeOptions& options, const std::vector<CandidateRows>& groups, int required,
+namespace {
+template<class LoadGroup>
+std::optional<std::vector<CandidateRows>> filter_document_groups(
+    const RuntimeOptions& options, std::size_t group_count, LoadGroup&& load_group, int required,
     const std::set<std::string>& documents, const CandidateRows* ordinary) {
-    if (std::any_of(groups.begin(), groups.end(), [](const auto& group) {
-            return !group.from_terms_index || !group.term_index_coverage_complete;
-        })) return std::nullopt;
     const auto index = read_owner_index(options);
     std::set<std::size_t> admitted;
     if (ordinary != nullptr) {
@@ -213,32 +212,60 @@ std::optional<std::vector<CandidateRows>> filter_document_coverage_candidates(
         }
     }
     std::vector<std::set<std::size_t>> covered(index.documents);
-    for (std::size_t group = 0; group < groups.size(); ++group) {
+    for (std::size_t group = 0; group < group_count; ++group) {
+        const auto& rows = load_group(group);
+        if (!rows.from_terms_index || !rows.term_index_coverage_complete) return std::nullopt;
         for (std::size_t store = 0; store < kStores.size(); ++store) {
-            for (const int row : groups[group].*kMembers[store]) {
+            if (store == 1) continue;
+            for (const int row : rows.*kMembers[store]) {
                 const auto owner = row_owner(index.stores[store], row);
                 if (store != 1 && documents.contains(index.paths[owner])) covered[owner].insert(group);
             }
         }
     }
-    std::vector<CandidateRows> result(groups.size());
-    for (std::size_t group = 0; group < groups.size(); ++group) {
+    std::vector<CandidateRows> result(group_count);
+    for (std::size_t group = 0; group < group_count; ++group) {
+        const auto& rows = load_group(group);
+        if (!rows.from_terms_index || !rows.term_index_coverage_complete) return std::nullopt;
         auto& selected = result[group];
         selected.term_index_coverage_complete = true;
         selected.from_terms_index = true;
         for (std::size_t store = 0; store < kStores.size(); ++store) {
-            for (const int row : groups[group].*kMembers[store]) {
+            if (store == 1) continue;
+            for (const int row : rows.*kMembers[store]) {
                 const auto owner = row_owner(index.stores[store], row);
                 const auto& document = covered[owner];
                 if (store != 1 && !admitted.contains(owner) && documents.contains(index.paths[owner]) &&
                     document.size() >= static_cast<std::size_t>(required)) {
                     (selected.*kMembers[store]).insert(row);
                     ++selected.discovered_row_count;
+                    if (selected.discovered_row_count > kMaxIndexedCandidateRows) {
+                        selected.from_terms_index = false;
+                        return result;
+                    }
                 }
             }
         }
     }
     return result;
+}
+} // namespace
+
+std::optional<std::vector<CandidateRows>> filter_document_coverage_candidates(
+    const RuntimeOptions& options, const std::vector<CandidateRows>& groups, int required,
+    const std::set<std::string>& documents, const CandidateRows* ordinary) {
+    if (std::any_of(groups.begin(), groups.end(), [](const auto& group) {
+            return !group.from_terms_index || !group.term_index_coverage_complete;
+        })) return std::nullopt;
+    return filter_document_groups(options, groups.size(),
+        [&](std::size_t group) -> const CandidateRows& { return groups[group]; }, required, documents, ordinary);
+}
+
+std::optional<std::vector<CandidateRows>> filter_document_coverage_postings(
+    const RuntimeOptions& options, std::size_t group_count,
+    const std::function<CandidateRows(std::size_t)>& load_group, int required,
+    const std::set<std::string>& documents, const CandidateRows* ordinary) {
+    return filter_document_groups(options, group_count, load_group, required, documents, ordinary);
 }
 
 } // namespace shin::context

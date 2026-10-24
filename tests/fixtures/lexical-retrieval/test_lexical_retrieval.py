@@ -12,7 +12,7 @@ TOOL = str(Path(sys.argv.pop(1)).resolve())
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compact_lexical import term_postings
+from compact_lexical import term_postings, legacy_fixture
 
 
 class LexicalRetrievalTests(unittest.TestCase):
@@ -452,6 +452,44 @@ class LexicalRetrievalTests(unittest.TestCase):
                     if row["path"] == "docs/manual.md":
                         self.assertLess(len(row["matched_group_indices"]), count)
 
+    def test_common_group_cutoff_does_not_hide_split_document(self):
+        words = "alpha beta gamma delta epsilon zeta eta theta iota".split()
+        query = " ".join(words)
+        profile_path = self.profiles / "lexical.json"
+        profile = json.loads(profile_path.read_text())
+        profile.update(sourceExtensions=[".md", ".json", ".jsonl"], jsonKeySections=True,
+                       jsonKeyMaxDepth=0, jsonKeyMaxSectionsPerFile=64)
+        profile_path.write_text(json.dumps(profile))
+        for index in range(4):
+            self.document(f"other-{index}.md", f"# Other {index}\n\n{query}.\n")
+        self.document("policy.json", json.dumps({
+            "document": "neutral-policy", "status": "accepted",
+            "summary": " ".join(words[:-1]), "operations": {"last": words[-1]},
+        }, indent=2))
+        self.document("partial.json", json.dumps({
+            "document": "partial-policy", "summary": " ".join(words[:-1]),
+        }, indent=2))
+        self.invoke("build")
+        baseline = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+        self.assertIn("docs/policy.json", [row["path"] for row in baseline["ranked_paths"]])
+        for count in (19900, 20001):
+            # Independent records share only the common term. They may neither
+            # disable document planning nor borrow coverage from their siblings.
+            self.document("noise.jsonl", "\n".join(json.dumps({"id": str(i), "type": "fact",
+                "title": "alpha independent record"}) for i in range(count)) + "\n")
+            for legacy in (False, True):
+                with self.subTest(rows=count, legacy=legacy):
+                    self.invoke("build")
+                    if legacy:
+                        legacy_fixture(self.out / "docs/kb/generated")
+                    result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+                    self.assertEqual(result["ranked_paths"], baseline["ranked_paths"])
+                    self.assertTrue(result["query_diagnostics"]["query_planner_used"])
+                    self.assertLessEqual(result["query_diagnostics"]["candidate_rows"], 20000)
+                    self.assertLessEqual(result["evidence_budget"]["returned_records"], 8)
+                    for group in result["query_coverage"]["groups"]:
+                        self.assertIn("docs/policy.json", group["selected_document_paths"])
+
     def test_saturated_strict_rows_do_not_hide_split_contract(self):
         words = "alpha beta gamma delta epsilon zeta eta theta iota".split()
         query = " ".join(words)
@@ -715,12 +753,12 @@ class LexicalRetrievalTests(unittest.TestCase):
                 result = self.invoke("brief", query, "--limit", "8", "--per-doc", "1")
                 self.assertFalse(result["query_diagnostics"]["fallback_used"])
                 # An overflowing individual group does not prevent the bounded
-                # strict intersection from using the index. The incomplete
-                # document planner must still be rejected below.
+                # strict intersection from using the index. The final near-match
+                # set itself exceeds the cap and must still be rejected below.
                 self.assertTrue(result["query_diagnostics"]["candidate_index_used"])
                 self.assertTrue(result["query_diagnostics"]["planner_attempted"])
                 self.assertEqual(result["query_diagnostics"]["planner_rejection_reason"],
-                                 "document-postings-incomplete")
+                                 "document-candidate-budget-exceeded")
                 self.assertEqual({row["path"] for row in result["ranked_paths"]}, {"docs/one.md", "docs/two.md"})
 
     def test_sparse_expansion_overflow_retains_strict_result(self):

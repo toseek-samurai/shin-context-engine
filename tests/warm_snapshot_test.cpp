@@ -304,6 +304,14 @@ void assert_snapshot_survives_missing_artifacts(
                        baseline_document_candidates.planner_unit_coverage.end(),
                        [](const auto& unit) { return unit.first.whole_document; }),
            "document-candidate fixture did not qualify any owner");
+    auto capped_groups = load_generated_query_group_candidates(before.options(), planned_brief.prepared_term_groups);
+    capped_groups.front() = CandidateRows{};
+    capped_groups.front().term_index_coverage_complete = true;
+    capped_groups.front().discovered_row_count = kMaxIndexedCandidateRows + 1;
+    expect_equal(brief_result_digest(baseline_document_candidates),
+                 brief_result_digest(collect_brief_from_index_document_coverage_plan(
+                     before.options(), planned_brief, true, relaxed_required_group_matches(planned_brief),
+                     false, &capped_groups)), "document recovery from a discarded group");
     const Json baseline_pack = render_pack(options, pack_request(options), before, 1);
     const BriefResult baseline_document_owner =
         collect_brief_from_index_document_owner_scope(before.options(), document_owner, nullptr);
@@ -329,6 +337,10 @@ void assert_snapshot_survives_missing_artifacts(
                          after.options(), planned_brief, true,
                          relaxed_required_group_matches(planned_brief), false)),
                      "artifact-hidden document row index");
+        expect_equal(brief_result_digest(baseline_document_candidates),
+                     brief_result_digest(collect_brief_from_index_document_coverage_plan(
+                         after.options(), planned_brief, true, relaxed_required_group_matches(planned_brief),
+                         false, &capped_groups)), "artifact-hidden document recovery");
         expect_equal(baseline_pack, render_pack(options, pack_request(options), after, 1),
                      "artifact-hidden pack");
         const BriefResult after_document_owner =
@@ -744,6 +756,7 @@ int run_warm_snapshot_test(const fs::path& temporary_parent) {
            "capped group must not masquerade as an empty complete posting");
     expect(!filter_document_coverage_candidates(RuntimeOptions{}, groups, 1, {}).has_value(),
            "capped document group must reject before attempting index reads");
+    groups[1].term_index_coverage_complete = false;
     QueryRequest incomplete_query;
     incomplete_query.term_groups = {{"alpha"}, {"beta"}};
     incomplete_query.prepared_term_groups = prepare_term_groups(incomplete_query.term_groups);
@@ -751,7 +764,7 @@ int run_warm_snapshot_test(const fs::path& temporary_parent) {
         RuntimeOptions{}, incomplete_query, false, relaxed_required_group_matches(incomplete_query),
         false, &groups);
     expect(sparse.planner_rejection_reason == "document-postings-incomplete" && sparse.candidate_rows == 0,
-           "sparse planner must reject capped groups without reading partial evidence");
+           "sparse planner must reject incomplete postings without reading partial evidence");
 
     TempDirectory temporary(temporary_parent);
     RuntimeOptions options = make_fixture_options(temporary.path());

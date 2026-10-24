@@ -101,7 +101,8 @@ def run(task, output):
     os.chdir(home)
     from run_agent import AIAgent
     agent = agent_type(AIAgent, guide)(provider=PROVIDER, api_mode="codex_responses", model=MODEL,
-        api_key=resolved["api_key"], base_url=resolved["base_url"], requested_provider=PROVIDER,
+        api_key=resolved["api_key"],
+        base_url=resolved["base_url"], requested_provider=PROVIDER,
         enabled_toolsets=[], disabled_toolsets=None, max_iterations=16, max_tokens=12000,
         reasoning_config={"enabled": True, "effort": EFFORT}, run_budget_seconds=180,
         skip_context_files=True, skip_memory=True, skip_background_review=True, load_soul_identity=False,

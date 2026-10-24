@@ -272,6 +272,15 @@ RetrievalUnitKey retrieval_unit_key(const FactRow& row, const std::set<std::stri
 std::optional<std::vector<CandidateRows>> filter_document_coverage_candidates(
     const RuntimeOptions& options, const std::vector<CandidateRows>& groups, int required,
     const std::set<std::string>& documents, const CandidateRows* ordinary = nullptr);
+// Recovery reads one complete group at a time, before the ordinary row cutoff.
+// The loader omits independent source facts; only declared document units qualify.
+std::optional<std::vector<CandidateRows>> filter_document_coverage_postings(
+    const RuntimeOptions& options, std::size_t group_count,
+    const std::function<CandidateRows(std::size_t)>& load_group, int required,
+    const std::set<std::string>& documents, const CandidateRows* ordinary);
+std::optional<std::vector<CandidateRows>> recover_document_coverage_candidates(
+    const RuntimeOptions& options, const PreparedTermGroups& groups, int required,
+    const std::set<std::string>& documents, const CandidateRows* ordinary);
 void finalize_planner_unit_coverage(BriefExecution& execution);
 bool can_prefix_complete_lookup_term(std::string_view term);
 bool field_contains_term(FieldMatchInput& field, const PreparedMatchTerm& term);

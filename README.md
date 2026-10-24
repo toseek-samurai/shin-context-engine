@@ -55,8 +55,7 @@ English and Russian; these examples use English. Names, counts, and timings abov
 
 `shin-ce stats` uses the same Sand palette as Monitor. This native FTXUI render
 uses synthetic example data; fonts and color support follow your terminal.
-These Sand TUI screens show the current source for the next preview. The
-published dev.36 kit has the previous terminal interface.
+Sand TUI is included in preview dev.39 and later.
 
 <p>
   <img src="docs/images/tui-project.svg" width="428" alt="Terminal project details explain partial coverage and name the excluded example file">
@@ -71,11 +70,11 @@ published dev.36 kit has the previous terminal interface.
 The preview includes a first-run setup window, automatic agent connections
 and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.36)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.39)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.36/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.39/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it

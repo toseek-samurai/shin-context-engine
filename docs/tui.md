@@ -1,9 +1,9 @@
 # Sand terminal monitor
 
 `shin-ce stats` brings Monitor's Sand palette, project states and timing
-calculations to an interactive terminal. These screens show the current source
-for the next preview; the published dev.36 kit has the previous terminal UI.
-See [building from source](building.md) to try this version locally.
+calculations to an interactive terminal. The Sand TUI is included in preview
+dev.39 and later; use the [preview kit](local-kit.md#download-a-preview-release)
+on macOS or [build from source](building.md) on Linux.
 
 Every image below comes from the actual FTXUI renderer with synthetic data.
 Project names, paths, token counts, model labels and timings are examples,

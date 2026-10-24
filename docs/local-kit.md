@@ -9,14 +9,14 @@ Mac may require manual approval. This is not a stable release.
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.36).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.39).
 The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
 Public release downloads do not require a GitHub account.
 
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.36/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.39/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -378,7 +378,7 @@ Monitor offer are separate checks.
 
 ## Core patch compatibility
 
-The dev.36 kit supports explicit forward transitions from Core `2.0.5-dev.1`
+The dev.39 kit supports explicit forward transitions from Core `2.0.5-dev.1`
 through `2.0.5-dev.4` to `2.0.5-dev.5`. The previously qualified forward
 transitions among dev.1–dev.4 remain supported. These retrieval corrections
 preserve generator-v22 evidence and storage formats.

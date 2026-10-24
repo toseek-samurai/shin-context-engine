@@ -17,8 +17,7 @@ On macOS and Linux, open the Sand terminal dashboard:
 shin-ce stats
 ```
 
-The Sand layout and controls below describe the current source for the next
-preview. The published dev.36 kit has the previous terminal interface.
+The Sand layout and controls below are included in preview dev.39 and later.
 See the [native screen gallery](tui.md), including EN/RU and compact layouts.
 
 For a portable kit, pass `--home /absolute/path/to/private-data`. An installed
@@ -81,7 +80,7 @@ Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.
 
-The current source keeps verified partial context available when a previously
+Since preview dev.39, Shin keeps verified partial context available when a previously
 qualified canonical route exceeds its approved source-file count or per-file byte limit. The
 response has `retrieval_ready=true`, `canonical_ready=false` and
 `source_coverage.reason=source-observation-limited`, with source counts from the

@@ -40,7 +40,7 @@ on-demand states. Its counters are fixture values.
 
 The [screen gallery](../tui.md) also includes Projects, partial-coverage details,
 Timing, Storage, Models, Russian, compact and disconnected views. These show
-the current source for the next preview, rather than the published dev.36 TUI.
+the Sand TUI included in preview dev.39 and later.
 All names, paths, tokens and counts are synthetic; example model labels do not
 represent real client attribution.
 

@@ -9,14 +9,14 @@ Mac may require manual approval. This is not a stable release.
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.39).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.41).
 The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
 Public release downloads do not require a GitHub account.
 
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.39/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.41/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -246,14 +246,14 @@ every project under the existing publication grants before installation succeeds
 Qualification errors retain the failing project's opaque hash and bounded gate
 diagnostics, including failures before service startup.
 
-The dev.41 source candidate records the previous readiness baseline for every
+Preview dev.41 and newer record the previous readiness baseline for every
 kit update, including updates that keep the same Core. A source-limit refusal is
 an explicit degraded baseline, not a transient failure or target readiness.
 Cold admission can verify retained partial context without a saved limit
 observation; the first controller check preserves its admitted partial result.
 
 An older failed update may retain a runtime journal without that baseline. The
-following recovery option is included in the dev.41 source candidate; it is not in dev.39.
+following recovery option is included in preview dev.41 and newer; it is not in dev.39.
 After reviewing the verified previous kit and its known content refusals, run
 from a new complete extracted kit:
 

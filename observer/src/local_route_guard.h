@@ -11,6 +11,15 @@ inline bool present(const fs::path& path) {
     return fs::exists(status);
 }
 
+inline void guard_unbound_workspace(const fs::path& workspace, const std::optional<Json>& binding) {
+    if (binding) return;
+    if (present(workspace / "state.pending"))
+        throw Error("binding-uncommitted", "Uncommitted initial binding requires review; it will not be replaced.");
+    for (const auto& entry : fs::directory_iterator(workspace))
+        if (entry.path().filename() != "observer.lock")
+            throw Error("unbound-project-state", "Private project data exists without its binding; preserve it for review, not init or attach.");
+}
+
 inline void guard_ancestor_bindings(const fs::path& root, const fs::path& home) {
     unsigned depth = 0;
     for (auto current = root.parent_path(); current != current.root_path(); current = current.parent_path()) {

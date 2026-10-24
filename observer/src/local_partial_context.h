@@ -22,6 +22,14 @@ inline bool source_observation_limited(const Json& observation) {
 
 // Observation is scheduling evidence, not authority. A retained reader still
 // authenticates its exact approved head and hashes every selected source.
+inline bool sample_retained_source_limit(const Config& config, const std::string& root_identity,
+                                        const std::string& profile_hash, Json& observation) {
+    auto current = sample_worktree(config, root_identity);
+    if (!source_observation_limited(current) || current.value("profile_config_hash", "") != profile_hash) return false;
+    observation = std::move(current);
+    return true;
+}
+
 inline Json retained_source_limit_observation(const Config& config, const fs::path& workspace,
                                               const std::string& root_identity, const std::string& profile_hash) {
     const auto state = local_watch_status(workspace / "watch").at("state");

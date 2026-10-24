@@ -28,15 +28,6 @@ bool overlaps(const fs::path& a, const fs::path& b) {
     return left == a.end() || right == b.end();
 }
 
-void guard_unbound_workspace(const fs::path& workspace, const std::optional<Json>& binding) {
-    if (binding) return;
-    if (present(workspace / "state.pending"))
-        throw Error("binding-uncommitted", "Uncommitted initial binding requires review; it will not be replaced.");
-    for (const auto& entry : fs::directory_iterator(workspace))
-        if (entry.path().filename() != "observer.lock")
-            throw Error("unbound-project-state", "Private project data exists without its binding; preserve it for review, not init or attach.");
-}
-
 template<class Invoke> Json core_result(Invoke&& invoke) {
     // Core's CLI adapter is already used by ready; keep stream capture scoped
     // to this one-shot, single-threaded frontend, never a Server handler.
@@ -931,6 +922,13 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     const auto& state = observer.at("state");
     const bool sampled = !state.is_null() && state.at("root_identity") == binding.at("root_identity");
     const bool canonical_ready = readiness.at("ready") == true;
+    if (!canonical_ready && !refresh && !partial_allowed && approved_text && grant.active() &&
+        options.profile.config_hash == grant.approved_profile_hash() &&
+        sample_retained_source_limit(config, binding.at("root_identity"), options.profile.config_hash, managed_observation)) {
+        partial_allowed = source_limit_partial = true;
+        publication.reset();
+        return partial_response();
+    }
     if (!canonical_ready) verify_refresh_source();
     std::string snapshot;
     if (canonical_ready) {
@@ -1606,7 +1604,8 @@ public:
             {"recoveries", unsigned(recovered) + unsigned(admission_recovered)},
             {"last_recovery", recovered ? "watch-state" : admission_recovered ? admission_recovery : ""},
             {"previous_run_interrupted", previous && previous->value("phase", "") != "stopped"},
-            {"last_result", nullptr}, {"refresh_authority", admission.at("refresh_authority")},
+            {"last_result", admission.value("phase", "") == "partial" ? admission : Json(nullptr)},
+            {"refresh_authority", admission.at("refresh_authority")},
             {"observed_at_ms", now_ms()}};
     }
 

@@ -287,7 +287,7 @@ std::string registry_digest(const fs::path& home) {
     return present(home / "registry/state.json") ? digest(read_text(home / "registry/state.json", kMaximumStateBytes, true)) : "";
 }
 Json runtime_before_update(const fs::path& home, const fs::path& executable) {
-    Json runtime{{"managed", false}, {"running", false}};
+    Json runtime{{"managed", false}, {"running", false}, {"unready_roots", Json::array()}};
     LocalProjectRequest request; request.home = home; request.command = "service-installation";
     if (present(home / "supervision")) {
         const auto status = local_autostart_status(request, executable);
@@ -509,7 +509,8 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         require(load().at("core_version") == target, "refresh-engine-changed", "Bootstrap migration did not confirm the target engine.");
     }
 }
-Json resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime) {
+Json resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime,
+                             bool reviewed_degraded_baseline = false) {
     Json restored{{"service_restored", true}, {"readiness_assessed", false},
         {"all_projects_ready", false}, {"pending_projects", 0}};
     if (runtime.at("managed")) (void)previous_cli(executable, home, "service-install");
@@ -539,7 +540,7 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
         const bool enrolled = std::any_of(projects.begin(), projects.end(), [&](const auto& p) { return p.root == root; });
         const bool was_unready = std::find(unready.begin(), unready.end(), Json(root)) != unready.end();
         if (!enrolled || !(transient_update_project_error(code.get<std::string>()) ||
-            (was_unready && recoverable_update_project_error(code.get<std::string>()))))
+            ((was_unready || reviewed_degraded_baseline) && recoverable_update_project_error(code.get<std::string>()))))
             throw Error("installation-service-not-ready", "Previous service has an unresolved enrollment refusal.",
                 update_service_diagnostic(status, "rollback"));
     }
@@ -562,7 +563,8 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
         if (!result.value("local_ready", false)) {
             const auto code = result.value("error", Json::object()).value("code", "project-not-ready");
             errors[project.root.string()] = code;
-            if (!was_unready && !transient_update_project_error(code))
+            if (!was_unready && !transient_update_project_error(code) &&
+                !(reviewed_degraded_baseline && recoverable_update_project_error(code)))
                 throw Error("installation-project-not-ready", "A previously ready project has an unresolved rollback refusal.",
                     update_service_diagnostic({{"enrollment_errors", errors}}, "rollback"));
         }
@@ -570,6 +572,7 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
     restored["readiness_assessed"] = true;
     restored["all_projects_ready"] = errors.empty();
     restored["pending_projects"] = errors.size();
+    if (reviewed_degraded_baseline) restored["degraded_baseline_reviewed"] = true;
     restored["diagnostic"] = update_service_diagnostic({{"enrollment_errors", errors}}, "rollback");
     return restored;
 }
@@ -696,7 +699,7 @@ Json adopt_update_prefix(const fs::path& prefix, const fs::path& bin, const fs::
     return state;
 }
 Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& bin, const fs::path& home,
-                bool adopt, std::unique_ptr<StateStore>& owner, std::optional<Json> saved,
+                bool adopt, bool accept_degraded_rollback, std::unique_ptr<StateStore>& owner, std::optional<Json> saved,
                 const ReleaseUpdateProgressSink& progress) {
     report_update(progress, {ReleaseUpdateStep::verifying_kit});
     const auto control = control_path(prefix), stage = control / "update-payload";
@@ -704,6 +707,12 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     require(kit.at("version") == SHIN_OBSERVER_VERSION && kit.at("core_version") == SHIN_VERSION,
         "installation-version-mismatch", "Run update from the same complete new kit.");
     verify_files(source, kit, present(source / marker_name));
+    if (accept_degraded_rollback)
+        require(saved && saved->at("phase") == "installed" && saved->contains("resume_runtime") &&
+            !saved->contains("update") && !saved->at("resume_runtime").contains("unready_roots") &&
+            saved->value("resume_bootstrap_migrations", Json::array()).empty() &&
+            saved->at("kit").at("core_version") == kit.at("core_version"),
+            "installation-recovery-review-not-applicable", "Degraded rollback review applies only to a legacy same-Core runtime journal with no recorded readiness baseline.");
     const auto hash = digest(read_text(source / manifest_name, kMaximumStateBytes, false));
     if (!saved || saved->at("phase") == "adopting") {
         require(adopt, "installation-not-owned", "Use explicit --adopt-existing with the verified legacy prefix, home and command directory.");
@@ -725,7 +734,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
                 "installation-state-invalid", "Interrupted bootstrap rollback has an incompatible kit pair.");
         owner.reset();
         migrate_bootstrap_patch(home, migrations, prefix / "bin/shin-ce");
-        const auto restored = resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"));
+        const auto restored = resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"), accept_degraded_rollback);
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Recovery state changed during restart.");
         state["last_rollback"] = restored;
@@ -755,9 +764,9 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         }
         const auto bootstrap_migrations = recover_publications ? bootstrap_patch_migrations(home, source / "bin/shin-ce") : Json::array();
         auto runtime = runtime_before_update(home, prefix / "bin/shin-ce");
-        if (recover_publications) {
+        if (runtime.at("running")) {
             runtime["unready_roots"] = Json::array();
-            if (runtime.at("running")) for (const auto& project : registered_local_projects(home)) {
+            for (const auto& project : registered_local_projects(home)) {
                 const auto before = previous_cli(prefix / "bin/shin-ce", home, "status", project.root, true);
                 if (!before.value("local_ready", false)) runtime["unready_roots"].push_back(project.root.string());
             }
@@ -945,7 +954,7 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
     require(::geteuid() != 0, "installation-root-forbidden", "Install the local kit as your normal user, without sudo.");
     const std::string command = argv[1];
     const bool updating = command == "update";
-    bool adopt = false, force_progress = false, json_progress = false;
+    bool adopt = false, accept_degraded_rollback = false, force_progress = false, json_progress = false;
     const auto source = executable_prefix(current_executable_path());
     fs::path prefix = present(source / marker_name) ? source : user_home / ".local/opt/shin-local";
     fs::path bin = user_home / ".local/bin";
@@ -954,6 +963,7 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
     for (int i = 2; i < argc; ++i) {
         const std::string name = argv[i];
         if (updating && name == "--adopt-existing" && seen.insert(name).second) { adopt = true; continue; }
+        if (updating && name == "--accept-degraded-rollback" && seen.insert(name).second) { accept_degraded_rollback = true; continue; }
         if (updating && (name == "--progress" || name == "--progress-json") && seen.insert(name).second) {
             require(!force_progress && !json_progress, "invalid-arguments", "Choose one progress output format.");
             force_progress = name == "--progress"; json_progress = !force_progress; continue;
@@ -1003,7 +1013,7 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         require(!adopt || (seen.contains("--prefix") && seen.contains("--home") && seen.contains("--bin-dir")),
             "invalid-arguments", "Adopting an existing kit requires explicit --prefix, --home and --bin-dir.");
         try {
-            const auto result = update_kit(source, prefix, bin, home, adopt, owner, saved, progress);
+            const auto result = update_kit(source, prefix, bin, home, adopt, accept_degraded_rollback, owner, saved, progress);
             report_update(progress, {ReleaseUpdateStep::completed});
             return result;
         } catch (...) { report_update(progress, {ReleaseUpdateStep::failed}); throw; }

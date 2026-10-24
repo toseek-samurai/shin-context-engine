@@ -11,12 +11,23 @@ int main(int argc, char** argv) {
         Json results = Json::array();
         const bool cancel = std::string(argv[3]) == "--cancel";
         const bool wrong_identity = std::string(argv[3]) == "--wrong-identity";
-        for (int i = cancel || wrong_identity ? 4 : 3; i < argc; ++i) {
+        const bool first_check = std::string(argv[3]) == "--first-watch-check";
+        for (int i = cancel || wrong_identity || first_check ? 4 : 3; i < argc; ++i) {
             LocalProjectRequest request;
             request.command = "status"; request.home = argv[2]; request.root = argv[i];
             if (wrong_identity) request.maintenance_root_identity = "retired-registry-identity";
             int checks = 0;
-            results.push_back(qualify_local_project(request, argv[1], [&] { return cancel && ++checks > 1; }));
+            if (first_check) {
+                bool checked = false;
+                (void)watch_local_projects(request, {request.root}, 1, [] { return false; }, {}, {},
+                    [&](const fs::path&, const Json& state) {
+                        if (!checked && state.at("phase") == "checking" && state.at("ticks") == 0) {
+                            checked = true;
+                            results.push_back(qualify_local_project(request, argv[1]));
+                        }
+                    });
+                if (!checked) throw Error("test-check-not-observed", "First controller check was not observed.");
+            } else results.push_back(qualify_local_project(request, argv[1], [&] { return cancel && ++checks > 1; }));
             if (::waitpid(-1, nullptr, WNOHANG) != -1 || errno != ECHILD)
                 throw Error("test-child-leaked", "Qualification did not reap its worker.");
         }

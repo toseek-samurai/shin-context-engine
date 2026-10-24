@@ -79,6 +79,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce update-install --revision HASH [--prefix DIR] installs an explicitly reviewed release (macOS).\n"
                      "shin-ce install [--prefix DIR] [--bin-dir DIR] [--home DIR] installs an extracted native kit.\n"
                      "shin-ce update [--prefix DIR] [--adopt-existing --home DIR --bin-dir DIR] updates from an extracted kit.\n"
+                     "shin-ce update --accept-degraded-rollback reviews a legacy same-Core rollback; it restores the previous kit only.\n"
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
                      "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"

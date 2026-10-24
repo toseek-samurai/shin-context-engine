@@ -197,7 +197,8 @@ if(BUILD_TESTING AND NOT WIN32)
         target_link_libraries(shin-observer-test-core PRIVATE shin-context-core)
         add_test(NAME shin-ce-local-route
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_route_test.py
-                $<TARGET_FILE:shin-ce> $<TARGET_FILE:shin-observer> $<TARGET_FILE:shin-observer-test-core>)
+                $<TARGET_FILE:shin-ce> $<TARGET_FILE:shin-observer> $<TARGET_FILE:shin-observer-test-core>
+                $<TARGET_FILE:shin-local-qualification-driver>)
         set_tests_properties(shin-ce-local-route PROPERTIES TIMEOUT 180)
         # Start the longest isolated lifecycle suites first on a fresh CTest run.
         # Costs only affect scheduling; deadlines and assertions are unchanged.

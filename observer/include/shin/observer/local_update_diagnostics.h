@@ -8,11 +8,11 @@ inline bool transient_update_project_error(const std::string& code) {
 }
 
 // Quality refusals can describe an already degraded baseline across a qualified
-// Core patch. They never count as target readiness or as transient failures of
+// kit update. They never count as target readiness or as transient failures of
 // a previously ready project.
 inline bool recoverable_update_project_error(const std::string& code) {
     return transient_update_project_error(code) || code == "project-check-failed" ||
-        code == "refresh-validation-failed" || code == "project-not-ready";
+        code == "refresh-validation-failed" || code == "project-not-ready" || code == "incomplete-source-observation";
 }
 inline bool previous_update_project_unready(const Json& status, const std::string& root) {
     if (!status.is_object() || status.value("ok", Json()) != true ||

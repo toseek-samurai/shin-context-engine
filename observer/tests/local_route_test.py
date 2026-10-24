@@ -16,6 +16,7 @@ import unittest
 from integration_test import Fixture, write_private_json
 
 CE, OBSERVER, CORE = (Path(sys.argv.pop(1)).resolve() for _ in range(3))
+QUALIFICATION = Path(sys.argv.pop(1)).resolve()
 
 
 class LocalRouteTests(unittest.TestCase):
@@ -1041,6 +1042,22 @@ class LocalRouteTests(unittest.TestCase):
         ready_query = self.ce('query', 'retry ceiling')
         self.assertIn('return 991;', self.ce('read', 'src/limits.js', '--snapshot', ready_query['snapshot_id'])['source_context'])
         self.assertEqual(profile, self.f.profile_path.read_bytes())
+
+    def test_source_limit_qualification_during_first_watch_check(self):
+        self.profile['sourceFactMaxFiles'] = 1
+        self.build()
+        self.managed()
+        grant = self.grant_path().read_bytes()
+        manifest = self.generated_manifest().read_bytes()
+        (self.f.root / 'src/zz-growth.js').write_text('export function growth() { return 1; }\n')
+        result = self.invoke(QUALIFICATION, str(CE), str(self.home), '--first-watch-check', str(self.f.root))
+        status = result['results'][0]
+        self.assertTrue(status['local_ready'], status)
+        self.assertTrue(status['retrieval_ready'])
+        self.assertFalse(status['canonical_ready'])
+        self.assertEqual(status['source_coverage']['reason'], 'source-observation-limited')
+        self.assertEqual(grant, self.grant_path().read_bytes())
+        self.assertEqual(manifest, self.generated_manifest().read_bytes())
 
     def test_source_file_cap_keeps_verified_partial_context(self):
         self.check_source_limit_retains_verified_context(False)

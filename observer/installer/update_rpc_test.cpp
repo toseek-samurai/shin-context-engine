@@ -40,6 +40,8 @@ int main() {
         check(transient_update_project_error("project-busy") && transient_update_project_error("refresh-timeout"));
         check(!transient_update_project_error("binding-identity-changed") && !transient_update_project_error("index-integrity-failed"));
         check(!transient_update_project_error("project-check-failed") && recoverable_update_project_error("project-check-failed"));
+        check(!transient_update_project_error("incomplete-source-observation") &&
+              recoverable_update_project_error("incomplete-source-observation"));
         // Only a separately confirmed registry enrollment failure can explain
         // a denied project route. The caller additionally validates membership
         // and pins the previous Observer/Core protocol identities.
@@ -47,7 +49,7 @@ int main() {
             {"enrollment_errors", {{"/fixture/root", "project-check-failed"}}}};
         check(previous_update_project_unready(previous, "/fixture/root"));
         check(!previous_update_project_unready(previous, "/fixture/unknown"));
-        for (const auto* code : {"refresh-validation-failed", "project-busy", "refresh-timeout"}) {
+        for (const auto* code : {"refresh-validation-failed", "project-busy", "refresh-timeout", "incomplete-source-observation"}) {
             previous["enrollment_errors"]["/fixture/root"] = code;
             check(previous_update_project_unready(previous, "/fixture/root"));
         }

@@ -364,6 +364,9 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             rejected = call(*update, error='installation-update-recovery-required')
             assert 'refresh-engine-changed' in json.dumps(rejected['error']['diagnostic']), rejected
             assert 'resume_runtime' in json.loads(state_file.read_text())
+            # Explicit legacy review cannot waive this Core transition.
+            call(*update, '--accept-degraded-rollback', error='installation-recovery-review-not-applicable')
+            assert 'resume_runtime' in json.loads(state_file.read_text())
         finally:
             binding_path.write_bytes(binding_bytes)
         until = time.monotonic() + 35

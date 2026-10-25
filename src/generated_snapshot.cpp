@@ -189,10 +189,11 @@ std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions 
     auto lock = lock_index_for_read(options.out_root);
     const VerifiedSnapshot verified = load_verified_snapshot(options.out_root, limits.maximum_payload_bytes,
                                                              limits.maximum_file_bytes);
-    if ((verified.generator_version != kGeneratorVersion && verified.generator_version != kLegacyGeneratorVersion) || verified.profile != options.profile.id ||
+    if (verified.generator_version != kGeneratorVersion || verified.profile != options.profile.id ||
         verified.profile_config_hash != profile_config_hash(options.profile))
         throw_index_error("snapshot-route-mismatch", "Snapshot generator or profile does not match the route.", false);
-    for (const auto& key : expected_generated_relative_files(compact_lexical_manifest(verified.manifest))) {
+    (void)compact_lexical_manifest(verified.manifest);
+    for (const auto& key : expected_generated_relative_files()) {
         if (key != (kGeneratedDir / "manifest.json").generic_string() && !verified.files.contains(key))
             throw_index_error("index-unavailable", "A complete generated index is required for resident loading.");
     }

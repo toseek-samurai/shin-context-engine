@@ -110,6 +110,7 @@ You can add further folders in Monitor or with
 `shin-ce project-add --root /path/to/another/project`. For terminal-only use, run
 `shin-ce stats` (or `shin-ce service-status --text` for a single status report).
 Use Tab or 1–5 to switch views, Enter for project details, and q to exit.
+Unreleased source adds **Sessions** as view 6 for MCP activity and context recovery.
 To use Shin from a coding agent,
 [configure the included MCP adapter](docs/native-client-setup.md). Automatic
 startup at login is a separate opt-in step in the

@@ -13,7 +13,6 @@ bool compact_lexical_manifest(const Json& manifest) {
     const auto generator = json_string_value(manifest, "generator_version");
     const auto format = json_string_value(manifest, "term_index_format");
     if (generator == kGeneratorVersion && format == "shin.lexical.v1") return true;
-    if (generator == kLegacyGeneratorVersion && !manifest.contains("term_index_format")) return false;
     throw_index_error("index-generator-unsupported", "Unsupported lexical format or generator identity.", false);
 }
 
@@ -26,10 +25,11 @@ bool compact_lexical_index(const RuntimeOptions& options) {
 }
 
 std::vector<std::string> expected_generated_relative_files(const RuntimeOptions& options) {
-    return expected_generated_relative_files(compact_lexical_index(options));
+    (void)compact_lexical_index(options);
+    return expected_generated_relative_files();
 }
 
-std::vector<std::string> expected_generated_relative_files(bool compact) {
+std::vector<std::string> expected_generated_relative_files() {
     std::vector<std::string> paths{
         (kGeneratedDir / "documents.jsonl").generic_string(),
         (kGeneratedDir / "document-rows.json").generic_string(),
@@ -47,11 +47,7 @@ std::vector<std::string> expected_generated_relative_files(bool compact) {
         (kGeneratedDir / "facts.index.tsv").generic_string(),
         (kGeneratedDir / "manifest.json").generic_string()
     };
-    if (compact) paths.push_back((kGeneratedDir / "terms.lex").generic_string());
-    else {
-        paths.push_back((kGeneratedDir / "terms.jsonl").generic_string());
-        paths.push_back((kGeneratedDir / "terms.index.tsv").generic_string());
-    }
+    paths.push_back((kGeneratedDir / "terms.lex").generic_string());
     return paths;
 }
 
@@ -109,7 +105,7 @@ void require_complete_source_scan_or_throw(const IndexFreshness& freshness) {
 static IndexFreshness assess_index_freshness_exact(const RuntimeOptions& options) {
     IndexFreshness freshness;
     freshness.mode = "full-generated-output";
-    const auto expected_generation = validation_generated_output(options, compact_lexical_index(options));
+    const auto expected_generation = validation_generated_output(options);
     const auto& generated = *expected_generation;
     freshness.source_count = generated.document_count;
     for (const auto& [path, expected] : generated.files) {
@@ -641,8 +637,7 @@ static IndexFreshness assess_index_freshness_fast(const RuntimeOptions& options,
     }
 
     const Json manifest = parse_json_text(manifest_content, manifest_path.string());
-    if (json_string_value(manifest, "generator_version") != kGeneratorVersion &&
-        json_string_value(manifest, "generator_version") != kLegacyGeneratorVersion) {
+    if (json_string_value(manifest, "generator_version") != kGeneratorVersion) {
         ++freshness.stale_files;
         freshness.notes.push_back("Manifest generator_version does not match the current generator.");
     }
@@ -990,10 +985,6 @@ static void merge_term_posting(CandidateRows& candidates, const TermPosting& pos
     add_candidate_ids(candidates.runbooks, posting.runbooks);
 }
 
-static TermPosting parse_term_posting_row(const std::string& line, std::string* parsed_term = nullptr) {
-    return decode_generated_term_posting(line, parsed_term);
-}
-
 static void add_prepared_lookup_term(std::set<std::string>& terms, const std::string& raw) {
     const PreparedMatchTerm prepared = prepare_match_term(raw);
     auto add = [&](const std::string& value) {
@@ -1062,24 +1053,6 @@ bool parse_decimal_integer(std::string_view text, Integer& value) noexcept {
     }
     value = parsed;
     return true;
-}
-
-bool parse_term_offset_line(const std::string& line, std::string& term, TermOffset& out) {
-    const std::string_view view(line);
-    const std::size_t first_tab = view.find('\t');
-    if (first_tab == std::string::npos) {
-        return false;
-    }
-    const std::size_t second_tab = view.find('\t', first_tab + 1);
-    if (second_tab == std::string::npos) {
-        return false;
-    }
-    term.assign(view.substr(0, first_tab));
-    if (!parse_decimal_integer(view.substr(first_tab + 1, second_tab - first_tab - 1), out.offset) ||
-        !parse_decimal_integer(view.substr(second_tab + 1), out.bytes)) {
-        return false;
-    }
-    return out.offset >= 0 && out.bytes > 0;
 }
 
 bool parse_row_offset_line(const std::string& line, RowOffset& out) {
@@ -1178,303 +1151,6 @@ static bool read_offset_index_line(std::istream& input,
     return out.next_offset > out.offset;
 }
 
-static bool find_term_offset(std::istream& input,
-                             long long file_bytes,
-                             const std::string& wanted_term,
-                             TermOffset& wanted_offset) {
-    long long lower = 0;
-    long long upper = file_bytes;
-    while (lower < upper) {
-        const long long probe = lower + (upper - lower) / 2;
-        OffsetIndexLine line;
-        if (!read_offset_index_line(input, file_bytes, probe, line)) {
-            upper = probe;
-            continue;
-        }
-
-        std::string term;
-        TermOffset offset;
-        if (!parse_term_offset_line(line.text, term, offset)) {
-            throw_index_error("index-corrupt", "Generated term offset index is invalid.");
-        }
-        if (term == wanted_term) {
-            wanted_offset = offset;
-            return true;
-        }
-        if (term < wanted_term) {
-            if (line.next_offset <= lower) {
-                throw_index_error("index-corrupt", "Generated term offset index search did not advance.");
-            }
-            lower = line.next_offset;
-        } else {
-            if (line.offset >= upper) {
-                throw_index_error("index-corrupt", "Generated term offset index search did not advance.");
-            }
-            upper = line.offset;
-        }
-    }
-    return false;
-}
-
-static std::map<std::string, TermOffset> load_wanted_term_offsets_binary(
-    const RuntimeOptions& options,
-    const fs::path& offsets_path,
-    const std::set<std::string>& wanted_terms) {
-    std::map<std::string, TermOffset> offsets;
-    GeneratedInput input(options, offsets_path);
-    if (!input) {
-        throw std::runtime_error("Cannot read " + offsets_path.string());
-    }
-    input.seekg(0, std::ios::end);
-    const std::streampos end = input.tellg();
-    if (end == std::streampos(-1)) {
-        throw std::runtime_error("Cannot determine size of " + offsets_path.string());
-    }
-    const long long file_bytes = static_cast<long long>(end);
-    for (const std::string& wanted_term : wanted_terms) {
-        TermOffset offset;
-        if (find_term_offset(input, file_bytes, wanted_term, offset)) {
-            offsets[wanted_term] = offset;
-        }
-    }
-    return offsets;
-}
-
-static std::map<std::string, TermOffset> load_wanted_term_offsets_sequential(
-    const RuntimeOptions& options,
-    const fs::path& offsets_path,
-    const std::set<std::string>& wanted_terms) {
-    std::map<std::string, TermOffset> offsets;
-    GeneratedInput input(options, offsets_path);
-    if (!input) {
-        throw std::runtime_error("Cannot read " + offsets_path.string());
-    }
-    auto wanted = wanted_terms.begin();
-    BoundedGeneratedLineReader reader(input, kMaxGeneratedOffsetIndexLineBytes,
-                                      "Generated term offset index row");
-    std::string line_storage;
-    while (wanted != wanted_terms.end() && reader.read(line_storage)) {
-        const std::string_view line(line_storage);
-        if (line.empty()) {
-            continue;
-        }
-
-        const std::size_t first_tab = line.find('\t');
-        const std::size_t second_tab = first_tab == std::string_view::npos
-                                           ? std::string_view::npos
-                                           : line.find('\t', first_tab + 1);
-        TermOffset offset;
-        if (first_tab == 0 || first_tab == std::string_view::npos ||
-            second_tab == std::string_view::npos ||
-            !parse_decimal_integer(line.substr(first_tab + 1, second_tab - first_tab - 1),
-                                   offset.offset) ||
-            !parse_decimal_integer(line.substr(second_tab + 1), offset.bytes) ||
-            offset.offset < 0 || offset.bytes <= 0) {
-            throw_index_error("index-corrupt", "Generated term offset index is invalid.");
-        }
-
-        const std::string_view term = line.substr(0, first_tab);
-        while (wanted != wanted_terms.end() && std::string_view(*wanted) < term) {
-            ++wanted;
-        }
-        if (wanted != wanted_terms.end() && term == std::string_view(*wanted)) {
-            offsets.emplace(*wanted, offset);
-            ++wanted;
-        }
-    }
-    return offsets;
-}
-
-struct SelectedTermOffsets {
-    std::map<std::string, TermOffset> offsets;
-    long long selected_bytes = 0;
-    bool coverage_complete = true;
-};
-
-struct OffsetIndexViewLine {
-    std::size_t offset = 0;
-    std::size_t next_offset = 0;
-    std::string_view text;
-};
-
-static bool offset_index_line_at(std::string_view index,
-                                 std::size_t probe,
-                                 OffsetIndexViewLine& out) {
-    if (probe >= index.size()) {
-        return false;
-    }
-    const std::size_t previous_newline = probe == 0 ? std::string_view::npos
-                                                     : index.rfind('\n', probe - 1);
-    const std::size_t line_start = previous_newline == std::string_view::npos
-                                       ? 0
-                                       : previous_newline + 1;
-    const std::size_t newline = index.find('\n', line_start);
-    const std::size_t line_end = newline == std::string_view::npos ? index.size() : newline;
-    if (line_end - line_start > kMaxGeneratedOffsetIndexLineBytes) {
-        throw_index_error("index-corrupt",
-                          "Generated term offset index row exceeds its byte limit.");
-    }
-    out.offset = line_start;
-    out.next_offset = newline == std::string_view::npos ? index.size() : newline + 1;
-    out.text = index.substr(line_start, line_end - line_start);
-    return out.next_offset > out.offset;
-}
-
-static std::size_t find_term_lower_bound(std::string_view index,
-                                         const std::string& wanted_term) {
-    std::size_t lower = 0;
-    std::size_t upper = index.size();
-    while (lower < upper) {
-        const std::size_t probe = lower + (upper - lower) / 2;
-        OffsetIndexViewLine line;
-        if (!offset_index_line_at(index, probe, line)) {
-            upper = probe;
-            continue;
-        }
-
-        std::string term;
-        TermOffset offset;
-        if (!parse_term_offset_line(std::string(line.text), term, offset)) {
-            throw_index_error("index-corrupt", "Generated term offset index is invalid.");
-        }
-        if (term < wanted_term) {
-            if (line.next_offset <= lower) {
-                throw_index_error("index-corrupt",
-                                  "Generated term offset index search did not advance.");
-            }
-            lower = line.next_offset;
-        } else {
-            if (line.offset >= upper) {
-                throw_index_error("index-corrupt",
-                                  "Generated term offset index search did not advance.");
-            }
-            upper = line.offset;
-        }
-    }
-    return lower;
-}
-
-static bool add_selected_term_offset(SelectedTermOffsets& selected,
-                                     std::string term,
-                                     const TermOffset& offset,
-                                     std::size_t max_terms,
-                                     long long max_bytes) {
-    if (offset.offset < 0 || offset.bytes <= 0 || offset.bytes > kMaxGeneratedIndexRowBytes ||
-        offset.offset > std::numeric_limits<long long>::max() - offset.bytes) {
-        throw_index_error("index-corrupt", "Generated term offset range is invalid.");
-    }
-    if (selected.offsets.find(term) != selected.offsets.end()) {
-        return true;
-    }
-    if (selected.offsets.size() >= max_terms ||
-        offset.bytes > max_bytes - selected.selected_bytes) {
-        selected.offsets.clear();
-        selected.selected_bytes = 0;
-        selected.coverage_complete = false;
-        return false;
-    }
-    selected.offsets.emplace(std::move(term), offset);
-    selected.selected_bytes += offset.bytes;
-    return true;
-}
-
-static SelectedTermOffsets load_prefix_completed_term_offsets(
-    const RuntimeOptions& options,
-    const fs::path& offsets_path,
-    const std::set<std::string>& wanted_terms,
-    const std::set<std::string>& prefixes) {
-    constexpr std::size_t kMaxCompletedTerms = 2048;
-    constexpr long long kMaxCompletedPostingBytes = 64LL * 1024LL * 1024LL;
-    constexpr long long kMaxInMemoryOffsetIndexBytes = 64LL * 1024LL * 1024LL;
-    SelectedTermOffsets selected;
-    GeneratedInput input(options, offsets_path);
-    if (!input) {
-        throw std::runtime_error("Cannot read " + offsets_path.string());
-    }
-    const long long file_bytes = data_file_size(input, offsets_path);
-    if (file_bytes > kMaxInMemoryOffsetIndexBytes) {
-        selected.coverage_complete = false;
-        return selected;
-    }
-    std::string index(static_cast<std::size_t>(file_bytes), '\0');
-    input.clear();
-    input.seekg(0);
-    input.read(index.data(), static_cast<std::streamsize>(index.size()));
-    if (input.gcount() != static_cast<std::streamsize>(index.size())) {
-        throw_index_error("index-corrupt", "Cannot read generated term offset index.");
-    }
-
-    for (const std::string& prefix : prefixes) {
-        std::size_t range_offset = find_term_lower_bound(index, prefix);
-        while (range_offset < index.size()) {
-            OffsetIndexViewLine line;
-            if (!offset_index_line_at(index, range_offset, line)) {
-                break;
-            }
-            std::string term;
-            TermOffset offset;
-            if (!parse_term_offset_line(std::string(line.text), term, offset)) {
-                throw_index_error("index-corrupt", "Generated term offset index is invalid.");
-            }
-            if (!starts_with(term, prefix)) {
-                break;
-            }
-            if (!can_prefix_complete_lookup_term(term)) {
-                range_offset = line.next_offset;
-                continue;
-            }
-            if (!add_selected_term_offset(selected, std::move(term), offset,
-                                          kMaxCompletedTerms, kMaxCompletedPostingBytes)) {
-                return selected;
-            }
-            range_offset = line.next_offset;
-        }
-    }
-
-    for (const std::string& term : wanted_terms) {
-        if (selected.offsets.find(term) != selected.offsets.end()) {
-            continue;
-        }
-        const std::size_t exact_offset = find_term_lower_bound(index, term);
-        OffsetIndexViewLine line;
-        if (!offset_index_line_at(index, exact_offset, line)) {
-            continue;
-        }
-        std::string indexed_term;
-        TermOffset offset;
-        if (!parse_term_offset_line(std::string(line.text), indexed_term, offset)) {
-            throw_index_error("index-corrupt", "Generated term offset index is invalid.");
-        }
-        if (indexed_term == term &&
-            !add_selected_term_offset(selected, std::move(indexed_term), offset,
-                                      kMaxCompletedTerms, kMaxCompletedPostingBytes)) {
-            return selected;
-        }
-    }
-    return selected;
-}
-
-static SelectedTermOffsets load_wanted_term_offsets(
-    const RuntimeOptions& options,
-    const fs::path& offsets_path,
-    const std::set<std::string>& wanted_terms,
-    const std::set<std::string>& prefixes) {
-    constexpr std::size_t kSequentialLookupThreshold = 16;
-    if (wanted_terms.empty()) {
-        return {};
-    }
-    if (!prefixes.empty()) {
-        return load_prefix_completed_term_offsets(options, offsets_path, wanted_terms, prefixes);
-    }
-    SelectedTermOffsets selected;
-    if (wanted_terms.size() >= kSequentialLookupThreshold) {
-        selected.offsets = load_wanted_term_offsets_sequential(options, offsets_path, wanted_terms);
-    } else {
-        selected.offsets = load_wanted_term_offsets_binary(options, offsets_path, wanted_terms);
-    }
-    return selected;
-}
-
 using TermPostingLookup = std::map<std::string, TermPosting>;
 
 struct LoadedTermPostings {
@@ -1505,60 +1181,6 @@ static void normalize_term_posting(TermPosting& posting) {
     normalize_posting_rows(posting.decisions);
     normalize_posting_rows(posting.contracts);
     normalize_posting_rows(posting.runbooks);
-}
-
-static LoadedTermPostings load_term_postings_from_offsets(
-    const RuntimeOptions& options,
-    const fs::path& terms_path,
-    const fs::path& offsets_path,
-    const std::set<std::string>& wanted_terms,
-    const std::set<std::string>& prefixes) {
-    LoadedTermPostings loaded;
-    const SelectedTermOffsets selected =
-        load_wanted_term_offsets(options, offsets_path, wanted_terms, prefixes);
-    loaded.coverage_complete = selected.coverage_complete;
-    if (selected.offsets.empty()) {
-        return loaded;
-    }
-    GeneratedInput terms_input(options, terms_path);
-    if (!terms_input) {
-        throw std::runtime_error("Cannot read " + terms_path.string());
-    }
-    const long long terms_file_bytes = data_file_size(terms_input, terms_path);
-    for (const auto& [term, offset] : selected.offsets) {
-        require_valid_data_range(offset.offset, offset.bytes, terms_file_bytes,
-                                 "Generated term offset index");
-        terms_input.clear();
-        terms_input.seekg(offset.offset);
-        std::string line(static_cast<std::size_t>(offset.bytes), '\0');
-        terms_input.read(&line[0], static_cast<std::streamsize>(line.size()));
-        if (terms_input.gcount() != static_cast<std::streamsize>(line.size())) {
-            throw_index_error("index-corrupt", "Generated term offset index points outside terms.jsonl.");
-        }
-        line.resize(static_cast<std::size_t>(terms_input.gcount()));
-        line = trim(line);
-        if (line.empty()) {
-            throw_index_error("index-corrupt", "Generated term offset index points to an empty row.");
-        }
-        std::string parsed_term;
-        TermPosting posting = parse_term_posting_row(line, &parsed_term);
-        if (parsed_term != term) {
-            throw_index_error("index-corrupt", "Generated term offset index points to a different term.");
-        }
-        if (wanted_terms.find(term) != wanted_terms.end()) {
-            append_term_posting(loaded.lookup[term], posting);
-        }
-        for (const std::string& prefix : prefixes) {
-            if (starts_with(term, prefix)) {
-                append_term_posting(loaded.lookup[prefix], posting);
-            }
-        }
-    }
-    for (auto& [term, posting] : loaded.lookup) {
-        (void)term;
-        normalize_term_posting(posting);
-    }
-    return loaded;
 }
 
 static LoadedTermPostings load_compact_term_postings(
@@ -1812,11 +1434,8 @@ static CandidateRows load_candidate_rows_from_terms_index(const RuntimeOptions& 
                                                    const PreparedTermGroups& term_groups,
                                                    int required_group_matches) {
     CandidateRows candidates;
-    const fs::path terms_path = generated_root / "terms.jsonl";
-    const fs::path offsets_path = generated_root / "terms.index.tsv";
-    const bool compact = compact_lexical_index(options);
-    if (compact ? !generated_file_exists(options, generated_root / "terms.lex")
-                : (!generated_file_exists(options, terms_path) || !generated_file_exists(options, offsets_path))) {
+    (void)compact_lexical_index(options);
+    if (!generated_file_exists(options, generated_root / "terms.lex")) {
         throw_index_error("index-corrupt", "Generated term index is incomplete.");
     }
     const std::set<std::string> wanted_terms = term_lookup_set(term_groups);
@@ -1824,8 +1443,7 @@ static CandidateRows load_candidate_rows_from_terms_index(const RuntimeOptions& 
         return candidates;
     }
     const LoadedTermPostings loaded =
-        compact ? load_compact_term_postings(options, wanted_terms, prefix_lookup_set(term_groups))
-                : load_term_postings_from_offsets(options, terms_path, offsets_path, wanted_terms, prefix_lookup_set(term_groups));
+        load_compact_term_postings(options, wanted_terms, prefix_lookup_set(term_groups));
     candidates =
         select_candidates_by_required_groups(term_groups, loaded.lookup, required_group_matches);
     candidates.term_index_coverage_complete =
@@ -1850,21 +1468,17 @@ std::vector<CandidateRows> load_generated_query_group_candidates(
     const PreparedTermGroups& term_groups) {
     const fs::path generated_root = options.out_root / kGeneratedDir;
     const fs::path manifest_path = generated_root / "manifest.json";
-    const fs::path terms_path = generated_root / "terms.jsonl";
-    const fs::path offsets_path = generated_root / "terms.index.tsv";
     if (!generated_file_exists(options, manifest_path)) {
         throw_index_error("index-unavailable", "Generated KB manifest is missing: " + manifest_path.string());
     }
-    const bool compact = compact_lexical_index(options);
-    if (compact ? !generated_file_exists(options, generated_root / "terms.lex")
-                : (!generated_file_exists(options, terms_path) || !generated_file_exists(options, offsets_path))) {
+    (void)compact_lexical_index(options);
+    if (!generated_file_exists(options, generated_root / "terms.lex")) {
         throw_index_error("index-corrupt", "Generated term index is incomplete.");
     }
 
     const std::set<std::string> wanted_terms = term_lookup_set(term_groups);
     const LoadedTermPostings loaded =
-        compact ? load_compact_term_postings(options, wanted_terms, prefix_lookup_set(term_groups))
-                : load_term_postings_from_offsets(options, terms_path, offsets_path, wanted_terms, prefix_lookup_set(term_groups));
+        load_compact_term_postings(options, wanted_terms, prefix_lookup_set(term_groups));
     std::vector<CandidateRows> groups;
     groups.reserve(term_groups.size());
     for (const PreparedTermGroup& group : term_groups) {
@@ -1880,12 +1494,9 @@ std::vector<CandidateRows> load_generated_query_group_candidates(
 std::optional<std::vector<CandidateRows>> recover_document_coverage_candidates(
     const RuntimeOptions& options, const PreparedTermGroups& groups, int required,
     const std::set<std::string>& documents, const CandidateRows* ordinary) {
-    const auto generated = options.out_root / kGeneratedDir;
     const auto wanted = term_lookup_set(groups);
-    auto loaded = compact_lexical_index(options)
-        ? load_compact_term_postings(options, wanted, prefix_lookup_set(groups))
-        : load_term_postings_from_offsets(options, generated / "terms.jsonl", generated / "terms.index.tsv",
-                                         wanted, prefix_lookup_set(groups));
+    (void)compact_lexical_index(options);
+    auto loaded = load_compact_term_postings(options, wanted, prefix_lookup_set(groups));
     if (!loaded.coverage_complete) return std::nullopt;
     // Independent source records cannot contribute whole-document coverage.
     // Drop their postings before materializing any candidate sets. Retain only

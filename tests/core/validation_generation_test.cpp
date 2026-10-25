@@ -35,9 +35,9 @@ void test(const fs::path& base, const fs::path& registry) {
     const auto lock = lock_index_for_read(options.out_root);
     auto cache = std::make_shared<ValidationGeneration>(options);
     auto before = generation_execution_count();
-    auto first = cache->acquire(options, true);
+    auto first = cache->acquire(options);
     expect(first && first->files == expected.files, "fresh expectation differs");
-    expect(cache->acquire(options, true) == first, "unchanged inputs not shared");
+    expect(cache->acquire(options) == first, "unchanged inputs not shared");
     expect(generation_execution_count() == before + 1 && cache->metrics().at("reuses") == 1,
            "shared preparation regenerated");
     auto direct_before = generation_execution_count();
@@ -79,10 +79,10 @@ void test(const fs::path& base, const fs::path& registry) {
 
     const auto invalidates = [&](auto mutate, auto restore) {
         auto current = std::make_shared<ValidationGeneration>(options);
-        if (!current->acquire(options, true))
+        if (!current->acquire(options))
             throw std::runtime_error("negative baseline not reusable: " + current->metrics().dump());
         mutate();
-        expect(!current->acquire(options, true) && current->metrics().at("invalidations") == 1,
+        expect(!current->acquire(options) && current->metrics().at("invalidations") == 1,
                "changed dependencies reused old generation");
         auto fallback = options; fallback.validation_generation = current;
         expect(validation_generated_output(fallback)->files == generate_outputs(options.profile, options.root).files,
@@ -116,19 +116,17 @@ void test(const fs::path& base, const fs::path& registry) {
     write(options.root / "README.md", readme);
 
     auto fresh = std::make_shared<ValidationGeneration>(options);
-    expect(bool(fresh->acquire(options, true)), "binding baseline");
+    expect(bool(fresh->acquire(options)), "binding baseline");
     auto foreign = options; foreign.root = base / "foreign-root";
-    expect(!fresh->acquire(foreign, true), "foreign root reused");
-    fresh = std::make_shared<ValidationGeneration>(options); fresh->acquire(options, true);
+    expect(!fresh->acquire(foreign), "foreign root reused");
+    fresh = std::make_shared<ValidationGeneration>(options); fresh->acquire(options);
     foreign = options; foreign.out_root = base / "foreign-index";
-    expect(!fresh->acquire(foreign, true), "foreign output reused");
-    fresh = std::make_shared<ValidationGeneration>(options); fresh->acquire(options, true);
-    expect(!fresh->acquire(options, false), "different lexical format reused");
-    fresh = std::make_shared<ValidationGeneration>(options); fresh->acquire(options, true);
+    expect(!fresh->acquire(foreign), "foreign output reused");
+    fresh = std::make_shared<ValidationGeneration>(options); fresh->acquire(options);
     foreign = options; foreign.profile.default_topic += "-changed-in-memory";
-    expect(!fresh->acquire(foreign, true), "mutated effective profile reused cached config hash");
+    expect(!fresh->acquire(foreign), "mutated effective profile reused cached config hash");
     ValidationGeneration tiny(options, 1);
-    expect(bool(tiny.acquire(options, true)) && !tiny.acquire(options, true) &&
+    expect(bool(tiny.acquire(options)) && !tiny.acquire(options) &&
            tiny.metrics().at("retained_bytes") == 0 && tiny.metrics().at("fallback_reason") == "retained-byte-limit",
            "oversized result retained");
 

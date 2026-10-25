@@ -131,6 +131,55 @@ void check(const fs::path& parent) {
     expect(split.at("results")[3].at("candidates").empty(), "no invented lexical evidence");
 }
 
+void natural_language_checks(const fs::path& parent) {
+    Fixture f(parent);
+    f.write("src/retry.cpp", "// Retry failed requests after a network timeout.\nint retryRequest() { return 1; }\n");
+    f.write("src/permissions.cpp", "// Validate user permissions before access to the database.\nint validatePermission() { return 2; }\n");
+    f.write("src/russian.cpp", "// Проверка целостности архива\nint inspectArchive() { return 3; }\n");
+    f.write("src/noise.sql", "SELECT whereClause, howValue, doesFlag, theValue, whenValue FROM words;\n");
+    f.publish();
+    const auto result = discover_source_candidates(f.options, {
+        "Where does retrying a failed network request happen?",
+        "Где повторяется запрос после таймаута сети?",
+        "Где проверяются права пользователя перед доступом к базе?",
+        "ПРОВЕРКА ЦЕЛОСТНОСТИ АРХИВА", "validatePermission",
+        "секретарьквазипанголин", "Where does quuxPangolinNonexistent happen?"});
+    const std::vector<std::string> expected = {"src/retry.cpp", "src/retry.cpp", "src/permissions.cpp",
+                                              "src/russian.cpp", "src/permissions.cpp"};
+    for (std::size_t i = 0; i < expected.size(); ++i) {
+        const auto& candidates = result.at("results")[i].at("candidates");
+        expect(!candidates.empty() && candidates[0].at("path") == expected[i],
+               ("natural language owner: " + std::to_string(i)).c_str());
+    }
+    for (std::size_t i : {5, 6})
+        expect(result.at("results")[i].at("candidates").empty(), "no stop-word-only or invented language evidence");
+    const auto forms = discover_source_candidates(f.options, {"validate permission", "validating validated permission permissions"});
+    expect(forms.at("results")[0].at("candidates") == forms.at("results")[1].at("candidates"),
+           "equivalent inflections must not multiply BM25 weight");
+
+    Fixture breadth(parent);
+    std::string repeated;
+    for (int i = 0; i < 200; ++i) repeated += "SELECT retry, request, network, timeout FROM values_table;\n";
+    for (int i = 0; i < 8; ++i) breadth.write("src/part" + std::to_string(i) + ".sql", repeated);
+    breadth.publish();
+    auto diverse = discover_source_candidates(breadth.options, {"retry request network timeout", "retry", "состояние"});
+    const auto& broad = diverse.at("results")[0];
+    expect(broad.at("distinct_paths_first") == true && broad.at("candidates").size() == 8, "broad query keeps the span cap");
+    std::set<std::string> paths;
+    for (const auto& candidate : broad.at("candidates")) paths.insert(candidate.at("path"));
+    expect(paths.size() == 8, "different files precede duplicate spans for broad discovery");
+    expect(diverse.at("results")[1].at("distinct_paths_first") == false &&
+           diverse.at("results")[1].at("candidates")[0].at("path") == diverse.at("results")[1].at("candidates")[1].at("path"),
+           "short symbol queries preserve BM25 span order");
+    expect(diverse.at("results")[2].at("distinct_paths_first") == false, "translation hints cannot trigger broad-query diversity");
+    for (int i = 2; i < 8; ++i) fs::remove(breadth.options.root / ("src/part" + std::to_string(i) + ".sql"));
+    breadth.publish();
+    diverse = discover_source_candidates(breadth.options, {"retry request network timeout"});
+    const auto& filled = diverse.at("results")[0].at("candidates");
+    expect(filled.size() == 4 && filled[0].at("path") != filled[1].at("path") && filled[0].at("path") == filled[2].at("path"),
+           "second spans fill spare capacity without exceeding two per file");
+}
+
 void resident_checks(const fs::path& parent) {
     Fixture f(parent);
     f.write("src/live.sql", "SELECT stableResidentNeedle;\n");
@@ -464,9 +513,9 @@ void disk_checks(const fs::path& parent) {
         const auto saved = old_format.load();
         if (!saved) throw std::runtime_error("expected cache artifact");
         auto bytes = *saved;
-        const auto format = bytes.find("shin.source-cache.v2");
+        const auto format = bytes.find("shin.source-cache.v3");
         expect(format != std::string::npos, "cache format is bound");
-        bytes.replace(format, std::string("shin.source-cache.v2").size(), "shin.source-cache.v1");
+        bytes.replace(format, std::string("shin.source-cache.v3").size(), "shin.source-cache.v2");
         old_format.save(bytes);
     }
     {
@@ -570,6 +619,8 @@ void published_cache_transfer_checks(const fs::path& parent) {
     const auto cache = fs::absolute(f.base / "published-cache");
     SourceDiscoveryIndex prepared(candidate);
     const auto expected = prepared.query(candidate, {"transferredPublicationNeedle"});
+    const std::string private_query = "neverPersistThisPrivateQuery731";
+    (void)prepared.query(candidate, {private_query});
     const auto before = prepared.preparation_metrics();
     expect(before.at("index_builds") == 1 && before.at("files") == 1 &&
            before.at("source_bytes") == content.size() && before.at("chunks") > 0,
@@ -594,6 +645,14 @@ void published_cache_transfer_checks(const fs::path& parent) {
         auto candidate_lock = lock_index_for_read(candidate.out_root);
         auto published_lock = lock_index_for_read(published.out_root);
         prepared.persist_published_cache(published, cache);
+    }
+    for (const auto& file : fs::directory_iterator(cache)) {
+        if (file.path().extension() != ".sqlite") continue;
+        const auto bytes = read_file(file.path());
+        expect(bytes.find(private_query) == std::string::npos &&
+               bytes.find(to_lower(private_query)) == std::string::npos &&
+               bytes.find("query_text") == std::string::npos && bytes.find("query_stems") == std::string::npos,
+               "query text and normalization tables cannot enter a transferred cache");
     }
     const auto transferred = prepared.preparation_metrics();
     expect(transferred.at("cache_status") == "persisted" && transferred.at("index_builds") == 1 &&
@@ -653,6 +712,7 @@ int main(int argc, char** argv) {
     try {
         if (argc != 2) return 2;
         shin::context::check(argv[1]);
+        shin::context::natural_language_checks(argv[1]);
         shin::context::resident_checks(argv[1]);
         shin::context::snapshot_checks(argv[1]);
         shin::context::context_checks(argv[1]);

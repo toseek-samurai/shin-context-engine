@@ -1,0 +1,98 @@
+{
+  "schemaVersion": "shin.mcp-activity-contract.v1",
+  "document": "mcp-activity-v1",
+  "status": "accepted",
+  "availability": "unreleased-source",
+  "summary": "Bounded local observation of MCP tool invocations, independently of service execution and availability.",
+  "scope": {
+    "included": "Parsed JSON-RPC tools/call requests reaching the adapter filters, including shin_projects, shin_help, unknown tool names, SDK/argument refusals and adapter-capacity refusals.",
+    "excluded": "Protocol initialize, tools/list, notifications and malformed frames that cannot be identified as a tool invocation. CLI and service monitoring traffic is not MCP traffic. Older adapters without this recorder do not contribute; reconnect MCP clients after upgrading the kit.",
+    "unit": "One opaque call_id per invocation. Initial and terminal updates merge into the same row. Duplicate JSON-RPC IDs still represent separate attempts; they do not overwrite an outstanding invocation.",
+    "execution": "service_request_id joins a call to an optional service observation. Its presence does not prove execution or delivery. Never add MCP attempts to service execution counts.",
+    "backfill": false
+  },
+  "storage": {
+    "directory": "<recorded-data-home>/mcp-history",
+    "database": "telemetry.sqlite",
+    "applicationId": 1397246285,
+    "schemaVersion": 1,
+    "retentionDays": 7,
+    "callRowLimit": 10000,
+    "lossReportRowLimit": 10000,
+    "databaseBytes": 33554432,
+    "queueUpdatesPerProcess": 256,
+    "ownership": "Private owned directory and regular single-link database; no symlinks, unsafe sidecars or replacement-file reacquisition. A short process-shared writer lease serializes SQLite access. No existing service history is migrated or replaced.",
+    "scheduling": "Background batches; protocol and render threads never open SQLite or wait for the writer lease. Idle adapter writers sleep. The service copies a cached installation-wide summary refreshed in the background.",
+    "failure": "Telemetry is best effort and cannot refuse project access. Temporary contention/capacity/supported write failures can recover; unsafe files, corruption and unsupported schemas remain refused. Unknown commits are not replayed. Loss counters report updates, not a known number of missing invocations.",
+    "coverage": "coverage_start_ms records journal creation, not seven days of guaranteed collection. Age and row pruning, future observations, queue losses, unconfirmed updates and unfinished calls remain distinguishable. There is no reconstruction of earlier traffic."
+  },
+  "semantics": {
+    "schema": "shin.mcp-activity.v1",
+    "attempts": "Retained calls within the observed seven-day window, each counted once.",
+    "context_calls": "query + inspect + read + resume attempts, including refusals; not a relevance or task-success score.",
+    "outcomes": "success or tool-error means the handler prepared a result; rpc-error means the SDK or adapter refused it. unfinished means no terminal observation, and can include a current request, interruption or process exit.",
+    "written": "The local stdout write completed; this does not acknowledge client receipt, consumption by a model or task success.",
+    "attribution": "Session IDs are salted with the local data-home binding and hashed. Model labels require an explicitly supplied session and valid model ID. Caller-reported metadata is not verified identity or authority.",
+    "diagnostic": "An optional boolean on query/inspect/read labels explicit probes. All other traffic stays unclassified. No automatic model guesses, call quotas or assumed agent-only totals."
+  },
+  "privacy": "Explicit metadata projection only: opaque IDs, allowlisted methods/outcomes, safe error codes, caller-reported model labels, timestamps, durations, counts and opaque file/version read labels. No query text, source bodies, raw session/JSON-RPC IDs, absolute project paths, arbitrary tool names or error messages. Nothing is uploaded.",
+  "readiness": "MCP status remains nonwaiting. Native reader-preparing is exposed as shin.mcp-readiness.v1 with ok=true, state=preparing, local_ready=false and retrieval_ready=false, without an error, snapshot or source evidence. It is a successful status observation, not successful retrieval. Submit the useful query once; it owns its bounded wait.",
+  "versionErrors": "A project client may explain an exact-request-ID, valid local-RPC error envelope explicitly refusing service-version-mismatch across kit versions. Foreign successes, malformed or mixed envelopes and installer control responses retain exact-version fences. Recovery asks the operator to reconnect the client with the installed kit.",
+  "verification": [
+    "observer/tests/local_mcp_activity_test.cpp",
+    "observer/tests/local_rpc_test.cpp",
+    "observer/tests/local_mcp_test.py",
+    "observer/tray/request_timing_test.cpp",
+    "observer/tray/layout_test.inc",
+    "observer/tui/view_test.cpp",
+    "observer/tests/local_session_analysis_test.cpp"
+  ],
+  "sessions": {
+    "grouping": "Real hashed host session; optional hashed caller task key, explicit intent and parent request link. Episodes use registered explicit host turn/compaction boundaries and timestamps, never inferred topics or idle gaps.",
+    "bounds": {
+      "sessions": 8,
+      "timelinePerSession": 8,
+      "modelLabelsPerSession": 4,
+      "episodesPerSession": 3
+    },
+    "contextTools": [
+      "query",
+      "inspect",
+      "read",
+      "resume"
+    ],
+    "taskNotes": "checkpoint/resume also appear as invocation counts; note bodies remain outside this numerical journal.",
+    "generation": "Optional hashed generation ID links returned snapshots without treating a retrieval as evidence of consumption.",
+    "analysis": {
+      "schema": "shin.session-analysis.v1",
+      "execution": "The installation summary reader computes analysis in the background from all retained calls for the latest eight sessions. Adapter writers do not parse host history for this analysis. Only bounded numerical summaries are transported; no analysis sample cap discards retained calls.",
+      "readIdentity": "A complete successful native file read emits installation/project-salted opaque file and content-version IDs after selected-source verification. The adapter projects these for shin_read only. A generation change with unchanged file bytes retains its version ID. No path, body or raw content hash is stored in the MCP journal.",
+      "readCohort": "Successful non-diagnostic shin_read calls with a completed local stdout write. Failed, unfinished, unwritten and explicit probe calls are excluded from read totals. query fragments, inspections, CLI, shell and IDE reads are not file-read observations.",
+      "readCounts": "reads counts observed calls; unknown_reads counts eligible calls lacking a complete identity. files/versions count distinct project-scoped known identities. same_version_repeats is identified reads minus distinct file versions; additional_versions is distinct versions minus files. Counts can be lower bounds when observations or labels are missing, and are not waste or task-success scores.",
+      "episodes": "A turn-start or explicit host compaction starts an interval, closed by the next explicit turn/compaction/end/abort boundary. Events deduplicate by opaque event ID. Tied boundary timestamps and conflicting turn identities remain unassigned. Calls exactly on a boundary are unassigned because millisecond timestamps do not establish order. A compaction is not an inferred topic change.",
+      "horizon": "The open interval ends at the registered host collector timestamp, not the current wall clock: later calls are not assigned to a guessed continuing task. Only the latest three eligible intervals are returned, with episodes_truncated. Source is the recorded data home usage/state.json; a separately imported UI token file does not change episode authority.",
+      "episodeReads": "Within an interval, same_version_repeats counts repeated observed versions; previously_seen_versions counts unique interval versions already observed earlier in this same retained session, scoped by project and file. This does not establish model forgetting or that a repetition was unnecessary.",
+      "coverage": "interval_complete requires a closed unambiguous interval inside the retained MCP window, no reported update/commit/future/unfinished gaps, current complete Codex markers, and known read identities for its read cohort. Unknown or stale events leave read counts available. Model labels in host history never attribute individual calls. Counts are observations, not proof of host receipt, context consumption, recovery completion or task success.",
+      "migration": "The unreleased v1 journal expands atomically with two optional default-empty columns under the existing writer lease. Existing call IDs, outcomes, timestamps and rows are preserved, old read labels stay unknown, and reopen is idempotent. Released older kits do not record this journal and ignore it on rollback; no history contraction or deletion is introduced.",
+      "budgets": "Existing 7-day, 10000-row, 32-MiB, 256-update queue, eight-session and 60-KiB status projection ceilings are unchanged. Per-session analysis scans retained rows in a background worker and exports at most three small episode summaries. Status projection may omit session rows with its existing truncation report."
+    }
+  },
+  "admission": {
+    "bounds": {
+      "executionWorkers": 2,
+      "waitingRequests": 4,
+      "connections": 8,
+      "warmExecutionWaitMs": 500,
+      "coldPreparationWaitMs": 5000,
+      "mcpQueryPreparationWaitMs": 20000
+    },
+    "ordering": "Requests for one project enter a bounded FIFO admission wait before first execution. Waiting does not consume an execution slot. Ready/finished reader events wake pending admission immediately; periodic retries are only a fallback.",
+    "deadlines": "Warm contention gets at most 500 ms. Native cold preparation defaults to 5 seconds; query-only readiness_wait_ms may select 5000..20000 ms, and MCP queries use 20000. Status remains immediate. All phases retain the original total 30-second service and 35-second transport ceilings. A ready-but-occupied query gets at most 500 ms; retries and peer cancellation never extend a deadline.",
+    "cancellation": "Cancelling an unexecuted waiter releases only its own slot. Cancellation or loss of an active reader cannot replay that request or transfer its cancellation to another waiting caller. Pending callers recheck lifecycle, authority and freshness before first dispatch.",
+    "diagnostic": "shin.local-service-admission.v1 is a strict bounded nine-field metadata projection: reason, execution_started=false, worker/waiter counts and ceilings, cold/warm wait ceilings. Reasons are reader-preparing, project-executing, execution-capacity or waiting-capacity. Arbitrary paths, extra keys and inconsistent counts are refused. Admission metadata is not project validation evidence.",
+    "recovery": "Nonwaiting MCP status also returns promptly during contention. Busy is admission pressure, not proof of damaged data or failed quality gates. Follow with at most one useful same-project query when current calls finish; no polling, automatic replay or index repair.",
+    "adapter": "The MCP adapter admits at most eight total requests and two concurrent source/context operations. Nonwaiting shin_status, local shin_projects and static shin_help share the bounded control allowance with protocol requests, so source traffic cannot alone block discovery or help. Unknown/malformed tool names remain in the source allowance. Typed cancellation and duplicate-ID fences remain unchanged.",
+    "initialBinding": "An explicit service uses its already pinned root/workspace binding for the first watch admission, before that watch has returned its workspace identity. A queued startup request cannot create an unbound reader from the initial qualification result. Known mismatched identities remain refused.",
+    "progress": "MCP query progress uses a bounded client _meta.progressToken, only when supplied, with elapsed seconds every two seconds and no total or invented percentage. Notifications describe preparation or retrieval, not actual publisher phases or readiness proof. One tool call produces one native request; no adapter polling/replay. Cancellation ends the wait. Clients decide how notifications are displayed."
+  }
+}

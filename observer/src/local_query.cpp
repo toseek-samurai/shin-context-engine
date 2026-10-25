@@ -1,4 +1,5 @@
 #include "shin/observer/local_query.h"
+#include "local_sessions.h"
 #include "shin/observer/local_changes.h"
 #include "context_internal.h"
 #include "generated_io.h"
@@ -211,6 +212,15 @@ Json LocalQuerySession::description() const {
 Json LocalQuerySession::execute(const LocalProjectRequest& request) {
     auto& state = *impl_;
     if (request.root != state.config.root) throw Error("service-project-denied", "Resident project binding differs.");
+    if (request.command == "checkpoint" || request.command == "resume") {
+        state.guard();
+        auto result = state.status;
+        result.erase("readiness"); result["readiness_assessed"] = false;
+        result.update(local_session_operation(state.options,state.workspace,request,[&] { state.guard(); }));
+        result["command"] = request.command;
+        result["freshness_contract"] = {{"mode","explicit-session-worktree-assessment"},{"whole_project_checked_during_request",true}};
+        return result;
+    }
     const auto started = core::SteadyClock::now();
     const auto generations = core::generation_execution_count();
     const auto publication = core::lock_index_for_read(state.config.out_dir);
@@ -351,6 +361,15 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
     result["query_persisted"] = false;
     result["work_performed"] = {{"full_generations", core::generation_execution_count() - generations}, {"resident_hit", true},
         {"selected_files", paths.size()}, {"selected_source_bytes", bytes}, {"request_sequence", ++state.requests}};
+    // Numerical read identity comes only from a successfully verified source.
+    // Salt the file with this installation and project; unrelated generation
+    // changes must not turn unchanged bytes into a new file version.
+    if (request.command == "read" && !request.path.empty() && paths.size() == 1 && paths.contains(request.path) &&
+        result.value("native_read_complete", Json()) == true) {
+        const auto file = digest("shin-read-file-v1:" + request.home.string() + ":" + state.config.root.string() + ":" + request.path);
+        result["work_performed"]["read_identity"] = {{"file_id",file},
+            {"version_id",digest(file + ":" + state.sources.at(request.path).at("content_hash").get<std::string>())}};
+    }
     result["phase_ms"] = {{"admission", admission_ms}, {"retrieval", retrieval_ms},
         {"documents", document_ms}, {"source", source_ms}, {"source_collection", collection_ms},
         {"final_verification", core::elapsed_ms_since(verification_started)}};

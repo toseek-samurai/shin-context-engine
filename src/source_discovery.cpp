@@ -6,6 +6,7 @@
 #include "source_syntax.h"
 #include "source_cache.h"
 #include "source_context.h"
+#include "source_query_terms.h"
 #include "generation_admission.h"
 
 #include <sqlite3.h>
@@ -133,7 +134,7 @@ Json source_cache_identity(const RuntimeOptions& options) {
 Json source_cache_binding(const RuntimeOptions& options, const std::string& profile_hash,
                           const std::string& snapshot_id) {
     return {{"identity", source_cache_identity(options)}, {"profile_hash", profile_hash}, {"snapshot", snapshot_id},
-            {"format", "shin.source-cache.v2"}, {"engine", kProductVersion}, {"sqlite", sqlite3_libversion()}};
+            {"format", "shin.source-cache.v3"}, {"engine", kProductVersion}, {"sqlite", sqlite3_libversion()}};
 }
 
 std::map<std::string, std::string> source_bindings(const RetrievalSession& session) {
@@ -165,6 +166,12 @@ void SourceDiscoveryIndex::Impl::configure(sqlite3* db) {
     sqlite3_progress_handler(db, 1000, [](void* pointer) {
         return SteadyClock::now() >= *static_cast<const SteadyClock::time_point*>(pointer) ? 1 : 0;
     }, &deadline);
+    // Query vocabulary must never enter a serialized/published source cache,
+    // including a prepared generation transferred after a validation query.
+    execute(db, "CREATE VIRTUAL TABLE temp.query_text USING fts5(body, tokenize='unicode61');"
+                "CREATE VIRTUAL TABLE temp.query_vocab USING fts5vocab(query_text, 'row');"
+                "CREATE VIRTUAL TABLE temp.query_stems USING fts5(body, tokenize='porter unicode61');"
+                "CREATE VIRTUAL TABLE temp.stem_vocab USING fts5vocab(query_stems, 'instance');");
 }
 
 bool SourceDiscoveryIndex::Impl::restore(const std::string& bytes, const Json& binding, const Json& schema,
@@ -291,9 +298,7 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
     require(opened == SQLITE_OK, "source-discovery-sql");
     configure(raw);
     execute(raw, "PRAGMA page_size=4096; PRAGMA max_page_count=65536;"
-                 "CREATE VIRTUAL TABLE chunks USING fts5(body, tokenize='unicode61');"
-                 "CREATE VIRTUAL TABLE query_text USING fts5(body, tokenize='unicode61');"
-                 "CREATE VIRTUAL TABLE query_vocab USING fts5vocab(query_text, 'row');"
+                 "CREATE VIRTUAL TABLE chunks USING fts5(body, tokenize='porter unicode61');"
                  "CREATE TABLE cache_meta(id INTEGER PRIMARY KEY, payload TEXT NOT NULL);");
     std::unique_ptr<SourceCache> cache;
     sources = source_bindings(session);
@@ -498,14 +503,37 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         bind_text(input, 1, query);
         require(sqlite3_step(input.get()) == SQLITE_DONE, "source-discovery-sql");
         auto vocabulary = prepare(raw, "SELECT term FROM query_vocab ORDER BY term");
-        std::string expression;
-        std::size_t terms = 0;
+        std::vector<std::string> tokens;
         int rc;
         while ((rc = sqlite3_step(vocabulary.get())) == SQLITE_ROW) {
-            require(++terms <= 64, "source-discovery-token-limit");
+            require(tokens.size() < 64, "source-discovery-token-limit");
+            tokens.push_back(column_text(vocabulary.get(), 0));
+        }
+        require(rc == SQLITE_DONE, "source-discovery-sql");
+        const auto terms = source_query_terms(tokens);
+        const auto distinct_paths_first = source_query_distinct_paths_first(tokens);
+        require(terms.size() <= 256, "source-discovery-token-limit");
+        // Several spellings may stem to one word (cancelled / cancelling).
+        // FTS counts repeated OR phrases repeatedly; keep one representative
+        // per stem so inflections cannot multiply that concept's BM25 weight.
+        execute(raw, "DELETE FROM query_stems;");
+        auto stem_input = prepare(raw, "INSERT INTO query_stems(rowid,body) VALUES (?,?)");
+        for (std::size_t i = 0; i < terms.size(); ++i) {
+            require(sqlite3_bind_int64(stem_input.get(), 1, static_cast<sqlite3_int64>(i) + 1) == SQLITE_OK,
+                    "source-discovery-sql");
+            bind_text(stem_input, 2, terms[i]);
+            require(sqlite3_step(stem_input.get()) == SQLITE_DONE && sqlite3_reset(stem_input.get()) == SQLITE_OK,
+                    "source-discovery-sql");
+        }
+        auto stems = prepare(raw, "SELECT min(doc) FROM stem_vocab GROUP BY term ORDER BY term");
+        std::string expression;
+        while ((rc = sqlite3_step(stems.get())) == SQLITE_ROW) {
+            const auto index = sqlite3_column_int64(stems.get(), 0);
+            require(index > 0 && static_cast<std::size_t>(index) <= terms.size(), "source-discovery-sql");
+            const auto& term = terms[static_cast<std::size_t>(index) - 1];
             if (!expression.empty()) expression += " OR ";
             expression += '"';
-            for (const auto c : column_text(vocabulary.get(), 0)) {
+            for (const auto c : term) {
                 expression += c;
                 if (c == '"') expression += c;
             }
@@ -513,7 +541,23 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         }
         require(rc == SQLITE_DONE, "source-discovery-sql");
         Json candidates = Json::array();
+        Json deferred = Json::array();
         std::map<std::string, int> per_path;
+        const auto append_candidate = [&](Json candidate) {
+            if (at_snapshot || cache_status == "restored") {
+                const auto content = read_bound_source(options.root, candidate.at("path"),
+                                                       candidate.at("source_content_hash"), kFileBytes);
+                const auto begin = candidate.at("byte_start").get<std::size_t>();
+                const auto end = candidate.at("byte_end").get<std::size_t>();
+                const auto offsets = source_line_offsets(content);
+                require(end <= content.size() && fnv1a64(content.substr(begin, end - begin)) == candidate.at("span_hash").get<std::string>() &&
+                        static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), begin) - offsets.begin()) == candidate.at("start_line").get<std::size_t>() &&
+                        static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) == candidate.at("end_line").get<std::size_t>() &&
+                        !source_range_secret(content).found, "source-cache-source-mismatch");
+            }
+            candidate["rank"] = candidates.size() + 1;
+            candidates.push_back(std::move(candidate));
+        };
         if (!expression.empty()) {
             auto search = prepare(raw, "SELECT rowid,bm25(chunks) AS score FROM chunks WHERE chunks MATCH ? ORDER BY score,rowid");
             bind_text(search, 1, expression);
@@ -524,26 +568,21 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
                         "source-discovery-row-binding");
                 auto candidate = Json::parse(column_text(record.get(), 0));
                 require(sqlite3_reset(record.get()) == SQLITE_OK, "source-discovery-sql");
-                if (per_path[candidate.at("path").get<std::string>()]++ >= 2) continue;
-                if (at_snapshot || cache_status == "restored") {
-                    const auto content = read_bound_source(options.root, candidate.at("path"),
-                                                           candidate.at("source_content_hash"), kFileBytes);
-                    const auto begin = candidate.at("byte_start").get<std::size_t>();
-                    const auto end = candidate.at("byte_end").get<std::size_t>();
-                    const auto offsets = source_line_offsets(content);
-                    require(end <= content.size() && fnv1a64(content.substr(begin, end - begin)) == candidate.at("span_hash").get<std::string>() &&
-                            static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), begin) - offsets.begin()) == candidate.at("start_line").get<std::size_t>() &&
-                            static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) == candidate.at("end_line").get<std::size_t>() &&
-                            !source_range_secret(content).found, "source-cache-source-mismatch");
-                }
-                candidate["rank"] = candidates.size() + 1;
+                const auto occurrence = ++per_path[candidate.at("path").get<std::string>()];
+                if (occurrence > 2) continue;
                 candidate["bm25"] = sqlite3_column_double(search.get(), 1);
-                candidates.push_back(std::move(candidate));
+                if (distinct_paths_first && occurrence == 2) deferred.push_back(std::move(candidate));
+                else append_candidate(std::move(candidate));
                 if (candidates.size() == 8) break;
             }
             require(rc == SQLITE_ROW || rc == SQLITE_DONE, "source-discovery-sql");
+            for (auto& candidate : deferred) {
+                if (candidates.size() == 8) break;
+                append_candidate(std::move(candidate));
+            }
         }
         results.push_back({{"query", query}, {"candidates", candidates}, {"query_ms", elapsed_ms_since(query_started)},
+                           {"distinct_paths_first", distinct_paths_first},
                            {"answer_complete", false}, {"source_inspection_required", true}});
     }
     const auto collection_started = SteadyClock::now();
@@ -562,7 +601,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
     Json result = {{"schema_version", "shin.source-candidates.v1"}, {"ok", true},
         {"profile", options.profile.id}, {"root", options.root.generic_string()},
         {"snapshot_id", freshness.snapshot_id}, {"index_freshness", index_freshness_json(freshness)},
-        {"policy", "source-only-structural-raw-plus-camel-parts-bm25-unicode61-v2"},
+        {"policy", "source-software-terms-en-ru-porter-bm25-diversity-v4"},
         {"admission", at_snapshot ? "immutable-publication-and-selected-source-hashes" :
             "verified-publication-and-uncached-source-hashes-not-output-regeneration"},
         {"sqlite_version", sqlite3_libversion()}, {"model_runs", 0}, {"default_brief_changed", false},

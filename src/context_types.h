@@ -54,8 +54,7 @@ using Json = nlohmann::json;
 
 inline constexpr std::string_view kProductVersion = SHIN_VERSION;
 inline const fs::path kGeneratedDir = fs::path("docs") / "kb" / "generated";
-inline const std::string kLegacyGeneratorVersion = "shin-generator-v21-cpp-syntax";
-inline const std::string kGeneratorVersion = "shin-generator-v22-compact-lexical";
+inline const std::string kGeneratorVersion = "shin-generator-v23-unicode-lexical";
 inline constexpr std::size_t kMaxSectionIndexedTextBytes = 16384;
 inline constexpr std::size_t kMaxDocumentIndexedTextBytes = 131072;
 inline const std::string kMatchingMode = "field-aware-v1";
@@ -563,7 +562,6 @@ using TermPostingMap = std::unordered_map<std::string, TermPosting>;
 
 struct RenderedTermIndex {
     std::string postings_jsonl;
-    std::string offsets_tsv;
     int term_count = 0;
 };
 
@@ -928,11 +926,6 @@ struct ContextIndexResult {
     int matched_sections = 0;
     int matched_facts = 0;
     RetrievalDiagnostics diagnostics;
-};
-
-struct TermOffset {
-    long long offset = 0;
-    long long bytes = 0;
 };
 
 struct RowOffset {

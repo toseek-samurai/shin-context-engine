@@ -4,9 +4,21 @@
   "status": "active-contract",
   "purpose": "Keep candidate admission, field scoring and diagnostic evidence consistent while recovering document-level context across section boundaries.",
   "matching": {
-    "normalization": "Unicode-aware normalized terms with stable token boundaries.",
+    "normalization": "Core uses locale-independent Unicode NFC and full case folding from pinned utf8proc 2.12.0. Letters and numbers are searchable across scripts; combining marks remain attached to a preceding word. ASCII identifier boundaries and scoring are preserved. Invalid UTF-8 bytes become separators, never joined letters.",
     "exact": "Exact terms and identifiers retain higher evidence than broad partial matches.",
-    "prefix": "Prefix completion is bounded and used only where the query form permits it."
+    "prefix": "Prefix completion is bounded, counts at least four Unicode letters/numbers rather than bytes, and is used only where the query form permits it."
+  },
+  "nativeSourceQuery": {
+    "policy": "source-software-terms-en-ru-porter-bm25-diversity-v4",
+    "status": "unreleased",
+    "scope": "Native source_context and explicit source discovery. These query hints do not redefine Core query-group coverage, evidence authority or source permissions; Core Unicode normalization is specified separately.",
+    "terms": "Tokenize the original query with unicode61. Remove EN/RU question stop words only from multi-token queries. Keep original meaningful terms; add bounded English hints for reviewed Russian software concepts and inflections from src/source_query_terms.cpp. No repository names, source paths, known-answer symbols, external translation service or model are part of this lexicon.",
+    "matching": "The source index retains raw source text and CamelCase components under the built-in Porter/unicode61 tokenizer. Porter normalizes English forms; it is not a Russian stemmer. Deduplicate query terms by their actual indexed stem before OR matching, so multiple inflections do not multiply BM25 weight. Keep one original term as each stem's representative; do not stem an already-stemmed string again.",
+    "bounds": "At most 4096 query bytes, 64 original vocabulary terms and 256 expanded terms. Existing source/chunk/time, eight-result, two-per-file and source-view byte limits remain unchanged. Quoted tokens cannot introduce FTS operators.",
+    "cache": "The derived source cache uses shin.source-cache.v3; older tokenizer/projection caches rebuild through normal preparation. Temporary vocabulary tables are excluded from cache serialization, including candidate-to-publication transfer after a query. Query calls do not persist cache changes. Cleanup recognizes v2 and v3 only with their corresponding exact table set and existing project/index ownership checks; unknown or mismatched contents remain preserved.",
+    "limits": "This finite software vocabulary is not general sentence translation or semantic search. Unknown words remain literal, ambiguous concepts may retrieve several owners, and valid fresh locators do not prove relevance or answer completeness. Source code, tests and contracts compete without hard-coded path boosts.",
+    "verification": "tests/core/source_discovery_test.cpp covers EN/RU descriptions, literal Cyrillic, exact identifiers, unknown/stop-word negatives, equal inflection weights, broad-query file diversity and spare-span filling, cold/restored parity, cache-format replacement, transfer query privacy, source identity and redaction. Compare frozen native MCP cohorts separately from hermetic correctness gates.",
+    "selection": "Queries with at least four distinct original non-stop vocabulary terms first select the best BM25 span from different files. Second spans fill spare capacity in BM25 order. Short queries retain ordinary span order. Translation expansions do not activate this policy. The result reports distinct_paths_first; this is a lexical heuristic, not inferred task intent."
   },
   "compoundBriefRetention": {
     "activation": "During fallback for queries with at least eight term groups, a bounded row matching every query group retains priority over partial rows when candidates compete for retention or selection. Matches using a Markdown indexed_text body keep ordinary scoring, so incidental prose cannot suppress focused headings.",
@@ -20,7 +32,7 @@
   },
   "sectionPublication": {
     "implementation": "src/extraction.cpp: populate_markdown_indexed_text",
-    "registeredFormats": "Explicitly enrolled .mdc documents use the existing Markdown pipeline, case-insensitively, with original paths and ranges. Profiles own enrollment; hidden directories are not discovered implicitly. globs and alwaysApply remain client metadata, not executed policy or authority. Rebuild earlier .mdc publications explicitly; generator-v20 format is unchanged.",
+    "registeredFormats": "Explicitly enrolled .mdc documents use the existing Markdown pipeline, case-insensitively, with original paths and ranges. Profiles own enrollment; hidden directories are not discovered implicitly. globs and alwaysApply remain client metadata, not executed policy or authority. Earlier publications require rebuilding with the current generator; evidence row shapes remain unchanged.",
     "shape": "Existing Markdown section, chunk and document rows retain their original ranges. indexed_text is the normalized, redacted body, separate from the compact preview; no new paragraph rows are introduced.",
     "matching": "Nonempty indexed_text replaces preview in the shared publication/scoring projection at weight 16. Empty fields retain preview matching. Selection policy is documented separately in documentCandidates.",
     "maximumRowBytes": 16384,
@@ -66,12 +78,12 @@
   },
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v22-compact-lexical",
+    "generator": "shin-generator-v23-unicode-lexical",
     "format": "shin.lexical.v1",
-    "legacyReader": "shin-generator-v21-cpp-syntax only; no automatic migration",
     "evidenceRowsChanged": false,
     "installed": false,
-    "formatImplementation": "src/generation.cpp"
+    "formatImplementation": "src/generation.cpp",
+    "compatibility": "current Unicode generator only; rebuild previous indexes"
   },
   "prefixCompletion": {
     "activation": "Disabled for ordinary public query construction. Query length never changes exact lexical terms into prefix matches.",
@@ -100,5 +112,20 @@
     "projection": "src/extraction.cpp: query_fact_row projects decisions and typed references into the same fields as generated-row decoding.",
     "invariant": "On the same corpus and row threshold, indexed Context and source-scan Context return identical scored sections/facts, source ranges, provenance, match groups and match counts.",
     "boundary": "This invariant does not equate Brief owner/planner routing with source-scan Brief or legacy raw-line source-scan Search. Those modes are explicit and never an implicit fallback from a corrupt or stale snapshot."
+  },
+  "unicodePublication": {
+    "status": "unreleased",
+    "generator": "shin-generator-v23-unicode-lexical",
+    "format": "shin.lexical.v1",
+    "compatibility": "One current reader/writer. v21/v22 retrieval is rejected; there is no legacy JSONL/TSV term reader or writer. Raw prior manifest integrity/ownership may be inspected only to authorize rebuilding from current approved sources.",
+    "rebuild": "The normal granted or bootstrap publisher detects generator drift, qualifies a fresh candidate and atomically publishes it. No old lexical data conversion, manual index repair, grant takeover or history deletion. Failed preparation preserves the current publication and reports the failure. Standalone Core requires an explicit build.",
+    "coverage": "Request terms, profile aliases, generated keys, full-text matching and disk/resident readers share normalization. Original paths, source bytes, hashes, line ranges and provenance remain unchanged. Unicode support does not translate queries, strip accents, equate visually confusable scripts or segment arbitrary natural-language sentences.",
+    "limits": "Existing 128-byte lexical keys, candidate ceilings, output limits and source boundaries remain in force. Non-ASCII single-letter terms can be meaningful; prefix completion still requires four letters/numbers.",
+    "verification": [
+      "tests/core/qualified_query_test.cpp",
+      "tests/core/retrieval_scoring_test.cpp",
+      "tests/core/compact_terms_test.cpp",
+      "tests/integration/run_index_fault_tests.sh"
+    ]
   }
 }

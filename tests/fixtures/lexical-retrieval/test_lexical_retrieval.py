@@ -12,7 +12,7 @@ TOOL = str(Path(sys.argv.pop(1)).resolve())
 
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-from compact_lexical import term_postings, legacy_fixture
+from compact_lexical import term_postings
 
 
 class LexicalRetrievalTests(unittest.TestCase):
@@ -477,18 +477,15 @@ class LexicalRetrievalTests(unittest.TestCase):
             # disable document planning nor borrow coverage from their siblings.
             self.document("noise.jsonl", "\n".join(json.dumps({"id": str(i), "type": "fact",
                 "title": "alpha independent record"}) for i in range(count)) + "\n")
-            for legacy in (False, True):
-                with self.subTest(rows=count, legacy=legacy):
-                    self.invoke("build")
-                    if legacy:
-                        legacy_fixture(self.out / "docs/kb/generated")
-                    result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
-                    self.assertEqual(result["ranked_paths"], baseline["ranked_paths"])
-                    self.assertTrue(result["query_diagnostics"]["query_planner_used"])
-                    self.assertLessEqual(result["query_diagnostics"]["candidate_rows"], 20000)
-                    self.assertLessEqual(result["evidence_budget"]["returned_records"], 8)
-                    for group in result["query_coverage"]["groups"]:
-                        self.assertIn("docs/policy.json", group["selected_document_paths"])
+            with self.subTest(rows=count):
+                self.invoke("build")
+                result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+                self.assertEqual(result["ranked_paths"], baseline["ranked_paths"])
+                self.assertTrue(result["query_diagnostics"]["query_planner_used"])
+                self.assertLessEqual(result["query_diagnostics"]["candidate_rows"], 20000)
+                self.assertLessEqual(result["evidence_budget"]["returned_records"], 8)
+                for group in result["query_coverage"]["groups"]:
+                    self.assertIn("docs/policy.json", group["selected_document_paths"])
 
     def test_saturated_strict_rows_do_not_hide_split_contract(self):
         words = "alpha beta gamma delta epsilon zeta eta theta iota".split()

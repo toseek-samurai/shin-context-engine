@@ -100,8 +100,10 @@ compiled into the kit and need no downloads.
 Click the Shin icon in the menu bar. Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
-For the Sand terminal dashboard with line charts, run `shin-ce stats`. Use Tab or 1–5 for
-Overview, Projects, Timing, Storage and Models; Enter opens project details,
+For the Sand terminal dashboard with line charts, run `shin-ce stats`.
+Use Tab or 1–5 for Overview, Projects, Timing, Storage and Models. Unreleased
+source adds **Sessions** as view 6, showing MCP activity and explicit host context
+markers when available. Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
 service. Model counters are collected automatically
 for enrolled projects and shown by default in both Monitor and the TUI. The first
@@ -271,6 +273,9 @@ include readable stages in a log. No desktop window opens for a terminal command
 Restart Monitor after completion. Restart persistent MCP connections in your coding
 agent as well: already-running adapters retain the old version and cannot query
 the new service until relaunched. Client configuration paths stay the same.
+The unreleased source diagnoses this as `service-version-mismatch`, includes client
+and service versions and asks for client reconnection. Successful responses still
+require matching versions; the current service can keep serving other clients.
 
 An interrupted operation is resumed by repeating the same command from the same
 extracted kit. Failed activation restores the previous payload and service; the
@@ -278,6 +283,14 @@ error reports whether rollback completed or further recovery is required. One
 previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
+
+The dev.43 candidate uses Core dev.7 and the Unicode v23 index format. It
+rebuilds previous derived indexes under their existing project authority; no
+old retrieval reader or term conversion is retained. During rollback to an
+older kit, a private bootstrap index that the old CLI cannot read is atomically
+retired through the owned temporary-publication lifecycle before the old CLI
+builds it again. The installation journal retains pending recovery throughout.
+Bindings, profiles, sources, grants, identity and history are not deleted.
 
 Starting with the dev.20 source candidate, failed activation retains bounded
 enrollment error codes and opaque project hashes in `error.diagnostic` and
@@ -287,7 +300,7 @@ may have temporarily blocked projects: `last_rollback.service_restored` then sta
 separate from `all_projects_ready` and `pending_projects`. These fields describe
 the rollback observation, not current readiness; use `service-status` and project
 `status` for the current state. Identity, integrity and registry failures still
-leave recovery incomplete. The updater never repairs an index to clear a refusal.
+leave recovery incomplete. The updater never changes project policy or ownership to clear a refusal.
 
 The dev.33 source candidate also handles a registered project that the previous
 service could not admit after rollback. During a qualified Core patch transition,

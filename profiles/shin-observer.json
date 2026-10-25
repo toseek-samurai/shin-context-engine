@@ -10,6 +10,8 @@
     "observer/CMakeLists.txt",
     "observer/VERSION",
     "profiles/shin-observer.json",
+    "docs/machine/mcp-activity-v1.json",
+    "docs/machine/local-session-recovery-v1.json",
     "docs/machine/shin-component-profiles-v1.json",
     "integrations/shin-development/shin-integration-bundle-v1.json"
   ],
@@ -22,6 +24,8 @@
     "profiles/shin-observer.json",
     "integrations/shin-development/shin-integration-bundle-v1.json",
     "docs/machine/shin-local-observer-v1.json",
+    "docs/machine/mcp-activity-v1.json",
+    "docs/machine/local-session-recovery-v1.json",
     "docs/machine/shin-observer-delivery-v1.json",
     "docs/machine/shin-observer-offline-collaboration-v1.json",
     "docs/machine/shin-observer-outbox-v1.json",

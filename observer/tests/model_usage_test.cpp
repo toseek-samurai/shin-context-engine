@@ -69,6 +69,12 @@ void source_fixture(std::int64_t now) {
     cfg["sources"]["hermes"]["database"] = (home / "hermes.sqlite").string();
     const auto complete = collect_model_usage(cfg,now);
     const auto summary = summarize_model_usage(complete,now);
+    auto malformed_events = complete;
+    malformed_events["context_events"] = {{"schema_version","shin.context-events.v1"},{"source","codex"},
+        {"complete",true},{"omitted",0},{"events",Json::array({{{"event_id","raw-session"}}})}};
+    const auto isolated = summarize_model_usage(malformed_events,now);
+    if (isolated.at("context_events").at("status") != "invalid" || isolated.at("projects") != summary.at("projects"))
+        throw std::runtime_error("context-metadata-must-not-invalidate-token-snapshot");
     const auto& group = summary.at("projects").at(0);
     if (!summary.at("complete").get<bool>() || complete.at("buckets").size() != 3 ||
         group.at("totals").at("input_tokens") != 210 || group.at("totals").at("records") != 3 ||

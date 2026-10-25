@@ -99,6 +99,54 @@ class RegisteredUsage(unittest.TestCase):
             if child.poll() is None:child.kill();child.wait(timeout=5)
             os.close(master);os.close(slave)
 
+    def test_explicit_host_events_are_private_bounded_and_separate_from_token_snapshot(self):
+        root=self.project('marked',100)
+        log=self.codex/'sessions/marked.jsonl'
+        now=datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')
+        with log.open('a') as stream:
+            events=[{'type':'event_msg','payload':{'type':'task_started','turn_id':'raw-turn-private'}},
+                    {'type':'turn_context','payload':{'model':'provider/model-one','turn_id':'raw-turn-private'}},
+                    {'type':'compacted','payload':{'window_id':'raw-window-private','message':'PRIVATE SUMMARY',
+                                                'replacement_history':['PRIVATE HISTORY']}},
+                    {'type':'event_msg','payload':{'type':'task_complete','last_agent_message':'PRIVATE ANSWER'}}]
+            for event in events: stream.write(json.dumps({**event,'timestamp':now})+'\n')
+        self.ce('project-add',root);self.stop()
+        state=self.collect()
+        self.assertNotIn('context_events',state['snapshot'])  # Older kits can still read this exact token snapshot.
+        context=state['context_events'];markers=context['events']
+        self.assertEqual({m['kind'] for m in markers},{'turn-start','turn-model','compaction','turn-finish'})
+        expected=hashlib.sha256(f'shin-session-v1:{self.home}:marked'.encode()).hexdigest()
+        self.assertEqual({m['session_id'] for m in markers},{expected})
+        self.assertEqual(next(m for m in markers if m['kind']=='turn-model')['model_id'],'provider/model-one')
+        self.assertTrue(all('model_id' not in m for m in markers if m['kind']!='turn-model'))
+        for private in ('PRIVATE','raw-turn-private','raw-window-private','marked',str(root)):
+            self.assertNotIn(private,json.dumps(context))
+        # A token gap is not a compaction; retained explicit events remain stable on a repeated sweep.
+        self.assertEqual(self.collect()['context_events'],context)
+        with log.open('a') as stream:
+            for i in range(80): stream.write(json.dumps({'type':'compacted','timestamp':now,
+                                                       'payload':{'window_id':f'raw-{i}'}})+'\n')
+        bounded=self.collect()['context_events']
+        self.assertEqual(len(bounded['events']),64)
+        self.assertFalse(bounded['complete']);self.assertGreater(bounded['omitted'],0)
+        self.assertEqual(self.collect()['snapshot']['buckets'],state['snapshot']['buckets'])
+
+    def test_bad_optional_context_record_does_not_drop_valid_tokens(self):
+        root=self.project('damaged-marker',100)
+        self.ce('project-add',root);self.stop()
+        self.assertEqual(sum(b['input_tokens'] for b in self.collect()['snapshot']['buckets']),100)
+        stamp=datetime.datetime.now(datetime.timezone.utc).isoformat().replace('+00:00','Z')
+        with (self.codex/'sessions/damaged-marker.jsonl').open('a') as stream:
+            stream.write('{"type":"compacted","payload":\n')
+            stream.write(json.dumps({'type':'event_msg','timestamp':stamp,'payload':{'type':'token_count','info':{
+                'total_token_usage':{'input_tokens':150,'output_tokens':2},
+                'last_token_usage':{'input_tokens':50,'output_tokens':0}}}})+'\n')
+        state=self.collect()
+        self.assertEqual(state['snapshot']['sources']['codex']['state'],'available')
+        self.assertEqual(sum(b['input_tokens'] for b in state['snapshot']['buckets']),150)
+        self.assertFalse(state['context_events']['complete'])
+        self.assertGreater(state['context_events']['omitted'],0)
+
     def test_enroll_repeat_detach_restart_and_source_failure(self):
         one=self.project('first',100)
         response=self.ce('project-add',one)

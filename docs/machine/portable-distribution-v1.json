@@ -25,7 +25,9 @@
       "licenses/tree-sitter-cpp/LICENSE",
       "licenses/tree-sitter-cpp/UPSTREAM.json",
       "licenses/pugixml/LICENSE.MIT",
-      "licenses/pugixml/UPSTREAM.json"
+      "licenses/pugixml/UPSTREAM.json",
+      "licenses/utf8proc/LICENSE.md",
+      "licenses/utf8proc/UPSTREAM.json"
     ],
     "genericProfiles": [
       "profiles/generic-cpp.json",
@@ -85,6 +87,10 @@
     "verification": "portable-install-check moves the staged prefix before invoking the installed binary and imports/checks external execution-evidence artifacts after relocation."
   },
   "nativeCompanions": {
+    "machineContracts": [
+      "contracts/local-session-recovery-v1.json",
+      "contracts/mcp-activity-v1.json"
+    ],
     "layout": "Observer CMake install provides the local CLI and optional MCP/Monitor kit. It does not enroll projects or install credentials.",
     "verification": "observer/installer/package_smoke.py qualifies the extracted macOS archive, relocation, disposable installation, local retrieval and EN/RU terminal monitoring.",
     "releaseOwner": "docs/machine/shin-release-closure-v1.json",

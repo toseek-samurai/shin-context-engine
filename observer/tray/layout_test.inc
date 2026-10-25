@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
             for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
@@ -205,7 +205,7 @@ int main(int argc, char** argv) {
                     profile_review_open = kind.starts_with("profile-review-") || kind == "profile-review";
                     profile_review_root = "/fixture/workspace";
                     timing_open = kind.starts_with("timing-");
-                    dashboard_view = timing_open || kind == "overview" ? 0 : kind.starts_with("models") ? 2 : 1;
+                    dashboard_view = timing_open || kind == "overview" ? 0 : kind.starts_with("models") ? 2 : kind.starts_with("sessions") ? 3 : 1;
                     timing_retained = kind != "timing-live" && kind != "timing-live-partial";
                     timing_filter = 0;
                     if (kind == "blocked") project.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
@@ -300,6 +300,10 @@ int main(int argc, char** argv) {
                         view.data["telemetry"]["projection"] = {{"truncated", true}};
                     if (timing_open && kind != "timing-missing") {
                         auto& telemetry = view.data["telemetry"];
+                        telemetry["mcp_activity"] = {{"schema_version", "shin.mcp-activity.v1"}, {"status", "ready"},
+                            {"attempts", 200}, {"calls", {{"query", 100}, {"inspect", 24}, {"read", 31}, {"status", 17}, {"help", 18}, {"projects", 10}}},
+                            {"outcomes", {{"success", 190}, {"tool-error", 7}, {"rpc-error", 2}, {"unfinished", 1}}},
+                            {"coverage_start_ms", 1792920000000LL}};
                         telemetry["activity"] = {{"schema_version", "shin.service-activity.v1"},
                             {"calls", {{"query", 100}, {"inspect", 24}, {"read", 31}, {"status", 17}}},
                             {"diagnostic", 10}, {"uncorrelated", 42}, {"reported_sessions", 64}, {"sessions_truncated", true},
@@ -331,6 +335,26 @@ int main(int argc, char** argv) {
                                 {"skipped_reasons", kind == "models" ? Json::object() : Json{{"rollout-missing", 92}, {"rollout-lines-omitted", 6}}}}}}},
                             {"projects", Json::array({{{"id", ""}, {"name", "Все проекты"}, {"totals", totals},
                                 {"models", models}, {"days", Json::array({day})}}})}});
+                    }
+                    if (kind.starts_with("sessions")) {
+                        const std::string session_id(64,'a');
+                        view.data["telemetry"]["mcp_activity"] = {{"status","ready"},{"window_start_ms",0},{"dropped_updates",0},{"unconfirmed_updates",0},{"sessions_truncated",kind=="sessions-partial"},
+                            {"session_rows",Json::array({{{"session_id",session_id},{"context_calls",21},{"errors",2},{"tasks",3},
+                                {"recovery_requests",4},{"model_unknown",21},{"models",Json::object()},
+                                {"query_times",Json::array({3500})},{"queries_complete",true},
+                                {"timeline",Json::array({{{"method","query"},{"intent","context-recovery"},{"outcome","success"}},
+                                    {{"method","resume"},{"intent","context-recovery"},{"outcome","success"}}})}}})}};
+                        view.usage = std::make_shared<const Json>(Json{{"context_events",{{"complete",kind=="sessions"},
+                            {"events",Json::array({{{"session_id",session_id},{"at_ms",2000},{"kind","compaction"}},
+                                {{"session_id",session_id},{"at_ms",1000},{"kind","turn-model"},{"model_id","history-model"}}})}}}});
+                    }
+                    if (kind.starts_with("sessions")) {
+                        auto& row = view.data["telemetry"]["mcp_activity"]["session_rows"][0];
+                        row["analysis"] = {{"schema_version","shin.session-analysis.v1"},{"calls_complete",kind=="sessions"},
+                            {"unassigned_context_calls",3},{"reads",{{"reads",12},{"same_version_repeats",4},{"additional_versions",2},{"unknown_reads",1}}},
+                            {"episodes",Json::array({{{"start_ms",1792920000000LL},{"kind","compaction"},{"closed",true},
+                                {"context_calls",7},{"errors",1},{"interval_complete",kind=="sessions"},
+                                {"reads",{{"same_version_repeats",2},{"previously_seen_versions",1}}}}})}};
                     }
                     selected = kind.starts_with("projects") || kind == "project-states" ? "" : "fixture";
                     project_page = kind == "projects-last-page" ? 100 : 0;

@@ -71,6 +71,7 @@ set_property(SOURCE
     APPEND PROPERTY COMPILE_OPTIONS "$<$<NOT:$<C_COMPILER_ID:MSVC>>:-Werror=strict-prototypes>")
 
 set(SHIN_CONTEXT_CORE_SOURCES
+    src/unicode_text.cpp
     src/cli.cpp
     src/adoption.cpp
     src/adoption_plan.cpp
@@ -144,13 +145,17 @@ set(SHIN_CONTEXT_CORE_SOURCES
     third_party/pugixml/pugixml.cpp
 )
 add_library(shin-context-core STATIC ${SHIN_CONTEXT_CORE_SOURCES})
+add_library(shin-unicode-vendor STATIC third_party/utf8proc/utf8proc.c)
+set_target_properties(shin-unicode-vendor PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
+target_compile_definitions(shin-unicode-vendor PUBLIC UTF8PROC_STATIC)
+target_include_directories(shin-unicode-vendor SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party/utf8proc)
 if(WIN32)
     add_subdirectory(shared/windows-io)
     target_link_libraries(shin-context-core PRIVATE shin-windows-io)
 endif()
 target_include_directories(shin-context-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(shin-context-core SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
-target_link_libraries(shin-context-core PUBLIC Threads::Threads shin-syntax-vendor)
+target_link_libraries(shin-context-core PUBLIC Threads::Threads shin-syntax-vendor shin-unicode-vendor)
 target_compile_definitions(shin-context-core PUBLIC SHIN_VERSION="${SHIN_VERSION}")
 target_compile_options(shin-context-core PRIVATE ${SHIN_CXX_WARNINGS})
 include(shared/cmake/CoreAllocator.cmake)
@@ -264,6 +269,8 @@ if(SHIN_CONTEXT_BUILD_CLI)
             DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/licenses/tree-sitter/unicode")
     install(FILES third_party/pugixml/LICENSE.MIT third_party/pugixml/UPSTREAM.json
             DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/licenses/pugixml")
+    install(FILES third_party/utf8proc/LICENSE.md third_party/utf8proc/UPSTREAM.json
+            DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/licenses/utf8proc")
     install(DIRECTORY integrations/codex/skills/shin-context
             DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/codex/skills")
     install(DIRECTORY integrations/hermes/plugins/shin-context
@@ -296,7 +303,7 @@ if(SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
     else()
         set(SHIN_SOURCE_CACHE src/source_cache.cpp)
     endif()
-    add_library(shin-source-discovery-provider STATIC src/source_discovery.cpp ${SHIN_SOURCE_CACHE} src/source_context.cpp)
+    add_library(shin-source-discovery-provider STATIC src/source_discovery.cpp src/source_query_terms.cpp ${SHIN_SOURCE_CACHE} src/source_context.cpp)
     if(WIN32)
         target_link_libraries(shin-source-discovery-provider PRIVATE shin-windows-io)
         target_compile_definitions(shin-source-discovery-provider PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN)

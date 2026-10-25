@@ -1,6 +1,7 @@
 #include "shin/observer/local_rpc.h"
 #include <set>
 #include "shin/observer/local_project.h"
+#include "local_sessions.h"
 #include <algorithm>
 
 namespace shin::observer::local_rpc {
@@ -17,14 +18,30 @@ Json failure(const std::string& id, const std::string& code, const std::string& 
 }
 
 namespace {
-Json response_for_version(const Json& response, const std::string& id, const std::string& observer_version, const std::string& core_version) {
-    if (!response.is_object() || response.value("schema_version", "") != "shin.local-rpc.v1" ||
-        response.value("request_id", "") != id || response.value("observer_version", "") != observer_version ||
-        response.value("core_version", "") != core_version || !response.contains("ok") || !response.at("ok").is_boolean())
+Json response_for_version(const Json& response, const std::string& id, const std::string& observer_version,
+                          const std::string& core_version, bool diagnose_mismatch = false) {
+    if (!response.is_object() || response.value("schema_version", Json()) != "shin.local-rpc.v1" ||
+        response.value("request_id", Json()) != id || validation_identifier(response.value("observer_version", Json())).empty() ||
+        validation_identifier(response.value("core_version", Json())).empty() || !response.contains("ok") || !response.at("ok").is_boolean())
         throw Error("service-response-invalid", "Local response identity/version is invalid.");
-    if (response.contains("error")) throw Error(response.at("error").at("code"), response.at("error").at("message"),
-                                                response.at("error").value("diagnostic", Json()));
-    auto result = response.at("result");
+    const auto error = response.value("error", Json());
+    const bool valid_error = error.is_object() && !response.at("ok").get<bool>() && !response.contains("result") &&
+        !validation_identifier(error.value("code", Json())).empty() && error.value("message", Json()).is_string() &&
+        error.at("message").get_ref<const std::string&>().size() <= 4096;
+    if (response.at("observer_version") != observer_version || response.at("core_version") != core_version) {
+        // Only an explicit refusal may cross the version fence. Success payloads
+        // and installer control responses still require the exact verified kit.
+        if (diagnose_mismatch && valid_error && error.at("code") == "service-version-mismatch")
+            throw Error("service-version-mismatch", "Client Observer " + observer_version + ", Core " + core_version +
+                "; service Observer " + response.at("observer_version").get<std::string>() + ", Core " +
+                response.at("core_version").get<std::string>() + ". Reconnect the MCP client after updating the kit; verify both components use the current installation.");
+        throw Error("service-response-invalid", "Local response identity/version is invalid.");
+    }
+    if (response.contains("error")) {
+        if (!valid_error) throw Error("service-response-invalid", "Local error response is invalid.");
+        throw Error(error.at("code"), error.at("message"), error.value("diagnostic", Json()));
+    }
+    auto result = response.value("result", Json());
     if (!result.is_object() || !result.contains("ok") || result.at("ok") != response.at("ok"))
         throw Error("service-response-invalid", "Local response success is inconsistent.");
     return result;
@@ -32,7 +49,7 @@ Json response_for_version(const Json& response, const std::string& id, const std
 
 } // namespace
 Json project_response(const Json& response, const std::string& id) {
-    return response_for_version(response, id, SHIN_OBSERVER_VERSION, SHIN_VERSION);
+    return response_for_version(response, id, SHIN_OBSERVER_VERSION, SHIN_VERSION, true);
 }
 Json control_response(const Json& response, const std::string& id, const std::string& observer_version, const std::string& core_version) {
     if (validation_identifier(observer_version).empty() || validation_identifier(core_version).empty())
@@ -52,7 +69,7 @@ std::string string_field(const Json& value, const char* key, std::size_t limit) 
 void validate_request(const Json& value) {
     const std::set<std::string> allowed{"schema_version", "request_id", "observer_version", "core_version",
                                         "command", "root", "query", "path", "record", "snapshot"};
-    const std::set<std::string> optional{"diagnostic", "session_id", "parent_request_id", "model_id"};
+    const std::set<std::string> optional{"diagnostic", "session_id", "parent_request_id", "model_id", "wait_for_ready", "readiness_wait_ms", "session"};
     if (!value.is_object())
         throw Error("service-request-invalid", "Unexpected local request fields.");
     for (const auto& key : allowed)
@@ -76,11 +93,20 @@ void validate_request(const Json& value) {
     if (string_field(value, "request_id", 96).empty())
         throw Error("service-request-invalid", "A request identity is required.");
     const auto command = string_field(value, "command", 32);
+    if (value.contains("readiness_wait_ms") && (command != "query" ||
+        !value.at("readiness_wait_ms").is_number_integer() || value.at("readiness_wait_ms") < 5000 ||
+        value.at("readiness_wait_ms") > 20000))
+        throw Error("service-request-invalid", "Query readiness waiting must be between 5000 and 20000 milliseconds.");
+    if (value.contains("wait_for_ready") && (command != "status" || !value.at("wait_for_ready").is_boolean()))
+        throw Error("service-request-invalid", "Readiness waiting is a boolean for project status only.");
     if (value.contains("diagnostic") && (!value.at("diagnostic").is_boolean() ||
         !std::set<std::string>{"query", "inspect", "read"}.contains(command)))
         throw Error("service-request-invalid", "Diagnostic labeling is a boolean for project reads only.");
-    if (!std::set<std::string>{"status", "query", "inspect", "read", "service-status", "service-stop"}.contains(command))
+    if (!std::set<std::string>{"status", "query", "inspect", "read", "checkpoint", "resume", "service-status", "service-stop"}.contains(command))
         throw Error("service-method-denied", "The local request surface is read-only except explicit service stop.");
+    if (command == "checkpoint" || command == "resume") {
+        LocalProjectRequest session; session.command = command; local_session_fields(value,session);
+    } else if (value.contains("session")) throw Error("service-request-invalid","Task state belongs only to explicit session operations.");
     (void)string_field(value, "root", 4096);
     (void)string_field(value, "query", 4096);
     (void)string_field(value, "path", 4096);

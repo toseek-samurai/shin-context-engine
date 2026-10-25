@@ -1,8 +1,11 @@
 #include "shin/observer/model_usage.h"
+#include "shin/observer/local_project.h"
 #include "shin/observer/observer.h"
 #include <sqlite3.h>
 #include <array>
+#include <algorithm>
 #include <chrono>
+#include <deque>
 #include <fcntl.h>
 #include <map>
 #include <mutex>
@@ -88,12 +91,15 @@ struct Rows {
         row["records"] = integer(row.at("records")) + 1;
     }
 };
-struct Cached { std::uint64_t size = 0; std::int64_t mtime = 0; Rows rows; std::uint64_t records = 0; bool incomplete = false, future = false; };
+struct Cached { std::uint64_t size = 0; std::int64_t mtime = 0; Rows rows; std::uint64_t records = 0; bool incomplete = false, future = false;
+    std::deque<Json> context_events; std::uint64_t event_omissions = 0;
+};
 std::map<std::string, Cached> cache;
 std::mutex cache_mutex;
 
 Cached codex_file(const fs::path& path, const Json& config, const std::string& session, const std::string& project,
-    std::int64_t created, std::int64_t from, std::int64_t now, Clock::time_point deadline, std::uint64_t& bytes, std::stop_token stop) {
+    std::int64_t created, std::int64_t from, std::int64_t now, Clock::time_point deadline, std::uint64_t& bytes, std::stop_token stop,
+    const fs::path& session_home) {
     const auto canonical = fs::canonical(path); need(canonical == path, "rollout-unsafe-file");
     const auto& source = config.at("sources").at("codex");
     bool allowed = false;
@@ -115,7 +121,7 @@ Cached codex_file(const fs::path& path, const Json& config, const std::string& s
 #else
     const auto mtime = static_cast<std::int64_t>(s.st_mtim.tv_sec) * 1000000000 + s.st_mtim.tv_nsec;
 #endif
-    const auto key = path.string() + ":" + session + ":" + digest(config.dump()) + ":" + day_text(from);
+    const auto key = path.string() + ":" + session + ":" + digest(config.dump()) + ":" + day_text(from) + ":" + session_home.string();
     if (const auto it = cache.find(key); it != cache.end() && !it->second.future && it->second.size == static_cast<std::uint64_t>(s.st_size) && it->second.mtime == mtime) return it->second;
     // Admit a complete file against the existing sweep budget. Large sessions
     // need no separate smaller ceiling; memory remains a bounded line/chunk buffer.
@@ -136,28 +142,60 @@ Cached codex_file(const fs::path& path, const Json& config, const std::string& s
                 continue;
             }
             need(++lines <= 1000000, "rollout-line-limit");
-            if (!discard && (line.find("\"token_count\"") != std::string::npos || line.find("\"turn_context\"") != std::string::npos || line.find("\"session_meta\"") != std::string::npos)) {
-                const auto event = parse_json(line); const auto type = event.value("type", ""); const auto& payload = event.at("payload");
-                if (type == "session_meta") {
-                    owned = payload.value("id", "") == session;
-                    need(owned || !seen_owner, "rollout-session-mismatch");
-                    if (owned && !seen_owner) { seen_owner = true; previous_total.clear(); model = "unknown"; }
-                }
-                else if (owned && type == "turn_context") model = payload.value("model", "unknown");
-                else if (owned && type == "event_msg" && payload.value("type", "") == "token_count" && payload.contains("info") && payload.at("info").is_object()) {
-                    const auto& info = payload.at("info"); const auto total = info.at("total_token_usage").dump();
-                    if (total != previous_total) {
-                        const auto when = stamp(event.at("timestamp").get<std::string>());
-                        if (when > now) result.future = true;
-                        if (when >= from && when >= created && when <= now) {
-                            const auto& last = info.at("last_token_usage");
-                            Json usage{{"input_tokens", last.at("input_tokens")}, {"output_tokens", last.at("output_tokens")},
-                                {"cache_read_tokens", last.value("cached_input_tokens", Json(0))}, {"cache_write_tokens", last.value("cache_write_input_tokens", Json(0))},
-                                {"reasoning_tokens", last.value("reasoning_output_tokens", Json(0))}};
-                            result.rows.add(project, "codex", model, "usage-event", when, usage); ++result.records;
-                        }
+            const bool token_record = line.find("\"token_count\"") != std::string::npos || line.find("\"turn_context\"") != std::string::npos || line.find("\"session_meta\"") != std::string::npos;
+            const bool context_record = !session_home.empty() && (line.find("\"compacted\"") != std::string::npos || line.find("\"task_started\"") != std::string::npos ||
+                line.find("\"task_complete\"") != std::string::npos || line.find("\"turn_aborted\"") != std::string::npos);
+            if (!discard && (token_record || context_record)) {
+                try {
+                    const auto event = parse_json(line); const auto type = event.value("type", ""); const auto& payload = event.at("payload");
+                    if (type == "session_meta") {
+                        owned = payload.value("id", "") == session;
+                        need(owned || !seen_owner, "rollout-session-mismatch");
+                        if (owned && !seen_owner) { seen_owner = true; previous_total.clear(); model = "unknown"; }
                     }
-                    previous_total = total;
+                    else if (owned && type == "turn_context") model = payload.value("model", "unknown");
+                    else if (owned && type == "event_msg" && payload.value("type", "") == "token_count" && payload.contains("info") && payload.at("info").is_object()) {
+                        const auto& info = payload.at("info"); const auto total = info.at("total_token_usage").dump();
+                        if (total != previous_total) {
+                            const auto when = stamp(event.at("timestamp").get<std::string>());
+                            if (when > now) result.future = true;
+                            if (when >= from && when >= created && when <= now) {
+                                const auto& last = info.at("last_token_usage");
+                                Json usage{{"input_tokens", last.at("input_tokens")}, {"output_tokens", last.at("output_tokens")},
+                                    {"cache_read_tokens", last.value("cached_input_tokens", Json(0))}, {"cache_write_tokens", last.value("cache_write_input_tokens", Json(0))},
+                                    {"reasoning_tokens", last.value("reasoning_output_tokens", Json(0))}};
+                                result.rows.add(project, "codex", model, "usage-event", when, usage); ++result.records;
+                            }
+                        }
+                        previous_total = total;
+                    }
+                    if (owned && !session_home.empty()) {
+                        const auto event_type = type == "event_msg" ? payload.value("type", "") : type;
+                        const std::map<std::string,std::string> kinds{{"compacted","compaction"},{"task_started","turn-start"},
+                            {"task_complete","turn-finish"},{"turn_aborted","turn-abort"},{"turn_context","turn-model"}};
+                        if (const auto kind = kinds.find(event_type); kind != kinds.end()) try {
+                            const auto when = stamp(event.at("timestamp").get<std::string>());
+                            if (when > now) result.future = true;
+                            if (when >= from && when >= created && when <= now) {
+                                Json marker{{"event_id",digest("shin-host-event-v1:"+session+":"+std::to_string(lines)+":"+std::to_string(when)+":"+kind->second)},
+                                    {"session_id",digest("shin-session-v1:"+session_home.string()+":"+session)}, {"at_ms",when},{"kind",kind->second}};
+                                if (event_type == "turn_context") {
+                                    const auto reported = payload.value("model", Json());
+                                    if (reported.is_string() && valid_reported_model(reported.get<std::string>())) marker["model_id"] = reported;
+                                }
+                                for (const auto* identity : {"turn_id","window_id"}) {
+                                    const auto field = payload.value(identity, Json());
+                                    if (field.is_string() && !field.get_ref<const std::string&>().empty() && field.get_ref<const std::string&>().size() <= 128)
+                                        marker[identity] = digest("shin-host-id-v1:"+session+":"+field.get<std::string>());
+                                }
+                                result.context_events.push_back(std::move(marker));
+                                if (result.context_events.size() > 64) { result.context_events.pop_front(); ++result.event_omissions; }
+                            }
+                        } catch (const std::exception&) { ++result.event_omissions; }
+                    }
+                } catch (const std::exception&) {
+                    if (token_record) throw;
+                    ++result.event_omissions; // Optional lifecycle metadata cannot invalidate token observations.
                 }
             } else if (discard) result.incomplete = true;
             line.clear(); discard = false;
@@ -170,7 +208,7 @@ Cached codex_file(const fs::path& path, const Json& config, const std::string& s
 }
 } // namespace
 
-Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token stop) {
+Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token stop, const fs::path& session_home) {
     std::lock_guard lock(cache_mutex);
     need(config.at("schema_version") == "shin.usage-collector.v1" && config.at("projects").is_array() && !config.at("projects").empty() && config.at("projects").size() <= 24);
     std::map<std::string,std::string> paths; Json projects = Json::array(); std::set<std::string> ids;
@@ -190,6 +228,7 @@ Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token s
     Json output{{"schema_version","shin.model-usage.v3"},{"config_sha256",digest(config.dump())},{"updated_at_unix_ms",now},
         {"projects",projects},{"buckets",Json::array()},{"sources",Json::object()}};
     Rows rows; std::uint64_t bytes = 0;
+    Json context_events = Json::array(); std::uint64_t event_omissions = 0;
     for (const auto* client : {"codex", "opencode", "hermes"}) {
         Json state{{"state","available"},{"attempted_at_unix_ms",now},{"last_success_unix_ms",now},{"from",day_text(from)},{"to",day_text(now)},
             {"source_records",0},{"unassigned_sessions",0},{"skipped_sessions",0},{"skipped_reasons",Json::object()},{"adapter_version","shin-native-v1"}};
@@ -203,7 +242,13 @@ Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token s
                     need(++count <= 512); const auto session = text(sessions.get(),0), root = text(sessions.get(),2);
                     if (!paths.contains(root)) { unassigned.insert(session); continue; }
                     try {
-                        const auto data = codex_file(text(sessions.get(),1),config,session,paths.at(root),sqlite3_column_int64(sessions.get(),3),from,now,deadline,bytes,stop);
+                        const auto data = codex_file(text(sessions.get(),1),config,session,paths.at(root),sqlite3_column_int64(sessions.get(),3),from,now,deadline,bytes,stop,session_home);
+                        for (const auto& event : data.context_events) context_events.push_back(event);
+                        if (context_events.size() > 64) {
+                            std::sort(context_events.begin(),context_events.end(),[](const Json& a,const Json& b) { return a.at("at_ms") > b.at("at_ms"); });
+                            event_omissions += context_events.size()-64; context_events.erase(context_events.begin()+64,context_events.end());
+                        }
+                        event_omissions += data.event_omissions;
                         for (const auto& [key, row] : data.rows.values) {
                             need(rows.values.contains(key) || rows.values.size() < 512);
                             auto& target = rows.values[key]; if (target.is_null()) target = row;
@@ -247,6 +292,15 @@ Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token s
         state["unassigned_sessions"] = unassigned.size(); output["sources"][client] = std::move(state);
     }
     for (const auto& [key, row] : rows.values) { (void)key; output["buckets"].push_back(row); }
+    if (!session_home.empty()) {
+        std::sort(context_events.begin(), context_events.end(), [](const Json& a, const Json& b) {
+            return std::pair{a.at("at_ms").get<std::int64_t>(),a.at("event_id").get<std::string>()} >
+                std::pair{b.at("at_ms").get<std::int64_t>(),b.at("event_id").get<std::string>()};
+        });
+        if (context_events.size() > 64) { event_omissions += context_events.size()-64; context_events.erase(context_events.begin()+64, context_events.end()); }
+        output["context_events"] = {{"schema_version","shin.context-events.v1"},{"source","codex"},{"events",std::move(context_events)},
+            {"omitted",event_omissions},{"complete",event_omissions == 0 && output["sources"]["codex"]["state"] == "available"}};
+    }
     need(!stop.stop_requested(), "usage-cancelled");
     (void)summarize_model_usage(output,now);
     return output;

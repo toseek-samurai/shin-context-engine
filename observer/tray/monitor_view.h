@@ -8,6 +8,7 @@
 #include "../ui/model_projects.h"
 #include "../ui/request_timing.h"
 #include "../ui/service_activity.h"
+#include "../ui/session_activity.h"
 #include "profile_review.h"
 #include "monitor_motion.h"
 #include <atomic>
@@ -543,7 +544,7 @@ void select_project(const std::string& id) {
 
 void activate(int code) {
     if (code < 3) graph_mode = code;
-    else if (code >= 10 && code <= 12) {
+    else if (code >= 10 && code <= 13) {
         dashboard_view = code - 10;
         platform_save_view(dashboard_view);
     } else if (code >= 20 && code <= 22) history_hours = code == 20 ? 0 : code == 21 ? 24 : 168;
@@ -602,7 +603,7 @@ void metric_choice(const char* label, const std::string& value, int code, ImVec4
 
 void view_tab(const char* label, int code, bool active, float width) {
     const auto origin = ImGui::GetCursorScreenPos();
-    const bool navigation = code >= 10 && code <= 12;
+    const bool navigation = code >= 10 && code <= 13;
     const float height = navigation && ImGui::GetIO().DisplaySize.x >= 340 ? 32.0f : 26.0f;
     ImGui::PushID(code);
     if (ImGui::InvisibleButton("tab", {width, height})) activate(code);
@@ -615,9 +616,11 @@ void view_tab(const char* label, int code, bool active, float width) {
         ImGui::GetColorU32(raised), 4);
     if (navigation && active) draw->AddRectFilled(origin, {origin.x + width, origin.y + height},
         alpha_color(sand, .07f), 4);
-    const auto text_size = ImGui::CalcTextSize(label);
+    const auto shown = clipped(label,width-8);
+    const auto text_size = ImGui::CalcTextSize(shown.c_str());
     draw->AddText({origin.x + (width - text_size.x) / 2, origin.y + (height - text_size.y) / 2},
-        ImGui::GetColorU32(active ? sand : hovered ? ink : muted), label);
+        ImGui::GetColorU32(active ? sand : hovered ? ink : muted), shown.c_str());
+    if (hovered && shown != label) ImGui::SetTooltip("%s",label);
     if (navigation && active) {
         const float left = monitor_motion.nav_left.step(origin.x, monitor_motion.delta,
             monitor_motion.reduced || !monitor_motion.initialized);
@@ -841,16 +844,23 @@ void render_request_timing(const ViewState& view, const Json& telemetry) {
     const float half = (width - 7) / 2;
     view_tab(timing_retained ? shin::ui::tr("All history ▾") : shin::ui::tr("This run ▾"), 66, false, half); ImGui::SameLine();
     view_tab(timing_filter == 0 ? shin::ui::tr("All queries ▾") : timing_filter == 1 ? shin::ui::tr("Unclassified ▾") : shin::ui::tr("Diagnostic ▾"), 62, false, half);
-    const auto activity = shin::ui::service_activity_lines(telemetry);
+    const auto activity = shin::ui::service_activity_lines(telemetry, true);
     if (!activity.empty()) {
         ImGui::PushFont(nullptr, 11);
         if (ImGui::GetContentRegionAvail().y >= 250) {
-            for (const auto& line : activity) ImGui::TextWrapped("%s", line.c_str());
+            for (std::size_t i = 0; i < activity.size(); ++i) {
+                ImGui::TextWrapped("%s", activity[i].c_str());
+                if (i == 0 && ImGui::IsItemHovered()) {
+                    std::string detail;
+                    for (const auto& line : shin::ui::service_activity_lines(telemetry)) detail += line + "\n";
+                    ImGui::SetTooltip("%s", detail.c_str());
+                }
+            }
         } else {
             ImGui::TextWrapped("%s", activity.front().c_str());
             if (ImGui::IsItemHovered()) {
                 std::string detail;
-                for (const auto& line : activity) detail += line + "\n";
+                for (const auto& line : shin::ui::service_activity_lines(telemetry)) detail += line + "\n";
                 ImGui::SetTooltip("%s", detail.c_str());
             }
         }
@@ -1792,10 +1802,11 @@ void render(const ViewState& view) {
         shin::ui::tr("Service connected; projects need attention") : shin::ui::tr("Service connected"), accent, 50, 20);
     ImGui::Spacing();
     if (!profile_review_open) {
-        const float tab_width = (ImGui::GetContentRegionAvail().x - 14) / 3;
+        const float tab_width = (ImGui::GetContentRegionAvail().x - 21) / 4;
         view_tab(shin::ui::tr("Overview"), 10, dashboard_view == 0, tab_width); ImGui::SameLine();
         view_tab(shin::ui::tr("Projects"), 11, dashboard_view == 1, tab_width); ImGui::SameLine();
-        view_tab(shin::ui::tr("Models"), 12, dashboard_view == 2, tab_width);
+        view_tab(shin::ui::tr("Models"), 12, dashboard_view == 2, tab_width); ImGui::SameLine();
+        view_tab(shin::ui::tr("Sessions"), 13, dashboard_view == 3, tab_width);
         if (ImGui::GetIO().DisplaySize.y >= 300) {
             ImGui::PushFont(nullptr, 11);
             if (!view.connected) ImGui::TextColored(amber, "%s", view.data.is_null() ? shin::ui::tr("Waiting for connection") : shin::ui::tr("Offline · last received data"));
@@ -1811,7 +1822,7 @@ void render(const ViewState& view) {
     ImGui::BeginChild("view-content", {0, std::max(1.0f, footer_y - ImGui::GetCursorPosY() - 5)}, ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 #if defined(__APPLE__)
-    if (projects.empty() && dashboard_view != 2 && !timing_open) {
+    if (projects.empty() && dashboard_view < 2 && !timing_open) {
         ImGui::TextWrapped("%s", shin::ui::tr("Choose a project to start using Shin. Setup also helps connect your coding agent."));
         ImGui::Spacing();
         if (ImGui::Button(shin::ui::tr("Set up Shin…"), {ImGui::GetContentRegionAvail().x, 32})) activate(85);
@@ -1821,7 +1832,14 @@ void render(const ViewState& view) {
     if (dashboard_view == 0 && timing_open) render_request_timing(view, telemetry);
     else if (dashboard_view == 0) render_overview(view, telemetry, history);
     else if (dashboard_view == 1) render_projects(view, telemetry, history);
-    else render_models(view, telemetry, history);
+    else if (dashboard_view == 2) render_models(view, telemetry, history);
+    else {
+        ImGui::BeginChild("session-observations",{0,0});
+        ImGui::PushFont(nullptr,12);
+        if (!view.connected) ImGui::TextWrapped("%s",shin::ui::tr("Offline · last received data"));
+        for (const auto& line : shin::ui::session_activity_lines(telemetry,*view.usage)) ImGui::TextWrapped("%s",line.c_str());
+        ImGui::PopFont(); ImGui::EndChild();
+    }
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::SetCursorPosY(footer_y);
@@ -1831,6 +1849,10 @@ void render(const ViewState& view) {
         const auto label=std::string(shin::ui::tr("Update available"))+" · "+release_update_version;
         if(ImGui::Button(label.c_str(),{ImGui::GetContentRegionAvail().x,23}))activate(86);
         ui_actions.push_back({label,"",ImGui::GetItemRectMin(),ImGui::GetItemRectSize(),86,true});
+        ImGui::PopFont();
+    } else if (dashboard_view == 3) {
+        ImGui::PushFont(nullptr,11);
+        ImGui::TextColored(muted,"%s",shin::ui::tr("MCP observations · up to 7 days"));
         ImGui::PopFont();
     } else if (dashboard_view != 2) history_state(history, view.connected,
         telemetry.value("projection", Json::object()).value("truncated", false));

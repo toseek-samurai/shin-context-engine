@@ -3,6 +3,7 @@
 #include "../ui/project_diagnostics.h"
 #include "../ui/request_timing.h"
 #include "../ui/service_activity.h"
+#include "../ui/session_activity.h"
 #include <cwchar>
 #include <cwctype>
 #include <iomanip>
@@ -94,7 +95,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
     std::vector<Line> out;
     const bool connected = fresh(snapshot);
     if (state.help) return {
-        {shin::ui::tr("Keyboard"), Tone::heading}, {shin::ui::tr("1-5 / Tab / Left / Right  Switch view")},
+        {shin::ui::tr("Keyboard"), Tone::heading}, {shin::ui::tr("1-6 / Tab / Left / Right  Switch view")},
         {shin::ui::tr("Up / Down or j / k         Select a project, otherwise scroll")},
         {shin::ui::tr("Enter                     Project details")}, {shin::ui::tr("Esc / Backspace           Back")},
         {shin::ui::tr("PageUp / PageDown          Scroll a page")},
@@ -204,6 +205,8 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         }
         out.push_back({}); out.push_back({shin::ui::tr("t recent/history  |  f traffic filter  |  Means are measured samples, not SLA guarantees.")});
         for (const auto& line : ui::service_activity_lines(telemetry)) out.push_back({line});
+    } else if (state.tab == 5) {
+        for (const auto& line : ui::session_activity_lines(telemetry,snapshot.usage)) out.push_back({line});
     } else if (state.tab == 3) {
         out.push_back({shin::ui::tr("Storage"), Tone::heading});
         if (snapshot.storage_loading) out.push_back({shin::ui::tr("Reading storage inventory..."), Tone::warning});

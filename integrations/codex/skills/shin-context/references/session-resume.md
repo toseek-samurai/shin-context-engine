@@ -1,11 +1,37 @@
 # Session Recovery
 
-Requires Core2.0. This optional checkpoint procedure is not the native MCP start
-route; normally use `shin_status` and a fresh query after context loss. For an
-explicit checkpoint task, use the same adopted profile/root/out-dir as retrieval.
-The machine contracts are `session-checkpoint-v1.json` and
-`execution-receipt-v1.json` under the distribution contracts directory (source
-layout: `docs/machine`).
+For ordinary context loss or a changed topic, select the exact enrolled project
+and ask one useful current-code query. Read known files directly. Optional
+`task_key` and `intent` labels describe caller-known work, without inferred host
+compaction or per-call model identity. Unknown labels stay omitted.
+
+When the connected server advertises `shin_checkpoint` and `shin_resume`, an
+optional useful milestone or handoff may retain compact task notes under the
+host's existing permissions. Use the actual host `session_id`, stable caller
+`task_key`, exact project and objective. Save a short `progress`, focused
+`queries`, optional `paths` and `next_steps`. Keep that binding and the returned
+revision in host handoff state; the kit owns private storage outside the project.
+Never put chat IDs or notes in shared project instructions or MCP configuration.
+
+After reconnect, resolve the saved exact root through the current catalog when
+advertised. A previous connection's selector or snapshot is not a root identity.
+After context loss, resume only with the known binding and current objective.
+`ok` means assessment succeeded. Review `continuation_ready`, `review_required`
+and drift/age findings independently; `ready_without_review` combines readiness
+with no pending review. Notes are caller assertions, not source authority,
+execution receipts or permission to run saved actions. Replacing notes requires
+the exact `expected_revision` returned by resume/save after reviewing its state.
+
+If these tools are unavailable, the binding/key was lost, or no verifiable note
+exists, continue with current-code retrieval. Never probe other chat/task IDs,
+change identities, or manually rebuild a managed index to recover notes. Let
+its service qualify source changes normally. There are no save rituals, call
+quotas, automatic pre-compaction capture or host-memory changes.
+
+For the existing lower-level Core CLI procedure, use the same adopted
+profile/root/out-dir as retrieval. Its contracts remain `session-checkpoint-v1.json`
+and `execution-receipt-v1.json` under the distribution contracts directory
+(source layout: `docs/machine`).
 
 Use an external host-owned state directory, for example
 `${XDG_STATE_HOME:-$HOME/.local/state}/shin-context/sessions/<project-key>/<task-id>/<thread-id>`.

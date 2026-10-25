@@ -998,55 +998,6 @@ static void scan_doctor_topics(DoctorResult& result, const fs::path& generated_r
     });
 }
 
-static void scan_doctor_terms(DoctorResult& result, const fs::path& generated_root) {
-    std::string previous;
-    for_each_jsonl_line_if_exists(generated_root / "terms.jsonl", [&](const std::string& line) {
-        std::string term;
-        (void)decode_generated_term_posting(line, &term);
-        ++result.counts.terms;
-        if (term.empty()) {
-            add_doctor_issue(result.issues, result.counts, "error", "empty-term-posting",
-                             (generated_root / "terms.jsonl").generic_string(), result.counts.terms,
-                             "Term postings row has an empty term.");
-        }
-        if (!previous.empty() && term <= previous) {
-            add_doctor_issue(result.issues, result.counts, "error", "unsorted-term-posting",
-                             (generated_root / "terms.jsonl").generic_string(), result.counts.terms,
-                             "Term postings rows must be unique and sorted by term.");
-        }
-        previous = term;
-    });
-}
-
-static void scan_doctor_term_offsets(DoctorResult& result, const fs::path& generated_root) {
-    std::string previous;
-    for_each_jsonl_line_if_exists(generated_root / "terms.index.tsv", [&](const std::string& line) {
-        std::string term;
-        TermOffset offset;
-        ++result.counts.term_offsets;
-        if (!parse_term_offset_line(line, term, offset)) {
-            add_doctor_issue(result.issues, result.counts, "error", "invalid-term-offset",
-                             (generated_root / "terms.index.tsv").generic_string(),
-                             result.counts.term_offsets,
-                             "Term offset row must contain term, byte offset, and byte length.");
-            return;
-        }
-        if (term.empty()) {
-            add_doctor_issue(result.issues, result.counts, "error", "empty-term-offset",
-                             (generated_root / "terms.index.tsv").generic_string(),
-                             result.counts.term_offsets,
-                             "Term offset row has an empty term.");
-        }
-        if (!previous.empty() && term <= previous) {
-            add_doctor_issue(result.issues, result.counts, "error", "unsorted-term-offset",
-                             (generated_root / "terms.index.tsv").generic_string(),
-                             result.counts.term_offsets,
-                             "Term offset rows must be unique and sorted by term.");
-        }
-        previous = term;
-    });
-}
-
 static void scan_doctor_row_offsets(DoctorResult& result,
                              const fs::path& generated_root,
                              const std::string& data_file,
@@ -1283,7 +1234,7 @@ static void validate_doctor_consistency(const RuntimeOptions& options,
     }
     if (counts.terms != counts.term_offsets) {
         add_doctor_issue(result.issues, counts, "error", "term-index-count-mismatch",
-                         (options.out_root / kGeneratedDir / "terms.index.tsv").generic_string(), 0,
+                         (options.out_root / kGeneratedDir / "terms.lex").generic_string(), 0,
                          "Lexical offset and dictionary row counts must match.");
     }
     const int expected_row_offsets =
@@ -1371,7 +1322,8 @@ DoctorResult inspect_generated_kb_health(const RuntimeOptions& options, bool str
     scan_doctor_sections(result, generated_root, document_ids);
     scan_doctor_links(options.profile, result, generated_root);
     scan_doctor_topics(result, generated_root);
-    if (compact_lexical_index(options)) {
+    (void)compact_lexical_index(options);
+    {
         try {
             const auto manifest = parse_json_text(read_file(manifest_path), manifest_path.string());
             GeneratedInput input(options, generated_root / "terms.lex");
@@ -1384,9 +1336,6 @@ DoctorResult inspect_generated_kb_health(const RuntimeOptions& options, bool str
             add_doctor_issue(result.issues, result.counts, "error", "invalid-compact-terms",
                 (generated_root / "terms.lex").generic_string(), 0, error.what());
         }
-    } else {
-        scan_doctor_terms(result, generated_root);
-        scan_doctor_term_offsets(result, generated_root);
     }
     scan_doctor_fact_rows(result, generated_root, fact_ids);
     scan_doctor_row_offsets(result, generated_root, "sections.jsonl", result.counts.sections);

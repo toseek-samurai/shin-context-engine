@@ -51,13 +51,12 @@ void ValidationGeneration::verify_inputs(const RuntimeOptions& options) {
     verification_ms_ += elapsed_ms_since(started);
 }
 
-std::shared_ptr<const GeneratedOutput> ValidationGeneration::acquire(const RuntimeOptions& options, bool compact) {
+std::shared_ptr<const GeneratedOutput> ValidationGeneration::acquire(const RuntimeOptions& options) {
     const std::lock_guard guard(mutex_);
     if (disabled_) return {};
     try {
         verify_binding(options);
         if (generated_) {
-            if (compact != compact_) changed();
             verify_inputs(options);
             ++reuses_;
             return generated_;
@@ -74,8 +73,7 @@ std::shared_ptr<const GeneratedOutput> ValidationGeneration::acquire(const Runti
         }
         for (const auto& [path, state] : sources_.source_facts) { (void)state; fact_paths_.push_back(path); }
         if (retool_) retool_environment_ = retool_generation_environment(root_, fact_paths_);
-        compact_ = compact;
-        auto generated = std::make_shared<const GeneratedOutput>(generate_outputs(options.profile, root_, nullptr, compact));
+        auto generated = std::make_shared<const GeneratedOutput>(generate_outputs(options.profile, root_));
         // Dependencies come from the newly computed expectation, never from a
         // possibly stale/forged index. A previously broken target matters too.
         const auto found = generated->files.find((kGeneratedDir / "links.jsonl").generic_string());
@@ -119,9 +117,9 @@ Json ValidationGeneration::metrics() const {
         {"fallback_reason", fallback_reason_}};
 }
 
-std::shared_ptr<const GeneratedOutput> validation_generated_output(const RuntimeOptions& options, bool compact) {
+std::shared_ptr<const GeneratedOutput> validation_generated_output(const RuntimeOptions& options) {
     if (options.validation_generation)
-        if (auto generated = options.validation_generation->acquire(options, compact)) return generated;
-    return std::make_shared<const GeneratedOutput>(generate_outputs(options.profile, options.root, nullptr, compact));
+        if (auto generated = options.validation_generation->acquire(options)) return generated;
+    return std::make_shared<const GeneratedOutput>(generate_outputs(options.profile, options.root));
 }
 } // namespace shin::context

@@ -1,0 +1,76 @@
+{
+  "schemaVersion": "shin.local-session-recovery-contract.v1",
+  "document": "local-session-recovery-v1",
+  "status": "accepted",
+  "availability": "unreleased-source",
+  "summary": "Optional explicit MCP task notes reusing the existing Core checkpoint/resume assessment. Notes never establish source authority or task success.",
+  "scope": {
+    "tools": [
+      "shin_checkpoint",
+      "shin_resume"
+    ],
+    "discovery": "Existing explicit root or allow-root project grants remain mandatory. No new filesystem paths, receipts or trusted producers can be supplied by callers.",
+    "identity": "Real host session_id plus caller-chosen task_key. Both become domain-separated opaque SHA-256 IDs. The slot additionally binds physical root, workspace and adopted profile. Never substitute identities to find another checkpoint.",
+    "workflow": "Save only when useful; preserve the key/revision in host handoff state. No per-turn save rituals or call quotas. Missing notes do not block ordinary context queries.",
+    "authority": "Caller-asserted progress, next steps and paths. Resume compares objective, age and current worktree with the unchanged Core contract; review_required and continuation_ready are independent consistency findings, not proof of work or receipt. The wrapper ready_without_review additionally requires no review."
+  },
+  "storage": {
+    "path": "<recorded-data-home>/sessions/<opaque-binding>/state.json",
+    "insideProject": false,
+    "maximumSlots": 1024,
+    "maximumDraftBytes": 4096,
+    "maximumCheckpointBytes": 16384,
+    "maximumResumeBytes": 49152,
+    "ttlSeconds": {
+      "default": 86400,
+      "maximum": 604800
+    },
+    "write": "Private owner-only StateStore, allocation/writer leases, inode and binding checks, atomic pending/fsync/rename. Existing notes require their exact expected_revision for replacement. Malformed/replaced state is preserved and refused; there is no silent reset or automatic deletion.",
+    "privacy": "Explicit notes are private local content, not numerical telemetry. Core secret screening remains in force. No note bodies, query text, raw session IDs or task keys enter the MCP activity journal. Nothing is uploaded."
+  },
+  "cost": "Only explicit checkpoint/resume invoke Core worktree assessment. Ordinary resident query/read/inspect freshness and publication authority are unchanged. Core CLI index-mutation suggestions are replaced with native background-qualification guidance; they never authorize manual rebuild of a managed index.",
+  "observation": {
+    "intent": "Optional caller labels explore, context-recovery or follow-up on ordinary project calls. Checkpoint and resume use fixed purposes. These are not host lifecycle facts.",
+    "hostMarkers": "Registered Codex history only: explicit compacted, task_started, task_complete, turn_aborted and turn_context records. Turn completion does not establish user task success. No markers are inferred from token gaps, elapsed time, query text or a topic classifier.",
+    "projection": "At most 64 recent metadata markers: opaque event/session/turn/window IDs, timestamp, kind; model only from an explicit turn_context and labeled client-history provenance. No message, replacement history, prompts or source bodies are exported.",
+    "compatibility": "Context events are optional at the registered-usage envelope level. The existing strict model-usage.v3 token snapshot remains readable by older kits during rollback. Invalid/oversized metadata cannot invalidate token totals.",
+    "coverage": "Missing or unsupported clients, unassigned cwd routes, skipped large lines and truncation are not zero compactions. No aliases, enrollment or unmanaged history repairs are performed to improve coverage."
+  },
+  "presentation": {
+    "surfaces": [
+      "Monitor Sessions",
+      "shin-ce stats view 6"
+    ],
+    "maximumSessions": 8,
+    "timelinePerSession": 8,
+    "successfulQueryTimesPerSession": 8,
+    "models": "Per-call model_id remains caller-reported and unknown when absent. Host-history model labels are displayed separately and never assigned to individual MCP calls.",
+    "latency": "Time to the next retained successful query start after an explicit compaction marker is shown only for an observed interval with no reported journal losses. It is not receipt latency, recovery completion or task quality.",
+    "nonGoals": [
+      "Artificial invocation targets",
+      "Automatic checkpoint creation after inferred compaction",
+      "Paid model evaluation campaigns",
+      "Task success or context-consumption scores"
+    ],
+    "episodes": "Background analysis uses only registered explicit Codex boundaries, separate from caller recovery intent. It shows the latest three intervals per retained session, read repetitions within them and previously seen file versions. Missing, ambiguous or stale observations remain partial; no topic classifier, model attribution or context-use score is inferred."
+  },
+  "verification": [
+    "observer/tests/local_mcp_test.py",
+    "observer/tests/usage_registered_test.py",
+    "observer/tests/model_usage_test.cpp",
+    "observer/tui/view_test.cpp",
+    "observer/tui/sand_test.cpp",
+    "observer/tray/layout_test.inc",
+    "observer/tests/local_session_analysis_test.cpp"
+  ],
+  "delivery": {
+    "instructions": "All native MCP clients receive the same initialize instructions and self-contained recovery tool descriptions. Bundled Codex and Hermes procedures use advertised capabilities and preserve handoff bindings.",
+    "compatibility": "Missing tools, a lost binding or unverifiable notes fall back to current-code retrieval, without fabricated IDs, implicit enrollment or managed-index repair.",
+    "packageContracts": [
+      "local-session-recovery-v1.json",
+      "mcp-activity-v1.json"
+    ],
+    "projectFiles": "Project registration does not edit consumer AGENTS.md or introduce competing client instruction files.",
+    "hostMemory": "Task notes are explicitly saved private local state; no automatic compaction capture, conversation retention or envelope injection is introduced."
+  }
+}

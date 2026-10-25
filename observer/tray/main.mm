@@ -1068,7 +1068,7 @@ static std::unique_ptr<Monitor> monitor;
     }
     const char* projectText = usageProject.UTF8String;
     if (projectText) model_project = projectText;
-    dashboard_view = static_cast<int>(std::clamp<NSInteger>([[NSUserDefaults standardUserDefaults] integerForKey:@"ShinView"], 0, 2));
+    dashboard_view = static_cast<int>(std::clamp<NSInteger>([[NSUserDefaults standardUserDefaults] integerForKey:@"ShinView"], 0, 3));
     self.item = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
     self.item.autosaveName = @"ShinMonitor";
     self.item.visible = YES;
@@ -1343,11 +1343,11 @@ int main(int argc, char** argv) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* item = [[NSMenuItem alloc] init];
         NSMenu* application = [[NSMenu alloc] init];
-        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Models"),
+        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Models"), ui_text("Sessions"),
             ui_text("Now"), ui_text("24 hours"), ui_text("7 days")];
         for (NSUInteger i = 0; i < titles.count; ++i) {
             NSMenuItem* choice = [application addItemWithTitle:titles[i] action:@selector(selectView:) keyEquivalent:@""];
-            choice.tag = static_cast<NSInteger>(i < 3 ? 10 + i : 20 + i - 3);
+            choice.tag = static_cast<NSInteger>(i < 4 ? 10 + i : 20 + i - 4);
             choice.target = delegate;
         }
         [application addItem:[NSMenuItem separatorItem]];

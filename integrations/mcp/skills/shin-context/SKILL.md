@@ -84,12 +84,12 @@ review. MCP cannot approve it. Do not retry or reconnect as a substitute for
 approval. After acceptance, let the service qualify the index, then make a fresh
 same-project query and use its new snapshot; acceptance alone is not readiness.
 
-For transient `recovery` (updating, busy, timeout or sleep), continue direct-source
-work. If Shin would help at a later task checkpoint, retry one fresh query for
-the same project after `retry_after_ms` and use its new snapshot for inspect/read.
-Avoid polling loops or abandoning Shin for the whole chat after one temporary
-failure. Shin remains optional. Report persistent refusals; permission, identity,
-policy and validation failures are not transient retry advice. Do not run Core
+A status with `state=preparing` is pending, not a failed project. Submit the
+useful `shin_query`: it waits for readiness within the same call for up to
+20 seconds and supports cancellation and client progress tokens. Do not poll
+status or sleep manually. If that bounded wait expires, or permission, identity,
+policy or validation blocks the project, report the reason and use direct sources.
+Return to Shin at a useful checkpoint; there are no call quotas. Do not run Core
 build, change profiles, release ownership, use another index or silently fall
 back to historical/legacy evidence to bypass a refused native route.
 

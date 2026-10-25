@@ -1,4 +1,5 @@
 #include "shin/observer/model_usage.h"
+#include "shin/observer/local_project.h"
 #include <algorithm>
 #include <chrono>
 #include <map>
@@ -45,7 +46,9 @@ void add(Json& target, const Json& row) {
 } // namespace
 
 Json summarize_model_usage(const Json& input, std::int64_t now) {
-    keys(input, {"schema_version", "config_sha256", "projects", "buckets", "sources", "updated_at_unix_ms"});
+    auto expected = std::set<std::string>{"schema_version", "config_sha256", "projects", "buckets", "sources", "updated_at_unix_ms"};
+    if (input.contains("context_events")) expected.insert("context_events");
+    keys(input, expected);
     const bool bound_workspaces = input.at("schema_version") == "shin.model-usage.v3";
     require(bound_workspaces || input.at("schema_version") == "shin.model-usage.v2");
     const auto pin = label(input.at("config_sha256"), 64, true);
@@ -131,13 +134,35 @@ Json summarize_model_usage(const Json& input, std::int64_t now) {
         result["projects"].push_back({{"id", id}, {"name", group.name}, {"workspace_keys", group.workspaces},
             {"totals", group.total}, {"models", models}, {"days", days}});
     }
+    if (input.contains("context_events")) try {
+        const auto& events = input.at("context_events");
+        keys(events, {"schema_version","source","events","omitted","complete"});
+        require(events.at("schema_version") == "shin.context-events.v1" && events.at("source") == "codex" &&
+            events.at("complete").is_boolean() && events.at("events").is_array() && events.at("events").size() <= 64);
+        (void)count(events.at("omitted"));
+        const auto opaque = [&](const Json& id) {
+            const auto text = label(id,64,true); require(text.size() == 64 && text.find_first_not_of("0123456789abcdef") == std::string::npos);
+        };
+        for (const auto& marker : events.at("events")) {
+            auto fields = std::set<std::string>{"event_id","session_id","at_ms","kind"};
+            for (const auto* key : {"turn_id","window_id","model_id"}) if (marker.contains(key)) fields.insert(key);
+            keys(marker,fields); opaque(marker.at("event_id")); opaque(marker.at("session_id"));
+            require(count(marker.at("at_ms")) <= static_cast<std::uint64_t>(now));
+            require(std::set<Json>{"compaction","turn-start","turn-finish","turn-abort","turn-model"}.contains(marker.at("kind")));
+            for (const auto* key : {"turn_id","window_id"}) if (marker.contains(key)) opaque(marker.at(key));
+            if (marker.contains("model_id")) { require(marker.at("kind") == "turn-model" && marker.at("model_id").is_string() && valid_reported_model(marker.at("model_id").get<std::string>())); }
+        }
+        result["context_events"] = events;
+    } catch (const std::exception&) { result["context_events"] = {{"status","invalid"}}; }
     return result;
 }
 Json read_model_usage(const fs::path& path, std::int64_t now) {
     (void)directory_identity(path.parent_path(), true);
     const auto input = parse_json(read_text(path, 2 * 1024 * 1024, true));
     if (input.value("schema_version", "") == "shin.registered-usage.v1") {
-        auto result = summarize_model_usage(input.at("snapshot"), now);
+        auto snapshot = input.at("snapshot");
+        if (input.contains("context_events")) snapshot["context_events"] = input.at("context_events");
+        auto result = summarize_model_usage(snapshot, now);
         const auto health_dir = path.parent_path().parent_path()/"usage-health";
         if (fs::exists(fs::symlink_status(health_dir))) {
             StateStore health(health_dir,false);

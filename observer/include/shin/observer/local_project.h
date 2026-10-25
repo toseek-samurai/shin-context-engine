@@ -30,8 +30,16 @@ struct LocalProjectRequest {
     std::string marker_revision;
     std::string config_revision;
     bool diagnostic = false;
+    bool wait_for_ready = true; // MCP status probes observe cold preparation without waiting.
+    std::uint64_t readiness_wait_ms = 0; // Optional query admission budget; bounded by the native service.
     // Optional opaque telemetry only; never used for project authority.
     std::string session_id, parent_request_id, model_id;
+    std::string task_id, intent;
+    Json session_draft;
+    std::string session_task;
+    std::string expected_revision;
+    // Local adapter telemetry callback; no authority and never accepted from wire/CLI.
+    std::function<void(const std::string&)> observe_request_id;
     // Internal reconciliation token, never accepted from a CLI argument.
     std::string maintenance_worktree;
     std::string maintenance_root_identity;
@@ -45,6 +53,10 @@ struct LocalProjectRequest {
 
 // Single-threaded CLI adapter over native Core/Observer commands.
 Json local_project(const LocalProjectRequest& request);
+// Installer rollback only: atomically retire an owned candidate publication so
+// the restored CLI can rebuild. Never rewrites bindings or accepts old retrieval.
+bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected_binding,
+                                 const std::string& restored_generator);
 // Observational watch state, never project/publication authority.
 Json local_watch_status(const fs::path& directory);
 Json watch_local_project(const LocalProjectRequest& request, std::uint64_t samples,

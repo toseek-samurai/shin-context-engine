@@ -579,9 +579,11 @@ void verify_cache_owner(const std::string& bytes, const StorageProject& project,
         require(tables.size()<14 && sqlite3_column_type(schema,0)==SQLITE_TEXT,"storage-cache-unverified","Cache schema is invalid.");
         tables.insert(reinterpret_cast<const char*>(sqlite3_column_text(schema,0)));
     }
-    const std::set<std::string> expected{"cache_meta","chunks","chunks_config","chunks_content","chunks_data","chunks_docsize","chunks_idx",
+    const std::set<std::string> legacy_tables{"cache_meta","chunks","chunks_config","chunks_content","chunks_data","chunks_docsize","chunks_idx",
         "query_text","query_text_config","query_text_content","query_text_data","query_text_docsize","query_text_idx","query_vocab"};
-    require(schema_step==SQLITE_DONE && tables==expected,"storage-cache-unverified","Cache contains unknown tables; it is preserved.");
+    const std::set<std::string> current_tables{"cache_meta","chunks","chunks_config","chunks_content","chunks_data","chunks_docsize","chunks_idx"};
+    require(schema_step==SQLITE_DONE && (tables==legacy_tables || tables==current_tables),
+        "storage-cache-unverified","Cache contains unknown tables; it is preserved.");
     sqlite3_stmt* query = nullptr;
     const auto prepared = sqlite3_prepare_v2(raw,"SELECT payload FROM cache_meta WHERE id=0",-1,&query,nullptr);
     std::unique_ptr<sqlite3_stmt,decltype(&sqlite3_finalize)> statement(query,sqlite3_finalize);
@@ -594,7 +596,9 @@ void verify_cache_owner(const std::string& bytes, const StorageProject& project,
         payload.at("indexed_text_bytes").get<std::uintmax_t>()<=core::SourceCache::maximum_bytes,
         "storage-cache-unverified","Cache metadata is outside its format bounds.");
     const auto& binding = payload.at("binding"); const auto& identity = binding.at("identity");
-    require(binding.at("format") == "shin.source-cache.v2" && identity.at("root") == project.root.generic_string() &&
+    const bool known_format = (binding.at("format") == "shin.source-cache.v2" && tables == legacy_tables) ||
+                             (binding.at("format") == "shin.source-cache.v3" && tables == current_tables);
+    require(known_format && identity.at("root") == project.root.generic_string() &&
         identity.at("index") == project.output.generic_string() && core::fnv1a64(identity.dump()).substr(8)==key,
         "storage-cache-unverified", "Cache belongs to a different project or index.");
 }

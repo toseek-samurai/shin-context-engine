@@ -57,6 +57,7 @@ void bound_local_service_status(Json& status) {
     // summary counters; discard duplicate current-run detail before history.
     struct Detail { const char* path; bool newest_first; const char* flag; };
     for (const auto& detail : {
+            Detail{"/mcp_activity/session_rows", true, "/mcp_activity/sessions_truncated"},
             Detail{"/request_metrics/recent", false, "/request_metrics/recent_truncated"},
             Detail{"/refresh_diagnostics", false, "/refresh_diagnostics_truncated"},
             Detail{"/events", false, nullptr}, Detail{"/samples", false, nullptr},
@@ -92,8 +93,11 @@ void bound_local_service_status(Json& status) {
         throw Error("service-status-too-large", "Essential local service status exceeds its byte budget.");
 }
 
-void LocalTelemetry::open_history(const fs::path& directory) { history = std::make_unique<LocalHistory>(directory); }
-void LocalTelemetry::close_history() { history.reset(); }
+void LocalTelemetry::open_history(const fs::path& directory, const fs::path& mcp_directory) {
+    history = std::make_unique<LocalHistory>(directory);
+    mcp_activity = std::make_unique<LocalMcpActivity>(mcp_directory.empty() ? directory.parent_path() / "mcp-history" : mcp_directory, true);
+}
+void LocalTelemetry::close_history() { history.reset(); mcp_activity.reset(); }
 
 void LocalTelemetry::detach(const fs::path& root) {
     if (projects.erase(root.string()) == 0) return;
@@ -405,6 +409,7 @@ Json LocalTelemetry::snapshot() const {
         {"project_states", std::move(rows)}, {"samples", samples}, {"events", events},
         {"history", history ? history->snapshot() : Json{{"status", "disabled"}}},
         {"refresh_diagnostics", refresh_results}, {"activity", activity.snapshot()},
+        {"mcp_activity", mcp_activity ? mcp_activity->snapshot() : Json{{"status", "disabled"}}},
         {"request_metrics", {{"scope", "worker-execution-until-response-ready"},
             {"service_duration_scope", "complete-request-received-until-response-ready"},
             {"purpose_policy", "explicit-diagnostic-otherwise-unclassified"},

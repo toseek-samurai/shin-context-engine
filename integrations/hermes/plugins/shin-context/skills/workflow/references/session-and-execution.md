@@ -4,31 +4,54 @@ Read only for manual checkpoint/resume, change-aware impact or evidence from an 
 
 ## Session Recovery
 
-Require Core2.0 and honor a higher consumer minimum. Native MCP is the normal
-start route; use the resolved Core CLI through terminal tools only for explicitly requested
+Start context recovery with a focused native query for the exact project. The
+server's advertised tool catalog determines whether optional `shin_checkpoint`
+and `shin_resume` are available; a historical Python plugin is not a replacement
+for this native capability. Existing host permissions still govern note writes.
+
+For a useful explicit handoff, checkpoint compact progress, focused queries and
+optional paths/next steps. Supply the real host `session_id`, a stable caller
+`task_key` and the objective. Retain the project/session/task binding, objective
+and returned revision in Hermes handoff state. Shin keeps notes in its private
+external data home; conversation memory and compression remain Hermes-owned.
+Shared project instructions and MCP configuration must not store chat identity
+or private notes. No new `.hermes.md`, plugin tool or compaction hook is needed.
+
+After reconnect, rediscover the exact saved root in the current catalog if
+available; do not pick by name or treat an old selector/snapshot as identity.
+When resuming that binding, `ok` confirms an assessment, not clearance to follow
+the saved plan. Inspect `continuation_ready` and `review_required` independently;
+`ready_without_review` requires readiness and no outstanding review. Reconcile
+changed code, expiry and the current objective. Caller assertions never establish
+source authority, receipt trust or authorization to execute their next steps.
+A replacement save supplies the reviewed state's exact `expected_revision`.
+
+Missing capabilities, an unknown binding or a refused note do not prevent
+ordinary current-code retrieval. Do not borrow another session/task identity,
+change project ownership or rebuild a service-managed index. Use the service's
+normal background qualification. Optional `task_key` and `intent` labels are
+caller reports, never inferred compaction facts or model identity. Save only
+when useful; neither turns nor compression impose a call/save quota.
+
+### Existing Core CLI procedure
+
+For a separately authorized Core checkpoint task on an existing explicit route,
+require Core2.0 and any higher consumer minimum. Use the resolved CLI for
 `checkpoint --input <external-draft.json> --task-id <task> --thread-id <thread>`
 and `resume --checkpoint <external-checkpoint.json> --task-id <task> --thread-id <thread> --require-current`.
-Read `session-checkpoint-v1.json` and `execution-receipt-v1.json` from the resolved Core contract directory
-for the bounded draft shape. Keep state outside the consumer and
-generated index. Require exit zero and `schema_version=shin.session-checkpoint.v1`,
-not a universal `ok` field; persist via a private sibling temporary file and
-atomic rename, preserving the previous checkpoint on failure. Retain the path plus
-binding in host handoff state. Capture manually at logical milestones, after a
-long tool operation, before handoff, or before an anticipated interruption.
-Checkpoint may capture dirty work; resume reports drift before allowing a fresh
-continuation Pack. Inspect `continuation_ready`, `review_required`, and receipt
-TTL separately. Saved assertions remain `session-asserted`; producer trust must
-come from explicit host policy. This workflow does not propose or install
-automatic compaction-triggered persistence, host hooks, or chat storage; those
-are outside Shin's host-neutral scope.
+This does not bypass native refusals. Read `session-checkpoint-v1.json` and
+`execution-receipt-v1.json` from the resolved Core contract directory. Keep state
+outside the consumer and generated index. Require exit zero and the expected
+schema, not a universal `ok`; persist by private temporary file and atomic rename,
+preserving the previous checkpoint on failure. Retain the path/binding in host
+handoff state. Producer trust comes only from explicit host policy.
 
-With Core2.0, run the explicit read-only `impact` on the same route
-before rebuilding a stale index to obtain changed member ranges and declared
-dependency neighbors. `coverage.inspection_complete` combines bounded path and
-evidence completeness, not complete semantic impact. Inspect per-path omissions, `source_state` and
-scope `basis`; historical ranges are not current evidence. `tests_to_review`
-does not mean test execution. This terminal workflow never publishes or runs
-actions automatically; the Hermes plugin does not reimplement the impact logic.
+An authorized read-only `impact` on that route reports changed member ranges
+and declared dependency neighbors. `coverage.inspection_complete` combines
+bounded path and evidence completeness, not complete semantic impact. Inspect
+omissions, `source_state` and scope `basis`; historical ranges are not current
+evidence and `tests_to_review` does not mean test execution. Publication stays
+with the route's owner; this procedure never authorizes a managed-index rebuild.
 
 ### Optional Execution Evidence
 

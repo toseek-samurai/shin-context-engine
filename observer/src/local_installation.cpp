@@ -4,6 +4,7 @@
 #include "shin/observer/local_registry.h"
 #include "shin/observer/local_update_diagnostics.h"
 #include "../ui/update_progress.h"
+#include "context_types.h"
 #include <regex>
 #include <csignal>
 #include <spawn.h>
@@ -268,6 +269,9 @@ void qualify_update(const fs::path& home, const fs::path& executable,
             try {
                 result = qualify_local_project(project, executable);
             } catch (const Error& error) {
+                if (error.code == "index-generator-unsupported")
+                    throw Error("installation-project-not-ready", "This derived index requires rebuilding with the candidate engine.",
+                        update_project_diagnostic(project.root.string(), error.code));
                 if ((error.code != "project-busy" && error.code != "binding-changed") ||
                     std::chrono::steady_clock::now() >= deadline)
                     throw Error(error.code, error.what(), merge_update_diagnostic(
@@ -444,19 +448,23 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
     return result;
 }
 bool compatible_core_patch(const std::string& from, const std::string& to) {
-    // Explicit format-preserving v22 transitions, never a generic version range.
-    if (to == "2.0.5-dev.6")
-        return from == "2.0.5-dev.1" || from == "2.0.5-dev.2" || from == "2.0.5-dev.3" ||
-               from == "2.0.5-dev.4" || from == "2.0.5-dev.5";
-    return (from == "2.0.5-dev.1" && (to == "2.0.5-dev.2" || to == "2.0.5-dev.3" || to == "2.0.5-dev.4" || to == "2.0.5-dev.5")) ||
-           (from == "2.0.5-dev.2" && (to == "2.0.5-dev.3" || to == "2.0.5-dev.4" || to == "2.0.5-dev.5")) ||
-           (from == "2.0.5-dev.3" && (to == "2.0.5-dev.4" || to == "2.0.5-dev.5")) ||
-           (from == "2.0.5-dev.4" && to == "2.0.5-dev.5");
+    // Bindings and publication grants authorize rebuilding, never reading an
+    // older index. Versions admit only a forward transition within one major.
+    try {
+        const auto previous = release_order(from), next = release_order(to);
+        return previous[0] == next[0] && previous < next;
+    } catch (const Error&) { return false; }
 }
 Json bootstrap_identity(Json binding) {
     binding.erase("core_version");
+    binding.erase("generator_version");
     binding.erase("prepared_snapshot");
     return binding;
+}
+bool rebuildable_bootstrap_format(const Json& binding) {
+    const auto generator = binding.value("generator_version", "");
+    return generator == shin::context::kGeneratorVersion || generator == "shin-generator-v22-compact-lexical" ||
+           generator == "shin-generator-v21-cpp-syntax";
 }
 Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate) {
     Json records = Json::array();
@@ -467,9 +475,14 @@ Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate)
         if (binding->value("schema_version", "") != "shin.local-project-binding.v1" ||
             binding->value("core_version", "") == SHIN_VERSION) continue;
         require(compatible_core_patch(binding->value("core_version", ""), SHIN_VERSION) &&
-            binding->value("generator_version", "") == "shin-generator-v22-compact-lexical",
+            rebuildable_bootstrap_format(*binding),
             "refresh-engine-changed", "This private binding is outside the qualified Core patch transition.");
-        (void)qualify_local_project(project, candidate); // Validate identity and policy without publication.
+        try { (void)qualify_local_project(project, candidate); } // Validate identity/policy without publication.
+        catch (const Error& error) {
+            if (error.code != "index-generator-unsupported") throw;
+            // The current reader deliberately cannot consume the old format.
+            // Only the ordinary owned init path below may replace it.
+        }
         records.push_back({{"root", project.root.string()}, {"binding", *binding}});
     }
     return records;
@@ -482,7 +495,7 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         require(record.at("binding").value("schema_version", "") == "shin.local-project-binding.v1" &&
             record.at("binding").value("root", "") == root.string() &&
             compatible_core_patch(record.at("binding").value("core_version", ""), SHIN_VERSION) &&
-            record.at("binding").value("generator_version", "") == "shin-generator-v22-compact-lexical",
+            rebuildable_bootstrap_format(record.at("binding")),
             "installation-state-invalid", "Bootstrap migration is outside the reviewed source contract.");
         const auto project = std::find_if(projects.begin(), projects.end(), [&](const auto& value) { return value.root == root; });
         require(project != projects.end(), "registry-binding-changed", "Migration project is no longer enrolled.");
@@ -498,9 +511,17 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         const auto original = record.at("binding").at("core_version").get<std::string>();
         const std::string target = previous.empty() ? SHIN_VERSION : original;
         const std::string other = previous.empty() ? original : SHIN_VERSION;
+        const std::string target_generator = previous.empty() ? shin::context::kGeneratorVersion :
+            record.at("binding").at("generator_version").get<std::string>();
+        const std::string other_generator = previous.empty() ? record.at("binding").at("generator_version").get<std::string>() :
+            shin::context::kGeneratorVersion;
         const auto current = load();
-        if (current.at("core_version") == target) continue;
-        require(current.at("core_version") == other, "refresh-engine-changed", "Unexpected bootstrap engine version.");
+        const bool target_binding = current.at("core_version") == target && current.at("generator_version") == target_generator;
+        require(target_binding || (current.at("core_version") == other && current.at("generator_version") == other_generator),
+            "refresh-engine-changed", "Unexpected bootstrap engine or format.");
+        const bool retired = !previous.empty() && target_generator != shin::context::kGeneratorVersion &&
+            retire_bootstrap_update_index(*project, current, target_generator);
+        if (target_binding && !retired) continue;
         if (previous.empty()) {
             auto request = *project; request.command = "init";
             const auto result = local_project(request);
@@ -509,7 +530,9 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         } else {
             (void)previous_cli(previous, home, "init", root);
         }
-        require(load().at("core_version") == target, "refresh-engine-changed", "Bootstrap migration did not confirm the target engine.");
+        const auto confirmed = load();
+        require(confirmed.at("core_version") == target && confirmed.at("generator_version") == target_generator,
+            "refresh-engine-changed", "Bootstrap rebuild did not confirm the target engine and format.");
     }
 }
 Json resume_previous_runtime(const fs::path& home, const fs::path& executable, const Json& runtime,
@@ -752,8 +775,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         if (state.at("receipt").at("manifest_sha256").get<std::string>() == hash)
             return {{"ok", true}, {"command", "update"}, {"changed", false}, {"phase", "installed"}, {"version", kit.at("version")}, {"data_preserved", true}};
         const bool core_patch = compatible_core_patch(state.at("kit").at("core_version"), kit.at("core_version"));
-        // Explicit format-preserving transition: v22 evidence rows and reader
-        // contracts are unchanged; candidate admission still qualifies every root.
+        // Candidate admission qualifies every root before payload replacement.
         require(kit.at("core_version") == state.at("kit").at("core_version") || core_patch,
             "installation-core-transition-unsupported", "This Core transition has no qualified data compatibility contract; the current kit was preserved.");
         require(release_order(kit.at("version")) > release_order(state.at("kit").at("version")),
@@ -860,6 +882,10 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         if (update.value("recover_publications", false)) {
             require(compatible_core_patch(update.at("old_kit").at("core_version"), kit.at("core_version")), "installation-state-invalid",
                 "Publication recovery requires the qualified Core patch transition.");
+            // An interrupted activation may already have started this candidate's
+            // service. Reacquire its startup fence and stop it before replaying
+            // publication work; never race a second publisher against that service.
+            const auto service_guard = stop_owned_service(update.at("receipt"), kit.at("version"), kit.at("core_version"));
             migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()));
             LocalProjectRequest request; request.home = home; request.command = "watch";
             std::vector<fs::path> roots;

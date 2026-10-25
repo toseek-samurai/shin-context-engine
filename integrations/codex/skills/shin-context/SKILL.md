@@ -8,9 +8,8 @@ description: Retrieve verified code and docs through Shin 2.0 before broad repos
 Use Shin first for unfamiliar code/context recovery; read known files directly.
 Read [reader selection](references/reader-selection.md) before discovery or read recovery.
 
-Use Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
-readable `shin-generator-v21-cpp-syntax`. The local
-offline service needs no account, remote backend or vector service.
+Use Shin v2.0.0 or newer with `shin-generator-v23-unicode-lexical`.
+Older indexes require rebuilding. The offline service needs no account or backend.
 Retrieval grants no execution, publication or installation authority. Read the repository's applicable `AGENTS.md` and named adoption marker.
 
 ## Normal Work
@@ -19,14 +18,14 @@ Retrieval grants no execution, publication or installation authority. Read the r
    the exact root for this task. Pass its `project` handle on every project tool call;
    there is no global current project. Otherwise MCP pins one startup root.
    Call `shin_status` and verify the returned root.
-2. For a ready route, call `shin_query` with one focused question. Inspect scope,
+2. For a ready or preparing route, call `shin_query` with one focused question. Inspect scope,
    omissions and source locators; a passing gate is not whole-repository coverage.
 3. Use `shin_inspect` and `shin_read` for returned SOURCE locators with the exact
    snapshot and project-relative path. In multi-project MCP pass `mcp_snapshot`
    from that response and the same `project`; single-root MCP uses `snapshot_id`. Read documents without SOURCE locators directly.
    Requery after a snapshot change. Sources/tests establish implementation and execution claims.
 
-Pass available real session IDs on project calls; see [session guidance](references/session-resume.md).
+For session IDs and optional handoff, see [session guidance](references/session-resume.md).
 
 
 On failure, follow `recovery`; use `shin_help` if advertised.
@@ -51,9 +50,10 @@ blockers in handoff. `route-revision-conflict` needs owner review,
 not retries. Editing a profile is not approval. Follow [review](references/setup-and-adoption.md#profile-change-review);
 verify readiness after acceptance.
 
-For transient `recovery`, continue source work; if useful later, retry one query
-after `retry_after_ms` with the same project and use its new snapshot. Avoid
-polling or chat-wide abandonment. Report persistent refusals.
+A preparing status is pending: submit the useful `shin_query`. It waits up to
+20 seconds inside one call. No manual sleeps or status polling. After that wait
+expires or a real blocker appears, use direct sources; return at a useful
+checkpoint. No call quotas.
 Do not manually build a managed index, alter budgets or profiles, release its
 ownership, select another index or use historical evidence to bypass refusal.
 Ordinary `rg`, `jq` and direct source reads remain valid; Shin use is not a quota.

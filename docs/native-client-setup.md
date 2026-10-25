@@ -234,3 +234,69 @@ ordinary local reader. `source-read-unknown-file` means no scanned source bindin
 exists in the selected snapshot; it does not prove that a file is absent on disk.
 Do not reindex or widen a profile for these refusals. On a snapshot mismatch,
 query the same project once and use its new snapshot for the next source read.
+
+## Getting useful context
+
+The default engine uses lexical retrieval. For unfamiliar code, ask one focused
+question and include concrete API, class or feature names already present in the
+task. Broad descriptions can return the relevant contract without locating the
+implementation. Retain relevant code names in a Russian question; the UI language
+does not control the search language.
+
+When `shin_status` reports `state=preparing`, submit the useful `shin_query`.
+The query waits automatically for up to 20 seconds for a current reader. There
+is no manual sleep or status polling. Clients that supply a progress token can
+display elapsed-time notifications; cancellation releases the pending request.
+A pending status has no snapshot or source evidence. After the query deadline or
+a real policy/permission blocker, direct-source work remains available.
+
+The unreleased native source search removes common EN/RU question words,
+normalizes English word forms, and adds English hints for a bounded vocabulary
+of Russian software terms. It runs offline and retains the original search
+words. For descriptions with at least four meaningful words, it shows different
+files before second fragments of an already selected file, within the same eight
+result limit. It is not a general translator: unfamiliar vocabulary and ambiguous
+descriptions can still miss the implementation. Core document search now uses Unicode normalization and case folding, including
+Cyrillic and canonically equivalent character sequences. Profile aliases also
+support Unicode. This preserves words; it does not translate a Russian question
+into an English document. Native source hints and document matching remain
+separate retrieval paths.
+
+The source candidate uses one index format, `shin-generator-v23-unicode-lexical`.
+The service rebuilds older managed indexes from approved project sources before
+serving them. Project settings, permissions, histories and recovery notes remain
+intact. Standalone Core users run `build` explicitly; old indexes are not queried
+through a compatibility reader.
+
+Read a known file or search a known symbol directly. After discovery, use the
+returned source locators or an ordinary local reader. If the evidence does not
+cover the question, continue with direct sources and retain the limitation in the
+handoff. Do not repeat broad queries to increase usage counts, or treat a missing
+result as proof that a file does not exist. A valid fresh response proves its
+source checks, not relevance, context consumption or task success.
+
+## Context recovery (unreleased)
+
+Codex, OpenCode, Command Code, Hermes and manually configured MCP clients receive
+the same native server instructions and tool descriptions. Check the connected
+server's advertised tools: an older kit or the historical Python plugin may not
+offer `shin_checkpoint` / `shin_resume`. Reconnect the client after a kit upgrade.
+Adding a project keeps its files intact; it does not insert client-specific rules
+or chat identifiers into `AGENTS.md`.
+
+A fresh focused query remains the normal way to recover project context. If a
+useful handoff needs notes and the host permits the write, `shin_checkpoint`
+saves compact progress outside the project. Keep its exact project, real chat
+ID, caller task key, objective and returned revision in the host's handoff state.
+After reconnect, resolve that exact root through the current catalog when
+available; an old connection's selector or snapshot does not establish identity.
+`shin_resume` reviews that binding against current code. An `ok` assessment can
+still require review; `ready_without_review` requires both continuation readiness
+and no outstanding review. Saved next steps do not authorize their execution.
+Replacing notes requires the exact reviewed `expected_revision`.
+
+When tools or the binding are unavailable, use a useful current-code query.
+Missing notes do not require re-enrollment, another chat ID, profile changes or
+manual index repair. There are no per-turn saves, artificial call quotas or
+automatic compaction hooks. Model labels from client history stay separate from
+models reported in individual calls. See the [session contract](machine/local-session-recovery-v1.json).

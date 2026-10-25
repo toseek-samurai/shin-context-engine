@@ -20,6 +20,18 @@ int main() try {
     assert(lines[4].find("unknown: 3") != std::string::npos);
     activity["activity"]["calls"]["query"] = -1;
     assert(shin::ui::service_activity_lines(activity).empty());
+    json mcp{{"mcp_activity", {{"schema_version", "shin.mcp-activity.v1"}, {"status", "ready"},
+        {"attempts", 9}, {"calls", {{"query", 2}, {"read", 1}, {"status", 3}, {"projects", 2}, {"help", 1}}},
+        {"outcomes", {{"success", 7}, {"tool-error", 1}, {"unfinished", 1}}}, {"coverage_start_ms", 1792920000000LL}}}};
+    auto mcp_lines = shin::ui::service_activity_lines(mcp);
+    assert(mcp_lines.size() == 6 && mcp_lines[0].find("9") != std::string::npos && mcp_lines[0].find("3") != std::string::npos);
+    shin::ui::set_language(shin::ui::Language::ru);
+    assert(shin::ui::service_activity_lines(mcp)[0].find("Обращения MCP") != std::string::npos);
+    shin::ui::set_language(shin::ui::Language::en);
+    mcp["mcp_activity"]["calls"]["query"] = -1;
+    assert(shin::ui::service_activity_lines(mcp).empty());
+    mcp["mcp_activity"]["status"] = "unavailable";
+    assert(shin::ui::service_activity_lines(mcp).size() == 1);
     activity["activity"]["calls"]["query"] = "2";
     assert(shin::ui::service_activity_lines(activity).empty());
     const auto cohort = [](int requests, double worker, int measured, const char* purpose, const char* reader) {

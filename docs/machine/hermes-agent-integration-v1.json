@@ -168,7 +168,7 @@
     }
   },
   "projectIntegration": {
-    "sessionRecovery": "The workflow skill invokes checkpoint/resume through the resolved Core CLI route. No new plugin tool or automatic compaction hook is claimed. Session state stays in external host-owned storage; see session-checkpoint-v1.json.",
+    "sessionRecovery": "Prefer advertised native shin_checkpoint/shin_resume for optional explicit task notes under existing host permissions; preserve project/session/task/objective/revision in host handoff. ok is assessment success; ready_without_review additionally requires no review. Missing capabilities or notes fall back to a useful current-code query without changing identities. Core CLI remains a separately authorized procedure. No new Python plugin tool, project instruction file or compaction hook. Conversation memory/compression remain Hermes-owned; native task notes are private external Shin state. See local-session-recovery-v1.json and session-checkpoint-v1.json.",
     "newHermesContextFileRequired": false,
     "reason": "Hermes already loads the existing AGENTS.md hierarchy; adding .hermes.md would create a competing higher-priority project instruction route.",
     "consumerMarkerChangesRequired": false,

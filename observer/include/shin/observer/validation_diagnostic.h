@@ -123,7 +123,30 @@ inline nlohmann::json bounded_validation_diagnostic(const nlohmann::json& input)
     return result;
 }
 
+inline nlohmann::json bounded_admission_diagnostic(const nlohmann::json& input) {
+    using J = nlohmann::json;
+    if (!input.is_object() || input.size() != 9 || input.value("schema_version",J()) != "shin.local-service-admission.v1" ||
+        input.value("execution_started",J()) != false) return nullptr;
+    const auto reason = input.value("reason",J());
+    if (reason != "reader-preparing" && reason != "project-executing" &&
+        reason != "execution-capacity" && reason != "waiting-capacity") return nullptr;
+    const auto count = [&](const char* key, unsigned maximum) {
+        const auto n = input.value(key,J());
+        return n.is_number_integer() && n >= 0 && n <= maximum;
+    };
+    if (!count("query_workers",2) || !count("max_query_workers",2) ||
+        !count("waiting_requests",4) || !count("max_waiting_requests",4) ||
+        !count("wait_limit_ms",20000) || !count("execution_wait_limit_ms",500) ||
+        input.at("max_query_workers") == 0 || input.at("max_waiting_requests") == 0 ||
+        input.at("query_workers") > input.at("max_query_workers") ||
+        input.at("waiting_requests") > input.at("max_waiting_requests") ||
+        input.at("execution_wait_limit_ms") > input.at("wait_limit_ms")) return nullptr;
+    return input;
+}
+
 inline nlohmann::json bounded_failure_diagnostic(const nlohmann::json& input) {
+    const auto admission = bounded_admission_diagnostic(input);
+    if (!admission.is_null()) return admission;
     const auto observation = shin::observer_protocol::bounded_observation_diagnostic(input);
     return observation.is_null() ? bounded_validation_diagnostic(input) : observation;
 }

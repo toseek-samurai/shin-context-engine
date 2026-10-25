@@ -224,11 +224,11 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
         if (event == Event::q || event == Event::Q || event == Event::CtrlD) screen.Exit();
         else if (event == Event::l || event == Event::L) toggle_language();
         else if (event == Event::CtrlL) screen.Clear();
-        else if (event.is_character() && event.character().size() == 1 && event.character()[0] >= '1' && event.character()[0] <= '5') {
+        else if (event.is_character() && event.character().size() == 1 && event.character()[0] >= '1' && event.character()[0] <= '6') {
             state.tab = event.character()[0] - '1'; state.detail = false; state.help = false; state.scroll = 0;
         }
-        else if (event == Event::Tab || event == Event::ArrowRight) state.tab = (state.tab + 1) % 5;
-        else if (event == Event::TabReverse || event == Event::ArrowLeft) state.tab = (state.tab + 4) % 5;
+        else if (event == Event::Tab || event == Event::ArrowRight) state.tab = (state.tab + 1) % 6;
+        else if (event == Event::TabReverse || event == Event::ArrowLeft) state.tab = (state.tab + 5) % 6;
         else if (event == Event::Character('?')) { state.help = !state.help; state.scroll = 0; }
         else if (event == Event::Escape || event == Event::Backspace) { state.detail = false; state.help = false; state.scroll = 0; }
         else if (event == Event::Return && (state.tab == 0 || state.tab == 1)) {

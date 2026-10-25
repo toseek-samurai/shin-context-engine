@@ -1,4 +1,5 @@
 #include "shin/observer/local_service.h"
+#include "local_sessions.h"
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_service_platform.h"
 #include "shin/observer/local_rpc.h"
@@ -28,6 +29,7 @@ constexpr std::size_t request_limit = 8192, response_limit = 128 * 1024, connect
 constexpr std::size_t resident_limit = kLocalResidentProjectLimit;
 constexpr std::size_t waiting_limit = 4;
 constexpr auto admission_wait_limit = std::chrono::seconds(5);
+constexpr auto execution_wait_limit = std::chrono::milliseconds(500);
 constexpr const char* refresh_retry_advice =
     " Continue useful work with direct sources. If Shin would help at a later task checkpoint, "
     "try one fresh query for the same project and use its new snapshot for inspect/read. "
@@ -43,17 +45,21 @@ bool resident_ready(const Json& status, const fs::path& root) {
 }
 
 
+enum class AdmissionWait { preparation, project, capacity };
+
 class Connection {
 public:
     explicit Connection(std::unique_ptr<ServiceChannel> input) : socket(std::move(input)) {}
     std::unique_ptr<ServiceChannel> socket;
     std::string method = "unknown", input, output, request_id, session_id, parent_request_id, model_id, snapshot;
-    std::uint64_t admission_retries = 0;
+    std::uint64_t admission_retries = 0, admission_order = 0;
+    AdmissionWait wait_reason = AdmissionWait::preparation;
     double wait_ms = 0;
+    std::chrono::milliseconds readiness_wait{admission_wait_limit};
     bool executed = false;
     fs::path root;
     bool metric_recorded = false, done = false, stop_reply = false, reply_sent = false;
-    bool resident_pending = false, warm_pending = false, waited_for_resident = false, diagnostic = false;
+    bool resident_pending = false, admission_pending = false, waited_for_resident = false, diagnostic = false;
     Clock::time_point deadline = Clock::now() + std::chrono::seconds(2), received{}, next_admission{};
 };
 struct Resident {
@@ -85,7 +91,7 @@ public:
                 directory_identity(home / "projects" / digest(canonical.string()), true)});
         }
         endpoint = make_service_endpoint(home);
-        telemetry.open_history(directory / "history");
+        telemetry.open_history(directory / "history", home / "mcp-history");
     }
 
     ~Service() {
@@ -138,7 +144,16 @@ public:
         }
     }
     LocalTelemetry telemetry;
-    Json refresh(const LocalProjectRequest& request, const std::function<bool()>& stopped) {
+    Json refresh(const LocalProjectRequest& input, const std::function<bool()>& stopped) {
+        auto request = input;
+        // An explicit watch's first admission has not returned its workspace
+        // identity yet. Use only the service's already verified binding, so an
+        // early waiting query cannot start an unbound resident from that result.
+        if (request.maintenance_workspace_identity.empty()) {
+            const auto binding = bindings.find(request.root.string());
+            if (binding != bindings.end() && binding->second.first == request.maintenance_root_identity)
+                request.maintenance_workspace_identity = binding->second.second;
+        }
         const auto started = Clock::now();
         const auto wall_started = std::chrono::system_clock::now();
         LocalSuspendObservation suspension;
@@ -159,8 +174,11 @@ public:
         const auto persist = [&](const std::string& outcome, const std::string& code, const std::string& phase) {
             finish_stage(Clock::now(), {});
             const double sleep_ms = suspension.suspended_ms();
-            const double wall_ms = std::max(sleep_ms, std::chrono::duration<double, std::milli>(
-                std::chrono::system_clock::now() - wall_started).count());
+            // Civil-clock corrections cannot make a timed-out refresh shorter
+            // than the monotonic interval used to enforce its deadline.
+            const double wall_ms = std::max({sleep_ms, std::chrono::duration<double, std::milli>(
+                std::chrono::system_clock::now() - wall_started).count(),
+                std::chrono::duration<double, std::milli>(Clock::now() - started).count()});
             try { telemetry.refresh_result(request.root, {{"outcome", outcome},
                 {"duration_ms", wall_ms},
                 {"active_ms", suspension.available() ? Json(std::max(0.0, wall_ms - sleep_ms)) : Json(nullptr)},
@@ -363,19 +381,28 @@ private:
         client.metric_recorded = true;
     }
 
+    void wake_admissions() {
+        for (auto& client : connections) if (client->admission_pending) client->next_admission = Clock::time_point{};
+    }
+
     void discard_resident(const std::string& root, const std::string& code) {
         for (auto& client : connections) {
-            if ((!client->resident_pending && !client->warm_pending) || client->root.string() != root) continue;
-            // A warming request has not executed. Keep its original frame and
-            // deadline across transient refresh invalidation; all admission
-            // checks run again. Never replay an already dispatched request.
-            if (client->warm_pending && code == "project-updating") continue;
+            if ((!client->resident_pending && !client->admission_pending) || client->root.string() != root) continue;
+            // An admitted wait has not executed. A peer's cancellation or a
+            // transient reader loss must not cancel it or reset its deadline.
+            // Every authority/freshness check runs again before its first dispatch.
+            if (client->admission_pending && (code == "project-updating" || code == "client-disconnected" ||
+                code == "service-timeout" || code == "resident-disconnected")) {
+                client->wait_reason = AdmissionWait::preparation;
+                continue;
+            }
             client->resident_pending = false;
-            client->warm_pending = false;
+            client->admission_pending = false;
             client->output = failure(client->request_id, code, "Project search is preparing in the background; retry shortly.").dump() + '\n';
             record_result(*client, {{"error_code", code}});
         }
         residents.erase(root);
+        wake_admissions();
     }
 
     void prepare_resident(const LocalProjectRequest& request, const std::string& snapshot, bool demanded = false) {
@@ -396,7 +423,7 @@ private:
             for (auto it = residents.begin(); it != residents.end(); ++it) {
                 if (!it->second->ready || !it->second->request_id.empty() ||
                     std::any_of(connections.begin(), connections.end(), [&](const auto& client) {
-                        return client->warm_pending && client->root.string() == it->first;
+                        return client->admission_pending && client->root.string() == it->first;
                     })) continue;
                 if (victim == residents.end() || it->second->last_used < victim->second->last_used) victim = it;
             }
@@ -433,6 +460,7 @@ private:
                         if (selected != qualified.end() && selected->second.snapshot == reader.snapshot)
                             selected->second.source_coverage = reader.preparation.value("source_coverage", Json());
                         resident_errors.erase(root);
+                        wake_admissions();
                     } else if (kind == "response" && reader.ready && !reader.request_id.empty()) {
                         const auto& response = frame.at("response");
                         if (response.at("request_id") != reader.request_id || response.at("schema_version") != "shin.local-rpc.v1")
@@ -452,6 +480,7 @@ private:
                         }
                         reader.request_id.clear();
                         reader.last_used = Clock::now();
+                        wake_admissions();
                         if (!frame.at("reusable").get<bool>()) remove[root] = "project-updating";
                     } else if (kind == "invalidated" || kind == "preparation-failed") {
                         remove[root] = frame.value("code", "project-updating");
@@ -477,7 +506,32 @@ private:
 
     std::size_t waiting_requests() const {
         return static_cast<std::size_t>(std::count_if(connections.begin(), connections.end(),
-            [](const auto& client) { return client->warm_pending; }));
+            [](const auto& client) { return client->admission_pending; }));
+    }
+
+    Json admission_diagnostic(const char* reason, std::chrono::milliseconds preparation_wait = admission_wait_limit) const {
+        return {{"schema_version","shin.local-service-admission.v1"},{"reason",reason},{"execution_started",false},
+            {"query_workers",active_workers()},{"max_query_workers",worker_limit},
+            {"waiting_requests",waiting_requests()},{"max_waiting_requests",waiting_limit},
+            {"wait_limit_ms",preparation_wait.count()},
+            {"execution_wait_limit_ms",execution_wait_limit.count()}};
+    }
+
+    void wait_for_admission(Connection& client, AdmissionWait reason, bool wait_for_ready) {
+        if (!wait_for_ready)
+            throw Error("service-busy","The reader or execution capacity is occupied. A useful query can wait briefly for admission.",
+                admission_diagnostic(reason == AdmissionWait::project ? "project-executing" : "execution-capacity"));
+        if (!client.admission_pending) {
+            if (waiting_requests() >= waiting_limit)
+                throw Error("service-busy","The bounded request waiting capacity is full. Continue useful work and try a query later.",
+                    admission_diagnostic("waiting-capacity"));
+            client.deadline = client.received + (reason == AdmissionWait::preparation ? client.readiness_wait : execution_wait_limit);
+        }
+        if (reason != AdmissionWait::preparation && client.wait_reason == AdmissionWait::preparation)
+            client.deadline = std::min(client.deadline,Clock::now()+execution_wait_limit);
+        client.admission_pending = true;
+        client.wait_reason = reason;
+        client.next_admission = Clock::now() + std::chrono::milliseconds(100);
     }
 
     void dispatch(Connection& client, const Json& request) {
@@ -486,6 +540,7 @@ private:
         const auto command = request.at("command").get<std::string>();
         client.request_id = id;
         client.method = command;
+        client.readiness_wait = std::chrono::milliseconds(request.value("readiness_wait_ms", 5000));
         client.session_id = request.value("session_id", "");
         client.model_id = request.value("model_id", "");
         client.parent_request_id = request.value("parent_request_id", "");
@@ -499,6 +554,7 @@ private:
                 {"query_workers", active_workers()}, {"max_query_workers", worker_limit},
                 {"waiting_requests", waiting_requests()}, {"max_waiting_requests", waiting_limit},
                 {"admission_wait_limit_ms", std::chrono::duration_cast<std::chrono::milliseconds>(admission_wait_limit).count()},
+                {"execution_wait_limit_ms",execution_wait_limit.count()},
                 {"max_connections", connection_limit}, {"projects", Json::array()},
                 {"resident_projects", Json::array()}, {"max_resident_projects", resident_limit},
                 {"max_registered_projects", kLocalServiceProjectLimit}, {"qualified_projects", Json::array()},
@@ -576,14 +632,13 @@ private:
         if (blocker != project_blockers.end())
             throw Error(blocker->second.at("code"), blocker->second.at("message"),
                         blocker->second.value("diagnostic", Json()));
-        if (std::any_of(connections.begin(), connections.end(), [&](const auto& other) {
-            return other.get() != &client && (other->warm_pending || other->resident_pending) && other->root.string() == found->first;
-        })) throw Error("service-busy", "This project's reader is serving another request; retry shortly.");
-        // Waiting has its own bound; it must not consume another project's
-        // execution slot. Keep space for active queries and service control.
-        if (!client.warm_pending && waiting_requests() >= waiting_limit &&
+        const bool wait_for_ready = command != "status" || request.value("wait_for_ready",true);
+        // Waiting never consumes an execution slot. Retain the original four
+        // waiting / two execution / eight connection resource boundaries.
+        if (!client.admission_pending && waiting_requests() >= waiting_limit &&
             (!residents.contains(found->first) || !residents.at(found->first)->ready))
-            throw Error("service-busy", "Local preparation waiting capacity is full; retry later.");
+            throw Error("service-busy","The bounded request waiting capacity is full. Continue useful work and try a query later.",
+                admission_diagnostic("waiting-capacity"));
         if (!residents.contains(found->first)) {
             const auto available = qualified.find(found->first);
             if (available != qualified.end()) {
@@ -601,66 +656,71 @@ private:
             // The 100ms admission retries must not extend this lifetime.
             if (!qualified.contains(found->first))
                 reader_requests.try_emplace(found->first, client.received + std::chrono::seconds(30));
-            if (!client.warm_pending) {
-                ++resident_warm_requests;
-                client.deadline = client.received + admission_wait_limit;
+            if (!wait_for_ready) {
+                client.waited_for_resident = true;
+                throw Error("project-updating","The project reader is preparing in the background. A useful query can wait briefly for readiness.",
+                    admission_diagnostic("reader-preparing"));
             }
-            client.warm_pending = true;
-            client.next_admission = Clock::now() + std::chrono::milliseconds(100);
+            wait_for_admission(client,AdmissionWait::preparation,true);
+            if (!client.waited_for_resident) ++resident_warm_requests;
             client.waited_for_resident = true;
-            client.root = found->first;
-            client.method = command;
-            client.request_id = id;
+            return;
+        }
+        const bool predecessor = std::any_of(connections.begin(),connections.end(),[&](const auto& other) {
+            return other.get() != &client && !other->done && other->root == client.root &&
+                (other->resident_pending || (other->admission_pending && other->admission_order < client.admission_order));
+        });
+        auto& reader = *resident->second;
+        if (predecessor || !reader.request_id.empty()) {
+            wait_for_admission(client,AdmissionWait::project,wait_for_ready);
             return;
         }
         if (active_workers() >= worker_limit) {
-            if (client.warm_pending) {
-                client.next_admission = Clock::now() + std::chrono::milliseconds(100);
-                return; // Keep its original deadline and never replay executed work.
-            }
-            throw Error("service-busy", "Local query capacity is full; retry later.");
+            wait_for_admission(client,AdmissionWait::capacity,wait_for_ready);
+            return;
         }
-        auto& reader = *resident->second;
-        if (!reader.request_id.empty()) throw Error("service-busy", "This project's reader is serving another request; retry shortly.");
         try { reader.process.send(request, Clock::now() + std::chrono::seconds(1)); }
         catch (...) { discard_resident(found->first, "resident-disconnected"); throw; }
         client.executed = true;
-        if (client.waited_for_resident)
+        if (client.admission_pending)
             client.wait_ms = std::chrono::duration<double, std::milli>(Clock::now() - client.received).count();
         reader.request_id = id;
         reader.last_used = Clock::now();
         client.request_id = id;
         client.resident_pending = true;
         client.deadline = client.received + std::chrono::seconds(30);
-        client.warm_pending = false;
+        client.admission_pending = false;
         client.method = command;
         client.root = found->first;
         if (command != "status") ++telemetry.requests;
     }
 
     void process(Connection& client) {
-        if (client.warm_pending) {
+        if (client.admission_pending) {
             const bool expired = Clock::now() >= client.deadline;
             if (client.socket->input_or_closed() || expired) {
                 client.wait_ms = std::chrono::duration<double, std::milli>(Clock::now() - client.received).count();
-                record_result(client, {{"error_code", expired ? "project-updating" : "client-disconnected"}});
-                client.warm_pending = false;
-                if (!expired) { client.done = true; return; }
-                client.output = failure(client.request_id, "project-updating",
-                    std::string("Project is still updating after bounded admission waiting.") + refresh_retry_advice).dump() + '\n';
+                const bool preparing = client.wait_reason == AdmissionWait::preparation;
+                const auto code = expired ? (preparing ? "project-updating" : "service-busy") : "client-disconnected";
+                record_result(client, {{"error_code",code}});
+                client.admission_pending = false;
+                if (!expired) { client.done = true; wake_admissions(); return; }
+                client.output = failure(client.request_id,code,
+                    std::string(preparing ? "Project is still preparing after bounded admission waiting." : "Execution remains occupied after bounded admission waiting.") + refresh_retry_advice,
+                    admission_diagnostic(preparing ? "reader-preparing" : client.wait_reason == AdmissionWait::project ? "project-executing" : "execution-capacity", client.readiness_wait)).dump() + '\n';
                 client.deadline = Clock::now() + std::chrono::seconds(1); // Flush explicit refusal.
             } else {
                 if (Clock::now() < client.next_admission) return;
                 ++client.admission_retries;
                 try { dispatch(client, parse_json(client.input)); }
                 catch (const Error& error) {
-                    client.warm_pending = false;
+                    client.admission_pending = false;
                     client.output = failure(client.request_id, error.code, error.what(), error.diagnostic).dump() + '\n';
                 } catch (const std::exception&) {
-                    client.warm_pending = false;
+                    client.admission_pending = false;
                     client.output = failure(client.request_id, "service-request-failed", "Cannot prepare the requested project reader.").dump() + '\n';
                 }
-                if (client.warm_pending || client.resident_pending) return;
+                if (client.admission_pending || client.resident_pending) return;
                 client.wait_ms = std::chrono::duration<double, std::milli>(Clock::now() - client.received).count();
                 record_result(client, {{"error_code", parse_json(client.output).at("error").at("code")}});
             }
@@ -699,6 +759,7 @@ private:
                 if (end != client.input.size() - 1) throw Error("service-frame-invalid", "Only one request per connection is supported.");
                 const auto request = parse_json(client.input);
                 client.received = Clock::now();
+                client.admission_order = ++admission_sequence;
                 client.diagnostic = request.is_object() && request.value("diagnostic", Json(false)) == true;
                 if (request.is_object() && request.contains("request_id") && request.at("request_id").is_string())
                     id = string_field(request, "request_id", 96);
@@ -740,6 +801,7 @@ private:
     std::map<std::string, std::unique_ptr<Resident>> residents;
     std::map<std::string, QualifiedProject> qualified;
     std::map<std::string, Clock::time_point> reader_requests;
+    std::uint64_t admission_sequence = 0;
     std::uint64_t resident_evictions = 0, resident_warm_requests = 0, resident_memory_evictions = 0;
     bool resident_memory_limited = false;
     Clock::time_point next_memory_check{};
@@ -752,7 +814,7 @@ private:
         std::vector<ResidentRetentionSample> samples;
         for (const auto& [root, reader] : residents) {
             const bool pending = std::any_of(connections.begin(), connections.end(), [&](const auto& client) {
-                return client->warm_pending && client->root.string() == root;
+                return client->admission_pending && client->root.string() == root;
             });
             roots.push_back(root);
             samples.push_back({reader->process.rss_bytes(), reader->ready && reader->request_id.empty() && !pending,
@@ -889,6 +951,7 @@ Json start_local_service(const LocalProjectRequest& input, const fs::path& execu
         // Socket availability precedes registry admission. An explicit restart
         // must settle enrollment before a caller's first project request.
         std::vector<fs::path> roots;
+        roots.reserve(projects.size());
         for (const auto& project : projects) roots.push_back(project.root);
         LocalStartupAdmission admission(std::move(roots), resident_limit);
         while (!admission.observe(status)) {
@@ -1065,6 +1128,7 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
     const auto deadline = Clock::now() + std::chrono::seconds(35);
     auto channel = connect_service(request.home, deadline, cancelled);
     const auto id = digest(std::to_string(service_process_id()) + ":" + std::to_string(Clock::now().time_since_epoch().count()));
+    if (request.observe_request_id) request.observe_request_id(digest(id));
     auto input = reply(id);
     const bool control = request.command == "service-status" || request.command == "service-stop";
     if (!control && (observer_version != SHIN_OBSERVER_VERSION || core_version != SHIN_VERSION))
@@ -1074,9 +1138,12 @@ Json exchange_local_request(const LocalProjectRequest& request, const std::funct
     input.update({{"command", request.command}, {"root", control ? "" : fs::canonical(request.root).string()},
         {"query", request.query}, {"path", request.path}, {"record", request.record}, {"snapshot", request.snapshot}});
     if (request.diagnostic) input["diagnostic"] = true;
+    if (request.command == "status" && !request.wait_for_ready) input["wait_for_ready"] = false;
+    if (request.readiness_wait_ms) input["readiness_wait_ms"] = request.readiness_wait_ms;
     if (!request.session_id.empty()) input["session_id"] = request.session_id;
     if (!request.model_id.empty()) input["model_id"] = request.model_id;
     if (!request.parent_request_id.empty()) input["parent_request_id"] = request.parent_request_id;
+    if (request.command == "checkpoint" || request.command == "resume") input["session"] = local_session_payload(request);
     const auto frame = input.dump() + '\n';
     if (frame.size() > request_limit) throw Error("service-frame-too-large", "Local request exceeds its byte limit.");
     service_write(*channel, frame, deadline, cancelled);

@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "unicode_text.h"
 #include <memory_resource>
 #ifdef SHIN_EXPERIMENT_LEXICAL_REUSE
 #include "lexical_reuse_experiment.h"
@@ -69,6 +70,7 @@ bool index_term_has_signal(std::string_view term) {
         (term.size() <= 7 && std::binary_search(stop_terms.begin(), stop_terms.end(), term))) {
         return false;
     }
+    if (has_non_ascii(term)) return unicode_index_term(term);
     int alnum_count = 0;
     for (char raw : term) {
         const unsigned char c = static_cast<unsigned char>(raw);
@@ -143,7 +145,7 @@ static void add_index_term(IndexTermSet& terms, std::string_view raw) {
     for (std::size_t slash = raw.find('/'); slash != std::string_view::npos;
          slash = raw.find('/', slash + 1)) {
         for (const auto path_part : {raw.substr(0, slash), raw.substr(slash + 1)}) {
-            const auto key = to_lower(std::string(path_part));
+            const auto key = unicode_casefold(path_part);
             insert_index_term(terms, key);
         }
     }
@@ -176,7 +178,7 @@ static void add_index_terms_from_text(IndexTermSet& terms, std::string_view text
         const bool at_end = i == view.size();
         const unsigned char c = at_end ? 0 : static_cast<unsigned char>(view[i]);
         const bool segment_char = !at_end &&
-                                  (is_ascii_alnum(c) || c == '_' || c == '-' || c == '+' || c == '#' || c == '.' || c == '/');
+                                  (is_ascii_alnum(c) || c >= 128 || c == '_' || c == '-' || c == '+' || c == '#' || c == '.' || c == '/');
         const bool special_segment_char = c == '_' || c == '-' || c == '+' || c == '#' || c == '.' || c == '/';
         if (segment_char && segment_start == std::string_view::npos) {
             segment_start = i;
@@ -211,6 +213,7 @@ std::vector<std::string> lexical_match_terms(std::string_view text, bool sorted)
 }
 
 bool can_prefix_complete_lookup_term(std::string_view term) {
+    if (has_non_ascii(term)) return unicode_prefix_term(term);
     constexpr std::size_t kMinPrefixBytes = 4;
     return term.size() >= kMinPrefixBytes &&
            std::all_of(term.begin(), term.end(), [](char raw) {
@@ -223,11 +226,15 @@ bool can_prefix_complete_lookup_term(std::string_view term) {
 // letters/digits: normalization removes separators, but never intervening letters.
 // KMP rejects scattered-letter false positives before vocabulary construction.
 static bool could_contain_lexical_term(std::string_view text, std::string_view compact) {
+    // The ASCII byte probe cannot prove absence after Unicode case folding or
+    // canonical composition. The authoritative vocabulary handles these fields.
+    if (has_non_ascii(compact)) return true;
     if (compact.empty()) return true;
     if (compact.size() > 128) {
         // Long phrase queries keep the original bounded-memory conservative probe.
         std::size_t matched = 0;
         for (const unsigned char raw : text) {
+            if (raw >= 128) return true;
             if (static_cast<char>(ascii_lower(raw)) != compact[matched]) continue;
             if (++matched == compact.size()) return true;
         }
@@ -242,6 +249,7 @@ static bool could_contain_lexical_term(std::string_view text, std::string_view c
     }
     std::size_t matched = 0;
     for (const unsigned char raw : text) {
+        if (raw >= 128) return true;
         if (!is_ascii_alnum(raw)) continue;
         const auto lowered = static_cast<char>(ascii_lower(raw));
         while (matched && lowered != compact[matched]) matched = prefix[matched - 1];
@@ -257,13 +265,16 @@ LexicalMatchKind field_match_kind(FieldMatchInput& field, const PreparedMatchTer
     // than rescanning its text for every later group/alias. The probes only
     // avoid vocabulary construction; they are not additional matching rules.
     if (!field.lexical_ready && !could_contain_lexical_term(field.text, term.compact)) return LexicalMatchKind::none;
-    if (!field.lexical_ready && term.normalized == term.compact && index_term_has_signal(term.normalized)) {
+    if (!field.lexical_ready && !has_non_ascii(term.normalized) &&
+        term.normalized == term.compact && index_term_has_signal(term.normalized)) {
         for (auto start = field.text.find(term.normalized); start != std::string_view::npos;
              start = field.text.find(term.normalized, start + 1)) {
             const auto end = start + term.normalized.size();
-            const bool left = start == 0 || !is_ascii_alnum(static_cast<unsigned char>(field.text[start - 1])) ||
+            const bool left = start == 0 || (static_cast<unsigned char>(field.text[start - 1]) < 128 &&
+                !is_ascii_alnum(static_cast<unsigned char>(field.text[start - 1]))) ||
                 identifier_word_boundary(field.text, start);
-            const bool right = end == field.text.size() || !is_ascii_alnum(static_cast<unsigned char>(field.text[end])) ||
+            const bool right = end == field.text.size() || (static_cast<unsigned char>(field.text[end]) < 128 &&
+                !is_ascii_alnum(static_cast<unsigned char>(field.text[end]))) ||
                 identifier_word_boundary(field.text, end);
             if (left && right) return LexicalMatchKind::exact;
         }

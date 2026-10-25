@@ -2,6 +2,7 @@
 #include <iomanip>
 #include <map>
 #include <sstream>
+#include <ctime>
 
 namespace shin::observer {
 namespace {
@@ -21,6 +22,18 @@ std::string number(const Json& value, double divisor = 1.0) {
     std::ostringstream out;
     out << std::fixed << std::setprecision(divisor == 1.0 ? 0 : 1) << value.get<double>() / divisor;
     return out.str();
+}
+
+std::string timestamp(const Json& value) {
+    if (!value.is_number_integer() || value.get<std::int64_t>() < 0) return "unknown";
+    const auto time = static_cast<std::time_t>(value.get<std::int64_t>() / 1000);
+    std::tm utc{};
+#ifdef _WIN32
+    if (::gmtime_s(&utc, &time) != 0) return "unknown";
+#else
+    if (!::gmtime_r(&time, &utc)) return "unknown";
+#endif
+    std::ostringstream out; out << std::put_time(&utc, "%Y-%m-%d %H:%M UTC"); return out.str();
 }
 }
 
@@ -52,6 +65,12 @@ std::string local_status_text(const Json& status) {
     const auto rss = samples.is_array() && !samples.empty() ? field(samples.back(), "rss_bytes") : Json();
     out << "RAM (service + owned workers, last sample): " << number(rss, 1024 * 1024) << " MiB\n";
     const auto& metrics = field(telemetry, "request_metrics");
+    const auto& mcp = field(telemetry, "mcp_activity");
+    if (field(mcp, "status") == "ready")
+        out << "MCP tool calls (retained): " << number(field(mcp, "attempts"))
+            << " | Context calls: " << number(field(mcp, "context_calls"))
+            << " | Recorded since: " << timestamp(field(mcp, "coverage_start_ms")) << '\n';
+    else if (mcp.is_object()) out << "MCP activity unavailable; counts are unknown.\n";
     out << "Requests (current run): " << number(field(metrics, "responses_ready")) << " ready, "
         << number(field(metrics, "response_errors")) << " failed, "
         << number(field(metrics, "unobserved")) << " unobserved\n";

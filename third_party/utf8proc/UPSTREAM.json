@@ -1,0 +1,16 @@
+{
+  "schemaVersion": 1,
+  "name": "utf8proc",
+  "repository": "https://github.com/JuliaStrings/utf8proc",
+  "release": "v2.12.0",
+  "commit": "79cdd5ab40c79afa559f689ffc13b76812dee1ac",
+  "archive": "https://codeload.github.com/JuliaStrings/utf8proc/tar.gz/79cdd5ab40c79afa559f689ffc13b76812dee1ac",
+  "archiveSha256": "e8fadfcd531d65525cbef157b866c5408e2e3f0d7c0f3aefb0bce01a7a08e35d",
+  "license": "MIT and Unicode data license; see LICENSE.md",
+  "vendoredPaths": [
+    "utf8proc.c",
+    "utf8proc.h",
+    "utf8proc_data.c",
+    "LICENSE.md"
+  ]
+}

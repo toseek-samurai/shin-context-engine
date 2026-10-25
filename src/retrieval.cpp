@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "unicode_text.h"
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
 #include "aggregate_recovery_experiment.h"
 #endif
@@ -37,7 +38,8 @@ static std::string normalize_query_token(const std::string& raw) {
         }
         separated.push_back(raw[index]);
     }
-    const std::string lower = to_lower(separated);
+    const std::string lower = unicode_casefold(separated);
+    if (has_non_ascii(lower)) return unicode_trim_query_token(lower);
     std::size_t begin = 0;
     std::size_t end = lower.size();
     while (begin < end && !is_query_token_body_char(lower[begin])) {
@@ -55,7 +57,10 @@ bool is_query_stop_word(const std::string& term) {
         "could", "did", "do", "does", "for", "from", "how", "i", "in", "into", "is", "it",
         "me", "my", "of", "on", "or", "our", "please", "run", "show", "tell", "that", "the",
         "them", "these", "this", "those", "through", "to", "us", "was", "we", "were", "what", "when",
-        "where", "which", "who", "why", "will", "with", "without", "would", "you", "your"
+        "where", "which", "who", "why", "will", "with", "without", "would", "you", "your",
+        "в", "во", "где", "для", "до", "если", "и", "из", "или", "к", "как", "когда",
+        "ли", "на", "не", "но", "о", "об", "от", "по", "после", "почему", "при", "с", "со",
+        "у", "что", "чтобы", "это"
     };
     return stop_words.find(term) != stop_words.end();
 }
@@ -90,7 +95,7 @@ static std::vector<std::string> qualified_identifier_terms(const std::string& ra
 std::vector<std::string> parse_terms(const std::string& query) {
     std::vector<std::string> raw_terms;
     std::vector<std::string> meaningful_terms;
-    std::istringstream input(query);
+    std::istringstream input(unicode_query_spacing(query));
     std::string raw;
     while (input >> raw) {
         const std::string term = normalize_query_token(raw);
@@ -118,7 +123,7 @@ std::vector<std::string> parse_terms(const std::string& query) {
 }
 
 static void push_unique_term(std::vector<std::string>& values, const std::string& raw) {
-    const std::string value = trim(to_lower(raw));
+    const std::string value = trim(unicode_casefold(raw));
     if (value.empty()) {
         return;
     }
@@ -250,12 +255,12 @@ std::vector<std::vector<std::string>> expand_query_term_groups(const Profile& pr
         std::vector<std::string> group = automatic_term_variants(term);
         for (const AliasRule& rule : profile.aliases) {
             bool selected = false;
-            const std::string canonical = to_lower(rule.term);
+            const std::string canonical = unicode_casefold(rule.term);
             if (std::find(group.begin(), group.end(), canonical) != group.end()) {
                 selected = true;
             }
             for (const std::string& expansion : rule.expands) {
-                const std::string lower_expansion = to_lower(expansion);
+                const std::string lower_expansion = unicode_casefold(expansion);
                 if (std::find(group.begin(), group.end(), lower_expansion) != group.end()) {
                     selected = true;
                     break;
@@ -1331,6 +1336,7 @@ std::string normalize_match_text(std::string_view text) {
     for (std::size_t index = 0; index < text.size(); ++index) {
         const char raw = text[index];
         const unsigned char c = static_cast<unsigned char>(raw);
+        if (c >= 128) return unicode_match_text(text);
         if (identifier_word_boundary(text, index) && !previous_space) {
             out.push_back(' ');
             previous_space = true;
@@ -1360,7 +1366,7 @@ static std::string compact_match_text(std::string_view text) {
 
 PreparedMatchTerm prepare_match_term(std::string_view term) {
     PreparedMatchTerm prepared;
-    prepared.raw = trim(to_lower(std::string(term)));
+    prepared.raw = trim(unicode_casefold(term));
     prepared.normalized = normalize_match_text(term);
     prepared.compact = compact_match_text(prepared.normalized);
     return prepared;

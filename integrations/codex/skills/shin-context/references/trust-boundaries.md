@@ -78,9 +78,9 @@ resulting output and run the required strict checks; retrieval, `ready`,
 
 ## Generator Compatibility
 
-The current Core2.0 generator is `shin-generator-v22-compact-lexical`;
-`shin-generator-v21-cpp-syntax` remains readable. A read never migrates a
-publication. Unsupported formats require an explicitly authorized migration
+The current generator is `shin-generator-v23-unicode-lexical`. Older indexes
+are not readable. A read never rebuilds a publication. Unsupported formats
+require an authorized rebuild
 with the current binary at the same canonical external index, preserving the
 managed publisher's ownership. Release approval is separate from installation,
 deployment and consumer cutover. Keep the release-approved source policy,

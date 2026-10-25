@@ -81,6 +81,15 @@ with tempfile.TemporaryDirectory(prefix="shin-ce-install-", dir='/tmp') as tempo
         assert installed.returncode == 0, installed.stdout + installed.stderr
     relocated = work / "relocated kit"
     prefix.rename(relocated)
+    native_contracts = {
+        'local-session-recovery-v1.json': 'shin.local-session-recovery-contract.v1',
+        'mcp-activity-v1.json': 'shin.mcp-activity-contract.v1',
+    }
+    contract_dir = relocated / 'share/shin-context/contracts'
+    for name, schema in native_contracts.items():
+        artifact = contract_dir / name
+        assert not artifact.is_symlink() and artifact.resolve().is_relative_to(relocated.resolve()), artifact
+        assert json.loads(artifact.read_text())['schemaVersion'] == schema, artifact
     if complete_kit:
         assert platform.system() == 'Darwin'
         verify_macos_dependencies(relocated)
@@ -89,6 +98,9 @@ with tempfile.TemporaryDirectory(prefix="shin-ce-install-", dir='/tmp') as tempo
                       'share/shin-context/codex/skills/shin-context/SKILL.md',
                       'share/shin-observer/licenses/openssl/LICENSE.txt']:
             assert (relocated / asset).is_file(), asset
+        distribution = json.loads((contract_dir / 'portable-distribution-v1.json').read_text())
+        declared = set(distribution['nativeCompanions']['machineContracts'])
+        assert {'contracts/' + name for name in native_contracts} <= declared, declared
     tool = relocated / "bin/shin-ce"
     root = work / "project"
     root.mkdir()
@@ -178,7 +190,9 @@ with tempfile.TemporaryDirectory(prefix="shin-ce-install-", dir='/tmp') as tempo
                     assert part, 'MCP ended before replying'
                     pending += part
         assert {tool['name'] for tool in responses[2]['result']['tools']} == {
-            'shin_status', 'shin_query', 'shin_inspect', 'shin_read', 'shin_help'}
+            'shin_status', 'shin_query', 'shin_inspect', 'shin_read', 'shin_help', 'shin_checkpoint', 'shin_resume'}
+        assert all(tool['annotations']['readOnlyHint'] == (tool['name'] != 'shin_checkpoint')
+                   for tool in responses[2]['result']['tools'])
         assert not responses[3]['result'].get('isError', False), responses[3]
         assert 'return 17' in json.dumps(responses[3]), responses[3]
         child.stdin.close()

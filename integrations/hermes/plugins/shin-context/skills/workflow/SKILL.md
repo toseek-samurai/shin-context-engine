@@ -14,8 +14,8 @@ metadata:
 Use Shin first for unfamiliar code; read known files directly.
 Read [reader selection](references/source-verification.md#choosing-the-right-reader) for context/read recovery.
 
-Require Shin v2.0.0 or newer: installed `shin-generator-v22-compact-lexical`;
-readable `shin-generator-v21-cpp-syntax`. Local use needs no login or embeddings. Configure native MCP separately;
+Require Shin v2.0.0 or newer with `shin-generator-v23-unicode-lexical`.
+Older indexes require rebuilding. Local use needs no login. Configure native MCP separately;
 a Python plugin does not replace it.
 
 1. Read the repository's `AGENTS.md` chain and adoption marker. Do not
@@ -29,7 +29,7 @@ a Python plugin does not replace it.
 4. Verify consequential claims in current source. Scope and omissions matter;
    a green status or selected path does not prove a complete answer or executed test.
 
-Chat correlation: [session guidance](references/session-and-execution.md).
+Handoff and correlation: [session guidance](references/session-and-execution.md).
 
 
 On failure, follow `recovery`; use `shin_help` if advertised.
@@ -52,15 +52,11 @@ blockers in handoff. `route-revision-conflict` needs owner review,
 not retries. Editing a profile is not approval. Follow [review](references/route-and-publication.md#profile-change-review);
 verify readiness after acceptance.
 
-For transient `recovery`, continue direct-source work. If useful later, retry one
-fresh query for the same project after `retry_after_ms` and use its new snapshot.
-Avoid polling or chat-wide abandonment. Shin is optional; report persistent
-refusals. Permission, identity, policy and validation failures remain blockers.
-Never bypass refusals with manual builds, another index, weaker policy,
-ownership release or a historical route.
-
-If MCP has the wrong startup root, use the installed `shin-ce` with the verified
-explicit `--root` and the configured `--home`. Do not guess another home or
+A preparing status is pending: submit the useful `shin_query`. It waits up to
+20 seconds inside one call. No manual sleeps or status polling. After that wait
+expires or a real blocker appears, use direct sources; return at a useful
+checkpoint. No call quotas.
+Do not guess another home or
 select a source-checkout binary. Missing setup is not permission to bootstrap
 over a canonical marker. `init`, detach, profile/marker approval and grants are
 explicit owner operations; MCP navigation and reads grant no new access.

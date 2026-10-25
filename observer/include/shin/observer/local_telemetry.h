@@ -1,6 +1,7 @@
 #pragma once
 #include "io.h"
 #include "local_history.h"
+#include "local_mcp_activity.h"
 #include <chrono>
 #include <deque>
 #include <map>
@@ -21,7 +22,7 @@ public:
     // Reports retain bounded wall/active/sleep durations, allowlisted stages,
     // and numeric work counters without exposing source paths or contents.
     void refresh_result(const fs::path& root, const Json& report);
-    void open_history(const fs::path& directory);
+    void open_history(const fs::path& directory, const fs::path& mcp_directory = {});
     void close_history();
     Json snapshot() const;
     std::uint64_t requests = 0;
@@ -53,6 +54,7 @@ private:
     std::uint64_t responses_ready = 0, response_errors = 0, unobserved = 0;
     std::uint64_t observed_follow_ups = 0, admission_waits = 0, wait_recoveries = 0;
     std::unique_ptr<LocalHistory> history;
+    std::unique_ptr<LocalMcpActivity> mcp_activity;
     Clock::time_point last_persisted_sample{};
 };
 } // namespace shin::observer

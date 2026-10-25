@@ -24,7 +24,7 @@ else()
 endif()
 if(SHIN_OBSERVER_SOURCE_DISCOVERY)
     list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_rpc local_registry local_profile_location
-        local_telemetry local_history local_history_files local_query local_changes local_worker local_worker_process
+        local_telemetry local_history local_history_files local_mcp_activity local_session_analysis local_sessions local_query local_changes local_worker local_worker_process
         local_identity local_status local_release local_mcp_scope local_client_setup local_client_connect client_config client_config_json client_config_toml client_config_yaml model_usage)
     if(WIN32)
         list(APPEND SHIN_NATIVE_SOURCES local_service_windows local_worker_windows local_installation_unmanaged local_scm_windows local_scm_host_windows)
@@ -63,6 +63,10 @@ target_compile_options(shin-observer PRIVATE ${SHIN_NATIVE_WARNINGS})
 set(SHIN_LOCAL_ANALYSIS ${SHIN_NATIVE_SOURCES} "${SHIN_OBSERVER_ROOT}/src/main.cpp")
 install(TARGETS shin-observer RUNTIME DESTINATION bin)
 install(FILES "${SHIN_OBSERVER_ROOT}/VERSION" DESTINATION share/shin-observer)
+install(FILES
+    "${SHIN_OBSERVER_ROOT}/../docs/machine/local-session-recovery-v1.json"
+    "${SHIN_OBSERVER_ROOT}/../docs/machine/mcp-activity-v1.json"
+    DESTINATION share/shin-context/contracts)
 install(FILES "${SHIN_OBSERVER_ROOT}/../LICENSE" "${SHIN_OBSERVER_ROOT}/../NOTICE"
     DESTINATION share/shin-observer)
 install(FILES "${shin_httplib_SOURCE_DIR}/LICENSE" DESTINATION share/shin-observer/licenses/cpp-httplib)
@@ -81,6 +85,9 @@ install(FILES "${SHIN_OBSERVER_ROOT}/../third_party/tree-sitter/src/unicode/LICE
 install(FILES "${SHIN_OBSERVER_ROOT}/../third_party/pugixml/LICENSE.MIT"
     "${SHIN_OBSERVER_ROOT}/../third_party/pugixml/UPSTREAM.json"
     DESTINATION share/shin-observer/licenses/pugixml)
+install(FILES "${SHIN_OBSERVER_ROOT}/../third_party/utf8proc/LICENSE.md"
+    "${SHIN_OBSERVER_ROOT}/../third_party/utf8proc/UPSTREAM.json"
+    DESTINATION share/shin-observer/licenses/utf8proc)
 if(BUILD_TESTING)
     find_package(Python3 REQUIRED COMPONENTS Interpreter)
     add_executable(shin-ui-language-tests "${SHIN_OBSERVER_ROOT}/ui/language_test.cpp")
@@ -129,6 +136,19 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
         target_link_libraries(shin-local-mcp-scope-tests PRIVATE shin-observer-native)
         target_compile_options(shin-local-mcp-scope-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
         add_test(NAME shin-local-mcp-scope COMMAND shin-local-mcp-scope-tests)
+        add_executable(shin-local-rpc-tests "${SHIN_OBSERVER_ROOT}/tests/local_rpc_test.cpp")
+        target_link_libraries(shin-local-rpc-tests PRIVATE shin-observer-native)
+        target_compile_options(shin-local-rpc-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
+        add_test(NAME shin-local-rpc COMMAND shin-local-rpc-tests)
+        add_executable(shin-local-session-analysis-tests "${SHIN_OBSERVER_ROOT}/tests/local_session_analysis_test.cpp")
+        target_link_libraries(shin-local-session-analysis-tests PRIVATE shin-observer-native)
+        target_compile_options(shin-local-session-analysis-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
+        add_test(NAME shin-local-session-analysis COMMAND shin-local-session-analysis-tests)
+        add_executable(shin-local-mcp-activity-tests "${SHIN_OBSERVER_ROOT}/tests/local_mcp_activity_test.cpp")
+        target_link_libraries(shin-local-mcp-activity-tests PRIVATE shin-observer-native ${SHIN_NATIVE_SQLITE})
+        target_compile_options(shin-local-mcp-activity-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
+        add_test(NAME shin-local-mcp-activity COMMAND shin-local-mcp-activity-tests)
+        set_tests_properties(shin-local-mcp-activity PROPERTIES TIMEOUT 30)
         add_executable(shin-local-history-files-tests "${SHIN_OBSERVER_ROOT}/tests/local_history_files_test.cpp")
         target_link_libraries(shin-local-history-files-tests PRIVATE shin-observer-native ${SHIN_NATIVE_SQLITE})
         target_compile_options(shin-local-history-files-tests PRIVATE ${SHIN_NATIVE_WARNINGS})

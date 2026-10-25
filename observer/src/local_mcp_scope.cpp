@@ -37,7 +37,19 @@ Json route_review() {
 }
 }
 
-Json local_mcp_recovery(const std::string& code, const Json& diagnostic) {
+Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::string_view method) {
+    if (code == "session-checkpoint-conflict")
+        return {{"kind","request-correction"},{"responsible_party","requester"},
+            {"next_action","resume-same-project-session-task"},{"retry_same_request",false},
+            {"message","Resume the same project, real chat and task key to review its saved revision. Replace notes only with that exact expected_revision. Existing notes and normal context reads are preserved."}};
+    if (code == "session-checkpoint-not-found")
+        return {{"kind","request-correction"},{"responsible_party","requester"},
+            {"next_action","query-current-code-without-checkpoint"},{"retry_same_request",false},
+            {"message","No checkpoint is available under this binding. Use a useful current-code query; do not substitute another session or task identity. Checkpoints are optional."}};
+    if (code.starts_with("session-state-") || code.starts_with("session-store-") || code == "session-response-too-large" || code == "session-checkpoint-too-large")
+        return {{"kind","operator-review"},{"responsible_party","operator"},
+            {"next_action","preserve-session-notes-and-query-current-code"},{"retry_same_request",false},
+            {"message","This optional task-note operation could not be confirmed. Preserve existing notes and report the bounded error code. Continue normal context queries; do not delete saved state or repair project indexes."}};
     if (code == "route-revision-conflict") return with_diagnostic(route_review(), diagnostic);
     if (code == "binding-identity-changed" || code == "mcp-project-changed" ||
         code == "project-detached" || code == "binding-changed" || code == "source-binding-changed" ||
@@ -50,8 +62,14 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic) {
                 "the reviewed lifecycle or identity change requires a new connection. "
                 "Do not re-enroll or change route authority from this response."}}, diagnostic);
     }
-    if (code == "service-unavailable" || code == "service-disconnected" ||
-        code == "service-version-mismatch" || code == "service-executable-changed")
+    if (code == "service-version-mismatch")
+        return {{"kind", "environment-action"}, {"responsible_party", "operator"},
+            {"next_action", "reconnect-client-with-current-kit"},
+            {"message", "The MCP client and service belong to different kit versions. After a kit update, reconnect "
+                "the MCP integration or restart its client application to load the installed adapter. Verify that "
+                "both components use the current installation. A current running service can keep serving other "
+                "clients. Preserve project bindings and data; do not re-enroll projects or launch another service."}};
+    if (code == "service-unavailable" || code == "service-disconnected" || code == "service-executable-changed")
         return {{"kind", "environment-action"}, {"responsible_party", "operator"},
             {"next_action", "review-service-and-matched-kit"},
             {"message", "Ask the operator to check that the configured local service is available and its "
@@ -116,13 +134,28 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic) {
                 "maintainers. Do not relax profiles or repair indexes."}};
         return with_diagnostic(std::move(result), diagnostic);
     }
+    if (code == "service-busy")
+        return with_diagnostic({{"kind","transient"},{"responsible_party","requester"},
+            {"retry_after_ms",method == "status" ? 0 : 1000},{"max_attempts_per_checkpoint",1},
+            {"next_tool","shin_query"},{"same_project_required",true},{"fresh_snapshot_required",true},
+            {"next_action",method == "status" ? "query-once-with-bounded-readiness-wait" : "continue-work-then-query-once-at-checkpoint"},
+            {"message","Read admission is occupied or its bounded waiting capacity is full; this does not establish a broken project or failed validation. A useful query can wait briefly behind current work. Continue authorized direct-source work; if context is useful after the current calls finish, make one query for the same project and use its new snapshot. Do not poll status, restart a healthy service or change grants to bypass capacity."}},diagnostic);
+    if (code == "project-updating" && method == "status")
+        return with_diagnostic({{"kind", "transient"}, {"responsible_party", "requester"},
+            {"retry_after_ms", 0}, {"max_attempts_per_checkpoint", 1}, {"next_tool", "shin_query"},
+            {"same_project_required", true}, {"fresh_snapshot_required", true},
+            {"next_action", "query-once-with-bounded-readiness-wait"},
+            {"message", "This status probe did not wait for background reader preparation. If context is useful now, "
+                "make one shin_query for the same project; it waits automatically up to 20 seconds for readiness. Use its "
+                "fresh snapshot for follow-up reads. If that query is also refused, continue useful work with "
+                "direct sources and follow its recovery guidance. Do not poll status or retry in a loop."}}, diagnostic);
     if (code == "project-updating" || code == "refresh-timeout" ||
-        code == "refresh-suspended" || code == "service-busy" ||
+        code == "refresh-suspended" ||
         code == "file-changed-during-verification" || code == "query-source-changed" ||
         code == "source-read-hash-mismatch" || code == "refresh-superseded" ||
         code == "query-snapshot-changed")
         return with_diagnostic({{"kind", "transient"}, {"responsible_party", "requester"},
-            {"retry_after_ms", code == "service-busy" ? 1000 : 5000},
+            {"retry_after_ms", 5000},
             {"max_attempts_per_checkpoint", 1}, {"next_tool", "shin_query"},
             {"same_project_required", true}, {"fresh_snapshot_required", true},
             {"next_action", "continue-work-then-query-once-at-checkpoint"},

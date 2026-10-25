@@ -6,11 +6,13 @@ import os
 from pathlib import Path
 import select
 import socket
+import sqlite3
 import subprocess
 import sys
 import time
 import threading
 import unittest
+from contextlib import closing
 
 MCP = Path(sys.argv.pop(1)).resolve()
 import local_service_test as service
@@ -26,6 +28,269 @@ class McpTests(unittest.TestCase):
     frame = service.LocalServiceTests.frame
     connect = service.LocalServiceTests.connect
     receive = service.LocalServiceTests.receive
+    hold_reader = service.LocalServiceTests.hold_reader
+    wait_service_state = service.LocalServiceTests.wait_service_state
+
+    def activity_rows(self):
+        path = self.home / 'mcp-history/telemetry.sqlite'
+        with closing(sqlite3.connect(f'file:{path}?mode=ro', uri=True, timeout=1)) as db:
+            db.execute('PRAGMA query_only=ON')
+            db.row_factory = sqlite3.Row
+            return [dict(row) for row in db.execute('SELECT * FROM calls ORDER BY at_ms,call_id')]
+
+    def finish_adapter(self, child):
+        child.stdin.close()
+        child.stdin = None
+        child.communicate(timeout=5)
+        self.assertEqual(child.returncode, 0)
+
+    def test_activity_survives_offline_calls_restart_and_service_start(self):
+        self.endpoint.parent.mkdir(mode=0o700)
+        second = self.base / 'other'
+        second.mkdir()
+        (second / 'limits.js').write_text('export function readLimit() { return 8; }\n')
+        self.init(root=second)
+        child = self.adapter(roots=[self.root, second])
+        catalog = self.tool(child, 'shin_projects', {})
+        project = next(p['project'] for p in catalog['projects'] if p['root'] == str(self.root))
+        self.assertTrue(self.tool(child, 'shin_help', {})['ok'])
+        self.assertIn('error', self.rpc(child, 'tools/call', {'name': 'private-unknown-tool-name', 'arguments': {}}))
+        invalid = self.tool(child, 'shin_query', {'project': project, 'query': 'private-query-marker', 'root': '/private-marker'})
+        self.assertEqual(invalid['error']['code'], 'invalid-arguments')
+        offline = self.tool(child, 'shin_query', {'project': project, 'query': 'private-query-marker', 'session_id': 'private-session-marker'})
+        self.assertEqual(offline['error']['code'], 'service-unavailable')
+        self.finish_adapter(child)
+        rows = self.activity_rows()
+        self.assertEqual(len(rows), 5)
+        self.assertEqual(sorted(r['outcome'] for r in rows), ['rpc-error', 'success', 'success', 'tool-error', 'tool-error'])
+        self.assertTrue(all(r['write_state'] == 'written' for r in rows))
+        self.assertEqual(next(r for r in rows if r['method'] == 'projects')['project_id'], '')
+        before_ids = {r['call_id'] for r in rows}
+        path = self.home / 'mcp-history/telemetry.sqlite'
+        raw = path.read_bytes()
+        for private in ['private-query-marker', 'private-session-marker', 'private-unknown-tool-name', '/private-marker', str(self.root)]:
+            self.assertNotIn(private.encode(), raw)
+        child = self.adapter()
+        self.assertTrue(self.tool(child, 'shin_help', {})['ok'])
+        self.start()
+        query = self.tool(child, 'shin_query', {'query': 'readLimit', 'session_id': 'actual-test-chat', 'model_id': 'fixture-model', 'diagnostic': True})
+        self.assertTrue(query['ok'])
+        self.finish_adapter(child)
+        rows = self.activity_rows()
+        self.assertEqual(len(rows), 7)
+        self.assertTrue(before_ids < {r['call_id'] for r in rows})
+        linked = next(r for r in rows if r['service_request_id'] == query['request_trace']['request_id'])
+        self.assertEqual(linked['model_id'], 'fixture-model')
+        self.assertEqual(linked['purpose'], 'diagnostic')
+        self.assertEqual(linked['project_id'], hashlib.sha256(str(self.root).encode()).hexdigest())
+        deadline = time.monotonic() + 6
+        while True:
+            telemetry = self.raw('service-status')['result']['telemetry']
+            activity = telemetry.get('mcp_activity', {})
+            if activity.get('attempts') == 7:
+                break
+            self.assertLess(time.monotonic(), deadline, activity)
+            time.sleep(.05)
+        self.assertEqual(activity['calls'], {'help': 2, 'projects': 1, 'query': 3, 'unknown': 1})
+        self.assertEqual(activity['client_receipt'], 'not-observed')
+        self.assertEqual(activity['outcomes'], {'rpc-error': 1, 'success': 4, 'tool-error': 2})
+        self.assertEqual(telemetry['request_metrics']['responses_ready'], 1)  # executions are never summed with adapter attempts
+        executed = next(row for row in telemetry['request_metrics']['recent'] if row['method'] == 'query')
+        self.assertEqual(executed['request_id'], linked['service_request_id'])
+
+    def test_file_read_versions_survive_generations_without_counting_probes_or_refusals(self):
+        self.start()
+        child = self.adapter()
+        identity = {'session_id': 'read-version-test-chat'}
+        query = self.tool(child, 'shin_query', {'query': 'readLimit', **identity})
+        def read(snapshot, **extra):
+            return self.tool(child, 'shin_read', {'path': 'limits.js', 'snapshot': snapshot, **identity, **extra})
+        first = read(query['snapshot_id'])
+        self.assertTrue(first['ok'], first)
+        version = first['work_performed']['read_identity']
+        self.assertEqual(read(query['snapshot_id'])['work_performed']['read_identity'], version)
+        self.assertTrue(read(query['snapshot_id'], diagnostic=True)['ok'])
+        self.assertFalse(read('fnv1a64:0000000000000000')['ok'])
+        (self.root/'README.md').write_text('# Updated documentation\nreadLimit remains unchanged.\n')
+        self.wait_service_state(lambda s: any(p['snapshot_id'] != query['snapshot_id'] for p in s['qualified_projects']))
+        changed = self.tool(child, 'shin_query', {'query': 'readLimit', **identity})
+        self.assertNotEqual(changed['snapshot_id'], query['snapshot_id'])
+        self.assertEqual(read(changed['snapshot_id'])['work_performed']['read_identity'], version)
+        (self.root/'limits.js').write_text('export function readLimit() { return 8; }\n')
+        self.wait_service_state(lambda s: any(p['snapshot_id'] != changed['snapshot_id'] for p in s['qualified_projects']))
+        latest = self.tool(child, 'shin_query', {'query': 'readLimit', **identity})
+        newer = read(latest['snapshot_id'])['work_performed']['read_identity']
+        self.assertEqual(newer['file_id'], version['file_id'])
+        self.assertNotEqual(newer['version_id'], version['version_id'])
+        self.finish_adapter(child)
+        rows = self.activity_rows()
+        self.assertEqual(sum(bool(r['read_file_id']) for r in rows), 5)  # Includes one explicitly labelled probe.
+        for row in rows:
+            if row['method'] != 'read' or row['outcome'] != 'success':
+                self.assertEqual(row['read_file_id'], '')
+        state = self.wait_service_state(lambda s: any(r.get('analysis',{}).get('reads',{}).get('reads') == 4
+            for r in s['telemetry'].get('mcp_activity',{}).get('session_rows',[])))
+        analysis = state['telemetry']['mcp_activity']['session_rows'][0]['analysis']
+        self.assertEqual(analysis['reads']['same_version_repeats'], 2)
+        self.assertEqual(analysis['reads']['additional_versions'], 1)
+        self.assertEqual(analysis['reads']['unknown_reads'], 0)
+        self.assertEqual(analysis['episodes'], [])  # No host task/compaction markers in this fixture.
+        raw = (self.home/'mcp-history/telemetry.sqlite').read_bytes()
+        for private in (str(self.root), 'limits.js', 'return 7', 'read-version-test-chat'):
+            self.assertNotIn(private.encode(), raw)
+
+    def test_activity_journal_serializes_multiple_adapter_writers(self):
+        left, right = self.adapter(), self.adapter()
+        failures = []
+        def work(child):
+            try:
+                for _ in range(8):
+                    self.assertTrue(self.tool(child, 'shin_help', {})['ok'])
+                self.finish_adapter(child)
+            except Exception as exc:
+                failures.append(exc)
+        threads = [threading.Thread(target=work, args=(child,)) for child in (left, right)]
+        for thread in threads:
+            thread.start()
+        for thread in threads:
+            thread.join(timeout=8)
+            self.assertFalse(thread.is_alive())
+        self.assertFalse(failures, failures)
+        rows = self.activity_rows()
+        self.assertEqual(len(rows), 16)
+        self.assertEqual(len({r['call_id'] for r in rows}), 16)
+        self.assertTrue(all(r['outcome'] == 'success' and r['write_state'] == 'written' for r in rows))
+
+    def test_unsafe_activity_history_does_not_block_project_access(self):
+        directory = self.home / 'mcp-history'
+        directory.mkdir(mode=0o700)
+        preserved = self.base / 'preserved-data'
+        preserved.write_bytes(b'protected-fixture')
+        (directory / 'telemetry.sqlite').symlink_to(preserved)
+        self.start()
+        child = self.adapter()
+        self.assertTrue(self.tool(child, 'shin_help', {})['ok'])
+        query = self.tool(child, 'shin_query', {'query': 'readLimit'})
+        self.assertTrue(query['ok'])
+        self.assertIn('return 7', query['source_context'])
+        self.finish_adapter(child)
+        state = self.raw('service-status')['result']['telemetry']
+        self.assertEqual(state['mcp_activity']['status'], 'unavailable')
+        self.assertEqual(state['mcp_activity']['error_code'], 'mcp-history-unsafe')
+        self.assertEqual(preserved.read_bytes(), b'protected-fixture')
+        self.assertTrue((directory / 'telemetry.sqlite').is_symlink())
+
+    def test_version_refusal_survives_cross_version_error_envelope(self):
+        listener = self.delayed_service()
+        child = self.adapter()
+        cases = [({}, 'service-version-mismatch'), ({'request_id': 'foreign'}, 'service-response-invalid'),
+                 ({'ok': True, 'result': {'ok': True}}, 'service-response-invalid'),
+                 ({'error': {'code': 'service-version-mismatch', 'message': 5}}, 'service-response-invalid'),
+                 ({'error': {'code': 'service-unavailable', 'message': 'test'}}, 'service-response-invalid')]
+        for change, expected in cases:
+            request_id, connection = self.pending_query(child, listener)
+            with connection:
+                response = {'schema_version': 'shin.local-rpc.v1', 'request_id': child.last_service_request['request_id'],
+                    'observer_version': '2.0.5-dev.999', 'core_version': self.identity['core_version'],
+                    'ok': False, 'error': {'code': 'service-version-mismatch', 'message': 'test'}}
+                response.update(change)
+                connection.sendall((json.dumps(response) + '\n').encode())
+            result = json.loads(self.response(child, request_id)['result']['content'][0]['text'])
+            self.assertEqual(result['error']['code'], expected)
+            if expected == 'service-version-mismatch':
+                self.assertIn('2.0.5-dev.999', result['error']['message'])
+                self.assertIn(self.identity['version'], result['error']['message'])
+                self.assertEqual(result['recovery']['next_action'], 'reconnect-client-with-current-kit')
+
+    def test_status_probe_does_not_wait_for_cold_reader(self):
+        import fcntl
+        self.start()
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        (self.root / 'limits.js').write_text('export function readLimit() { return 73; }\n')
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            deadline = time.monotonic() + 5
+            while self.raw('service-status')['result']['qualified_projects']:
+                self.assertLess(time.monotonic(), deadline)
+                time.sleep(.01)
+            child = self.adapter()
+            started = time.monotonic()
+            status = self.tool(child, 'shin_status', {}, timeout=2)
+            elapsed = time.monotonic() - started
+            self.assertTrue(status['ok'])
+            self.assertEqual(status['state'], 'preparing')
+            self.assertFalse(status['local_ready'])
+            self.assertFalse(status['retrieval_ready'])
+            for field in ['error', 'snapshot_id', 'mcp_snapshot', 'source_context']:
+                self.assertNotIn(field, status)
+            self.assertEqual(status['recovery']['kind'], 'transient')
+            self.assertEqual(status['recovery']['next_action'], 'query-once-with-bounded-readiness-wait')
+            self.assertEqual(status['recovery']['retry_after_ms'], 0)
+            self.assertLess(elapsed, 1)
+            self.assertEqual(self.raw('service-status')['result']['waiting_requests'], 0)
+            invalid = self.raw('query', query='readLimit', wait_for_ready=False)
+            self.assertEqual(invalid['error']['code'], 'service-request-invalid')
+        query = self.tool(child, 'shin_query', {'query': 'readLimit'})
+        self.assertTrue(query['ok'])
+        self.assertIn('return 73', query['source_context'])
+        self.finish_adapter(child)
+        rows = self.activity_rows()
+        self.assertEqual(len(rows), 2)
+        self.assertEqual(next(r for r in rows if r['method'] == 'status')['error_code'], '')
+
+    def test_query_waits_in_one_call_with_progress_and_fresh_context(self):
+        import fcntl
+        self.start()
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        child = self.adapter()
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            (self.root / 'limits.js').write_text('export function readLimit() { return 73; }\n')
+            self.wait_service_state(lambda s: not s['qualified_projects'])
+            request_id = self.send(child, 'tools/call', {'name':'shin_query','arguments':{'query':'readLimit'},
+                '_meta':{'progressToken':'readiness-progress'}})
+            self.wait_service_state(lambda s: s['waiting_requests'] == 1)
+            # Keep publication blocked beyond the old five-second admission limit.
+            time.sleep(5.5)
+            status = self.tool(child, 'shin_status', {}, timeout=2)
+            self.assertEqual(status['state'], 'preparing')
+            self.assertEqual(self.raw('service-status')['result']['waiting_requests'], 1)
+            progress = [n['params'] for n in child.notifications if n.get('method') == 'notifications/progress']
+            self.assertGreaterEqual(len(progress), 2)
+            self.assertTrue(all(p['progressToken'] == 'readiness-progress' and 'total' not in p for p in progress))
+            self.assertEqual([p['progress'] for p in progress], sorted({p['progress'] for p in progress}))
+            self.assertNotIn(request_id, child.responses)
+        response = self.response(child, request_id, timeout=20)['result']
+        self.assertFalse(response['isError'])
+        result = json.loads(response['content'][0]['text'])
+        self.assertTrue(result['ok'])
+        self.assertIn('return 73', result['source_context'])
+        self.assertEqual(self.raw('service-status')['result']['waiting_requests'], 0)
+
+    def test_query_readiness_deadline_and_cancel_release_waiter(self):
+        import fcntl
+        self.start()
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        child = self.adapter()
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            (self.root / 'limits.js').write_text('export function readLimit() { return 73; }\n')
+            self.wait_service_state(lambda s: not s['qualified_projects'])
+            started = time.monotonic()
+            result = self.tool(child, 'shin_query', {'query':'readLimit'}, timeout=25)
+            self.assertGreaterEqual(time.monotonic() - started, 19.5)
+            self.assertLess(time.monotonic() - started, 24)
+            self.assertEqual(result['error']['code'], 'project-updating')
+            self.assertEqual(result['error']['diagnostic']['wait_limit_ms'], 20000)
+            self.assertFalse(result['error']['diagnostic']['execution_started'])
+            self.assertNotIn('snapshot_id', result)
+            self.assertNotIn('source_context', result)
+            request_id = self.send(child, 'tools/call', {'name':'shin_query','arguments':{'query':'readLimit'}})
+            self.wait_service_state(lambda s: s['waiting_requests'] == 1)
+            self.notify_cancel(child, request_id)
+            cancelled = json.loads(self.response(child, request_id, timeout=2)['result']['content'][0]['text'])
+            self.assertEqual(cancelled['error']['code'], 'service-request-cancelled')
+            self.wait_service_state(lambda s: s['waiting_requests'] == 0)
 
     def adapter(self, root=None, roots=None):
         argv = [str(MCP), '--home', str(self.home)]
@@ -37,6 +302,7 @@ class McpTests(unittest.TestCase):
         child.sequence = 0
         child.pending = b''
         child.responses = {}
+        child.notifications = []
         def cleanup():
             if child.poll() is None:
                 child.terminate()
@@ -51,6 +317,7 @@ class McpTests(unittest.TestCase):
             'clientInfo': {'name': 'shin-native-test', 'version': '1'}})
         self.assertEqual(response['result']['protocolVersion'], '2025-11-25')
         self.assertEqual(response['result']['serverInfo']['name'], 'shin')
+        child.initialization = response['result']
         child.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
         child.stdin.flush()
         return child
@@ -78,6 +345,8 @@ class McpTests(unittest.TestCase):
                     return value
                 if 'id' in value:
                     child.responses[value['id']] = value
+                elif 'method' in value:
+                    child.notifications.append(value)
             readable, _, _ = select.select([child.stdout], [], [], max(0, deadline - time.monotonic()))
             if readable:
                 part = os.read(child.stdout.fileno(), 8192)
@@ -100,15 +369,19 @@ class McpTests(unittest.TestCase):
         listener.settimeout(3)
         return listener
 
-    def pending_query(self, child, listener):
-        request_id = self.send(child, 'tools/call', {'name': 'shin_query', 'arguments': {'query': 'readLimit'}})
+    def pending_query(self, child, listener, method='query', project=None):
+        arguments={'query':'readLimit'} if method=='query' else {}
+        if project is not None:arguments['project']=project
+        request_id = self.send(child, 'tools/call', {'name': 'shin_'+method, 'arguments': arguments})
         connection, _ = listener.accept()
         self.addCleanup(connection.close)
         connection.settimeout(2)
         data = b''
         while not data.endswith(b'\n'):
             data += connection.recv(8192)
-        self.assertEqual(json.loads(data)['command'], 'query')
+        self.assertEqual(json.loads(data)['command'], method)
+        if method=='status':self.assertFalse(json.loads(data)['wait_for_ready'])
+        child.last_service_request = json.loads(data)
         return request_id, connection
 
     def tool(self, child, name, arguments, timeout=15):
@@ -198,14 +471,167 @@ class McpTests(unittest.TestCase):
             'session_id': args['session_id'], 'parent_request_id': 'x' * 64})
         self.assertFalse(bad['ok'])
 
+    def test_explicit_checkpoint_resume_is_bound_private_and_revision_checked(self):
+        self.start()
+        child = self.adapter()
+        args = {'session_id': 'fixture-session-private', 'task_key': 'fixture-task-private',
+                'task': 'Review the current readLimit implementation'}
+        draft = {**args, 'progress': 'fixture-note-private: located readLimit; verify callers next',
+                 'queries': ['readLimit'], 'paths': ['limits.js'], 'next_steps': ['Check readLimit callers']}
+        missing_first = self.tool(child, 'shin_resume', args)
+        self.assertFalse(missing_first['ok'])
+        self.assertEqual(missing_first['error']['code'], 'session-checkpoint-not-found')
+        self.assertEqual(missing_first['recovery']['next_action'], 'query-current-code-without-checkpoint')
+        saved = self.tool(child, 'shin_checkpoint', draft)
+        self.assertTrue(saved['ok'], saved)
+        self.assertEqual(len(saved['revision']), 64)
+        resumed = self.tool(child, 'shin_resume', args)
+        self.assertTrue(resumed['ok'], resumed)
+        self.assertEqual(resumed['revision'], saved['revision'])
+        self.assertTrue(resumed['session']['continuation_ready'], resumed)
+        self.assertTrue(resumed['ready_without_review'])
+        self.assertIn('fixture-note-private', json.dumps(resumed['session']))
+        self.assertIn('return 7;', json.dumps(resumed['session']))
+        for change in ({'session_id': 'another-session'}, {'task_key': 'another-task'}):
+            missing = self.tool(child, 'shin_resume', {**args, **change})
+            self.assertFalse(missing['ok']); self.assertNotIn('fixture-note-private', json.dumps(missing))
+        changed = self.tool(child, 'shin_resume', {**args, 'task': 'A different objective'})
+        self.assertTrue(changed['ok'], changed)
+        self.assertFalse(changed['session']['continuation_ready'])
+        self.assertTrue(changed['session']['task_wording_changed'])
+        conflict = self.tool(child, 'shin_checkpoint', draft)
+        self.assertFalse(conflict['ok']); self.assertEqual(conflict['error']['code'], 'session-checkpoint-conflict')
+        conflict = self.tool(child, 'shin_checkpoint', {**draft, 'expected_revision': '0'*64})
+        self.assertFalse(conflict['ok'])
+        updated = self.tool(child, 'shin_checkpoint', {**draft, 'progress': 'new private progress', 'expected_revision': saved['revision']})
+        self.assertTrue(updated['ok'], updated); self.assertNotEqual(updated['revision'], saved['revision'])
+        self.assertIn('new private progress', json.dumps(self.tool(child, 'shin_resume', args)))
+        (self.root/'limits.js').write_text('export function readLimit() { return 8; }\n')
+        deadline = time.monotonic()+15
+        while True:
+            current = self.tool(child, 'shin_query', {'query':'readLimit'})
+            if current['ok'] and 'return 8;' in current.get('source_context',''): break
+            self.assertLess(time.monotonic(),deadline,'fixture source refresh did not converge')
+            time.sleep(.1)
+        drifted = self.tool(child, 'shin_resume', args)
+        self.assertTrue(drifted['ok'],drifted)
+        self.assertFalse(drifted['ready_without_review'])
+        self.assertTrue(drifted['session']['review_required'])
+        self.assertIn('return 8;',json.dumps(drifted['session']))
+        rejected = self.tool(child, 'shin_checkpoint', {**draft, 'progress': 'sk-'+'Q7x9'*16,
+                                                     'expected_revision': updated['revision']})
+        self.assertFalse(rejected['ok']); self.assertEqual(rejected['error']['code'], 'secret-like-session-content')
+        oversized = self.tool(child, 'shin_checkpoint', {**draft, 'progress': 'x'*1025})
+        self.assertFalse(oversized['ok'])
+        self.assertEqual(self.tool(child, 'shin_resume', args)['revision'], updated['revision'])
+        slots = list((self.home/'sessions').glob('*/state.json'))
+        damaged = json.loads(slots[0].read_text()); damaged['revision'] = '0'*64
+        slots[0].write_text(json.dumps(damaged))
+        invalid = self.tool(child, 'shin_resume', args)
+        self.assertFalse(invalid['ok']); self.assertNotIn('new private progress', json.dumps(invalid))
+        self.assertTrue(self.tool(child, 'shin_query', {'query':'readLimit'})['ok'])
+        self.finish_adapter(child)
+        rows = self.activity_rows()
+        self.assertTrue(all('fixture-note-private' not in json.dumps(row) and 'fixture-task-private' not in json.dumps(row) for row in rows))
+        self.assertEqual({r['intent'] for r in rows}, {'checkpoint','context-recovery','unclassified'})
+        self.assertEqual(len({r['task_id'] for r in rows if r['task_id']}), 3)
+        slots = list((self.home/'sessions').glob('*/state.json'))
+        self.assertEqual(len(slots), 1)
+        self.assertIn('new private progress', slots[0].read_text())
+        self.assertFalse((self.root/'.shin/sessions').exists())
+
+    def test_checkpoint_scope_does_not_cross_projects(self):
+        other=self.base/'other-project';other.mkdir()
+        (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other);self.roots.append(other);self.start()
+        child=self.adapter(roots=[self.root,other])
+        catalog=self.tool(child,'shin_projects',{})['projects']
+        projects={p['root']:p['project'] for p in catalog}
+        args={'project':projects[str(self.root)],'session_id':'same-chat','task_key':'same-task',
+              'task':'Review readLimit'}
+        saved=self.tool(child,'shin_checkpoint',{**args,'progress':'Private first-project note',
+                                               'queries':['readLimit'],'paths':['limits.js']})
+        self.assertTrue(saved['ok'],saved)
+        resumed=self.tool(child,'shin_resume',args)
+        self.assertTrue(resumed['ok'],resumed)
+        self.assertIn('return 7;',json.dumps(resumed['session']))
+        missing=self.tool(child,'shin_resume',{**args,'project':projects[str(other)]})
+        self.assertFalse(missing['ok']);self.assertNotIn('Private first-project note',json.dumps(missing))
+        self.assertTrue(self.tool(child,'shin_resume',args)['ok'])
+
+    def test_busy_project_status_is_fast_and_distinct_from_failed_validation(self):
+        self.start();child=self.adapter();pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='occupying-reader'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        started=time.monotonic();status=self.tool(child,'shin_status',{},timeout=2)
+        self.assertLess(time.monotonic()-started,1)
+        self.assertEqual(status['error']['code'],'service-busy')
+        self.assertEqual(status['error']['diagnostic']['reason'],'project-executing')
+        self.assertEqual(status['recovery']['next_action'],'query-once-with-bounded-readiness-wait')
+        self.assertEqual(status['recovery']['retry_after_ms'],0)
+        self.assertNotIn('failure_reason',status['recovery'])
+        self.assertEqual(self.raw('service-status')['result']['waiting_requests'],0)
+        import signal
+        os.kill(pid,signal.SIGCONT);self.assertTrue(self.receive(first)['ok'])
+        self.assertTrue(self.tool(child,'shin_query',{'query':'readLimit'})['ok'])
+
+    def test_recovery_guidance_references_only_advertised_tools(self):
+        other=self.base/'guidance-scope';other.mkdir()
+        (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other);self.roots.append(other);self.start()
+        for roots in (None,[self.root,other]):
+            child=self.adapter(roots=roots)
+            catalog={tool['name']:tool for tool in self.rpc(child,'tools/list',{})['result']['tools']}
+            import re
+            instructions=child.initialization['instructions']
+            names=set(re.findall(r'\bshin_[a-z]+\b',instructions))
+            self.assertLessEqual(names,set(catalog))
+            self.assertTrue({'shin_checkpoint','shin_resume'} <= names)
+            for name in ('shin_checkpoint','shin_resume'):
+                required=set(catalog[name]['inputSchema']['required'])
+                self.assertTrue({'session_id','task_key','task'} <= required)
+            # Hosts that do not display initialize instructions still receive
+            # the independent readiness/review contract on the actual resume tool.
+            description=catalog['shin_resume']['description']
+            for field in ('ok','continuation_ready','review_required','ready_without_review'):
+                self.assertIn(field,description)
+            self.finish_adapter(child)
+
+    def test_handoff_survives_mcp_restart_without_project_file_changes(self):
+        other=self.base/'handoff-scope';other.mkdir()
+        (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other);self.roots.append(other);self.start()
+        original={p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()}
+        child=self.adapter()
+        binding={'session_id':'persistent-host-chat','task_key':'current-review','task':'Review readLimit'}
+        saved=self.tool(child,'shin_checkpoint',{**binding,'progress':'Located the declaration; inspect callers next',
+            'queries':['readLimit'],'paths':['limits.js'],'next_steps':['Review the current callers']})
+        self.assertTrue(saved['ok'],saved)
+        handoff=self.base/'host-handoff.json'
+        handoff.write_text(json.dumps({'root':str(self.root),'binding':binding,'revision':saved['revision']}));handoff.chmod(0o600)
+        self.finish_adapter(child)
+        # A new multi-project adapter has no in-memory task state from the old single-root connection.
+        child=self.adapter(roots=[self.root,other])
+        restored=json.loads(handoff.read_text())
+        catalog=self.tool(child,'shin_projects',{})['projects']
+        project=next(row['project'] for row in catalog if row['root']==restored['root'])
+        resumed=self.tool(child,'shin_resume',{**restored['binding'],'project':project})
+        self.assertTrue(resumed['ok'],resumed)
+        self.assertTrue(resumed['ready_without_review'],resumed)
+        self.assertEqual(resumed['revision'],restored['revision'])
+        self.assertIn('inspect callers next',json.dumps(resumed['session']))
+        self.assertIn('return 7;',json.dumps(resumed['session']))
+        self.assertEqual(original,{p.name:p.read_bytes() for p in self.root.iterdir() if p.is_file()})
+        self.finish_adapter(child)
+
     def test_catalog_query_inspect_read_and_eof(self):
         self.start()
         child = self.adapter()
         tools = self.rpc(child, 'tools/list', {})['result']['tools']
-        self.assertEqual({t['name'] for t in tools}, {'shin_query', 'shin_inspect', 'shin_read', 'shin_status', 'shin_help'})
+        self.assertEqual({t['name'] for t in tools}, {'shin_query', 'shin_inspect', 'shin_read', 'shin_status', 'shin_help', 'shin_checkpoint', 'shin_resume'})
         for tool in tools:
-            self.assertTrue(tool['annotations']['readOnlyHint'])
-            self.assertFalse(tool['annotations']['destructiveHint'])
+            self.assertEqual(tool['annotations']['readOnlyHint'], tool['name'] != 'shin_checkpoint')
+            self.assertEqual(tool['annotations']['destructiveHint'], tool['name'] == 'shin_checkpoint')
             self.assertFalse(tool['inputSchema']['additionalProperties'])
         query = self.tool(child, 'shin_query', {'query': 'readLimit'})
         self.assertIn('return 7;', query['source_context'])
@@ -299,9 +725,12 @@ class McpTests(unittest.TestCase):
                 self.assertEqual(hint['responsible_party'], 'shin-maintainers')
                 self.assertNotIn('next_tool', hint)
         self.assertEqual(select.select([listener], [], [], 0)[0], [])
+        self.finish_adapter(child)
         after = {str(p.relative_to(self.home)): p.read_bytes()
                  for p in self.home.rglob('*') if p.is_file()}
-        self.assertEqual(before, after)
+        numerical_history = {'mcp-history/observer.lock', 'mcp-history/telemetry.sqlite'}
+        self.assertTrue(numerical_history <= after.keys())
+        self.assertEqual(before, {key: value for key, value in after.items() if key not in numerical_history})
 
     def test_help_does_not_bypass_changed_project_binding(self):
         child = self.adapter()
@@ -338,9 +767,9 @@ class McpTests(unittest.TestCase):
         self.start()
         child = self.adapter(roots=[self.root, other])
         tools = self.rpc(child, 'tools/list', {})['result']['tools']
-        self.assertEqual(len(tools), 6)
+        self.assertEqual(len(tools), 8)
         for tool in tools:
-            self.assertTrue(tool['annotations']['readOnlyHint'])
+            self.assertEqual(tool['annotations']['readOnlyHint'], tool['name'] != 'shin_checkpoint')
             if tool['name'] not in ('shin_projects', 'shin_help'):
                 self.assertIn('project', tool['inputSchema']['required'])
         help_result = self.tool(child, 'shin_help', {})
@@ -936,6 +1365,33 @@ class McpTests(unittest.TestCase):
         self.notify_cancel(child, second)
         self.assertEqual(right.recv(1), b'')
         self.assertTrue(self.response(child, second, timeout=2)['result']['isError'])
+
+    def test_help_and_catalog_remain_available_during_two_source_calls(self):
+        other=self.base/'control-scope';other.mkdir()
+        (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other)
+        listener=self.delayed_service();child=self.adapter(roots=[self.root,other])
+        initial=self.tool(child,'shin_projects',{})
+        project=next(row['project'] for row in initial['projects'] if row['root']==str(self.root))
+        first,left=self.pending_query(child,listener,project=project);second,right=self.pending_query(child,listener,project=project)
+        started=time.monotonic();help_result=self.tool(child,'shin_help',{},timeout=2)
+        self.assertTrue(help_result['ok']);self.assertLess(time.monotonic()-started,1)
+        self.assertEqual(self.tool(child,'shin_projects',{})['projects'],initial['projects'])
+        self.assertIn('tools',self.rpc(child,'tools/list',{})['result'])
+        for request_id,connection in ((first,left),(second,right)):
+            self.notify_cancel(child,request_id);self.assertEqual(connection.recv(1),b'')
+            self.response(child,request_id,timeout=2)
+
+    def test_lightweight_controls_keep_the_total_eight_request_bound(self):
+        listener=self.delayed_service();child=self.adapter()
+        held=[self.pending_query(child,listener) for _ in range(2)]
+        held += [self.pending_query(child,listener,method='status') for _ in range(6)]
+        denied=self.rpc(child,'tools/call',{'name':'shin_help','arguments':{}})
+        self.assertIn('capacity',denied['error']['message'])
+        for request_id,connection in held:
+            self.notify_cancel(child,request_id);self.assertEqual(connection.recv(1),b'')
+            self.response(child,request_id,timeout=2)
+        self.assertTrue(self.tool(child,'shin_help',{})['ok'])
 
     def test_capacity_recovers_and_conflicting_ids_are_rejected(self):
         listener = self.delayed_service()

@@ -191,8 +191,7 @@ void require_compatible_snapshot(const RuntimeOptions& options,
                        option + " snapshot profile does not match the active profile.", 1,
                        false, "Select the profile that published both compared snapshots.");
     }
-    if (json_string_value(manifest, "generator_version") != kGeneratorVersion &&
-        json_string_value(manifest, "generator_version") != kLegacyGeneratorVersion) {
+    if (json_string_value(manifest, "generator_version") != kGeneratorVersion) {
         throw CliError("pack-diff-generator-mismatch", "configuration",
                        option + " snapshot generator is not readable by this release.", 1,
                        false, "Rebuild both snapshots with the current Shin generator.");

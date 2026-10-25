@@ -162,29 +162,6 @@ std::vector<std::string> required_string_array(const simdjson::dom::object& obje
     return strings;
 }
 
-std::vector<int> required_posting_array(const simdjson::dom::object& object,
-                                        std::string_view field) {
-    const std::optional<simdjson::dom::element> value = row_field(object, field);
-    simdjson::dom::array array;
-    if (!value.has_value() || value->get(array)) {
-        throw_index_error("index-corrupt",
-                          "Generated term posting field is not an array: " +
-                              std::string(field));
-    }
-    std::vector<int> ids;
-    for (simdjson::dom::element item : array) {
-        std::int64_t id = -1;
-        if (item.get(id) || id < 0 || id > std::numeric_limits<int>::max()) {
-            throw_index_error(
-                "index-corrupt",
-                "Generated term posting contains an invalid row id: " +
-                    std::string(field));
-        }
-        ids.push_back(static_cast<int>(id));
-    }
-    return ids;
-}
-
 FactRow decode_common_fact(const simdjson::dom::object& object, std::string_view store) {
     FactRow row;
     row.id = row_string(object, "id");
@@ -341,26 +318,6 @@ FactRow decode_generated_typed_reference_row(std::string_view line) {
     row.record_type = row_string(object, "type");
     row.source = row.path;
     return row;
-}
-
-TermPosting decode_generated_term_posting(std::string_view line,
-                                          std::string* parsed_term) {
-    const GeneratedRowDocument document(line, "terms.jsonl");
-    const simdjson::dom::object& object = document.object();
-    const std::string term = row_string(object, "term");
-    if (term.empty()) {
-        throw_index_error("index-corrupt", "Generated term posting has no valid term.");
-    }
-    if (parsed_term != nullptr) {
-        *parsed_term = term;
-    }
-    TermPosting posting;
-    posting.sections = required_posting_array(object, "sections");
-    posting.facts = required_posting_array(object, "facts");
-    posting.decisions = required_posting_array(object, "decisions");
-    posting.contracts = required_posting_array(object, "contracts");
-    posting.runbooks = required_posting_array(object, "runbooks");
-    return posting;
 }
 
 std::string generated_row_decoder_version() {

@@ -42,7 +42,7 @@ fi
 require_text "$skill_md" 'name: shin-context'
 require_text "$skill_md" 'before broad repository scans'
 require_text "$skill_md" 'Use Shin v2.0.0 or newer'
-require_text "$skill_md" 'shin-generator-v21-cpp-syntax'
+require_text "$skill_md" 'shin-generator-v23-unicode-lexical'
 for native_tool in shin_status shin_query shin_inspect shin_read shin_help; do
   grep -Fq "$native_tool" "$skill_md"
 done

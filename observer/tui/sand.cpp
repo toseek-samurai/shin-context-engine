@@ -218,11 +218,11 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
             paint.label(language, Tone::heading) | reflect(hits.language)}),
         hbox({paint.label(connection_text, online ? Tone::good : Tone::warning), filler(),
             paint.label(std::string(ui::tr("Uptime: ")) + (online ? number(field(telemetry, "uptime_ms"), 1000) + ui::tr(" s") : "—"), Tone::muted)})};
-    const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Timing"), ui::tr("Storage"), ui::tr("Models")};
+    const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Timing"), ui::tr("Storage"), ui::tr("Models"), ui::tr("Sessions")};
     Elements tabs;
     for (std::size_t i = 0; i < names.size(); ++i) {
         auto element = paint.label(std::to_string(i + 1) + " " + names[i],
-            static_cast<int>(i) == state.tab ? Tone::selected : Tone::muted, paint.columns / 5) | reflect(hits.tabs[i]);
+            static_cast<int>(i) == state.tab ? Tone::selected : Tone::muted, paint.columns / 6) | reflect(hits.tabs[i]);
         if (static_cast<int>(i) == state.tab) element = element | underlined;
         tabs.push_back(element);
     }
@@ -300,11 +300,11 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
     header.push_back(text(""));
     header.push_back(vbox(std::move(body)) | yframe | size(HEIGHT, EQUAL, available));
     header.push_back(separator() | (monochrome ? nothing : color(paint.colors.rule_ink)));
-    const auto hint = columns < 80 ? ui::tr("1-5 tabs  Enter details  ? help  q quit") :
+    const auto hint = columns < 80 ? ui::tr("1-6 tabs  Enter details  ? help  q quit") :
         state.tab == 0 ? ui::tr("Enter details  g metric  h period  L EN/RU  ? help  q quit") :
         state.tab == 2 ? ui::tr("t recent/history  f traffic  j/k scroll  L EN/RU  q quit") :
         state.tab == 4 ? ui::tr("p usage project  j/k scroll  L EN/RU  ? help  q quit") :
-        ui::tr("1-5 tabs  j/k scroll  Enter details  r refresh  ? help  q quit");
+        ui::tr("1-6 tabs  j/k scroll  Enter details  r refresh  ? help  q quit");
     header.push_back(paint.label(hint, Tone::muted));
     auto result = vbox(std::move(header)) | size(WIDTH, EQUAL, paint.columns) |
         size(HEIGHT, EQUAL, height) | center;

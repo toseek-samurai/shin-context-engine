@@ -8,7 +8,7 @@ namespace shin::context {
 namespace {
 
 void require_supported_generator(std::string_view generator_version) {
-    if (generator_version == kGeneratorVersion || generator_version == kLegacyGeneratorVersion) {
+    if (generator_version == kGeneratorVersion) {
         return;
     }
     throw_index_error(

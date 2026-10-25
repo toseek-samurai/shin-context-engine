@@ -248,7 +248,7 @@ DiscoveryResult discover_project(const fs::path& root);
 
 GeneratedOutput generate_outputs(const Profile& profile,
                                  const fs::path& root,
-                                 BuildPhaseTimings* timings = nullptr, bool compact_terms = true);
+                                 BuildPhaseTimings* timings = nullptr);
 int run_build(const RuntimeOptions& options);
 int run_check(const RuntimeOptions& options);
 int run_vacuum(const RuntimeOptions& options, const std::vector<std::string>& args);
@@ -384,7 +384,7 @@ int run_search(const RuntimeOptions& options, const std::vector<std::string>& ar
 
 bool compact_lexical_manifest(const Json& manifest);
 bool compact_lexical_index(const RuntimeOptions& options);
-std::vector<std::string> expected_generated_relative_files(bool compact = true);
+std::vector<std::string> expected_generated_relative_files();
 std::vector<std::string> expected_generated_relative_files(const RuntimeOptions& options);
 bool generated_index_available(const RuntimeOptions& options);
 IndexFreshness assess_index_freshness(const RuntimeOptions& options, bool require_current);
@@ -430,7 +430,6 @@ LinkRow parse_link_row(const std::string& line);
 FactRow parse_generated_fact_row(const std::string& line);
 FactRow parse_decision_as_fact_row(const std::string& line);
 FactRow parse_typed_reference_as_fact_row(const std::string& line);
-bool parse_term_offset_line(const std::string& line, std::string& term, TermOffset& out);
 bool parse_row_offset_line(const std::string& line, RowOffset& out);
 [[noreturn]] void throw_file_changed_during_verification(const fs::path& path);
 

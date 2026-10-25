@@ -108,7 +108,7 @@ Json collect_registered_model_usage(const fs::path& home, const Json& sources, c
         }
     }
     if (active_ids.empty()) return {{"ok",true},{"collected",false},{"reason","no-active-projects"}};
-    auto result = collect_model_usage(active_config,now_ms(),stop);
+    auto result = collect_model_usage(active_config,now_ms(),stop,home);
     result["config_sha256"] = digest(config.dump()); result["projects"] = project_metadata(config.at("projects"));
     if (previous) {
         const auto& old = previous->at("snapshot");
@@ -126,7 +126,21 @@ Json collect_registered_model_usage(const fs::path& home, const Json& sources, c
     require(!stop.stop_requested(), "usage-cancelled");
     require(read_text(home/"registry/state.json",kMaximumStateBytes,true) == registry_stamp, "usage-registry-changed");
     (void)summarize_model_usage(result,now_ms());
-    store.save({{"schema_version","shin.registered-usage.v1"},{"config",config},{"snapshot",result}});
+    Json saved{{"schema_version","shin.registered-usage.v1"},{"config",config},{"snapshot",result}};
+    // Keep the strict token snapshot readable by older kits during rollback.
+    if (saved["snapshot"].contains("context_events")) {
+        saved["context_events"] = std::move(saved["snapshot"]["context_events"]);
+        saved["snapshot"].erase("context_events");
+    }
+    while (saved.dump().size() > kMaximumStateBytes && saved.contains("context_events") &&
+           !saved["context_events"]["events"].empty()) {
+        auto& events = saved["context_events"];
+        events["events"].erase(events["events"].size()-1);
+        events["omitted"] = events.value("omitted",std::uint64_t{0})+1;
+        events["complete"] = false;
+    }
+    if (saved.dump().size() > kMaximumStateBytes) saved.erase("context_events");
+    store.save(saved);
     return {{"ok",true},{"collected",true},{"projects",result.at("projects").size()},{"sources",result.at("sources")}};
 }
 

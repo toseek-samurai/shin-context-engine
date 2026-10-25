@@ -18,7 +18,7 @@
       "generator": "shin-generator-v21-cpp-syntax",
       "tag": "v2.0.4",
       "policy": "docs/machine/shin-development-v1.json",
-      "classification": "historical-compatibility-metadata-not-release-qualification"
+      "classification": "historical-release-metadata-not-reader-compatibility"
     }
   },
   "trustBoundaryHardeningContract": "docs/machine/trust-boundary-hardening-v1.json",
@@ -886,13 +886,13 @@
       "completion_stable"
     ],
     "optimizations": [
-      "Generated-index query paths use binary seek over sorted terms.index.tsv for sparse lookups and switch to one sorted merge scan when alias expansion requests at least 16 terms.",
+      "Generated-index query paths use the bounded binary terms.lex dictionary and delta-coded postings; retired JSONL/TSV term formats are not read.",
       "Candidate planning unions aliases inside each query term group, intersects strict groups from the smallest posting set, distinguishes complete zero-result coverage from an uncovered term, and reuses one immutable candidate snapshot for section and fact retrieval.",
       "Sparse relaxed queries with at least eight groups complete bounded compact identifier prefixes only when exact candidate rows do not exceed the required-group threshold; healthy, strict, short, and scoped routes retain their existing shortlist and ranking.",
-      "Term postings build uses one-pass normalized extraction, deterministic ASCII classification, worker-local hash accumulation and caches, bounded static C++20 worker ranges, ordered node merge, and deterministic sorted render.",
+      "Term postings build uses one-pass Unicode-normalized extraction, locale-independent character classification, worker-local hash accumulation and caches, bounded static C++20 worker ranges, ordered node merge, and deterministic sorted render.",
       "Candidate sets above 20000 rows use the value-prefilter JSONL scan mode before parsing typed rows.",
       "Generated-index candidate row reads use generated row-offset TSV files to seek selected JSONL rows without materializing full files for sparse candidate sets.",
-      "Retrieval uses deterministic ASCII case folding, std::string_view field views with per-row normalization caches, and std::from_chars offset parsing.",
+      "Retrieval uses Unicode NFC and full case folding, std::string_view field views with per-row normalization caches, and std::from_chars offset parsing.",
       "Parsed rows use field-aware scoring with score_components and matched_fields in returned context hits.",
       "Markdown authority sections are lifted into typed decision, contract, and runbook rows with authority_level metadata.",
       "Generated text fields are redacted when the built-in scanner detects common secret-like values.",
@@ -1251,15 +1251,15 @@
       "compact brief preserves freshness, ranked paths, bounded excerpts, authority, evidence budget, and uncovered groups while omitting planner and score internals"
     ],
     "termPostingIndex": [
-      "terms.jsonl maps normalized terms to row ordinals in sections, facts, decisions, contracts, and runbooks",
-      "terms.index.tsv maps term to byte offset and byte length inside terms.jsonl; sparse term sets use exact binary seek and expanded sets of at least 16 terms use one ordered merge scan",
+      "terms.lex maps Unicode-normalized terms to row ordinals in sections, facts, decisions, contracts, and runbooks",
+      "terms.lex contains a bounded binary offset table, UTF-8 dictionary and delta-coded row lists; sparse and expanded lookups use the same current codec",
       "aliases are unioned within each query term group; row ordinals are retained only when they meet the strict or relaxed required-group threshold",
       "an empty strict intersection is accepted as complete only when every term group has postings and the query has at least eight groups; shorter or uncovered queries retain the value-scan substring fallback",
       "one resolved candidate snapshot is shared by section and fact retrieval for each strict or relaxed attempt",
-      "terms.jsonl and terms.index.tsv are required generated-index files; missing term index files make the generated index unavailable instead of triggering older-format compatibility",
+      "terms.lex is required; missing or incompatible indexes must be rebuilt rather than read through a compatibility codec",
       "section rows index document_id, path, status, authority_level, row_type, heading, preview, and topics; source-fact rows index id, record_type, path, status, area, title, and topics but skip summary text to keep postings bounded",
       "postings are used only as candidate discovery; final inclusion and ranking still come from field-aware scoring",
-      "term posting rows require a valid term and five integer arrays; malformed arrays and row ids fail closed as index-corrupt"
+      "term postings require a valid UTF-8 term and five bounded delta-coded integer lists; malformed encodings and row ids fail closed as index-corrupt"
     ],
     "rowOffsetIndexes": [
       "sections.index.tsv maps section row ordinal to byte offset and byte length inside sections.jsonl",
@@ -1461,8 +1461,7 @@
     "docs/kb/generated/sections.index.tsv",
     "docs/kb/generated/links.jsonl",
     "docs/kb/generated/topics.jsonl",
-    "docs/kb/generated/terms.jsonl",
-    "docs/kb/generated/terms.index.tsv",
+    "docs/kb/generated/terms.lex",
     "docs/kb/generated/decisions.jsonl",
     "docs/kb/generated/decisions.index.tsv",
     "docs/kb/generated/contracts.jsonl",

@@ -56,45 +56,24 @@ write_oversized_offset_line() {
 shin_for "$healthy_out" build >"$work_root/build.json"
 shin_for "$healthy_out" check >"$work_root/check.json"
 
-# Preserve the legacy-reader corruption suite after exercising the current writer.
-python3 "$source_root/tests/fixtures/compact_lexical.py" "$healthy_out/docs/kb/generated"
-shin_for "$healthy_out" check >"$work_root/legacy-check.json"
-
-binary_offset_out="$work_root/out-binary-offset"
-cp -R "$healthy_out" "$binary_offset_out"
-awk -F '\t' 'BEGIN {OFS="\t"} {$3="9223372036854775807"; print}' \
-  "$binary_offset_out/docs/kb/generated/terms.index.tsv" \
-  >"$binary_offset_out/docs/kb/generated/terms.index.tsv.tmp"
-mv "$binary_offset_out/docs/kb/generated/terms.index.tsv.tmp" \
-  "$binary_offset_out/docs/kb/generated/terms.index.tsv"
-expect_index_corrupt "$work_root/binary-offset.json" \
-  shin_for "$binary_offset_out" search capability
-
-sequential_offset_out="$work_root/out-sequential-offset"
-cp -R "$healthy_out" "$sequential_offset_out"
-awk -F '\t' 'BEGIN {OFS="\t"} {$3="9223372036854775807"; print}' \
-  "$sequential_offset_out/docs/kb/generated/terms.index.tsv" \
-  >"$sequential_offset_out/docs/kb/generated/terms.index.tsv.tmp"
-mv "$sequential_offset_out/docs/kb/generated/terms.index.tsv.tmp" \
-  "$sequential_offset_out/docs/kb/generated/terms.index.tsv"
-expect_index_corrupt "$work_root/sequential-offset.json" \
-  shin_for "$sequential_offset_out" search \
-    "application page section resource sql query javascript write"
-
-binary_offset_line_out="$work_root/out-binary-offset-line"
-cp -R "$healthy_out" "$binary_offset_line_out"
-write_oversized_offset_line \
-  "$binary_offset_line_out/docs/kb/generated/terms.index.tsv"
-expect_index_corrupt "$work_root/binary-offset-line.json" \
-  shin_for "$binary_offset_line_out" search capability
-
-sequential_offset_line_out="$work_root/out-sequential-offset-line"
-cp -R "$healthy_out" "$sequential_offset_line_out"
-write_oversized_offset_line \
-  "$sequential_offset_line_out/docs/kb/generated/terms.index.tsv"
-expect_index_corrupt "$work_root/sequential-offset-line.json" \
-  shin_for "$sequential_offset_line_out" search \
-    "application page section resource sql query javascript write"
+# Current compact-index corruption: bad signature, oversized offset table,
+# out-of-file record range and truncated binary record. Never use a retired codec.
+for fault in magic count offset truncated; do
+  fault_out="$work_root/out-compact-$fault"
+  cp -R "$healthy_out" "$fault_out"
+  python3 - "$fault_out/docs/kb/generated/terms.lex" "$fault" <<'PYFAULT'
+import struct, sys
+from pathlib import Path
+path = Path(sys.argv[1]); data = bytearray(path.read_bytes()); mode = sys.argv[2]
+if mode == 'magic': data[0] = ord('X')
+elif mode == 'count': struct.pack_into('<I', data, 8, 0xffffffff)
+elif mode == 'offset': struct.pack_into('<Q', data, 32, 0xffffffffffffffff)
+elif mode == 'truncated': data = data[:33]
+else: raise AssertionError(mode)
+path.write_bytes(data)
+PYFAULT
+  expect_index_corrupt "$work_root/compact-$fault.json" shin_for "$fault_out" search capability
+done
 
 row_offset_out="$work_root/out-row-offset"
 cp -R "$healthy_out" "$row_offset_out"
@@ -129,21 +108,6 @@ mv "$row_json_out/docs/kb/generated/sections.jsonl.tmp" \
   "$row_json_out/docs/kb/generated/sections.jsonl"
 expect_index_corrupt "$work_root/row-json.json" \
   shin_for "$row_json_out" context "capability result contract"
-
-posting_out="$work_root/out-posting"
-cp -R "$healthy_out" "$posting_out"
-posting_file="$posting_out/docs/kb/generated/terms.jsonl"
-posting_term="$(awk -F '"' '/"sections":\[\]/{print $4; exit}' "$posting_file")"
-if [[ -z "$posting_term" ]]; then
-  echo "fixture has no term posting with an empty sections array" >&2
-  exit 1
-fi
-awk -v wanted="$posting_term" '
-  index($0, "\"term\":\"" wanted "\"") == 2 {sub(/"sections":\[\]/, "\"sections\":{}")} {print}
-' "$posting_file" >"$posting_file.tmp"
-mv "$posting_file.tmp" "$posting_file"
-expect_index_corrupt "$work_root/posting-field.json" \
-  shin_for "$posting_out" search "$posting_term"
 
 missing_evidence_out="$work_root/out-missing-evidence"
 cp -R "$healthy_out" "$missing_evidence_out"

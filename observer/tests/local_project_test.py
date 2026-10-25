@@ -562,6 +562,26 @@ class StorageTests(unittest.TestCase):
         self.assertEqual(p['projects'][0]['reason'], 'unverified-files-preserved')
         self.assertTrue(cache.exists())
 
+    def test_cache_format_and_schema_must_agree_before_cleanup(self):
+        self.call('detach')
+        cache = next((self.workspace / 'observer/source-cache').glob('*.sqlite'))
+        with sqlite3.connect(cache) as db:
+            header = json.loads(db.execute('SELECT payload FROM cache_meta WHERE id=0').fetchone()[0])
+            self.assertEqual(header['binding']['format'], 'shin.source-cache.v3')
+            header['binding']['format'] = 'shin.source-cache.v2'
+            db.execute('UPDATE cache_meta SET payload=? WHERE id=0', (json.dumps(header),))
+        self.assertEqual(self.preview()['reclaimable_bytes'], 0, 'format alone cannot authorize deletion')
+        with sqlite3.connect(cache) as db:
+            db.execute("CREATE VIRTUAL TABLE query_text USING fts5(body, tokenize='unicode61')")
+            db.execute("CREATE VIRTUAL TABLE query_vocab USING fts5vocab(query_text, 'row')")
+        preview = self.preview()
+        self.assertGreater(preview['reclaimable_bytes'], 0, 'previous owned cache remains reclaimable')
+        with sqlite3.connect(cache) as db:
+            header['binding']['identity']['root'] = str(self.base / 'foreign-project')
+            db.execute('UPDATE cache_meta SET payload=? WHERE id=0', (json.dumps(header),))
+        self.assertEqual(self.preview()['reclaimable_bytes'], 0, 'matching format grants no foreign ownership')
+        self.assertTrue(cache.exists())
+
     def test_busy_cache_is_not_removed(self):
         self.call('detach')
         cache = next((self.workspace / 'observer/source-cache').glob('*.sqlite'))

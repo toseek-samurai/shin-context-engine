@@ -1,9 +1,10 @@
 #pragma once
 #include "local_registry.h"
+#include <string_view>
 
 namespace shin::observer {
 // Advisory only: never changes an error, admission, snapshot or project scope.
-Json local_mcp_recovery(const std::string& code, const Json& diagnostic = nullptr);
+Json local_mcp_recovery(const std::string& code, const Json& diagnostic = nullptr, std::string_view method = {});
 // Static, project-independent usage and recovery guidance. Performs no IO/RPC.
 Json local_mcp_help(const std::string& code = {});
 

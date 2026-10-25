@@ -42,36 +42,3 @@ def fnv(data):
     for byte in data:
         value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
     return f"fnv1a64:{value:016x}"
-
-
-def legacy_fixture(root):
-    records, offsets, offset = [], [], 0
-    for row in term_postings(root / "terms.lex"):
-        record = (json.dumps(row, ensure_ascii=False, separators=(",", ":")) + "\n").encode()
-        records.append(record)
-        offsets.append(f"{row['term']}\t{offset}\t{len(record)}\n".encode())
-        offset += len(record)
-    contents = {"terms.index.tsv": b"".join(offsets), "terms.jsonl": b"".join(records)}
-    manifest_path = root / "manifest.json"
-    text = manifest_path.read_text()
-    manifest = json.loads(text)
-    count = manifest["row_counts"]["terms"]
-    text = text.replace("shin-generator-v22-compact-lexical", "shin-generator-v21-cpp-syntax")
-    text = text.replace('  "term_index_format": "shin.lexical.v1",\n', "")
-    new_output = f'    {{"name":"terms","type":"shin.lexical.v1","path":"docs/kb/generated/terms.lex","rows":{count}}},\n'
-    old_output = (f'    {{"name":"terms","type":"jsonl","path":"docs/kb/generated/terms.jsonl","rows":{count}}},\n'
-                  f'    {{"name":"terms-index","type":"tsv","path":"docs/kb/generated/terms.index.tsv","rows":{count}}},\n')
-    assert new_output in text
-    text = text.replace(new_output, old_output)
-    integrity_line = next(line for line in text.splitlines(True) if line.startswith('    {"path":"docs/kb/generated/terms.lex"'))
-    replacement = ""
-    for name, data in contents.items():
-        (root / name).write_bytes(data)
-        replacement += f'    {{"path":"docs/kb/generated/{name}","bytes":{len(data)},"content_hash":"{fnv(data)}"}},\n'
-    text = text.replace(integrity_line, replacement)
-    manifest_path.write_text(text)
-    (root / "terms.lex").unlink()
-
-
-if __name__ == "__main__":
-    legacy_fixture(Path(sys.argv[1]))

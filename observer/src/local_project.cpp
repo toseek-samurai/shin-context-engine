@@ -610,9 +610,11 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             throw Error("route-revision-conflict", "Canonical configuration changed; explicit config-accept after refresh-release is required.");
         binding = *loaded;
     }
-    const bool readable_binding = binding.at("generator_version") == core::kGeneratorVersion ||
-        binding.at("generator_version") == core::kLegacyGeneratorVersion;
-    if (refresh && (!loaded || !readable_binding))
+    // Old known indexes are rebuild inputs only, never retrieval candidates.
+    const bool rebuildable_binding = binding.at("generator_version") == core::kGeneratorVersion ||
+        binding.at("generator_version") == "shin-generator-v22-compact-lexical" ||
+        binding.at("generator_version") == "shin-generator-v21-cpp-syntax";
+    if (refresh && (!loaded || !rebuildable_binding))
         throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
     LocalPublication grant(workspace, binding, config, request.manage_index);
     if (!grant.active() && grant.phase() != "read-only" && grant.phase() != "revoked" && !request.manage_index)
@@ -768,10 +770,9 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     auto quality_binding = binding;
     quality_binding["observer_config_hash"] = digest(config_text);
     const auto quality_key = qualification_key(quality_binding, options.profile.config_hash, marker_hash);
-    // A grant keeps its original route identity. Same-format managed updates
-    // qualify the actual new executable separately; they never rewrite a grant
-    // merely because the Core build version advanced.
-    if ((grant.active() && !readable_binding) ||
+    // The publisher grant keeps its original route identity across an index
+    // rebuild. Retrieval independently requires the current generated format.
+    if ((grant.active() && !rebuildable_binding) ||
         (refresh && !grant.active() && binding.at("core_version") != SHIN_VERSION))
         throw Error("refresh-engine-changed", "The granted index format or external engine binding needs explicit migration.");
     if (!attach && !refresh && !grant.active() && store.writer_present())
@@ -1348,7 +1349,10 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             save_qualification(workspace, binding, config, binding.at("prepared_snapshot"), readiness, quality_key, options);
     };
     if (refresh) {
-        if (engine_changed) throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
+        const bool rebuildable_index = binding.at("generator_version") == "shin-generator-v22-compact-lexical" ||
+                                       binding.at("generator_version") == "shin-generator-v21-cpp-syntax";
+        if (engine_changed && !rebuildable_index)
+            throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
         recover_refresh_candidate(workspace);
         if (shin::generated_io::publication_in_progress(options.out_root)) {
             shin::generated_io::IndexLock recovery_writer(options.out_root, shin::generated_io::LockMode::exclusive,
@@ -1422,6 +1426,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         const auto freshness = core::assess_index_freshness(options, true);
         core::require_current_index_or_throw(freshness);
         binding["prepared_snapshot"] = freshness.snapshot_id;
+        binding["core_version"] = SHIN_VERSION;
+        binding["generator_version"] = core::kGeneratorVersion;
         store.save(binding);
         qualify(readiness);
         result["phase"] = "current";
@@ -1433,7 +1439,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     }
     // Initial bootstrap may not have an index/lock yet; established readers
     // retain the same publication fence as attached projects.
-    auto publication = core::generated_index_available(options) ? core::lock_index_for_read(options.out_root) : nullptr;
+    // Init can replace an owned outdated index; normal reads still refuse it.
+    const bool usable_index = initialize && engine_changed ? false : core::generated_index_available(options);
+    auto publication = usable_index ? core::lock_index_for_read(options.out_root) : nullptr;
     auto readiness = readiness_for_generation();
     bool rebuilt = false;
     if (initialize) {
@@ -1981,5 +1989,48 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
 Json watch_local_project(const LocalProjectRequest& input, std::uint64_t samples,
                          const std::function<bool()>& stopped) {
     return watch_local_projects(input, {input.root}, samples, stopped);
+}
+
+bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected,
+                                 const std::string& restored_generator) {
+    const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
+    const auto workspace = home / "projects" / digest(root.string());
+    if (expected.value("schema_version", "") != "shin.local-project-binding.v1" ||
+        expected.value("root", "") != root.string() || directory_identity(root) != expected.at("root_identity").get<std::string>() ||
+        directory_identity(workspace, true) != expected.at("workspace_identity").get<std::string>())
+        throw Error("binding-identity-changed", "Rollback requires the recorded bootstrap project and workspace.");
+    guard_existing_routes(root, home);
+    require_local_project_active(workspace);
+    StateStore binding(workspace, true);
+    if (binding.load() != std::optional<Json>(expected))
+        throw Error("binding-identity-changed", "Bootstrap state changed before rollback rebuild.");
+    const fs::path profiles = expected.at("profile_dir").get<std::string>();
+    StateStore configuration(workspace / "config", false);
+    const auto document = configuration.load();
+    if (!document || *document != observer_configuration(workspace, root, profiles) ||
+        core::make_profile("generic-source", profiles).config_hash != expected.at("profile_config_hash").get<std::string>())
+        throw Error("binding-config-conflict", "Rollback cannot change project policy or configuration.");
+    const auto config = config_from_json(*document, workspace / "config/state.json");
+    recover_refresh_candidate(workspace);
+    shin::generated_io::IndexLock writer(config.out_dir, shin::generated_io::LockMode::exclusive,
+                                         shin::generated_io::LockTarget::writer);
+    shin::generated_io::recover_snapshot(config.out_dir, core::kGeneratedDir);
+    shin::generated_io::IndexLock index(config.out_dir, shin::generated_io::LockMode::exclusive);
+    const auto generated = config.out_dir / core::kGeneratedDir;
+    if (!present(generated)) return true; // Resume a journaled withdrawal followed by an interrupted old init.
+    const auto snapshot = core::load_verified_snapshot(config.out_dir, config.max_snapshot_bytes, config.max_file_bytes);
+    if (snapshot.generator_version == restored_generator) return false;
+    if (snapshot.generator_version != core::kGeneratorVersion || snapshot.profile != "generic-source" ||
+        snapshot.profile_config_hash != expected.at("profile_config_hash").get<std::string>())
+        throw Error("refresh-base-changed", "Rollback cannot retire an unrelated publication.");
+    // Installation already records pending rollback. The existing candidate
+    // ownership receipt makes cleanup resumable if interrupted after this rename.
+    // Only generated output moves; the index directory/control locks stay put.
+    RefreshCandidate retired(workspace);
+    const auto destination = retired.path / core::kGeneratedDir;
+    ensure_private_directory(retired.path / "docs");
+    ensure_private_directory(retired.path / "docs/kb");
+    fs::rename(generated, destination);
+    return true;
 }
 } // namespace shin::observer

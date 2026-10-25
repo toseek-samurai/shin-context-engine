@@ -60,7 +60,7 @@ printf 'unmanaged\n' >"$cache/.notes"
 diff "$work_root/list.json" "$work_root/list-repeat.json"
 assert_json "$work_root/list.json" '
   .schema_version == "shin.index-list.v1" and .ok and (.clean | not) and
-  .current_generator == "shin-generator-v22-compact-lexical" and
+  .current_generator == "shin-generator-v23-unicode-lexical" and
   .policy.scope == "immediate-child-managed-indexes-v1" and
   (.policy.snapshot_mutation | not) and
   .summary == {

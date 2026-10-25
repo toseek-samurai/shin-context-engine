@@ -128,8 +128,8 @@ def main():
         adapter.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
         adapter.stdin.flush()
         catalog = rpc('tools/list', {})['tools']
-        assert {tool['name'] for tool in catalog} == {'shin_status', 'shin_query', 'shin_inspect', 'shin_read', 'shin_help'}
-        assert all(tool['annotations']['readOnlyHint'] for tool in catalog)
+        assert {tool['name'] for tool in catalog} == {'shin_status', 'shin_query', 'shin_inspect', 'shin_read', 'shin_help', 'shin_checkpoint', 'shin_resume'}
+        assert all(tool['annotations']['readOnlyHint'] == (tool['name'] != 'shin_checkpoint') for tool in catalog)
         for name, arguments in [('shin_status', {}), ('shin_query', {'query': query})]:
             result = rpc('tools/call', {'name': name, 'arguments': arguments})
             assert not result.get('isError')

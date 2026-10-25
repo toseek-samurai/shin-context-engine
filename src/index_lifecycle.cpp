@@ -235,8 +235,7 @@ std::vector<CacheEntry> inspect_cache(const fs::path& cache_dir) {
                         entry.path, shin::generated_io::LockMode::shared_existing);
                     entry.snapshot = load_verified_snapshot(entry.path);
                     entry.snapshot_bytes = verified_snapshot_bytes(*entry.snapshot);
-                    entry.state = (entry.snapshot->generator_version == kGeneratorVersion ||
-                        entry.snapshot->generator_version == kLegacyGeneratorVersion)
+                    entry.state = (entry.snapshot->generator_version == kGeneratorVersion)
                                       ? "current"
                                       : "incompatible-generator";
                 } catch (const CliError& caught) {
@@ -279,8 +278,7 @@ Json cache_entry_json(const CacheEntry& entry) {
     };
     if (entry.snapshot.has_value()) {
         output["snapshot"] = verified_snapshot_description(*entry.snapshot);
-        output["compatible"] = (entry.snapshot->generator_version == kGeneratorVersion ||
-                        entry.snapshot->generator_version == kLegacyGeneratorVersion);
+        output["compatible"] = (entry.snapshot->generator_version == kGeneratorVersion);
     } else {
         output["snapshot"] = nullptr;
         output["compatible"] = nullptr;

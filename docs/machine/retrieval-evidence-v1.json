@@ -1,12 +1,12 @@
 {
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v22-compact-lexical",
+    "generator": "shin-generator-v23-unicode-lexical",
     "format": "shin.lexical.v1",
     "contract": "docs/machine/lexical-retrieval-v1.json",
-    "legacyReader": "shin-generator-v21-cpp-syntax only; no automatic migration",
     "evidenceRowsChanged": false,
-    "installed": false
+    "installed": false,
+    "compatibility": "current Unicode generator only; older indexes require rebuilding"
   },
   "schemaVersion": "shin.retrieval-evidence-contract.v1",
   "document": "retrieval-evidence-v1",
@@ -342,7 +342,7 @@
       "scope": "Only maxCandidateRows, maxMatchedSections and maxMatchedFacts are advisory after explicit owner opt-in. Coverage, rank, required/forbidden paths, types, freshness, integrity and safety remain blocking. No runtime or Pack cap changes.",
       "results": "Raw ceiling violations remain; quality_passed and resources_passed are independent. resource_check.ok is false on any exceeded work ceiling or empty suite, regardless of admission policy. Bounded warnings and explicit omissions survive failed-only eval, compact validation and readiness.",
       "regressionJob": "Check normal eval strict exit and resource_check.ok separately on a fixed corpus. Live-corpus advisory readiness is not resource-regression acceptance.",
-      "compatibility": "Native dev22 addition; a separately qualified Stable1.27.4 backport is installed locally with owner-approved BFF working-profile opt-in. Stable1.27.3 does not support it. Profile hash binds opt-in; rebuild required. Invalid types/values reject. No CLI bypass, automatic threshold mutation or native deployment."
+      "compatibility": "Profile hash binds explicit opt-in; rebuild required. Invalid types and values reject. No CLI bypass or automatic threshold mutation."
     },
     "compactCeilingDetails": "Full eval, failed-only records and bounded header fallback carry ceiling_violation_details: metric, actual, allowed, comparator and stage. Candidate rows use candidate-discovery, scored matches use scored-matches, and minimum coverage uses coverage with >=. These are measurement categories, not invented timing attribution or a sum across phases. Output byte and record budgets remain enforced.",
     "sessionSemantics": "One RetrievalSession retains the shared publication lock, freshness result, and active manifest identity across every base query and variant in the local eval command.",

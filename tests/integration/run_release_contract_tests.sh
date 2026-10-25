@@ -97,9 +97,9 @@ if ! version_at_least "$codex_minimum" "2.0.0" ||
    ! grep -Fq '## Normal Work' "$codex_skill" ||
    ! grep -Fq 'shin_status' "$codex_skill" ||
    ! grep -Fq 'shin_query' "$codex_skill" ||
-   ! grep -Fq 'shin-generator-v21-cpp-syntax' "$codex_skill" ||
-   ! grep -Fq 'shin-generator-v21-cpp-syntax' "$hermes_skill"; then
-  echo "integration skills must retain approved per-client minimums, managed 2.0 guidance, and the v21 generator" >&2
+   ! grep -Fq 'shin-generator-v23-unicode-lexical' "$codex_skill" ||
+   ! grep -Fq 'shin-generator-v23-unicode-lexical' "$hermes_skill"; then
+  echo "integration skills must retain approved per-client minimums, managed 2.0 guidance, and the current Unicode generator" >&2
   exit 1
 fi
 

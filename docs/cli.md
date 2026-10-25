@@ -172,8 +172,106 @@ counts distinct valid opaque IDs actually supplied by callers (bounded to 256 fo
 the run and 64 per project, with `+` displayed on overflow). Calls without such an
 ID are shown separately. Session counts do not identify models or measure all chats.
 Catalog/help calls handled inside the MCP adapter and service monitoring polls are
-excluded; client token counters are a different measurement. No historical status
-or missing session information is fabricated.
+excluded from these **service-run** counters; client token counters are a different
+measurement. No historical status or missing session information is fabricated.
+
+The unreleased source also exposes **MCP calls · history** in Monitor Timing,
+the terminal Timing view and `service-status` JSON (`telemetry.mcp_activity`). This
+separate journal includes status, catalog/help, unknown tools, argument errors and
+connection failures, even while the service is unavailable. Initial and terminal
+observations count as one invocation. A service request ID links the layers;
+their counts must not be added together. Protocol initialization, tool-list discovery
+and malformed frames are outside this tool-call count.
+Only upgraded MCP adapters contribute; reconnect existing clients after installing
+the kit. Older processes and earlier calls are not reconstructed.
+
+The local numerical journal survives adapter/service restarts. It retains up to
+seven days and 10,000 calls in a database capped at 32 MiB, under the recorded data
+home's `mcp-history` directory. The start of coverage is shown explicitly; earlier
+traffic is not reconstructed. Writes run in the background, with bounded queues.
+Gaps and unfinished calls remain visible. Successful stdout writes do not establish
+client receipt or task success. Queries, source bodies, raw chat IDs and absolute
+project paths are not retained. See the [activity contract](machine/mcp-activity-v1.json).
+
+MCP project status returns promptly when a reader needs background preparation.
+`project-updating` is a transient observation; a subsequent useful query retains
+its normal bounded readiness wait. CLI project status keeps its existing waiting
+behavior. Query/inspect/read tools accept `diagnostic: true` for explicit probes.
+
+### Requests during contention (unreleased)
+
+A brief overlap between requests for one project now uses a bounded FIFO admission
+queue. Waiting does not occupy another project's execution slot. The existing
+limits remain two executing requests, four waiting requests and eight connections.
+A ready reader's execution queue waits at most 500 ms; cold preparation keeps its
+five-second ceiling. Reader readiness and completed requests wake admission
+immediately. Transitioning from cold preparation to an occupied execution slot
+also caps that phase at 500 ms. Repeated internal checks never extend a deadline.
+
+MCP project status stays nonblocking when a reader is occupied. The adapter also
+keeps status, project discovery and static help available while its two source
+operation slots are occupied, within the unchanged eight-request total bound. A persistent
+`service-busy` response can include `shin.local-service-admission.v1` metadata
+identifying project contention, global execution pressure or a full waiting queue.
+This is not a project validation failure. Continue useful direct-source work and,
+if still needed after current calls finish, make one useful query for that project.
+Neither polling nor manual index repair is required.
+
+A queued request is executed at most once. Disconnecting a waiter releases its
+slot. A peer's cancellation does not cancel another waiting request; transient
+reader loss preserves its original deadline. Lifecycle, publication authority and
+snapshot/source freshness are rechecked before dispatch, so queuing cannot make
+an old snapshot usable again.
+
+### Sessions and optional recovery notes (unreleased)
+
+Monitor now has a **Sessions** view; `shin-ce stats` opens the same observations
+with key **6**. The latest eight correlated sessions show context calls, errors,
+caller task labels, recovery requests and recent invocation outcomes. Calls can
+supply `task_key` and `intent` (`explore`, `follow-up`, `context-recovery`); labels
+are optional and do not impose quotas or create inferred tasks.
+
+The registered Codex collector also projects explicit host compaction and turn
+markers. This metadata is bounded and contains no prompt, summary or source text.
+A model in client history is shown separately from a model reported in a call;
+it never fills an unknown call model. Missing markers, unsupported clients and
+partial history are not evidence that compaction did not happen. Timing describes
+retained successful query starts, not actual recovery or context consumption.
+
+The same view now summarizes the latest three observed **episodes** per session:
+a client turn start or explicit compaction opens an interval, and the next
+explicit boundary closes it. This is timestamp association, not topic detection.
+The open interval stops at the last registered Codex collection; calls after it,
+before a known start, on a tied boundary, or across conflicting turn identities
+remain unassigned. Stale, clipped or incomplete intervals are labelled. Analysis
+uses the recorded data home's registered history, independently of an optional
+imported token-usage file.
+
+**Read statistics cover MCP `shin_read` only**, excluding explicit diagnostic
+probes, failures and writes that did not complete. Query fragments and ordinary
+shell, CLI or IDE reads are outside this count. Opaque installation/project-bound
+file and version labels distinguish the same version read again from an additional
+version; unrelated index-generation changes do not change a file's version.
+Within an episode, previously seen versions are separate from repetitions inside
+that interval. Existing rows without labels stay unknown. All retained calls are
+analysed in the background; the displayed episode limit does not sample their
+counts. Repeated reads may be useful and do not measure wasted work or forgetting.
+
+For a useful stopping point, `shin_checkpoint` accepts the selected project,
+actual `session_id`, a stable `task_key`, current `task`, concise `progress`, and
+one to four focused `queries`. Optional `paths` and `next_steps` preserve a small
+explicit handoff. `shin_resume` takes the same binding and current objective.
+Notes live outside the project in the recorded data home's private `sessions`
+directory. Replacing a saved note requires its returned `expected_revision`.
+
+Resume reuses Core's age, objective and worktree checks. Review its flags and
+current evidence before continuing; a note is a caller assertion. Core readiness
+and review are independent: the wrapper also reports `ready_without_review`,
+which requires readiness and no pending review. These explicit
+operations audit the worktree, so reserve them for useful handoffs. Ordinary
+context queries keep their existing fast path. Missing or refused checkpoints
+are optional: continue with a useful current-code query and preserve saved state.
+See the [recovery contract](machine/local-session-recovery-v1.json).
 
 ### Session and model attribution (dev.14)
 

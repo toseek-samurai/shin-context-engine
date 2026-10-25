@@ -43,6 +43,25 @@ int main() {
                 hint.at("same_project_required") == true && hint.at("fresh_snapshot_required") == true,
                 "transient retry must remain bounded and project/snapshot scoped");
         }
+        const auto quick_status = local_mcp_recovery("project-updating", nullptr, "status");
+        const Json admission{{"schema_version","shin.local-service-admission.v1"},{"reason","project-executing"},
+            {"execution_started",false},{"query_workers",1},{"max_query_workers",2},
+            {"waiting_requests",1},{"max_waiting_requests",4},{"wait_limit_ms",5000},{"execution_wait_limit_ms",500}};
+        const auto busy = local_mcp_recovery("service-busy",admission,"status");
+        check(busy.at("diagnostic") == admission && !busy.contains("failure_reason"),"admission metadata must not become project validation evidence");
+        check(busy.at("retry_after_ms") == 0 && busy.at("next_action") == "query-once-with-bounded-readiness-wait","busy status must stay nonblocking");
+        auto query_wait = admission; query_wait["wait_limit_ms"] = 20000;
+        check(local_mcp_recovery("project-updating",query_wait,"query").at("diagnostic") == query_wait,
+            "query readiness deadline must survive bounded diagnostics");
+        for (const auto& change : Json::array({{{"path","/private/project"}},{{"execution_started",true}},
+            {{"query_workers",3}},{{"waiting_requests",-1}},{{"wait_limit_ms",20001}},{{"reason","arbitrary-private-text"}}})) {
+            auto unsafe = admission; unsafe.update(change);
+            check(!local_mcp_recovery("service-busy",unsafe).contains("diagnostic"),"unbounded or inconsistent admission metadata escaped");
+        }
+        check(quick_status.at("retry_after_ms") == 0 && quick_status.at("next_action") == "query-once-with-bounded-readiness-wait",
+            "fast status must allow a useful query without a status polling loop");
+        check(local_mcp_recovery("project-updating", nullptr, "query").at("retry_after_ms") == 5000,
+            "an already refused query must keep bounded recovery guidance");
         for (const auto* code : {"file-changed-during-verification", "query-source-changed",
                 "source-read-hash-mismatch", "refresh-superseded", "query-snapshot-changed"}) {
             const auto hint = local_mcp_recovery(code);

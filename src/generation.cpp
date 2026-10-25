@@ -517,41 +517,6 @@ static TermPostingBuildResult build_term_postings(const GeneratedRows& rows, Bui
     return {std::move(postings), static_cast<int>(workers)};
 }
 
-static RenderedTermIndex render_term_index(const TermPostingMap& postings) {
-    RenderedTermIndex rendered;
-    std::ostringstream postings_out;
-    std::ostringstream offsets_out;
-    std::vector<std::reference_wrapper<const TermPostingMap::value_type>> ordered_postings;
-    ordered_postings.reserve(postings.size());
-    for (const auto& posting : postings) {
-        ordered_postings.emplace_back(posting);
-    }
-    std::sort(ordered_postings.begin(), ordered_postings.end(),
-              [](const auto& a, const auto& b) {
-                  return a.get().first < b.get().first;
-              });
-    long long offset = 0;
-    for (const auto& entry_ref : ordered_postings) {
-        const auto& entry = entry_ref.get();
-        const std::string& term = entry.first;
-        const TermPosting& posting = entry.second;
-        postings_out << "{"
-            << "\"term\":" << json_string(term)
-            << ",\"sections\":" << json_int_array(posting.sections)
-            << ",\"facts\":" << json_int_array(posting.facts)
-            << ",\"decisions\":" << json_int_array(posting.decisions)
-            << ",\"contracts\":" << json_int_array(posting.contracts)
-            << ",\"runbooks\":" << json_int_array(posting.runbooks)
-            << "}\n";
-        const auto end = static_cast<long long>(postings_out.tellp());
-        offsets_out << term << "\t" << offset << "\t" << end - offset << "\n";
-        offset = end;
-        ++rendered.term_count;
-    }
-    rendered.postings_jsonl = std::move(postings_out).str();
-    rendered.offsets_tsv = std::move(offsets_out).str();
-    return rendered;
-}
 
 static std::string row_offsets_tsv(const std::string& jsonl) {
     std::ostringstream offsets_out;
@@ -611,15 +576,15 @@ static std::string manifest_json(const Profile& profile,
                           const SourceFactBuildResult& source_facts,
                           const StructuredDataCounts& structured_data,
                           const std::map<std::string, std::string>& generated_files,
-                          int broken_local_link_count, bool compact) {
+                          int broken_local_link_count) {
     const auto quarantined_count = std::count_if(source_facts.sources.begin(), source_facts.sources.end(),
         [](const auto& source) { return !source.quarantine_reason.empty(); });
     std::ostringstream out;
     out << "{\n"
         << "  \"schema_version\": \"shin.context.kb-enterprise.v1\",\n"
         << "  \"tool\": \"shin-context\",\n"
-        << "  \"generator_version\": " << json_string(compact ? kGeneratorVersion : kLegacyGeneratorVersion) << ",\n"
-        << (compact ? "  \"term_index_format\": \"shin.lexical.v1\",\n" : "")
+        << "  \"generator_version\": " << json_string(kGeneratorVersion) << ",\n"
+        << "  \"term_index_format\": \"shin.lexical.v1\",\n"
         << "  \"generated_at_utc\": \"stable\",\n"
         << "  \"profile\": " << json_string(profile.id) << ",\n"
         << "  \"source\": " << json_string(profile.source_label) << ",\n"
@@ -695,10 +660,7 @@ static std::string manifest_json(const Profile& profile,
         << "    {\"name\":\"sections-index\",\"type\":\"tsv\",\"path\":\"docs/kb/generated/sections.index.tsv\",\"rows\":" << section_count << "},\n"
         << "    {\"name\":\"links\",\"type\":\"jsonl\",\"path\":\"docs/kb/generated/links.jsonl\",\"rows\":" << link_count << "},\n"
         << "    {\"name\":\"topics\",\"type\":\"jsonl\",\"path\":\"docs/kb/generated/topics.jsonl\",\"rows\":" << topic_count << "},\n"
-        << (compact
-            ? "    {\"name\":\"terms\",\"type\":\"shin.lexical.v1\",\"path\":\"docs/kb/generated/terms.lex\",\"rows\":" + std::to_string(term_count) + "},\n"
-            : "    {\"name\":\"terms\",\"type\":\"jsonl\",\"path\":\"docs/kb/generated/terms.jsonl\",\"rows\":" + std::to_string(term_count) + "},\n"
-              "    {\"name\":\"terms-index\",\"type\":\"tsv\",\"path\":\"docs/kb/generated/terms.index.tsv\",\"rows\":" + std::to_string(term_count) + "},\n")
+        << "    {\"name\":\"terms\",\"type\":\"shin.lexical.v1\",\"path\":\"docs/kb/generated/terms.lex\",\"rows\":" << term_count << "},\n"
         << "    {\"name\":\"decisions\",\"type\":\"jsonl\",\"path\":\"docs/kb/generated/decisions.jsonl\",\"rows\":" << decision_count << "},\n"
         << "    {\"name\":\"decisions-index\",\"type\":\"tsv\",\"path\":\"docs/kb/generated/decisions.index.tsv\",\"rows\":" << decision_count << "},\n"
         << "    {\"name\":\"contracts\",\"type\":\"jsonl\",\"path\":\"docs/kb/generated/contracts.jsonl\",\"rows\":" << contract_count << "},\n"
@@ -1095,7 +1057,7 @@ SourceScanCorpus build_source_scan_corpus(const Profile& profile, const fs::path
 
 static GeneratedOutput render_generated_output(const Profile& profile,
                                         const GeneratedRows& rows,
-                                        BuildPhaseTimings* timings, bool compact) {
+                                        BuildPhaseTimings* timings) {
     GeneratedOutput generated;
     generated.document_count = static_cast<int>(rows.docs.size());
     generated.section_count = static_cast<int>(rows.sections.size());
@@ -1109,13 +1071,13 @@ static GeneratedOutput render_generated_output(const Profile& profile,
         if (timings != nullptr) timings->term_postings_ms += elapsed_ms_since(phase_start);
         phase_start = SteadyClock::now();
         RenderedTermIndex rendered;
-        if (compact) {
+        {
             rendered.postings_jsonl = encode_compact_terms(term_posting_build.postings,
                 {static_cast<std::uint32_t>(rows.sections.size()), static_cast<std::uint32_t>(rows.facts.size()),
                  static_cast<std::uint32_t>(rows.decisions.size()), static_cast<std::uint32_t>(rows.contracts.size()),
                  static_cast<std::uint32_t>(rows.runbooks.size())});
             rendered.term_count = static_cast<int>(term_posting_build.postings.size());
-        } else rendered = render_term_index(term_posting_build.postings);
+        }
         if (timings != nullptr) {
             timings->term_render_ms += elapsed_ms_since(phase_start);
             timings->peak_rss_bytes["term_render"] = process_peak_rss_bytes();
@@ -1140,11 +1102,7 @@ static GeneratedOutput render_generated_output(const Profile& profile,
     generated.files[(kGeneratedDir / "sections.jsonl").generic_string()] = sections_jsonl(rows.sections);
     generated.files[(kGeneratedDir / "links.jsonl").generic_string()] = links_jsonl(rows.links);
     generated.files[(kGeneratedDir / "topics.jsonl").generic_string()] = topics_jsonl(profile, rows.topic_docs);
-    if (compact) generated.files[(kGeneratedDir / "terms.lex").generic_string()] = std::move(term_index.postings_jsonl);
-    else {
-        generated.files[(kGeneratedDir / "terms.jsonl").generic_string()] = std::move(term_index.postings_jsonl);
-        generated.files[(kGeneratedDir / "terms.index.tsv").generic_string()] = std::move(term_index.offsets_tsv);
-    }
+    generated.files[(kGeneratedDir / "terms.lex").generic_string()] = std::move(term_index.postings_jsonl);
     generated.files[(kGeneratedDir / "decisions.jsonl").generic_string()] = decisions_jsonl(rows.decisions);
     generated.files[(kGeneratedDir / "contracts.jsonl").generic_string()] = typed_references_jsonl(rows.contracts);
     generated.files[(kGeneratedDir / "runbooks.jsonl").generic_string()] = typed_references_jsonl(rows.runbooks);
@@ -1168,7 +1126,7 @@ static GeneratedOutput render_generated_output(const Profile& profile,
                       generated.term_count, generated.decision_count, generated.contract_count,
                       generated.runbook_count, generated.fact_count, rows.source_facts, rows.structured_data,
                       generated.files,
-                      generated.broken_local_link_count, compact);
+                      generated.broken_local_link_count);
     if (timings != nullptr) {
         timings->json_render_ms += elapsed_ms_since(phase_start);
     }
@@ -1184,7 +1142,7 @@ static thread_local std::uint64_t generation_executions = 0;
 
 std::uint64_t generation_execution_count() { return generation_executions; }
 
-GeneratedOutput generate_outputs(const Profile& profile, const fs::path& root, BuildPhaseTimings* timings, bool compact_terms) {
+GeneratedOutput generate_outputs(const Profile& profile, const fs::path& root, BuildPhaseTimings* timings) {
     ++generation_executions;
     const auto total_start = SteadyClock::now();
     auto rows = build_generated_rows(profile, root, timings);
@@ -1193,7 +1151,7 @@ GeneratedOutput generate_outputs(const Profile& profile, const fs::path& root, B
     std::vector<FactRow>{}.swap(rows.source_facts.rows);
     std::vector<LinkRow>{}.swap(rows.source_facts.relations);
     rows.facts_by_doc.clear();
-    GeneratedOutput output = render_generated_output(profile, rows, timings, compact_terms);
+    GeneratedOutput output = render_generated_output(profile, rows, timings);
     if (timings != nullptr) {
         timings->total_generate_ms = elapsed_ms_since(total_start);
     }
@@ -1351,7 +1309,7 @@ int run_check(const RuntimeOptions& options) {
         throw_index_error("publication-incomplete",
                           "Generated snapshot publication is incomplete and requires writer recovery.");
     }
-    const auto expected_generation = validation_generated_output(options, compact_lexical_index(options));
+    const auto expected_generation = validation_generated_output(options);
     const auto& generated = *expected_generation;
     const GeneratedDrift drift = inspect_generated_output_drift(options, generated);
     emit_check_result(options, generated, drift);

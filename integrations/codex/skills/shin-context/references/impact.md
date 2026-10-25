@@ -1,8 +1,7 @@
 # Change-Aware Impact
 
-Use a supported Shin2.0 publication: the current generator is
-`shin-generator-v22-compact-lexical`; `shin-generator-v21-cpp-syntax` remains
-readable. An unsupported format requires an authorized migration of the same
+Use a current `shin-generator-v23-unicode-lexical` publication.
+Older indexes are not readable and require an authorized rebuild of the same
 canonical output. A read does not migrate or manually rebuild a managed index.
 
 Use the reviewed profile, root and canonical external index:

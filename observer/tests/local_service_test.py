@@ -23,6 +23,7 @@ class LocalServiceTests(unittest.TestCase):
     run_ce = fixtures.LocalProjectTests.run_ce
     init = fixtures.LocalProjectTests.init
     file_map = fixtures.LocalProjectTests.file_map
+    workspace = fixtures.LocalProjectTests.workspace
 
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory(prefix='shin-ipc-', dir='/tmp')
@@ -77,6 +78,34 @@ class LocalServiceTests(unittest.TestCase):
                 'observer_version': self.identity['version'], 'core_version': self.identity['core_version'],
                 'command': command, 'root': str(root or self.root), 'query': '', 'path': '', 'record': '',
                 'snapshot': '', **extra}
+
+    def test_previous_generator_is_rebuilt_before_the_first_read(self):
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        manifest = workspace / 'index/docs/kb/generated/manifest.json'
+        original = manifest.read_text()
+        self.assertIn('shin-generator-v23-unicode-lexical', original)
+        prior = original.replace('shin-generator-v23-unicode-lexical', 'shin-generator-v22-compact-lexical')
+        manifest.write_text(prior)
+        value = 1469598103934665603
+        for byte in prior.encode():
+            value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
+        binding_path = workspace / 'state.json'
+        binding = json.loads(binding_path.read_text())
+        binding['generator_version'] = 'shin-generator-v22-compact-lexical'
+        binding['prepared_snapshot'] = f'fnv1a64:{value:016x}'
+        binding_path.write_text(json.dumps(binding))
+        sentinel = self.home / 'retained-user-state'
+        sentinel.write_text('not derived from project sources')
+        before_sources = self.file_map(self.root)
+        self.start()
+        response = self.raw('query', query='readLimit')
+        self.assertTrue(response['ok'], response)
+        self.assertIn('return 7;', response['result']['source_context'])
+        current = json.loads(manifest.read_text())
+        self.assertEqual(current['generator_version'], 'shin-generator-v23-unicode-lexical')
+        self.assertEqual(json.loads(binding_path.read_text())['generator_version'], current['generator_version'])
+        self.assertEqual(sentinel.read_text(), 'not derived from project sources')
+        self.assertEqual(before_sources, self.file_map(self.root))
 
     def test_headless_status_is_read_only_and_json_remains_default(self):
         def text_status(command, *extra, home=None):
@@ -669,6 +698,158 @@ class LocalServiceTests(unittest.TestCase):
 
 
 
+    def wait_service_state(self, predicate, timeout=5):
+        deadline=time.monotonic()+timeout
+        while time.monotonic()<deadline:
+            state=self.raw('service-status')['result']
+            if predicate(state):return state
+            time.sleep(.02)
+        self.fail('service state did not converge: '+json.dumps(state))
+
+    def hold_reader(self, root=None):
+        root=root or self.root
+        readers=self.raw('service-status')['result']['resident_projects']
+        pid=next(row['pid'] for row in readers if row['root']==str(root) and row['ready'])
+        os.kill(pid,signal.SIGSTOP)
+        def release():
+            try:os.kill(pid,signal.SIGCONT)
+            except ProcessLookupError:pass
+        self.addCleanup(release)
+        return pid
+
+    def test_first_query_during_explicit_service_start_has_a_bound_reader(self):
+        # Hold qualification until the first client is waiting, so constructor
+        # admission cannot race ahead of the test's startup query.
+        with (self.workspace()/'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.start(ready=False)
+            pending = self.connect()
+            pending.sendall((json.dumps(self.frame('query', query='readLimit', request_id='first-startup-query'))+'\n').encode())
+            self.wait_service_state(lambda state: state['waiting_requests'] == 1)
+            fcntl.flock(lock, fcntl.LOCK_UN)
+        result = self.receive(pending)
+        self.assertTrue(result['ok'], result)
+        self.assertIn('return 7;', result['result']['source_context'])
+        status = self.raw('service-status')['result']
+        self.assertEqual(status['resident_errors'], {})
+        self.assertTrue(self.raw('query', query='readLimit')['ok'])
+
+    def test_short_same_project_collision_waits_without_blocking_other_project(self):
+        other=self.base/'independent';other.mkdir()
+        (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other);self.roots.append(other);self.start()
+        pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='first'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        second=self.connect();second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='second'))+'\n').encode())
+        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        # A queued request has not consumed the second execution slot.
+        began=time.monotonic();independent=self.raw('query',root=other,query='readLimit')
+        self.assertTrue(independent['ok'],independent);self.assertLess(time.monotonic()-began,2)
+        self.assertIn('return 99;',independent['result']['source_context'])
+        os.kill(pid,signal.SIGCONT)
+        self.assertTrue(self.receive(first)['ok'])
+        response=self.receive(second);self.assertTrue(response['ok'],response)
+        metrics=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
+        queued=next(row for row in metrics if row['request_id']==hashlib.sha256(b'second').hexdigest())
+        self.assertGreater(queued['wait_ms'],0)
+        self.assertEqual(queued['reader_state'],'warm')
+        self.assertEqual(queued['stage'],'execution')
+
+    def test_queued_busy_request_expires_once_without_execution(self):
+        self.start();pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='holding'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        second=self.connect();started=time.monotonic()
+        second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='busy-timeout'))+'\n').encode())
+        response=self.receive(second);elapsed=time.monotonic()-started
+        self.assertEqual(response['error']['code'],'service-busy',response)
+        self.assertGreaterEqual(elapsed,.45);self.assertLess(elapsed,2)
+        self.assertEqual(response['error']['diagnostic']['execution_started'],False)
+        self.assertEqual(response['error']['diagnostic']['reason'],'project-executing')
+        state=self.raw('service-status')['result']
+        self.assertEqual(state['waiting_requests'],0);self.assertEqual(state['query_workers'],1)
+        metric=next(row for row in state['telemetry']['request_metrics']['recent'] if row['request_id']==hashlib.sha256(b'busy-timeout').hexdigest())
+        self.assertEqual(metric['stage'],'admission')
+        os.kill(pid,signal.SIGCONT);self.assertTrue(self.receive(first)['ok'])
+        self.assertTrue(self.raw('query',query='readLimit')['ok'])
+
+    def test_project_queue_is_fifo_bounded_and_executes_each_frame_once(self):
+        self.start();pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='serial-0'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        queued=[]
+        for i in range(1,5):
+            client=self.connect();queued.append(client)
+            client.sendall((json.dumps(self.frame('query',query='readLimit',request_id=f'serial-{i}'))+'\n').encode())
+            self.wait_service_state(lambda state:state['waiting_requests']==i)
+        began=time.monotonic();refused=self.raw('query',query='readLimit',request_id='over-capacity')
+        self.assertLess(time.monotonic()-began,.5)
+        self.assertEqual(refused['error']['code'],'service-busy')
+        self.assertEqual(refused['error']['diagnostic']['reason'],'waiting-capacity')
+        state=self.raw('service-status')['result']
+        self.assertEqual(state['max_waiting_requests'],4);self.assertEqual(state['max_query_workers'],2)
+        self.assertEqual(state['waiting_requests'],4);self.assertEqual(state['query_workers'],1)
+        began=time.monotonic();status=self.raw('status',wait_for_ready=False)
+        self.assertLess(time.monotonic()-began,.5);self.assertEqual(status['error']['code'],'service-busy')
+        self.assertEqual(self.raw('service-status')['result']['waiting_requests'],4)
+        os.kill(pid,signal.SIGCONT)
+        self.assertTrue(self.receive(first)['ok'])
+        for client in queued:self.assertTrue(self.receive(client)['ok'])
+        rows=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
+        expected=[hashlib.sha256(f'serial-{i}'.encode()).hexdigest() for i in range(5)]
+        executed=[row['request_id'] for row in rows if row['request_id'] in expected and row['stage']=='execution']
+        self.assertEqual(executed,expected)
+
+    def test_cancelled_waiter_releases_only_its_queue_slot(self):
+        self.start();pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='active-peer'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        cancelled=self.connect();cancelled.sendall((json.dumps(self.frame('query',query='readLimit',request_id='cancelled-peer'))+'\n').encode())
+        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        cancelled.close();self.wait_service_state(lambda state:state['waiting_requests']==0)
+        self.assertEqual(self.raw('service-status')['result']['query_workers'],1)
+        replacement=self.connect();replacement.sendall((json.dumps(self.frame('query',query='readLimit',request_id='replacement-peer'))+'\n').encode())
+        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        os.kill(pid,signal.SIGCONT)
+        self.assertTrue(self.receive(first)['ok']);self.assertTrue(self.receive(replacement)['ok'])
+        rows=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
+        cancelled=next(row for row in rows if row['request_id']==hashlib.sha256(b'cancelled-peer').hexdigest())
+        self.assertEqual(cancelled['stage'],'admission');self.assertEqual(cancelled['error_code'],'client-disconnected')
+
+    def test_active_peer_disconnect_does_not_cancel_waiting_request(self):
+        self.start();self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='disconnecting'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        queued=self.connect();queued.sendall((json.dumps(self.frame('query',query='readLimit',request_id='surviving'))+'\n').encode())
+        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        first.close();response=self.receive(queued)
+        # A stopped worker may need forced termination; the original bounded
+        # wait may then expire, but another caller's cancellation is not ours.
+        if not response['ok']:self.assertEqual(response['error']['code'],'project-updating',response)
+        self.wait_service_state(lambda state:state['waiting_requests']==0 and state['query_workers']==0)
+        self.assertTrue(self.raw('query',query='readLimit')['ok'])
+
+    def test_queued_read_never_bypasses_snapshot_freshness(self):
+        self.start();snapshot=self.raw('query',query='readLimit')['result']['snapshot_id']
+        pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='before-edit'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        queued=self.connect();queued.sendall((json.dumps(self.frame('read',path='limits.js',snapshot=snapshot,request_id='after-edit'))+'\n').encode())
+        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        (self.root/'limits.js').write_text('export function readLimit() { return 8; }\n')
+        try:os.kill(pid,signal.SIGCONT)
+        except ProcessLookupError:pass
+        response=self.receive(queued)
+        self.assertFalse(response['ok'],response)
+        self.assertNotIn('return 7;',json.dumps(response))
+        self.assertIn(response['error']['code'],('project-updating','service-busy','snapshot-mismatch','query-snapshot-changed','query-source-changed'))
+        deadline=time.monotonic()+10
+        while True:
+            current=self.raw('query',query='readLimit')
+            if current['ok'] and 'return 8;' in current['result'].get('source_context',''):break
+            self.assertLess(time.monotonic(),deadline,current);time.sleep(.05)
+
     def test_slow_input_and_saturation_are_bounded(self):
         child = self.start()
         slow = self.connect()
@@ -685,7 +866,8 @@ class LocalServiceTests(unittest.TestCase):
         child.send_signal(signal.SIGCONT)
         with ThreadPoolExecutor(max_workers=6) as pool:
             results = list(pool.map(self.receive, clients))
-        self.assertGreaterEqual(sum(r.get('error', {}).get('code') == 'service-busy' for r in results), 4)
+        self.assertTrue(all(r.get('ok') or r.get('error',{}).get('code')=='service-busy' for r in results),results)
+        self.assertGreaterEqual(sum(r.get('ok',False) for r in results),1)
         deadline = time.monotonic() + 5
         while self.raw('service-status')['result']['query_workers'] and time.monotonic() < deadline:
             time.sleep(0.03)

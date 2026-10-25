@@ -5,7 +5,7 @@
 namespace shin::observer {
 Json summarize_model_usage(const Json& input, std::int64_t now);
 Json read_model_usage(const fs::path& path, std::int64_t now);
-Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token stop = {});
+Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token stop = {}, const fs::path& session_home = {});
 // Local numerical history only. No network requests or client settings writes.
 Json default_model_usage_sources(char** environment);
 Json collect_registered_model_usage(const fs::path& home, const Json& sources,

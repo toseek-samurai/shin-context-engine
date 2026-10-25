@@ -1,4 +1,5 @@
 #include "view.h"
+#include "../ui/language.h"
 #include <clocale>
 #include <iostream>
 #include <stdexcept>
@@ -47,6 +48,9 @@ int main() {
         require(render(snapshot, state).find("Search mean: 20 ms") != std::string::npos);
         state.retained = true;
         require(render(snapshot, state).find("unavailable") != std::string::npos);
+        snapshot.service["telemetry"]["mcp_activity"] = {{"schema_version", "shin.mcp-activity.v1"}, {"status", "ready"},
+            {"attempts", 4}, {"calls", {{"query", 1}, {"status", 1}, {"help", 1}, {"projects", 1}}}, {"outcomes", {{"success", 4}}}};
+        require(render(snapshot, state).find("MCP calls · history: 4") != std::string::npos);
         state.tab = 3; snapshot.storage_error = "storage-timeout";
         value = render(snapshot, state); require(value.find("storage-timeout") != std::string::npos && value.find("0 MiB") == std::string::npos);
         state.tab = 4; snapshot.usage = {{"status", "unconfigured"}};
@@ -60,6 +64,33 @@ int main() {
         require(tui::terminal_text("Проект", 6) == "Проект");
         require(tui::terminal_text("界a", 2) == "界");
         require(tui::terminal_text(std::string(1, '\xff'), 1) == "?");
+        auto sessions = snapshot; state.tab = 5;
+        require(render(tui::Snapshot{},state).find("Session activity is unavailable.") != std::string::npos);
+        const std::string session_id(64,'a');
+        sessions.service["telemetry"]["mcp_activity"] = {{"status","ready"},{"window_start_ms",0},{"dropped_updates",0},{"unconfirmed_updates",0},{"session_rows",Json::array({
+            {{"session_id",session_id},{"context_calls",9},{"errors",1},{"tasks",2},{"recovery_requests",2},
+             {"model_unknown",9},{"models",Json::object()},{"query_times",Json::array({3500})},{"queries_complete",true},
+             {"timeline",Json::array({{{"method","query"},{"intent","context-recovery"},{"outcome","success"}}})}}
+        })}};
+        sessions.usage["context_events"] = {{"complete",true},{"events",Json::array({
+            {{"session_id",session_id},{"at_ms",2000},{"kind","compaction"}},
+            {{"session_id",session_id},{"at_ms",1000},{"kind","turn-model"},{"model_id","history-model"}}
+        })}};
+        sessions.service["telemetry"]["mcp_activity"]["session_rows"][0]["analysis"] = {
+            {"schema_version","shin.session-analysis.v1"},{"calls_complete",true},{"unassigned_context_calls",1},
+            {"reads",{{"reads",8},{"same_version_repeats",3},{"additional_versions",2},{"unknown_reads",1}}},
+            {"episodes",Json::array({{{"start_ms",2000},{"kind","compaction"},{"closed",false},{"context_calls",4},
+                {"errors",0},{"reads",{{"same_version_repeats",1},{"previously_seen_versions",2}}},{"interval_complete",false}}})}};
+        auto observed = render(sessions,state);
+        require(observed.find("Same version again: 3") != std::string::npos && observed.find("After host compaction") != std::string::npos);
+        require(observed.find("Session aaaaaaaa") != std::string::npos && observed.find("1.5 s") != std::string::npos);
+        require(observed.find("Models reported in calls: unknown") != std::string::npos && observed.find("Model in client history: history-model") != std::string::npos);
+        sessions.service["telemetry"]["mcp_activity"]["session_rows"][0]["queries_complete"] = false;
+        sessions.service["telemetry"]["mcp_activity"]["session_rows"][0]["query_times"] = Json::array({5000,4000});
+        require(render(sessions,state).find("Next recorded query after compaction") == std::string::npos);
+        shin::ui::set_language(shin::ui::Language::ru);
+        require(render(sessions,state).find("Сессия aaaaaaaa") != std::string::npos);
+        shin::ui::set_language(shin::ui::Language::en);
         snapshot.service = original; state.tab = 0; (void)render(snapshot, state); require(snapshot.service == original);
         std::cout << "TUI: states, partial/stale data, stable selection, timing filters, missing metrics and safe Unicode passed\n";
         return 0;

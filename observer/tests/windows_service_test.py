@@ -204,7 +204,7 @@ def scenario(base):
             mcp.child.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
             mcp.child.stdin.flush()
             catalog = mcp.call('tools/list', {})['result']['tools']
-            assert {tool['name'] for tool in catalog} == {'shin_status', 'shin_query', 'shin_inspect', 'shin_read', 'shin_help'}
+            assert {tool['name'] for tool in catalog} == {'shin_status', 'shin_query', 'shin_inspect', 'shin_read', 'shin_help', 'shin_checkpoint', 'shin_resume'}
             assert 'return 8181' in mcp.tool('shin_query', {'query': 'quotaLimit'})['source_context']
             assert not mcp.tool('shin_query', {'query': 'quotaLimit', 'root': str(second)})['ok']
             assert mcp.tool('shin_read', {'path': 'quota.cpp', 'snapshot': updated['snapshot_id']})['ok']

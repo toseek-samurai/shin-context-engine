@@ -34,6 +34,24 @@ void check_qualified_token_boundaries() {
     }
 }
 
+void check_unicode_queries() {
+    const auto terms = parse_terms("ГДЕ «ПРОВЕРКА»\u00a0состояния?");
+    expect(terms == std::vector<std::string>({"проверка", "состояния"}), "Unicode query words and whitespace");
+    expect(normalize_match_text("ПроверкаСостояния CAFÉ Cafe\u0301 Straße Ελληνικά 中文") ==
+           "проверка состояния café café strasse ελληνικά 中文", "Unicode case folding, NFC and identifier boundaries");
+    expect(normalize_match_text("CaféBar Cafe\u0301Bar") == "café bar café bar", "combining marks preserve identifier boundaries");
+    expect(normalize_match_text("XÁbc XA\u0301bc") == "x ábc x ábc", "canonical characters precede acronym boundary detection");
+    expect(index_term_has_signal("состояние") && index_term_has_signal("中文"), "Unicode lexical admission");
+    expect(!index_term_has_signal("🙂"), "symbols are not lexical words");
+    expect(!can_prefix_complete_lookup_term("аб") && can_prefix_complete_lookup_term("абвг"),
+           "prefix minimum counts characters rather than UTF-8 bytes");
+    FieldMatchInput prefixed{"heading", "предсостояние", 34, true};
+    expect(field_match_kind(prefixed, prepare_match_term("состояние")) == LexicalMatchKind::none,
+           "continuation bytes cannot create a false exact word boundary");
+    const auto text = std::string("left") + char(0xff) + "right";
+    expect(normalize_match_text(text) == "left right", "invalid UTF-8 cannot join words");
+}
+
 class Fixture {
 public:
     explicit Fixture(const fs::path& parent)
@@ -65,6 +83,34 @@ public:
 private:
     fs::path base_;
 };
+
+void check_unicode_retrieval_parity(const fs::path& parent) {
+    Fixture fixture(parent);
+    fixture.options.profile.root_files = {"README.md", "other.md"};
+    fixture.options.profile.aliases = {{"budget", {"БЮДЖЕТ"}}};
+    fixture.write("README.md", "# Проверка состояния\n\nCAFÉ Straße σύστημα 中文\n\n## Бюджет\n\nСохранённые данные.\n");
+    fixture.write("other.md", "# Предсостояния\n\nCafe as an ASCII word and Latin a are distinct.\n");
+    {
+        const auto output = generate_outputs(fixture.options.profile, fixture.options.root);
+        shin::generated_io::IndexLock writer(fixture.options.out_root,
+            shin::generated_io::LockMode::exclusive, shin::generated_io::LockTarget::writer);
+        shin::generated_io::publish_snapshot(fixture.options.out_root, kGeneratedDir, output.files);
+    }
+    const auto snapshot = GeneratedSnapshot::load(fixture.options);
+    RetrievalSession disk(fixture.options, true), resident(snapshot, true);
+    for (const std::string query : {"ПРОВЕРКА состояния", "CAFÉ", "Cafe\u0301", "STRASSE", "ΣΎΣΤΗΜΑ", "中文", "budget"}) {
+        const auto request = make_command_query_request(fixture.options.profile, {query}, 6, 2);
+        const auto search = disk.search(request), brief = disk.brief(request, BriefProjection::compact);
+        expect(search == resident.search(request), "Unicode disk/resident search parity");
+        expect(brief == resident.brief(request, BriefProjection::compact), "Unicode disk/resident Brief parity");
+        expect(!search.at("hits").empty() && search.at("hits")[0].at("path") == "README.md", "Unicode target: " + query);
+        expect(brief.at("query_coverage").at("covered_groups") == request.terms.size(), "Unicode evidence-backed coverage");
+    }
+    const auto request = make_command_query_request(fixture.options.profile, {"состояния"}, 6, 2);
+    const auto result = disk.search(request);
+    for (const auto& hit : result.at("hits"))
+        expect(hit.at("path") != "other.md", "UTF-8 continuation bytes do not create word boundaries");
+}
 
 void check_qualified_retrieval_parity(const fs::path& parent) {
     Fixture fixture(parent);
@@ -117,8 +163,10 @@ int main(int argc, char** argv) {
     try {
         if (argc != 2) throw std::runtime_error("expected fixture parent");
         shin::context::check_qualified_token_boundaries();
+        shin::context::check_unicode_queries();
         shin::context::check_qualified_retrieval_parity(argv[1]);
-        std::cout << "qualified query: 2 checks passed\n";
+        shin::context::check_unicode_retrieval_parity(argv[1]);
+        std::cout << "qualified query: 4 checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

@@ -13,7 +13,7 @@ class ValidationGeneration {
 public:
     explicit ValidationGeneration(const RuntimeOptions& options,
         std::uintmax_t maximum_bytes = 256ULL * 1024 * 1024);
-    std::shared_ptr<const GeneratedOutput> acquire(const RuntimeOptions& options, bool compact);
+    std::shared_ptr<const GeneratedOutput> acquire(const RuntimeOptions& options);
     Json metrics() const;
 private:
     void verify_inputs(const RuntimeOptions& options);
@@ -27,7 +27,7 @@ private:
     std::map<std::string, bool> links_;
     std::vector<std::string> fact_paths_;
     Json retool_environment_;
-    bool retool_ = false, compact_ = true, disabled_ = false;
+    bool retool_ = false, disabled_ = false;
     std::shared_ptr<const GeneratedOutput> generated_;
     std::uint64_t reuses_ = 0, invalidations_ = 0, inventory_checks_ = 0, hash_files_ = 0, hash_bytes_ = 0;
     double verification_ms_ = 0;
@@ -35,6 +35,6 @@ private:
 };
 
 std::shared_ptr<const GeneratedOutput> validation_generated_output(
-    const RuntimeOptions& options, bool compact = true);
+    const RuntimeOptions& options);
 
 } // namespace shin::context

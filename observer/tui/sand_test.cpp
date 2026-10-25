@@ -76,6 +76,14 @@ tui::Snapshot fixture() {
                 {{"client", "example-client"}, {"model", "example-model-a"}, {"input_tokens", 1241034}, {"output_tokens", 154380}},
                 {{"client", "example-client"}, {"model", "example-model-b"}, {"input_tokens", 602086}, {"output_tokens", 86696}}
             })}}})}};
+    const std::string session_id(64,'a');
+    telemetry["mcp_activity"] = {{"status","ready"},{"session_rows",Json::array({{{"session_id",session_id},
+        {"context_calls",21},{"errors",2},{"tasks",3},{"recovery_requests",4},{"model_unknown",21},{"models",Json::object()},
+        {"analysis",{{"schema_version","shin.session-analysis.v1"},{"calls_complete",true},{"unassigned_context_calls",3},
+            {"reads",{{"reads",12},{"same_version_repeats",4},{"additional_versions",2},{"unknown_reads",1}}},
+            {"episodes",Json::array({{{"start_ms",1792920000000LL},{"kind","compaction"},{"closed",true},
+                {"context_calls",7},{"errors",1},{"interval_complete",true},
+                {"reads",{{"same_version_repeats",2},{"previously_seen_versions",1}}}}})}}}}})}};
     return s;
 }
 struct Rendered {
@@ -198,7 +206,7 @@ int main(int argc, char** argv) {
         for (auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
             shin::ui::set_language(language);
             for (const auto& [width, height] : {std::pair{60, 12}, {80, 24}, {120, 36}}) {
-                for (int tab = 0; tab < 5; ++tab) {
+                for (int tab = 0; tab < 6; ++tab) {
                     state = {}; state.tab = tab;
                     result = render(snapshot, state, width, height);
                     require(result.plain.find("SHIN") != std::string::npos, "header clipped");

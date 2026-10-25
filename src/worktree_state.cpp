@@ -376,6 +376,16 @@ Json compare_worktree(const RuntimeOptions& options, const Json& manifest,
         append_metadata_change("profile_config_hash", profile_hash,
                                current_profile_hash);
     }
+    const Json source_limits{{"max_files", options.profile.source_fact_max_files},
+                             {"max_file_bytes", options.profile.source_fact_max_file_bytes}};
+    const auto* baseline_limits = find_json_field(manifest, "source_fact_limits");
+    if (profile_config_current && (!baseline_limits || *baseline_limits != source_limits)) {
+        append_metadata_change("source_fact_limits", baseline_limits ? *baseline_limits : Json(nullptr), source_limits);
+    }
+    const auto profile_location = manifest_profile_config_identity(options.profile);
+    if (json_string_value(manifest, "profile_config") != profile_location) {
+        append_metadata_change("profile_config", json_string_value(manifest, "profile_config"), profile_location);
+    }
     if (!source_fact_inventory_current) {
         append_metadata_change(
             "source_fact_inventory",

@@ -129,6 +129,7 @@ FileFingerprint source_fingerprint_file(const fs::path& path, const std::string&
 [[noreturn]] void throw_source_observation_io_error(const std::string& operation);
 [[noreturn]] void throw_source_changed_during_verification(const std::string& operation);
 std::string profile_config_hash(const Profile& profile);
+std::string manifest_profile_config_identity(const Profile& profile);
 int markdown_heading_level(const std::string& line);
 Json parse_json_text(const std::string& text, const std::string& source);
 bool try_parse_json_text(const std::string& text, Json& out);

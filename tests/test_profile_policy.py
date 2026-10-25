@@ -67,6 +67,50 @@ class PolicyTests(unittest.TestCase):
         self.assertEqual(fields["sourceExtensions"]["origin"], "core-default-empty-input")
         self.assertEqual(fields["agentStartPaths"]["value"], ["README.md"])
 
+    def test_implicit_source_budgets_match_language_templates(self):
+        fields = self.policy()["fields"]
+        for key, expected in (("sourceFactMaxFiles", 10000),
+                              ("sourceFactMaxFileBytes", 1048576)):
+            self.assertEqual(fields[key]["value"], expected)
+            self.assertEqual(fields[key]["origin"], "core-default")
+
+    def test_explicit_source_budget_is_not_replaced_by_defaults(self):
+        self.profile.update(sourceFactMaxFiles=25, sourceFactMaxFileBytes=4096)
+        fields = self.policy()["fields"]
+        for key, expected in (("sourceFactMaxFiles", 25),
+                              ("sourceFactMaxFileBytes", 4096)):
+            self.assertEqual(fields[key]["value"], expected)
+            self.assertEqual(fields[key]["origin"], "profile")
+
+    def check_source_budget_headroom(self, generic):
+        source = self.root / "src"
+        source.mkdir()
+        for index in range(2001):
+            (source / f"policy{index}.cpp").write_text(f"int policy{index}() {{ return 1; }}\n")
+        large = source / "largePolicy.ts"
+        large.write_text("export const projectBudget = 1;\n" + " " * (600 * 1024))
+        self.profile.update(sourceFactRoots=["src"], sourceFactExtensions=[".cpp", ".ts"],
+                            sourceFactExtractors=["language"])
+        self.save()
+        policy = self.invoke("profile-policy", generic=generic)
+        for key in ("sourceFactMaxFiles", "sourceFactMaxFileBytes"):
+            self.assertEqual(policy["fields"][key]["origin"], "profile" if generic else "core-default")
+        self.invoke("build", generic=generic)
+        manifest = json.loads((self.base / "index/docs/kb/generated/manifest.json").read_text())
+        counts = manifest["source_fact_counts"]
+        self.assertEqual(counts["candidate_files"], 2002)
+        self.assertEqual(counts["scanned_files"], 2002)
+        self.assertEqual(counts["capped_files"], 0)
+        self.assertEqual(counts["skipped_large_files"], 0)
+        observed = next(row for row in manifest["source_fact_sources"] if row["path"] == "src/largePolicy.ts")
+        self.assertEqual(observed["bytes"], large.stat().st_size)
+
+    def test_new_project_template_handles_source_budget_headroom(self):
+        self.check_source_budget_headroom(generic=True)
+
+    def test_implicit_profile_handles_source_budget_headroom(self):
+        self.check_source_budget_headroom(generic=False)
+
     def test_conflicting_aliases(self):
         self.profile.update(sourceFactMaxFiles=100, source_fact_max_files=200)
         value = self.policy(expected=1)

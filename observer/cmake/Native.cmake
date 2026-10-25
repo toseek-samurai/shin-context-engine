@@ -23,7 +23,7 @@ else()
     set(SHIN_NATIVE_WARNINGS -Wall -Wextra -Wpedantic -Wmissing-declarations)
 endif()
 if(SHIN_OBSERVER_SOURCE_DISCOVERY)
-    list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_rpc local_registry
+    list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_rpc local_registry local_profile_location
         local_telemetry local_history local_history_files local_query local_changes local_worker local_worker_process
         local_identity local_status local_release local_mcp_scope local_client_setup local_client_connect client_config client_config_json client_config_toml client_config_yaml model_usage)
     if(WIN32)

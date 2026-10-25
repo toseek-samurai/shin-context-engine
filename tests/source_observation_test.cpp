@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "worktree_state.h"
 
 #include <chrono>
 
@@ -146,6 +147,30 @@ void disappeared_selected_source_is_changed(const fs::path& parent) {
     throw std::runtime_error("source-observation: expected selected source refusal");
 }
 
+void changed_default_budgets_invalidate_unchanged_profile(const fs::path& parent) {
+    Fixture fixture(parent);
+    RuntimeOptions options;
+    options.root = fixture.root;
+    options.profile.id = "budget-fixture";
+    options.profile.config_hash = "fnv1a64:0123456789abcdef";
+    WorktreeInventory inventory;
+    Json manifest{{"profile", options.profile.id}, {"source_count", 0},
+                  {"sources", Json::array()}, {"source_fact_sources", Json::array()},
+                  {"source_fact_counts", {{"candidate_files", 0}, {"capped_files", 0}}},
+                  {"generator_version", kGeneratorVersion},
+                  {"profile_config_hash", profile_config_hash(options.profile)},
+                  {"profile_config", manifest_profile_config_identity(options.profile)},
+                  {"source_fact_limits", {{"max_files", 2000}, {"max_file_bytes", 524288}}}};
+    const auto changed = compare_worktree(options, manifest, inventory, 10);
+    expect(changed.at("current") == false && changed.at("summary").at("metadata_changed") == 1,
+           "changed Core defaults require publication even with identical profile bytes and source inventory");
+    expect(changed.at("details").at(0).at("key") == "source_fact_limits", "effective budget drift is identified");
+    manifest["source_fact_limits"] = {{"max_files", options.profile.source_fact_max_files},
+                                     {"max_file_bytes", options.profile.source_fact_max_file_bytes}};
+    expect(compare_worktree(options, manifest, inventory, 10).at("current") == true,
+           "matching effective budgets keep an otherwise identical generation current");
+}
+
 }  // namespace
 }  // namespace shin::context
 
@@ -157,6 +182,7 @@ int main(int argc, char** argv) {
         shin::context::explicit_document_inventory_at_scale(argv[1]);
         shin::context::errors_are_typed_and_safe();
         shin::context::disappeared_selected_source_is_changed(argv[1]);
+        shin::context::changed_default_budgets_invalidate_unchanged_profile(argv[1]);
         std::cout << "source-observation: lexical inventory and typed errors passed\n";
         return 0;
     } catch (const std::exception& error) {

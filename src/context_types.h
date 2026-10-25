@@ -214,8 +214,8 @@ struct Profile {
     int markdown_chunk_lines = 24;
     int markdown_chunk_min_lines = 12;
     int markdown_chunk_chars = 1800;
-    int source_fact_max_files = 2000;
-    int source_fact_max_file_bytes = 524288;
+    int source_fact_max_files = 10000;
+    int source_fact_max_file_bytes = 1048576;
     int json_key_max_depth = 0;
     int json_key_max_sections_per_file = 0;
     int jsonl_max_rows_per_file = 0;

@@ -5,6 +5,7 @@
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_registry.h"
+#include "shin/observer/local_profile_location.h"
 #include "shin/observer/local_installation.h"
 #include "shin/observer/local_updates.h"
 #include "shin/observer/local_client_setup.h"
@@ -97,6 +98,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce profile-accept HASH [--root DIR] [--home DIR] explicitly approves a reviewed profile revision.\n"
                      "shin-ce marker-accept SHA256 [--root DIR] [--home DIR] explicitly approves a reviewed marker revision.\n"
                      "shin-ce config-accept SHA256 [--root DIR] [--home DIR] approves same-route operational settings after refresh-release.\n"
+                     "shin-ce profile-relocate --profile-dir DIR [--root DIR] [--home DIR] moves the same approved profile registry with the service stopped.\n"
                      "Init options: --offline, --no-service, --home DIR, --profile-dir DIR (new local projects only).\n"
                      "shin-ce watch [--root DIR ...] [--home DIR] [--samples N]\n"
                      "shin-ce serve --root DIR [--root DIR ...] [--home DIR]\n"
@@ -149,7 +151,7 @@ int run(int argc, char** argv, char** environment) {
     fs::path usage_file;
     if (background_child || supervised_child) request.command = "serve";
     if (!std::set<std::string>{"client-targets", "client-connect", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
-                               "service-start", "service-status", "service-stop", "service-definition",
+                               "profile-relocate", "service-start", "service-status", "service-stop", "service-definition",
                                "service-install", "service-update", "service-uninstall", "service-installation"}.contains(request.command))
         throw Error("invalid-arguments", "Unsupported command; see shin-ce --help.");
     std::string ui_language = "auto";
@@ -253,7 +255,7 @@ int run(int argc, char** argv, char** environment) {
             continue;
         }
         if (option == "--offline" && request.command == "init" && seen.insert(option).second) continue;
-        if ((option == "--root" && request.command != "service-definition") || option == "--home" || (option == "--profile-dir" && (request.command == "init" || request.command == "project-add")) ||
+        if ((option == "--root" && request.command != "service-definition") || option == "--home" || (option == "--profile-dir" && (request.command == "init" || request.command == "project-add" || request.command == "profile-relocate")) ||
             ((option == "--observer-config" || option == "--marker") &&
              (request.command == "attach" || request.command == "init"))) {
             if (!seen.insert(option).second || i + 1 == argc)
@@ -344,6 +346,7 @@ int run(int argc, char** argv, char** environment) {
     if (request.command == "identity") result = {{"schema_version","shin.ce-response.v1"}, {"tool","shin-ce"},
         {"version",SHIN_OBSERVER_VERSION}, {"core_version",SHIN_VERSION}, {"command","identity"}, {"ok",true},
         {"identity",local_identity(request,false)}, {"delivery_performed",false}, {"consumer_mutated",false}};
+    else if (request.command == "profile-relocate") result = relocate_local_profile(request);
     else if (request.command == "service-definition") result = local_service_definition(request, executable_path());
     else if (request.command == "service-install" || request.command == "service-uninstall")
         result = configure_local_autostart(request, executable_path());

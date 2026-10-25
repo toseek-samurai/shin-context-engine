@@ -117,6 +117,59 @@ The installer refuses an unowned destination, conflicting command links, or an
 existing data home it cannot safely adopt. Read the reported error and choose
 fresh locations; do not delete existing state to force installation.
 
+### Project source budgets
+
+New projects connected through `init` or `project-add` use the bundled
+`generic-source` profile, which explicitly allows 15,000 source files and 1 MiB
+per file. The language-specific bootstrap profiles allow 10,000 files and 1 MiB
+per file. These are extraction budgets, not the amount of text sent to an agent
+or a guarantee about peak indexing memory.
+
+In current development source, Core defaults to 10,000 files and 1 MiB per file
+when a profile omits those fields, matching the language-specific templates.
+The bundled new-project template declares its budgets explicitly. An existing
+permanent project keeps its explicit reviewed limits. `profile-policy` reports
+the effective values and whether each came from the profile or Core. Check that
+output for the installed kit; source defaults take effect with a new release.
+
+Set deliberate budgets in a permanent profile and approve its exact revision
+through the native profile-review/approval workflow. Let the existing managed
+publisher validate the new snapshot, then verify readiness and the observed,
+capped and skipped source counts. Increasing a budget does not approve changed
+roots, waive quality gates or make a previous snapshot current. Avoid removing
+budgets: size, validation time and memory still need independent bounds.
+
+### Moving an existing permanent profile
+
+Keep project-specific profiles with their project, for example under
+`profiles/`. Choose a directory outside the profile's selected document and source
+roots so the configuration does not become retrieval evidence itself.
+The generated index and local history remain in
+their existing external storage. This does not make Shin a project build dependency.
+
+In current development source, `profile-relocate` moves an enrolled, active,
+managed route to an existing directory containing an exact copy of its approved
+`PROFILE.json`. Stop the local service first, then run:
+
+```sh
+shin-ce profile-relocate --root /path/to/project \
+  --profile-dir /path/to/project/profiles
+shin-ce service-start
+```
+
+The command preserves publisher permission, project identities, approvals,
+profile revision history and index contents. It changes the profile directory
+in the Observer configuration and its dependent binding records. A private
+journal supports resuming the same command after interruption; unknown edits
+or replaced directories require review and are never overwritten.
+
+Relocation alone does not certify readiness. The managed publisher detects
+the changed profile provenance, validates and publishes the matching generation.
+Verify project readiness before deleting the old profile copy. To reverse a
+completed move while both copies remain available, stop the service and use
+the same command with the previous directory. Repeated completed requests
+for the current directory are harmless.
+
 ### Automatic model statistics (dev.12)
 
 `init` and `project-add` enroll the project in both local retrieval and background
@@ -404,6 +457,9 @@ The dev.39 kit supports explicit forward transitions from Core `2.0.5-dev.1`
 through `2.0.5-dev.4` to `2.0.5-dev.5`. The previously qualified forward
 transitions among dev.1–dev.4 remain supported. These retrieval corrections
 preserve generator-v22 evidence and storage formats.
+The current dev.42 source also admits those explicit Core versions and dev.5
+to Core dev.6. It preserves the v22 format and refreshes effective source-budget
+metadata when an unchanged profile inherits the new defaults.
 The updater still qualifies every enrolled project and preserves its
 ownership and rollback checks; other Core transitions remain refused.
 For this transition, stale or validation-blocked publications are refreshed by

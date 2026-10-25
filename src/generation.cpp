@@ -588,7 +588,7 @@ static std::map<std::string, int> count_docs_by(const std::vector<SourceDoc>& do
     return counts;
 }
 
-static std::string manifest_profile_config_identity(const Profile& profile) {
+std::string manifest_profile_config_identity(const Profile& profile) {
     const fs::path config_path(profile.config_source);
     if (config_path.empty()) {
         return "";

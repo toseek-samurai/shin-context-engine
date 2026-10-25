@@ -121,6 +121,155 @@ class LocalRouteTests(unittest.TestCase):
     def managed(self, service=False):
         return self.ce('init', '--observer-config', str(self.f.config), '--manage-index', one_shot=not service)
 
+    def relocation_target(self, name='project-profiles'):
+        target = self.f.root / name
+        target.mkdir(parents=True, exist_ok=True)
+        shutil.copyfile(self.f.profile_path, target / self.f.profile_path.name)
+        return target
+
+    def relocation_evidence(self, history=True):
+        paths = [self.workspace() / 'state.json', self.grant_path(), self.f.config,
+                 self.home / 'registry/state.json']
+        if history:
+            paths.append(self.home / 'service/history/telemetry.sqlite')
+        return {p: (p.stat().st_ino, p.read_bytes()) for p in paths if p.exists()}
+
+    def test_profile_relocation_preserves_authority_histories_and_supports_reverse(self):
+        self.marker()
+        self.managed()
+        self.ce('refresh-release')
+        config = self.f.config_data()
+        config['max_snapshot_bytes'] *= 2
+        write_private_json(self.f.config, config)
+        self.config_accept()
+        self.managed(service=True)
+        self.stop_service()
+        self.ce('watch', '--samples', '1')
+        target = self.relocation_target()
+        registry = (self.home / 'registry/state.json').read_bytes()
+        history = self.home / 'service/history/telemetry.sqlite'
+        history_before = history.stat().st_ino, history.read_bytes()
+        owner = self.owner_path().read_bytes()
+        def index_files():
+            return {str(p.relative_to(self.f.out)): (p.read_bytes(), p.stat().st_mtime_ns)
+                    for p in self.f.out.rglob('*') if p.is_file()}
+        index_before = index_files()
+        before = {name: json.loads((self.workspace() / name / 'state.json').read_text())
+                  for name in ('publication', 'profile-revisions', 'marker-policy', 'config-policy', 'qualification')}
+        observer_before = json.loads((self.f.state / 'state.json').read_text())
+        binding_before = json.loads((self.workspace() / 'state.json').read_text())
+        result = self.ce('profile-relocate', '--profile-dir', str(target))
+        self.assertEqual(result['schema_version'], 'shin.ce-response.v1')
+        self.assertEqual(result['tool'], 'shin-ce')
+        self.assertEqual(result['version'], (Path(__file__).resolve().parents[1] / 'VERSION').read_text().strip())
+        self.assertEqual(result['core_version'], (Path(__file__).resolve().parents[2] / 'VERSION').read_text().strip())
+        self.assertTrue(result['changed'])
+        self.assertFalse(result['index_mutated'])
+        self.assertTrue(result['history_preserved'])
+        self.assertFalse(result['readiness_assessed'])
+        self.assertEqual(registry, (self.home / 'registry/state.json').read_bytes())
+        self.assertEqual(history_before, (history.stat().st_ino, history.read_bytes()))
+        self.assertEqual(owner, self.owner_path().read_bytes())
+        self.assertEqual(index_before, index_files())
+        self.assertEqual(json.loads(self.f.config.read_text())['profile_dir'], str(target))
+        binding_after = json.loads((self.workspace() / 'state.json').read_text())
+        for field in ('observer_config_hash', 'observer_binding_key'):
+            binding_before.pop(field)
+            binding_after.pop(field)
+        self.assertEqual(binding_before, binding_after)
+        for name, fields in {'publication': ['route'], 'profile-revisions': ['authority'],
+                             'marker-policy': ['route_key'], 'config-policy': ['route_key', 'approved_config_hash'],
+                             'qualification': []}.items():
+            after = json.loads((self.workspace() / name / 'state.json').read_text())
+            for field in fields:
+                before[name].pop(field)
+                after.pop(field)
+            self.assertEqual(before[name], after, name)
+        observer_after = json.loads((self.f.state / 'state.json').read_text())
+        for field in ('binding', 'binding_key'):
+            observer_before.pop(field)
+            observer_after.pop(field)
+        self.assertEqual(observer_before, observer_after)
+        self.assertFalse(self.ce('profile-relocate', '--profile-dir', str(target))['changed'])
+        self.ce('service-start')
+        self.assertIn('return 7;', self.ce('query', 'readLimit')['source_context'])
+        self.stop_service()
+        self.assertTrue(self.ce('profile-relocate', '--profile-dir', str(self.f.profiles))['changed'])
+        self.assertEqual(json.loads(self.f.config.read_text())['profile_dir'], str(self.f.profiles))
+        self.ce('service-start')
+        self.assertTrue(self.ce('query', 'readLimit')['canonical_ready'])
+
+    def test_profile_relocation_refuses_live_service_different_policy_and_symlink(self):
+        self.managed(service=True)
+        target = self.relocation_target()
+        before = self.relocation_evidence(history=False)
+        refused = self.ce('profile-relocate', '--profile-dir', str(target), expected=2)
+        self.assertEqual(refused['error']['code'], 'profile-relocation-requires-stopped-service')
+        self.assertEqual(before, self.relocation_evidence(history=False))
+        self.stop_service()
+        before = self.relocation_evidence()
+        copied = target / self.f.profile_path.name
+        copied.write_text(copied.read_text() + '\n')
+        self.assertEqual(self.ce('profile-relocate', '--profile-dir', str(target), expected=2)['error']['code'], 'profile-relocation-conflict')
+        copied.unlink()
+        copied.symlink_to(self.f.profile_path)
+        self.ce('profile-relocate', '--profile-dir', str(target), expected=2)
+        copied.unlink()
+        shutil.copyfile(self.f.profile_path, copied)
+        alias = self.f.root / 'profile-alias'
+        alias.symlink_to(target, target_is_directory=True)
+        self.ce('profile-relocate', '--profile-dir', str(alias), expected=2)
+        self.assertEqual(before, self.relocation_evidence())
+
+    def test_profile_relocation_resumes_mixed_writes_and_attributed_pending_state(self):
+        self.managed(service=True)
+        self.stop_service()
+        target = self.relocation_target()
+        self.ce('profile-relocate', '--profile-dir', str(target))
+        journal_path = self.workspace() / 'profile-location/state.json'
+        journal = json.loads(journal_path.read_text())
+        payload = journal_path.parent / journal['payload']
+        journal['phase'] = 'prepared'
+        write_private_json(journal_path, journal)
+        self.f.config.write_bytes((payload / 'config-before.json').read_bytes())
+        for name, directory in [('binding', self.workspace()), ('observer', self.f.state)]:
+            (directory / 'state.json').write_bytes((payload / (name + '-before.json')).read_bytes())
+        write_private_json(self.f.state / 'state.pending', json.loads((payload / 'observer-after.json').read_text()))
+        self.assertTrue(self.ce('profile-relocate', '--profile-dir', str(target))['changed'])
+        self.assertFalse((self.f.state / 'state.pending').exists())
+        self.assertEqual(json.loads(journal_path.read_text())['phase'], 'complete')
+        self.ce('service-start')
+        self.assertTrue(self.ce('query', 'readLimit')['canonical_ready'])
+
+    def test_profile_relocation_does_not_approve_unrelated_configuration_or_overwrite_conflict(self):
+        self.managed(service=True)
+        self.stop_service()
+        target = self.relocation_target()
+        original = self.f.config.read_bytes()
+        config = json.loads(original)
+        config['poll_interval_ms'] *= 2
+        write_private_json(self.f.config, config)
+        before = self.relocation_evidence()
+        self.assertEqual(self.ce('profile-relocate', '--profile-dir', str(target), expected=2)['error']['code'], 'profile-relocation-conflict')
+        self.assertEqual(before, self.relocation_evidence())
+        self.f.config.write_bytes(original)
+        self.ce('profile-relocate', '--profile-dir', str(target))
+        journal_path = self.workspace() / 'profile-location/state.json'
+        journal = json.loads(journal_path.read_text())
+        journal['phase'] = 'unknown'
+        write_private_json(journal_path, journal)
+        before = self.relocation_evidence()
+        self.assertEqual(self.ce('profile-relocate', '--profile-dir', str(target), expected=2)['error']['code'], 'profile-relocation-conflict')
+        self.assertEqual(before, self.relocation_evidence())
+        journal['phase'] = 'prepared'
+        write_private_json(journal_path, journal)
+        grant = json.loads(self.grant_path().read_text())
+        grant['approved_profile_hash'] = '0' * 16
+        write_private_json(self.grant_path(), grant)
+        before = self.relocation_evidence()
+        self.assertEqual(self.ce('profile-relocate', '--profile-dir', str(target), expected=2)['error']['code'], 'profile-relocation-conflict')
+        self.assertEqual(before, self.relocation_evidence())
+
     def test_detach_revokes_only_granted_publication_and_keeps_canonical_index(self):
         self.managed(service=True)
         before = self.ce('query', 'readLimit')

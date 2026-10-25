@@ -192,7 +192,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         call(*update, error='installation-core-transition-unsupported')
         # Existing format-preserving previews migrate without changing authority.
         binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
-        for previous_core in ('2.0.5-dev.2', '2.0.5-dev.3', '2.0.5-dev.4'):
+        for previous_core in ('2.0.5-dev.2', '2.0.5-dev.3', '2.0.5-dev.4', '2.0.5-dev.5'):
             previous_fixture(owned=True, version='2.0.5-dev.15', core_version=previous_core)
             old_patch_binding = json.loads(binding_path.read_text())
             old_patch_binding['core_version'] = previous_core
@@ -203,7 +203,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             for key in old_patch_binding.keys() - {'core_version', 'prepared_snapshot'}:
                 assert current_binding[key] == old_patch_binding[key], key
         # Future/reverse Core transitions are refused before touching bindings.
-        previous_fixture(owned=True, version='2.0.5-dev.15', core_version='2.0.5-dev.6')
+        previous_fixture(owned=True, version='2.0.5-dev.15', core_version='2.0.5-dev.7')
         binding_before_refusal = binding_path.read_bytes()
         call(*update, error='installation-core-transition-unsupported')
         assert binding_path.read_bytes() == binding_before_refusal

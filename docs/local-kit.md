@@ -284,7 +284,7 @@ previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
-The dev.43 candidate uses Core dev.7 and the Unicode v23 index format. It
+The dev.44 candidate uses Core dev.7 and the Unicode v23 index format. It
 rebuilds previous derived indexes under their existing project authority; no
 old retrieval reader or term conversion is retained. During rollback to an
 older kit, a private bootstrap index that the old CLI cannot read is atomically
@@ -464,25 +464,25 @@ native installation child used by automatic updates; HTTPS delivery and the
 Monitor offer are separate checks.
 
 
-## Core patch compatibility
+## Core transitions and index rebuilds
 
-The dev.39 kit supports explicit forward transitions from Core `2.0.5-dev.1`
-through `2.0.5-dev.4` to `2.0.5-dev.5`. The previously qualified forward
-transitions among dev.1–dev.4 remain supported. These retrieval corrections
-preserve generator-v22 evidence and storage formats.
-The current dev.42 source also admits those explicit Core versions and dev.5
-to Core dev.6. It preserves the v22 format and refreshes effective source-budget
-metadata when an unchanged profile inherits the new defaults.
-The updater still qualifies every enrolled project and preserves its
-ownership and rollback checks; other Core transitions remain refused.
-For this transition, stale or validation-blocked publications are refreshed by
-the ordinary Observer under existing grants during journaled activation. All
-projects must qualify before success. Interrupted recovery resumes from the same
-archive; failed activation rolls back the kit and restores the previous service
-readiness boundary. Existing private-bootstrap bindings are migrated through native initialization,
-without new enrollment or changed identity/profile. Rollback uses the verified
-previous kit to restore their previous Core binding. Canonical publisher grants
-retain their original identity. No index deletion or profile change is used.
+The dev.44 candidate admits forward Core transitions within the same major
+version, subject to installation and project qualification. This replaces the
+historical list of individual version pairs. Downgrades are not normal updates;
+rollback uses the verified previous payload recorded by the installation journal.
+
+The qualified transition from the dev.42 kit upgrades Core dev.6 to dev.7 and
+rebuilds v22 indexes into Unicode v23. Older format identifiers are recognized
+only to rebuild approved source inputs, not to read or convert old retrieval
+data. Canonical publications are refreshed by the ordinary Observer under
+existing grants. Private-bootstrap bindings are updated through native
+initialization without new enrollment or changed identity/profile. All projects
+must qualify before success.
+
+Interrupted recovery resumes from the same archive. Failed activation restores
+the previous kit and rebuilds its derived indexes when necessary, including the
+owned bootstrap retirement described above. Source files, project settings,
+canonical grants and history remain preserved throughout activation and recovery.
 
 ### Release offers in Monitor
 

@@ -139,8 +139,18 @@ if(BUILD_TESTING AND NOT WIN32)
         set_tests_properties(shin-ce-local-multi-watch PROPERTIES TIMEOUT 180)
         add_test(NAME shin-ce-local-service
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_service_test.py
-                $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
+                $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --group ordinary)
         set_tests_properties(shin-ce-local-service PROPERTIES TIMEOUT 180)
+        add_test(NAME shin-ce-local-refresh-deadline
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_service_test.py
+                $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --group refresh-deadline)
+        set_tests_properties(shin-ce-local-refresh-deadline PROPERTIES TIMEOUT 90 COST 65)
+        add_test(NAME shin-ce-local-service-fifo
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_service_test.py
+                $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --group fifo)
+        # Real subsecond admission assertions are isolated from unrelated CPU
+        # load; concurrency inside the native FIFO test remains unchanged.
+        set_tests_properties(shin-ce-local-service-fifo PROPERTIES TIMEOUT 60 RUN_SERIAL TRUE COST 150)
         add_test(NAME shin-ce-cold-admission
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_cold_admission_test.py
                 $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
@@ -202,7 +212,7 @@ if(BUILD_TESTING AND NOT WIN32)
         set_tests_properties(shin-ce-local-route PROPERTIES TIMEOUT 180)
         # Start the longest isolated lifecycle suites first on a fresh CTest run.
         # Costs only affect scheduling; deadlines and assertions are unchanged.
-        set_tests_properties(shin-ce-local-service PROPERTIES COST 130)
+        set_tests_properties(shin-ce-local-service PROPERTIES COST 65)
         set_tests_properties(shin-ce-local-route PROPERTIES COST 110)
         set_tests_properties(shin-ce-local-watch shin-ce-managed-init PROPERTIES COST 65)
         if(SHIN_OBSERVER_MCP)

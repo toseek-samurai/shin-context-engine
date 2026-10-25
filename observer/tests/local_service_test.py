@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Native Unix-socket service and process-worker boundaries; no runtime Python."""
 from concurrent.futures import ThreadPoolExecutor
+from contextlib import closing
 import fcntl
 import hashlib
 import json
@@ -583,7 +584,7 @@ class LocalServiceTests(unittest.TestCase):
         child.communicate(timeout=15)
         path = self.endpoint.parent / 'history/telemetry.sqlite'
         identity = path.stat().st_ino
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             for column in ('service_duration', 'reader_state', 'purpose', 'error_code', 'admission',
                            'documents', 'source', 'source_collection', 'final_verification'):
                 db.execute(f'ALTER TABLE events DROP COLUMN {column}')
@@ -775,27 +776,36 @@ class LocalServiceTests(unittest.TestCase):
         self.assertTrue(self.raw('query',query='readLimit')['ok'])
 
     def test_project_queue_is_fifo_bounded_and_executes_each_frame_once(self):
-        self.start();pid=self.hold_reader()
+        service=self.start();pid=self.hold_reader()
         first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='serial-0'))+'\n').encode())
         self.wait_service_state(lambda state:state['query_workers']==1)
-        queued=[]
-        for i in range(1,5):
-            client=self.connect();queued.append(client)
-            client.sendall((json.dumps(self.frame('query',query='readLimit',request_id=f'serial-{i}'))+'\n').encode())
-            self.wait_service_state(lambda state:state['waiting_requests']==i)
-        began=time.monotonic();refused=self.raw('query',query='readLimit',request_id='over-capacity')
+        # Queue an ordered batch before admission starts. Serial status round
+        # trips used to spend the real 500 ms deadline on test coordination.
+        # The reader stays stopped; all queue/capacity observations are genuine.
+        os.kill(service.pid,signal.SIGSTOP)
+        try:
+            queued=[]
+            for i in range(1,5):
+                client=self.connect();queued.append(client)
+                client.sendall((json.dumps(self.frame('query',query='readLimit',request_id=f'serial-{i}'))+'\n').encode())
+            overflow=self.connect();overflow.sendall((json.dumps(self.frame('query',query='readLimit',request_id='over-capacity'))+'\n').encode())
+            status_client=self.connect();status_client.sendall((json.dumps(self.frame('status',wait_for_ready=False))+'\n').encode())
+            probe=self.connect();probe.sendall((json.dumps(self.frame('service-status'))+'\n').encode())
+        finally:
+            began=time.monotonic();os.kill(service.pid,signal.SIGCONT)
+        refused=self.receive(overflow);overflow.close()
+        status=self.receive(status_client);status_client.close()
+        state=self.receive(probe)['result'];probe.close()
+        os.kill(pid,signal.SIGCONT)
         self.assertLess(time.monotonic()-began,.5)
         self.assertEqual(refused['error']['code'],'service-busy')
         self.assertEqual(refused['error']['diagnostic']['reason'],'waiting-capacity')
-        state=self.raw('service-status')['result']
         self.assertEqual(state['max_waiting_requests'],4);self.assertEqual(state['max_query_workers'],2)
         self.assertEqual(state['waiting_requests'],4);self.assertEqual(state['query_workers'],1)
-        began=time.monotonic();status=self.raw('status',wait_for_ready=False)
-        self.assertLess(time.monotonic()-began,.5);self.assertEqual(status['error']['code'],'service-busy')
-        self.assertEqual(self.raw('service-status')['result']['waiting_requests'],4)
-        os.kill(pid,signal.SIGCONT)
-        self.assertTrue(self.receive(first)['ok'])
-        for client in queued:self.assertTrue(self.receive(client)['ok'])
+        self.assertEqual(status['error']['code'],'service-busy')
+        result=self.receive(first);self.assertTrue(result['ok']);self.assertEqual(result['request_id'],'serial-0')
+        for i,client in enumerate(queued,1):
+            result=self.receive(client);self.assertTrue(result['ok'],result);self.assertEqual(result['request_id'],f'serial-{i}')
         rows=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
         expected=[hashlib.sha256(f'serial-{i}'.encode()).hexdigest() for i in range(5)]
         executed=[row['request_id'] for row in rows if row['request_id'] in expected and row['stage']=='execution']
@@ -900,7 +910,7 @@ class LocalServiceTests(unittest.TestCase):
         self.assertLess(path.stat().st_size, 32 * 1024 * 1024)
         self.assertNotIn(b'PRIVATE-QUERY-MARKER', path.read_bytes())
         self.assertNotIn(str(self.root).encode(), path.read_bytes())
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute("INSERT INTO events(run,at_ms,kind) VALUES('old',1,'sample')")
             db.executemany("INSERT INTO events(run,at_ms,kind) VALUES('cap',?,'sample')",
                            [(int(time.time() * 1000),)] * 20001)
@@ -922,7 +932,7 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(restored['projects'][0]['requests'], 2)
         self.run_ce('service-stop')
         child.communicate(timeout=15)
-        with sqlite3.connect(path) as db:
+        with closing(sqlite3.connect(path)) as db, db:
             db.execute('PRAGMA user_version=999')
         original = path.read_bytes()
         self.start()
@@ -944,7 +954,7 @@ class LocalServiceTests(unittest.TestCase):
         self.run_ce('service-stop')
         child.communicate(timeout=15)
         now = int(time.time() * 1000)
-        with sqlite3.connect(self.endpoint.parent / 'history/telemetry.sqlite') as db:
+        with closing(sqlite3.connect(self.endpoint.parent / 'history/telemetry.sqlite')) as db, db:
             db.executemany("INSERT INTO events(run,at_ms,kind,rss,workers) VALUES(?,?,'sample',123456789,2)",
                            [('r' * 64, now - i * 3600000) for i in range(168)] +
                            [('r' * 64, now - i * 60000) for i in range(60)])
@@ -983,7 +993,7 @@ class LocalServiceTests(unittest.TestCase):
         output, _ = child.communicate(timeout=15)
         self.assertEqual(json.loads(output)['undelivered_stop_replies'], 0)
         self.assertEqual(child.returncode, 0)
-        with sqlite3.connect(self.endpoint.parent / 'history/telemetry.sqlite') as db:
+        with closing(sqlite3.connect(self.endpoint.parent / 'history/telemetry.sqlite')) as db, db:
             self.assertEqual(db.execute("SELECT count(*) FROM events WHERE run='cohort'").fetchone()[0], 64)
             self.assertEqual(db.execute("SELECT count(*) FROM events WHERE kind='request' AND run!='cohort'").fetchone()[0], 64)
         child = self.start()
@@ -1052,4 +1062,23 @@ class LocalServiceTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    unittest.main()
+    class TimedResult(unittest.TextTestResult):
+        def startTest(self,test):
+            self.started=time.monotonic();super().startTest(test)
+        def stopTest(self,test):
+            self.stream.writeln(f'  case_seconds={time.monotonic()-self.started:.3f} {test.id()}')
+            super().stopTest(test)
+    runner=unittest.TextTestRunner(verbosity=2,resultclass=TimedResult)
+    import sys
+    if '--group' in sys.argv:
+        at=sys.argv.index('--group');group=sys.argv[at+1];del sys.argv[at:at+2]
+        dedicated={'refresh-deadline':{'test_updating_wait_is_bounded_and_disconnect_releases_capacity'},
+                   'fifo':{'test_project_queue_is_fifo_bounded_and_executes_each_frame_once'}}
+        names=set(unittest.defaultTestLoader.getTestCaseNames(LocalServiceTests))
+        assert set.union(*dedicated.values()) <= names
+        groups={**dedicated,'ordinary':names-set.union(*dedicated.values())}
+        assert set.union(*groups.values())==names and sum(map(len,groups.values()))==len(names)
+        assert group in groups and len(sys.argv)==1
+        result=runner.run(unittest.TestSuite(LocalServiceTests(name) for name in sorted(groups[group])))
+        sys.exit(not result.wasSuccessful())
+    unittest.main(testRunner=runner)

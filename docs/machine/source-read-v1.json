@@ -65,8 +65,8 @@
     "src/retrieval_session.cpp"
   ],
   "verification": [
-    "tests/source_read_test.cpp",
-    "tests/test_source_read_cli.py",
+    "tests/core/source_read_test.cpp",
+    "tests/integration/test_source_read_cli.py",
     "existing exporter and Impact controls"
   ]
 }

@@ -58,15 +58,15 @@ docs-validate: docs-kb
 
 universality-check:
 	@mkdir -p "$(REPORT_DIR)"
-	bash tests/run_universality_tests.sh "$(JQ)" "$(CURDIR)" "$(REPORT_DIR)/universality.json"
+	bash tests/integration/run_universality_tests.sh "$(JQ)" "$(CURDIR)" "$(REPORT_DIR)/universality.json"
 
 release-contract-check: docs-kb
 	@mkdir -p "$(REPORT_DIR)"
-	bash tests/run_release_contract_tests.sh "$(JQ)" "$(TOOL)" "$(CURDIR)" "$(REPORT_DIR)/release-contract.json" "$(CONTEXT_OUT)/docs/kb/generated/manifest.json"
+	bash tests/integration/run_release_contract_tests.sh "$(JQ)" "$(TOOL)" "$(CURDIR)" "$(REPORT_DIR)/release-contract.json" "$(CONTEXT_OUT)/docs/kb/generated/manifest.json"
 
 portable-install-check: check
 	@mkdir -p "$(REPORT_DIR)"
-	bash tests/run_portable_install_tests.sh "$(CMAKE)" "$(JQ)" "$(CURDIR)" "$(abspath $(BUILD_DIR))" "$(REPORT_DIR)/portable-install.json"
+	bash tests/integration/run_portable_install_tests.sh "$(CMAKE)" "$(JQ)" "$(CURDIR)" "$(abspath $(BUILD_DIR))" "$(REPORT_DIR)/portable-install.json"
 
 core-perf: docs-kb
 	@mkdir -p "$(REPORT_DIR)/perf"
@@ -75,7 +75,7 @@ core-perf: docs-kb
 	"$(TOOL)" --root "$(CURDIR)" --profile shin --profile-dir "$(PROFILE_DIR)" --out-dir "$(CONTEXT_OUT)" pack-bench --input "$(REPORT_DIR)/perf/pack-request.json" --projection compact --iterations 10 --warmup 2 --require-current --strict > "$(REPORT_DIR)/perf/agent-context-pack.json"
 
 core-perf-check: core-perf
-	bash tests/run_perf_gate.sh "$(JQ)" "docs/machine/shin-context-engine-perf-budgets.json" "$(REPORT_DIR)/perf" "$(REPORT_DIR)/perf-gate.json" core
+	bash tests/benchmarks/run_perf_gate.sh "$(JQ)" "docs/machine/shin-context-engine-perf-budgets.json" "$(REPORT_DIR)/perf" "$(REPORT_DIR)/perf-gate.json" core
 
 perf: core-perf
 perf-check: core-perf-check
@@ -84,10 +84,10 @@ core-release-check: check safety static-analysis-check universality-check releas
 release-check: core-release-check
 
 skill-check:
-	bash tests/run_skill_contract_tests.sh "$(CURDIR)"
+	bash tests/integration/run_skill_contract_tests.sh "$(CURDIR)"
 
 hermes-integration-check:
-	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" tests/run_hermes_plugin_tests.py "$(CURDIR)"
+	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" tests/integration/run_hermes_plugin_tests.py "$(CURDIR)"
 
 install-codex-skill: skill-check
 	mkdir -p "$(CODEX_HOME)/skills/shin-context"

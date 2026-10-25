@@ -130,10 +130,10 @@
     "handoff": "A different receiving task/thread cannot consume the old checkpoint as current. Review the old state and create a new draft bound to the receiving task. No automatic rebind flag exists."
   },
   "verification": {
-    "runner": "tests/run_session_resume_tests.sh",
+    "runner": "tests/integration/run_session_resume_tests.sh",
     "ctest": "shin-context-session-resume",
-    "lockWaitRegression": "tests/run_session_lock_tests.py",
-    "appleLeaks": "tests/run_leaks.sh includes checkpoint and resume child-process probes"
+    "lockWaitRegression": "tests/integration/run_session_lock_tests.py",
+    "appleLeaks": "tests/tooling/run_leaks.sh includes checkpoint and resume child-process probes"
   },
   "nonGoals": [
     "chat storage",

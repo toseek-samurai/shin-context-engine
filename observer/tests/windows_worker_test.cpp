@@ -2,7 +2,7 @@
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_rpc.h"
 #include "shin/windows/transport.h"
-#include "../../tests/windows_private_acl.h"
+#include "../../tests/core/windows_private_acl.h"
 #include <windows.h>
 #include <fstream>
 #include <iostream>

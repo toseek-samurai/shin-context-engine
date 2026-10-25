@@ -11,7 +11,7 @@
 #include <vector>
 #include <cstring>
 #include <system_error>
-#include "../../../tests/windows_private_acl.h"
+#include "../../../tests/core/windows_private_acl.h"
 
 namespace fs = std::filesystem;
 using File = shin::windows::ReadFile;

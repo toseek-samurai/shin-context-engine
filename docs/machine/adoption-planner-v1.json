@@ -101,8 +101,8 @@
     "No consumer-specific paths, identifiers, or policy in C++ Core."
   ],
   "acceptance": {
-    "hermeticRunner": "tests/run_adoption_plan_tests.sh",
-    "portableInstallRunner": "tests/run_portable_install_tests.sh",
+    "hermeticRunner": "tests/integration/run_adoption_plan_tests.sh",
+    "portableInstallRunner": "tests/integration/run_portable_install_tests.sh",
     "requiredEvidence": [
       "source-only bootstrap readiness",
       "empty repository behavior",

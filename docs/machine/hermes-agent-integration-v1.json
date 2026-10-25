@@ -88,7 +88,7 @@
   "source": {
     "plugin": "integrations/hermes/plugins/shin-context",
     "workflowSkill": "integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md",
-    "contractTests": "tests/run_hermes_plugin_tests.py"
+    "contractTests": "tests/integration/run_hermes_plugin_tests.py"
   },
   "installation": {
     "command": "make install-hermes-integration",

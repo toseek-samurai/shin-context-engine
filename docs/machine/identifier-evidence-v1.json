@@ -118,7 +118,7 @@
     "relation": "Compact Brief now exposes the same verification-path concept as Agent Context Pack without copying full source text into the transport envelope."
   },
   "acceptance": {
-    "runner": "tests/run_fixture_tests.sh",
+    "runner": "tests/integration/run_fixture_tests.sh",
     "goldenIdentifier": "assistantDefault",
     "goldenCompoundIdentifier": "ActorWorkerBridge",
     "requiredVariants": [

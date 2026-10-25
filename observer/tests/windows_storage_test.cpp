@@ -2,7 +2,7 @@
 #include "shin/observer/local_identity.h"
 #include "shin/observer/local_registry.h"
 #include "shin/windows/file.h"
-#include "../../tests/windows_private_acl.h"
+#include "../../tests/core/windows_private_acl.h"
 #include <windows.h>
 #include <fstream>
 #include <iostream>

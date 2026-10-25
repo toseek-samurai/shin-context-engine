@@ -88,7 +88,7 @@ if(BUILD_TESTING AND NOT WIN32)
         add_test(NAME shin-local-worker-process COMMAND shin-local-worker-process-tests)
         set_tests_properties(shin-local-worker-process PROPERTIES TIMEOUT 90)
         add_test(NAME shin-installed-probe
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../tests/test_installed_probe.py)
+            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/../tests/tooling/test_installed_probe.py)
         add_executable(shin-local-changes-tests tests/local_changes_test.cpp)
         target_link_libraries(shin-local-changes-tests PRIVATE shin-observer-native)
         add_test(NAME shin-local-changes COMMAND shin-local-changes-tests)

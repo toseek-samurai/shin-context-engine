@@ -11,7 +11,7 @@
 #include <time.h>
 #endif
 #ifdef _WIN32
-#include "../../tests/windows_private_acl.h"
+#include "../../tests/core/windows_private_acl.h"
 #else
 #include <unistd.h>
 #endif

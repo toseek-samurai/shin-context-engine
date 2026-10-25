@@ -11,7 +11,7 @@
     "configuration": ".clang-tidy",
     "compileDatabase": "CMake compile_commands.json",
     "parallelRunner": "LLVM run-clang-tidy",
-    "runner": "tests/run_clang_tidy.sh",
+    "runner": "tests/tooling/run_clang_tidy.sh",
     "executableDiscovery": "CMake resolves LLVM 23 version-suffixed executables before unversioned clang-tidy and run-clang-tidy executables. Explicit Make overrides remain supported; cached relative tool names are cleared before automatic discovery.",
     "runnerCompatibility": "Optional run-clang-tidy presentation flags are capability-detected; unsupported options must never turn usage output into a successful no-analysis gate.",
     "versionPolicy": "LLVM 23 is the required static-analysis baseline on ARM64 and AMD64. The configured clang-tidy must accept the complete policy through --verify-config before analysis starts; analyzer upgrades cannot silently enable a new bugprone or performance heuristic."

@@ -74,7 +74,7 @@
     "No removal of lock shells after payload reclamation."
   ],
   "acceptance": {
-    "runner": "tests/run_index_lifecycle_tests.sh",
+    "runner": "tests/integration/run_index_lifecycle_tests.sh",
     "requiredEvidence": [
       "deterministic inventory of current, incompatible, corrupt, empty, unsafe, and unmanaged entries",
       "strict inventory failure without non-strict diagnostic failure",

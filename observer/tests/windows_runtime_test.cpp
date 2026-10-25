@@ -4,7 +4,7 @@
 #include "shin/windows/transport.h"
 #include "context_internal.h"
 #include "generated_io.h"
-#include "../../tests/windows_private_acl.h"
+#include "../../tests/core/windows_private_acl.h"
 #include <windows.h>
 #include <array>
 #include <atomic>

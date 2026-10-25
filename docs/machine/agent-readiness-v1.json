@@ -101,7 +101,7 @@
     "No replacement for release, sanitizer, performance, or ecosystem gates."
   ],
   "acceptance": {
-    "runner": "tests/run_ready_tests.sh",
+    "runner": "tests/integration/run_ready_tests.sh",
     "requiredEvidence": [
       "known-route readiness without adoption",
       "strict adopted readiness with canonical absolute marker normalization",

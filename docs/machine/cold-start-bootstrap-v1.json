@@ -175,8 +175,8 @@
     "adoptedProfileEvalRequired": true
   },
   "hermeticEvidence": {
-    "runner": "tests/run_cold_start_tests.sh",
-    "skillRunner": "tests/run_skill_contract_tests.sh",
+    "runner": "tests/integration/run_cold_start_tests.sh",
+    "skillRunner": "tests/integration/run_skill_contract_tests.sh",
     "corpora": [
       "java",
       "kotlin",

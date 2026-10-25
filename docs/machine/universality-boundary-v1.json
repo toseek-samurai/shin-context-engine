@@ -125,13 +125,13 @@
     }
   },
   "acceptance": {
-    "architectureGate": "tests/run_universality_tests.sh",
-    "sourceRetrievalTransferGate": "tests/test_context_transfer.py (optional source-provider builds): frozen synthetic mixed-format source/document/declared-link checks, not a held-out project or model-task claim; multilingual gaps remain separately visible.",
-    "coldStartGate": "tests/run_cold_start_tests.sh",
-    "adoptionGate": "tests/run_adoption_tests.sh",
-    "adoptionPlannerGate": "tests/run_adoption_plan_tests.sh",
-    "profileRoutingGate": "tests/run_profile_suggest_tests.sh",
-    "portableInstallGate": "tests/run_portable_install_tests.sh",
+    "architectureGate": "tests/integration/run_universality_tests.sh",
+    "sourceRetrievalTransferGate": "tests/research/test_context_transfer.py (optional source-provider builds): frozen synthetic mixed-format source/document/declared-link checks, not a held-out project or model-task claim; multilingual gaps remain separately visible.",
+    "coldStartGate": "tests/integration/run_cold_start_tests.sh",
+    "adoptionGate": "tests/integration/run_adoption_tests.sh",
+    "adoptionPlannerGate": "tests/integration/run_adoption_plan_tests.sh",
+    "profileRoutingGate": "tests/integration/run_profile_suggest_tests.sh",
+    "portableInstallGate": "tests/integration/run_portable_install_tests.sh",
     "portableProjectKinds": [
       "C++",
       "documentation-only",

@@ -86,7 +86,7 @@
     "No IDE process control or automatic file opening."
   ],
   "acceptance": {
-    "hermeticRunner": "tests/run_profile_suggest_tests.sh",
+    "hermeticRunner": "tests/integration/run_profile_suggest_tests.sh",
     "requiredEvidence": [
       "byte-identical repeated recommendation",
       "current-route and cross-route recommendations",

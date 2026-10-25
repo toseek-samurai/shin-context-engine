@@ -21,6 +21,7 @@ copyright notices and licenses. Contributions are submitted under Apache-2.0
 unless explicitly agreed otherwise; see [LICENSE](LICENSE).
 
 Build prerequisites and component scope are described in [README](README.md).
+The [test directory guide](tests/README.md) explains test ownership and commands.
 Run the affected component's CTest suite. Shared Core changes require companion
 checks as well. Keep original limits and negative assertions; do not skip a
 failing test to claim support. Report untested platforms and installation steps.

@@ -95,7 +95,7 @@ includes the bounded inventory counts.
 A pending read wakes an idle project's background qualification and receives
 priority between refreshes. Only one refresh runs at a time; due background work
 still receives round-robin turns. Existing source checks, failure backoff and
-publication authority remain enforced. Reader admission waits at most five
+publication authority remain enforced. CLI reader admission waits at most five
 seconds, within the existing 30-second request budget. If preparation is still in
 progress, the call returns `project-updating` while background work continues.
 `service-status` reports this bound as `admission_wait_limit_ms`.
@@ -175,7 +175,7 @@ Catalog/help calls handled inside the MCP adapter and service monitoring polls a
 excluded from these **service-run** counters; client token counters are a different
 measurement. No historical status or missing session information is fabricated.
 
-The unreleased source also exposes **MCP calls · history** in Monitor Timing,
+The dev.45 source also exposes **MCP calls · history** in Monitor Timing,
 the terminal Timing view and `service-status` JSON (`telemetry.mcp_activity`). This
 separate journal includes status, catalog/help, unknown tools, argument errors and
 connection failures, even while the service is unavailable. Initial and terminal
@@ -198,7 +198,7 @@ MCP project status returns promptly when a reader needs background preparation.
 its normal bounded readiness wait. CLI project status keeps its existing waiting
 behavior. Query/inspect/read tools accept `diagnostic: true` for explicit probes.
 
-### Requests during contention (unreleased)
+### Requests during contention (dev.45)
 
 A brief overlap between requests for one project now uses a bounded FIFO admission
 queue. Waiting does not occupy another project's execution slot. The existing
@@ -223,7 +223,7 @@ reader loss preserves its original deadline. Lifecycle, publication authority an
 snapshot/source freshness are rechecked before dispatch, so queuing cannot make
 an old snapshot usable again.
 
-### Sessions and optional recovery notes (unreleased)
+### Sessions and optional recovery notes (dev.45)
 
 Monitor now has a **Sessions** view; `shin-ce stats` opens the same observations
 with key **6**. The latest eight correlated sessions show context calls, errors,

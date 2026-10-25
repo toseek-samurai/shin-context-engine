@@ -250,7 +250,7 @@ display elapsed-time notifications; cancellation releases the pending request.
 A pending status has no snapshot or source evidence. After the query deadline or
 a real policy/permission blocker, direct-source work remains available.
 
-The unreleased native source search removes common EN/RU question words,
+The dev.45 native source search removes common EN/RU question words,
 normalizes English word forms, and adds English hints for a bounded vocabulary
 of Russian software terms. It runs offline and retains the original search
 words. For descriptions with at least four meaningful words, it shows different
@@ -262,7 +262,7 @@ support Unicode. This preserves words; it does not translate a Russian question
 into an English document. Native source hints and document matching remain
 separate retrieval paths.
 
-The source candidate uses one index format, `shin-generator-v23-unicode-lexical`.
+The dev.45 source uses one index format, `shin-generator-v23-unicode-lexical`.
 The service rebuilds older managed indexes from approved project sources before
 serving them. Project settings, permissions, histories and recovery notes remain
 intact. Standalone Core users run `build` explicitly; old indexes are not queried
@@ -275,7 +275,7 @@ handoff. Do not repeat broad queries to increase usage counts, or treat a missin
 result as proof that a file does not exist. A valid fresh response proves its
 source checks, not relevance, context consumption or task success.
 
-## Context recovery (unreleased)
+## Context recovery (dev.45)
 
 Codex, OpenCode, Command Code, Hermes and manually configured MCP clients receive
 the same native server instructions and tool descriptions. Check the connected

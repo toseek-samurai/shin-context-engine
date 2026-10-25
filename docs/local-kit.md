@@ -273,7 +273,7 @@ include readable stages in a log. No desktop window opens for a terminal command
 Restart Monitor after completion. Restart persistent MCP connections in your coding
 agent as well: already-running adapters retain the old version and cannot query
 the new service until relaunched. Client configuration paths stay the same.
-The unreleased source diagnoses this as `service-version-mismatch`, includes client
+The dev.45 source diagnoses this as `service-version-mismatch`, includes client
 and service versions and asks for client reconnection. Successful responses still
 require matching versions; the current service can keep serving other clients.
 
@@ -284,7 +284,7 @@ previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
-The dev.44 candidate uses Core dev.7 and the Unicode v23 index format. It
+The dev.45 candidate uses Core dev.7 and the Unicode v23 index format. It
 rebuilds previous derived indexes under their existing project authority; no
 old retrieval reader or term conversion is retained. During rollback to an
 older kit, a private bootstrap index that the old CLI cannot read is atomically
@@ -466,7 +466,7 @@ Monitor offer are separate checks.
 
 ## Core transitions and index rebuilds
 
-The dev.44 candidate admits forward Core transitions within the same major
+The dev.45 candidate admits forward Core transitions within the same major
 version, subject to installation and project qualification. This replaces the
 historical list of individual version pairs. Downgrades are not normal updates;
 rollback uses the verified previous payload recorded by the installation journal.

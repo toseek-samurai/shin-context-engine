@@ -775,7 +775,7 @@ class LocalServiceTests(unittest.TestCase):
         os.kill(pid,signal.SIGCONT);self.assertTrue(self.receive(first)['ok'])
         self.assertTrue(self.raw('query',query='readLimit')['ok'])
 
-    def test_project_queue_is_fifo_bounded_and_executes_each_frame_once(self):
+    def test_project_queue_is_fifo_bounded_and_resolves_each_frame_once(self):
         service=self.start();pid=self.hold_reader()
         first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='serial-0'))+'\n').encode())
         self.wait_service_state(lambda state:state['query_workers']==1)
@@ -803,13 +803,40 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(state['max_waiting_requests'],4);self.assertEqual(state['max_query_workers'],2)
         self.assertEqual(state['waiting_requests'],4);self.assertEqual(state['query_workers'],1)
         self.assertEqual(status['error']['code'],'service-busy')
-        result=self.receive(first);self.assertTrue(result['ok']);self.assertEqual(result['request_id'],'serial-0')
-        for i,client in enumerate(queued,1):
-            result=self.receive(client);self.assertTrue(result['ok'],result);self.assertEqual(result['request_id'],f'serial-{i}')
-        rows=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
+        results=[self.receive(first),*(self.receive(client) for client in queued)]
+        final_state=self.raw('service-status')['result']
+        self.assertEqual(final_state['waiting_requests'],0)
+        self.assertEqual(final_state['query_workers'],0)
+        rows=final_state['telemetry']['request_metrics']['recent']
         expected=[hashlib.sha256(f'serial-{i}'.encode()).hexdigest() for i in range(5)]
-        executed=[row['request_id'] for row in rows if row['request_id'] in expected and row['stage']=='execution']
-        self.assertEqual(executed,expected)
+        decisions=[row for row in rows if row['request_id'] in expected]
+        print('fifo_decisions='+json.dumps([{key:row.get(key) for key in (
+            'request_id','stage','error_code','wait_ms','duration_ms','service_duration_ms')}
+            for row in decisions]),flush=True)
+        self.assertTrue(results[0]['ok'],results[0])
+        self.assertCountEqual([row['request_id'] for row in decisions],expected)
+        completed=[]
+        for i,result in enumerate(results):
+            self.assertEqual(result['request_id'],f'serial-{i}')
+            row=next(row for row in decisions if row['request_id']==expected[i])
+            if result['ok']:
+                self.assertEqual(row['stage'],'execution')
+                self.assertIn('return 7;',result['result']['source_context'])
+                completed.append(expected[i])
+            else:
+                # Admission to the bounded queue is not an execution promise.
+                # Slower hosts can exhaust 500 ms while earlier frames execute.
+                # Such frames must be refused exactly once, without execution.
+                self.assertEqual(result['error']['code'],'service-busy',result)
+                diagnostic=result['error']['diagnostic']
+                self.assertEqual(diagnostic['reason'],'project-executing')
+                self.assertFalse(diagnostic['execution_started'])
+                self.assertEqual(diagnostic['execution_wait_limit_ms'],500)
+                self.assertEqual(row['stage'],'admission')
+                self.assertEqual(row['error_code'],'service-busy')
+                self.assertGreaterEqual(row['wait_ms'],500)
+        executed=[row['request_id'] for row in decisions if row['stage']=='execution']
+        self.assertEqual(executed,completed)
 
     def test_cancelled_waiter_releases_only_its_queue_slot(self):
         self.start();pid=self.hold_reader()
@@ -1073,7 +1100,7 @@ if __name__ == '__main__':
     if '--group' in sys.argv:
         at=sys.argv.index('--group');group=sys.argv[at+1];del sys.argv[at:at+2]
         dedicated={'refresh-deadline':{'test_updating_wait_is_bounded_and_disconnect_releases_capacity'},
-                   'fifo':{'test_project_queue_is_fifo_bounded_and_executes_each_frame_once'}}
+                   'fifo':{'test_project_queue_is_fifo_bounded_and_resolves_each_frame_once'}}
         names=set(unittest.defaultTestLoader.getTestCaseNames(LocalServiceTests))
         assert set.union(*dedicated.values()) <= names
         groups={**dedicated,'ordinary':names-set.union(*dedicated.values())}

@@ -28,7 +28,7 @@ void file(const fs::path& path, const std::string& text) {
 struct Fixture {
     fs::path root, state;
     Fixture() {
-        root = fs::temp_directory_path() / ("shin-observer-win-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64()));
+        root = fs::canonical(fs::temp_directory_path()) / ("shin-observer-win-" + std::to_string(GetCurrentProcessId()) + "-" + std::to_string(GetTickCount64()));
         check(!fs::exists(root), "fixture collision"); ensure_private_directory(root);
         state = root / "state"; ensure_private_directory(state);
     }

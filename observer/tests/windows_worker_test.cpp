@@ -24,7 +24,7 @@ template<class F> void refused(F action, const std::string& code) {
     throw std::runtime_error("expected refusal " + code);
 }
 struct Fixture {
-    fs::path path = fs::temp_directory_path() / ("shin-worker-win-" + std::to_string(GetCurrentProcessId()) + "-" +
+    fs::path path = fs::canonical(fs::temp_directory_path()) / ("shin-worker-win-" + std::to_string(GetCurrentProcessId()) + "-" +
         std::to_string(Clock::now().time_since_epoch().count()));
     Fixture() { ensure_private_directory(path); }
     ~Fixture() { std::error_code ignored; fs::remove_all(path, ignored); }

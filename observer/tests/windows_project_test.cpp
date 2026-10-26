@@ -17,7 +17,7 @@ void write(const fs::path& path, const std::string& content) {
     check(!out.fail(), "fixture write failed");
 }
 struct Fixture {
-    fs::path root = fs::temp_directory_path() / ("shin-project-win-" + std::to_string(GetCurrentProcessId()) + "-" +
+    fs::path root = fs::canonical(fs::temp_directory_path()) / ("shin-project-win-" + std::to_string(GetCurrentProcessId()) + "-" +
         std::to_string(Clock::now().time_since_epoch().count()));
     Fixture() { ensure_private_directory(root); }
     ~Fixture() { std::error_code ignored; fs::remove_all(root, ignored); }

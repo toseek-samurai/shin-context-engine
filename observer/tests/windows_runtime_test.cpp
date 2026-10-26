@@ -29,7 +29,7 @@ template<class Action> void refused(Action action, const std::string& code = {})
 }
 struct Fixture {
     fs::path root;
-    Fixture() : root(fs::temp_directory_path() / ("shin-runtime-win-" + std::to_string(GetCurrentProcessId()) + "-" +
+    Fixture() : root(fs::canonical(fs::temp_directory_path()) / ("shin-runtime-win-" + std::to_string(GetCurrentProcessId()) + "-" +
         std::to_string(Clock::now().time_since_epoch().count()))) { ensure_private_directory(root); }
     ~Fixture() { std::error_code ignored; fs::remove_all(root, ignored); }
 };

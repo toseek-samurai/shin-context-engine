@@ -31,10 +31,6 @@ jobs:
             directory: observer
             preset: windows-desktop
             tests: windows-desktop-smoke
-    env:
-      # MSBuild dependency tracking excludes AppData/TEMP. Keep builds outside
-      # both the source tree and RUNNER_TEMP, just as the local presets require.
-      SHIN_BUILD_ROOT: ${{ github.workspace }}/../shin-windows-${{ matrix.component }}
     defaults:
       run:
         shell: pwsh
@@ -43,6 +39,13 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+      - name: Prepare build paths
+        id: paths
+        run: |
+          # Stay outside source/AppData/TEMP, with no '..' for upload-artifact.
+          $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE '../shin-windows-${{ matrix.component }}'))
+          "SHIN_BUILD_ROOT=$buildRoot" >> $env:GITHUB_ENV
+          "build_root=$buildRoot" >> $env:GITHUB_OUTPUT
       - name: Toolchain
         run: |
           cmake --version
@@ -54,14 +57,14 @@ jobs:
       - name: Tests
         run: ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
       - name: Upload test reports
-        if: always()
+        if: always() && steps.paths.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: windows-source-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ env.SHIN_BUILD_ROOT }}/tests.xml
-            ${{ env.SHIN_BUILD_ROOT }}/**/Testing/Temporary/LastTest.log
-            ${{ env.SHIN_BUILD_ROOT }}/**/Testing/Temporary/LastTestsFailed.log
-            ${{ env.SHIN_BUILD_ROOT }}/**/CMakeFiles/CMakeConfigureLog.yaml
+            ${{ steps.paths.outputs.build_root }}/tests.xml
+            ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTest.log
+            ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTestsFailed.log
+            ${{ steps.paths.outputs.build_root }}/**/CMakeFiles/CMakeConfigureLog.yaml
           if-no-files-found: warn
           retention-days: 14

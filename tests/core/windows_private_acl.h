@@ -6,7 +6,8 @@
 #include <stdexcept>
 #include <vector>
 
-// Explicit fixture ACLs; std::filesystem::permissions cannot represent NTFS DACLs.
+// Explicit fixture ownership and ACLs; an elevated token can default new files
+// to Administrators rather than TokenUser. Production private files require both.
 inline void fixture_private_acl(const std::filesystem::path& path, bool shared = false, bool writable = false,
                                 const wchar_t* extra = L"") {
     HANDLE token = nullptr;
@@ -17,8 +18,9 @@ inline void fixture_private_acl(const std::filesystem::path& path, bool shared =
     if (size == 0 || size > 65536) throw std::runtime_error("fixture token length");
     std::vector<unsigned char> data(size);
     if (!GetTokenInformation(token, TokenUser, data.data(), size, &size)) throw std::runtime_error("fixture token user");
+    const auto owner = reinterpret_cast<TOKEN_USER*>(data.data())->User.Sid;
     LPWSTR sid = nullptr;
-    if (!ConvertSidToStringSidW(reinterpret_cast<TOKEN_USER*>(data.data())->User.Sid, &sid))
+    if (!ConvertSidToStringSidW(owner, &sid))
         throw std::runtime_error("fixture SID");
     struct Local { void* value; ~Local() { LocalFree(value); } } sid_cleanup{sid};
     const auto sddl = L"D:P(A;;FA;;;" + std::wstring(sid) + L")" +
@@ -31,6 +33,7 @@ inline void fixture_private_acl(const std::filesystem::path& path, bool shared =
     BOOL present = FALSE, defaulted = FALSE;
     if (!GetSecurityDescriptorDacl(descriptor, &present, &acl, &defaulted) || !present || !acl ||
         SetNamedSecurityInfoW(const_cast<LPWSTR>(path.c_str()), SE_FILE_OBJECT,
-            DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION, nullptr, nullptr, acl, nullptr) != ERROR_SUCCESS)
+            OWNER_SECURITY_INFORMATION | DACL_SECURITY_INFORMATION | PROTECTED_DACL_SECURITY_INFORMATION,
+            owner, nullptr, acl, nullptr) != ERROR_SUCCESS)
         throw std::runtime_error("fixture set ACL");
 }

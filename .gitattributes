@@ -1,3 +1,8 @@
+# Keep project shell runners usable in Linux/WSL from Windows checkouts.
+/observer/**/*.sh text eol=lf
+/observer/**/*.sh.in text eol=lf
+/tests/**/*.sh text eol=lf
+
 # Keep vendored syntax sources byte-identical to their pinned upstream releases.
 third_party/tree-sitter/** -whitespace linguist-vendored
 third_party/tree-sitter-java/** -whitespace linguist-vendored

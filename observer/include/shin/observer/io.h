@@ -48,6 +48,7 @@ void replace_user_archive(const fs::path& path, const std::string& expected_cont
 
 // Same optimistic atomic replacement, accepting owned 0600/0644 config files
 // and preserving their permission bits. Symlinks/hardlinks remain refused.
+// Windows currently admits only the owner-private ACL used by profile relocation.
 void replace_user_config(const fs::path& path, const std::string& expected_content,
                          const std::string& content, const std::string& parent_identity);
 

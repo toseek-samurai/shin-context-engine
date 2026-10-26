@@ -338,6 +338,42 @@ void save_frame(const fs::path& path) {
     checked(frame->WriteSource(encoded.Get(),nullptr),"Cannot write PNG pixels.");
     checked(frame->Commit(),"Cannot commit PNG frame.");checked(encoder->Commit(),"Cannot commit PNG.");
 }
+void check_action_bounds(ImVec2 size) {
+    for(const auto& action:ui_actions)
+        if(action.origin.x < -1 || action.origin.y < -1 || action.origin.x+action.size.x>size.x+1 || action.origin.y+action.size.y>size.y+1)
+            throw std::runtime_error("Monitor action exceeds viewport: " + action.label + " view=" + std::to_string(dashboard_view) +
+                " viewport=" + std::to_string(size.x) + "x" + std::to_string(size.y) +
+                " box=" + std::to_string(action.origin.x) + "," + std::to_string(action.origin.y) +
+                "," + std::to_string(action.size.x) + "," + std::to_string(action.size.y));
+}
+
+unsigned documentation_warning_render(ViewState state, const fs::path& output, ImVec2 size) {
+    state.connected=true;
+    state.data["telemetry"]["project_states"][0]["documentation_warnings"]=2;
+    const auto previous_language=shin::ui::language();
+    unsigned frames=0;
+    for(const auto language:{shin::ui::Language::en,shin::ui::Language::ru}) for(bool details:{false,true}) {
+        shin::ui::set_language(language);
+        dashboard_view=1;selected=details?"shin":"";
+        for(int frame=0;frame<3;++frame) render_frame(state);
+        check_action_bounds(size);
+        const std::string title=shin::ui::tr("Ready with documentation warnings");
+        const auto visible=std::find_if(ui_actions.begin(),ui_actions.end(),[&](const auto& action) {
+            return details ? action.chart==54 && action.label==title :
+                action.chart==-1 && action.label.find(title)!=std::string::npos;
+        });
+        if(visible==ui_actions.end()) throw std::runtime_error("Documentation warning is not visible in Monitor.");
+        if(details && (Json::parse(diagnostic_copy).at("documentation_warnings")!=2 ||
+            diagnostic_report_text.find(std::string(shin::ui::tr("Broken documentation links: "))+"2")==std::string::npos))
+            throw std::runtime_error("Monitor report lost the documentation warning count.");
+        const auto name=std::string("docs-")+(language==shin::ui::Language::ru?"ru-":"en-")+
+            std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+(details?"-details.png":"-list.png");
+        save_frame(output/name);++frames;
+    }
+    shin::ui::set_language(previous_language);selected.clear();
+    return frames;
+}
+
 int render_test(const fs::path& output) {
     fs::create_directories(output);
     ViewState state; state.connected=true;
@@ -347,6 +383,7 @@ int render_test(const fs::path& output) {
         {"query_workers",0},{"telemetry",{{"project_states",Json::array({project})},{"history",{{"status","ready"}}}}}};
     unsigned frames=0;
     unsigned cold_frames=0;
+    unsigned documentation_frames=0;
     for(const auto size: {ImVec2{448,620},ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
         SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
         // No successful reply has ever arrived: different from a disconnected
@@ -359,14 +396,10 @@ int render_test(const fs::path& output) {
         for(int view=0;view<3;++view) for(bool online:{false,true}) {
             dashboard_view=view;state.connected=online;
             for(int frame=0;frame<3;++frame) render_frame(state);
-            for(const auto& action:ui_actions)
-                if(action.origin.x < -1 || action.origin.y < -1 || action.origin.x+action.size.x>size.x+1 || action.origin.y+action.size.y>size.y+1)
-                    throw std::runtime_error("Monitor action exceeds viewport: " + action.label + " view=" + std::to_string(view) +
-                        " viewport=" + std::to_string(size.x) + "x" + std::to_string(size.y) +
-                        " box=" + std::to_string(action.origin.x) + "," + std::to_string(action.origin.y) +
-                        "," + std::to_string(action.size.x) + "," + std::to_string(action.size.y));
+            check_action_bounds(size);
             save_frame(output/(std::to_string(++frames)+".png"));
         }
+        documentation_frames+=documentation_warning_render(state,output,size);
     }
     const auto icon=logo();DestroyIcon(icon);
     {
@@ -384,7 +417,8 @@ int render_test(const fs::path& output) {
         ShowWindow(panel,SW_SHOWNOACTIVATE);SendMessageW(panel,WM_KEYDOWN,VK_ESCAPE,0);
         if(IsWindowVisible(panel)) throw std::runtime_error("Popover did not dismiss on Escape.");
     }
-    std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"nonblank",true},{"action_bounds",true},{"logo",true},
+    std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},
+        {"nonblank",true},{"action_bounds",true},{"logo",true},
         {"taskbar_recreated_event",true},{"focus_dismissal",true},{"escape",true}}.dump(2);
     return 0;
 }

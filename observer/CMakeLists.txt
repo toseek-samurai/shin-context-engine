@@ -116,8 +116,10 @@ if(BUILD_TESTING AND NOT WIN32)
         add_test(NAME shin-local-status COMMAND shin-local-status-tests)
         add_executable(shin-local-refresh-race-tests tests/local_refresh_race_test.cpp)
         target_link_libraries(shin-local-refresh-race-tests PRIVATE shin-observer-native)
-        add_test(NAME shin-local-refresh-races COMMAND shin-local-refresh-race-tests ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
-        set_tests_properties(shin-local-refresh-races PROPERTIES TIMEOUT 45)
+        add_test(NAME shin-local-refresh-races COMMAND ${Python3_EXECUTABLE}
+            ${CMAKE_CURRENT_SOURCE_DIR}/tests/run_refresh_race_tests.py
+            $<TARGET_FILE:shin-local-refresh-race-tests> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
+        set_tests_properties(shin-local-refresh-races PROPERTIES TIMEOUT 45 PROCESSORS 3)
         add_test(NAME shin-ce-local-storage COMMAND ${Python3_EXECUTABLE}
             ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_project_test.py $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles StorageTests)
         set_tests_properties(shin-ce-local-storage PROPERTIES TIMEOUT 120)

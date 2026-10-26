@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Protocol-to-service native tests, with no model inference or Python SDK."""
 import json
+import fcntl
 import hashlib
 import os
 from pathlib import Path
@@ -1137,8 +1138,43 @@ class McpTests(unittest.TestCase):
         # Status/query do not approve the profile; the exact owner action is separate.
         review = self.run_ce('profile-review', root=fixture.root)['profile_review']
         self.assertTrue(review['changed'])
-        self.run_ce('profile-accept', review['revision'], '--review-token', review['review_token'], root=fixture.root)
+        workspace = self.home / 'projects' / hashlib.sha256(str(fixture.root).encode()).hexdigest()
+        grant_path = workspace / 'publication/state.json'
+        unapproved = json.loads(grant_path.read_text())
+        reviewed_bytes = fixture.profile_path.read_bytes()
+        # Approval shares the publisher's writer lease. A busy refusal must not
+        # change authority; retry only that refusal with the same reviewed bytes.
+        with (workspace / 'observer.lock').open('rb') as writer:
+            fcntl.flock(writer, fcntl.LOCK_EX)
+            refused = self.run_ce('profile-accept', review['revision'], '--review-token', review['review_token'],
+                                  root=fixture.root, expected=2)
+            self.assertEqual(refused['error']['code'], 'writer-busy')
+            self.assertEqual(json.loads(grant_path.read_text()), unapproved)
+            self.assertEqual(manifest.read_bytes(), original)
         deadline = time.monotonic() + 20
+        while time.monotonic() < deadline:
+            approval = subprocess.run([str(service.fixtures.TOOL), 'profile-accept', review['revision'],
+                '--review-token', review['review_token'], '--root', str(fixture.root), '--home', str(self.home)],
+                capture_output=True, text=True, timeout=max(.001, deadline - time.monotonic()),
+                env={**os.environ, 'PATH': '', 'LC_ALL': 'C'})
+            if approval.returncode == 0:
+                self.assertFalse(approval.stderr)
+                self.assertLessEqual(len(approval.stdout.encode()), 65536)
+                accepted = json.loads(approval.stdout)
+                self.assertTrue(accepted['ok'])
+                self.assertEqual(accepted['approved_profile_hash'], review['revision'])
+                self.assertFalse(accepted['index_mutated'])
+                break
+            self.assertEqual(approval.returncode, 2, approval.stdout + approval.stderr)
+            self.assertFalse(approval.stdout)
+            self.assertEqual(json.loads(approval.stderr)['error']['code'], 'writer-busy')
+            self.assertEqual(json.loads(grant_path.read_text()), unapproved)
+            self.assertEqual(fixture.profile_path.read_bytes(), reviewed_bytes)
+            time.sleep(.02)
+        else:
+            self.fail('publisher did not release the profile writer')
+        self.assertEqual(fixture.profile_path.read_bytes(), reviewed_bytes)
+        self.assertEqual(json.loads(grant_path.read_text())['approved_profile_hash'], review['revision'])
         while time.monotonic() < deadline:
             result = self.tool(client, 'shin_query', {'query': 'readLimit'}, timeout=35)
             if result['ok']:

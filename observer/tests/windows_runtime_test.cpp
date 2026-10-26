@@ -224,7 +224,7 @@ void publication() {
     for (std::size_t i = 0; i < 2; ++i) {
         const auto root = f.root / ("source" + std::to_string(i)); ensure_private_directory(root);
         file(root / "README.md", "# Project contract\n\nThis project owns a bounded runtime.\n");
-        const auto workspace = f.root / "home/projects" / std::to_string(i); ensure_private_directory(workspace);
+        const auto workspace = f.root / "home/projects" / digest(root.string()); ensure_private_directory(workspace);
         const auto index = workspace / "index"; ensure_private_directory(index);
         core::RuntimeOptions options; options.root = root; options.out_root = index; options.profile_dir = SHIN_TEST_PROFILES;
         options.profile = core::make_profile("generic-docs", options.profile_dir);
@@ -232,10 +232,12 @@ void publication() {
         const auto snapshot = core::fnv1a64(core::read_file(index / "docs/kb/generated/manifest.json"));
         Config config; config.root = root; config.out_dir = index; config.profile = options.profile.id;
         config.profile_dir = options.profile_dir; config.max_snapshot_bytes = 128 * 1024 * 1024; config.max_file_bytes = 64 * 1024 * 1024;
-        Json binding{{"root", root.string()}, {"root_identity", directory_identity(root)},
+        Json binding{{"schema_version", "shin.local-project-binding.v1"},
+            {"root", root.string()}, {"root_identity", directory_identity(root)},
             {"workspace_identity", directory_identity(workspace, true)}, {"index_identity", directory_identity(index, true)},
             {"profile_config_hash", options.profile.config_hash}, {"marker", ""}, {"marker_hash", std::string(64, '0')}};
         StateStore writer(workspace, true);
+        writer.save(binding);
         LocalPublication grant(workspace, binding, config);
         grant.enable(snapshot, options.profile.config_hash); grant.verify(); owners[i] = grant.token();
         check(!grant.reconcile(), "unchanged publication requires repair");

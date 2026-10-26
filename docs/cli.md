@@ -9,6 +9,10 @@ shin-ce service-status --text
 shin-ce query "Where are requests validated?"
 ```
 
+Native Windows source builds provide the same CLI/MCP contracts, with `.exe`
+binaries and an explicit development data home. The terminal dashboard and
+automatic client setup have platform limits; see [Windows source status](windows-desktop.md).
+
 ## Interactive terminal monitor
 
 On macOS and Linux, open the Sand terminal dashboard:

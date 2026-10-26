@@ -5,8 +5,37 @@
 #include <iostream>
 #include <limits>
 
+void documentation_warning_overview() {
+    using namespace shin::ui;
+    const bool russian = language() == Language::ru;
+    const std::string warning = russian ? "Готово: есть предупреждения в документации" : "Ready with documentation warnings";
+    for (const auto* query_phase : {"ready", "standby"}) {
+        Json project{{"phase", "current"}, {"query_phase", query_phase}, {"query_ready", true},
+            {"active_issue", false}, {"documentation_warnings", 2}};
+        const auto overview = diagnostic_overview(project, true);
+        assert(overview.title == warning);
+        assert(overview.summary.find(russian ? "Неработающих ссылок в документации: 2" : "Broken documentation links: 2") != std::string::npos);
+        assert(overview.summary.find(russian ? "Доступным контекстом можно пользоваться." : "Available context remains usable.") != std::string::npos);
+        assert(!active_issue(project));
+        const auto report = Json::parse(diagnostic_summary(project, Json::object(), true, "", "2.0.5"));
+        assert(report.at("documentation_warnings") == 2);
+        assert(diagnostic_overview(project, false).title == tr("Service offline"));
+        auto blocked = project;
+        blocked["active_issue"] = true; blocked["error_code"] = "access-denied";
+        assert(project_state(blocked, true) == ProjectState::blocked);
+        assert(diagnostic_overview(blocked, true).title != warning);
+        auto partial = project;
+        partial["source_coverage"] = {{"reason", "source-observation-limited"}};
+        assert(diagnostic_overview(partial, true).title == tr("Context partially available"));
+        project["documentation_warnings"] = 0;
+        assert(diagnostic_overview(project, true).title == tr(std::string(query_phase) == "standby" ? "Ready on demand" : "Context is current"));
+        assert(Json::parse(diagnostic_summary(project, Json::object(), true, "", "2.0.5")).at("documentation_warnings") == 0);
+    }
+}
+
 int check_language() try {
     using namespace shin::ui;
+    documentation_warning_overview();
     MonitorTween tween;
     tween.snap(0);
     const float first = tween.step(1, .04f, false);

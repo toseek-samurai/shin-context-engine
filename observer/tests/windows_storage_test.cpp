@@ -252,6 +252,29 @@ void user_archives() {
     rejects("unsafe-file", [&] { (void)write_user_archive(f.state / "target:stream", "x"); });
     check(read_text(target, 32, true) == "preserve", "unsafe archive changed linked target");
 }
+void private_config_replacement() {
+    Fixture f;
+    const auto path = f.state / "observer.json";
+    const auto identity = directory_identity(f.state, true);
+    file(path, "before");
+    replace_user_config(path, "before", "after", identity);
+    check(read_text(path, 32, true) == "after", "private config replacement or ACL changed");
+    replace_user_config(path, "before", "after", identity);
+    rejects("archive-conflict", [&] { replace_user_config(path, "before", "conflicting", identity); });
+    rejects("unsafe-directory", [&] { replace_user_config(path, "after", "wrong parent", "changed"); });
+    rejects("archive-too-large", [&] { replace_user_config(path, "after", std::string(kMaximumStateBytes + 1, 'x'), identity); });
+    check(read_text(path, 32, true) == "after", "refused replacement changed the config");
+    const auto alias = f.state / "alias.json";
+    fs::create_hard_link(path, alias);
+    rejects("unsafe-file", [&] { replace_user_config(path, "after", "linked", identity); });
+    fs::remove(alias);
+    fixture_private_acl(path, true);
+    rejects("unsafe-file", [&] { replace_user_config(path, "after", "shared", identity); });
+    check(read_text(path, 32, false) == "after", "unsupported ACL was changed");
+    rejects("unsafe-file", [&] { (void)read_text(path, 32, true); });
+    check(std::distance(fs::directory_iterator(f.state), fs::directory_iterator{}) == 1,
+          "configuration replacement left a staging file");
+}
 void owner_rights_acl() {
     Fixture f;
     fixture_private_acl(f.state, false, false, L"(A;OICI;FA;;;OW)");
@@ -456,7 +479,7 @@ int main(int argc, char** argv) {
         for (const auto& [label, run] : std::vector<std::pair<const char*, void(*)()>>{
             {"readers/writers", readers_and_writers}, {"recovery/bounds", recovery_and_bounds},
             {"unsafe entries", unsafe_entries}, {"directory identity/archives", identities_and_archives}, {"user archives", user_archives},
-            {"OWNER RIGHTS ACL", owner_rights_acl},
+            {"private config replacement", private_config_replacement}, {"OWNER RIGHTS ACL", owner_rights_acl},
             {"service storage boundaries", service_storage_boundaries},
             {"image qualification", image_qualification},
             {"local provenance", local_provenance}, {"Unicode/long paths", unicode_and_long_path},

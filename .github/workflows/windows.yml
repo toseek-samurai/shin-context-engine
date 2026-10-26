@@ -1,0 +1,67 @@
+name: Windows source checks
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-source-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+# Development source checks only. Hosted runners are elevated, unlike the
+# supported user runtime. Full user-session, exact-package and installed SCM
+# qualification are separate gates; this workflow does not publish packages.
+jobs:
+  windows:
+    runs-on: windows-2022
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: native
+            directory: .
+            preset: windows-native
+            tests: windows-native-smoke
+          - component: desktop
+            directory: observer
+            preset: windows-desktop
+            tests: windows-desktop-smoke
+    env:
+      # MSBuild dependency tracking excludes AppData/TEMP. Keep builds outside
+      # both the source tree and RUNNER_TEMP, just as the local presets require.
+      SHIN_BUILD_ROOT: ${{ github.workspace }}/../shin-windows-${{ matrix.component }}
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Toolchain
+        run: |
+          cmake --version
+          python --version
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Tests
+        run: ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-source-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ env.SHIN_BUILD_ROOT }}/tests.xml
+            ${{ env.SHIN_BUILD_ROOT }}/**/Testing/Temporary/LastTest.log
+            ${{ env.SHIN_BUILD_ROOT }}/**/Testing/Temporary/LastTestsFailed.log
+            ${{ env.SHIN_BUILD_ROOT }}/**/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: warn
+          retention-days: 14

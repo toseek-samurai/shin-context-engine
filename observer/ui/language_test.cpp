@@ -2,9 +2,17 @@
 #include <stdexcept>
 #include <string>
 
-int main() try {
+int main(int argc, char** argv) try {
     using namespace shin::ui;
     const auto require = [](bool ok) { if (!ok) throw std::runtime_error("UI language contract failed"); };
+    if (argc == 3) {
+        require(std::string_view(argv[2]) == "en" || std::string_view(argv[2]) == "ru");
+        const auto before = language();
+        require(terminal_language(argv[1]) == (std::string_view(argv[2]) == "ru" ? Language::ru : Language::en));
+        require(language() == before);
+        return 0;
+    }
+    require(argc == 1);
     require(language_for("ru-RU") == Language::ru);
     require(language_for("RU_ru.UTF-8") == Language::ru);
     require(language_for("rubbish") == Language::en);

@@ -150,7 +150,8 @@ def main():
         assert (kit / 'share/shin-observer/licenses/imgui/LICENSE.txt').is_file()
         run([kit / 'bin/shin-tray.exe', '--render-test', base / 'renders'])
         rendered = json.loads((base / 'renders/result.json').read_text())
-        assert rendered['frames'] == 24 and rendered['cold_frames'] == 12
+        assert rendered['frames'] == 30 and rendered['cold_frames'] == 15
+        assert rendered['documentation_frames'] == 20
         root = base / 'project'
         root.mkdir()
         (root / 'quota.cpp').write_text('int quotaLimit() { return 42; }\n', encoding='utf-8')

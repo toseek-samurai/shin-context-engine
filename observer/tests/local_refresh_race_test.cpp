@@ -9,7 +9,11 @@
 #include <cstdlib>
 #include <fstream>
 #include <iostream>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 namespace {
 using namespace shin::observer;
@@ -22,16 +26,30 @@ void check(bool value, const char* message) {
 struct Fixture {
     fs::path base, root, home, manifest;
     LocalProjectRequest request;
-    explicit Fixture(const fs::path& profiles) {
+    explicit Fixture(const fs::path& profiles, bool broken_link = false) {
+#ifdef _WIN32
+        base = fs::temp_directory_path() / ("shin-refresh-race-" + std::to_string(GetCurrentProcessId()) + "-" +
+            std::to_string(core::SteadyClock::now().time_since_epoch().count()));
+        ensure_private_directory(base, true);
+        base = fs::canonical(base);
+#else
         auto pattern = (fs::temp_directory_path() / "shin-refresh-race-XXXXXX").string();
         check(::mkdtemp(pattern.data()) != nullptr, "cannot create fixture");
         base = fs::canonical(pattern);
+#endif
         root = base / "source"; home = base / "private";
         fs::create_directory(root);
-        std::ofstream(root / "README.md") << "# Retry ceiling\n\nreadLimit owns the retry ceiling.\n";
+        std::ofstream(root / "README.md") << (broken_link ?
+            "# Retry ceiling\n\nSee [planned guide](docs/planned.md).\n" :
+            "# Retry ceiling\n\nreadLimit owns the retry ceiling.\n");
         write(7);
         request.command = "init"; request.root = root; request.home = home; request.profile_dir = profiles;
-        check(local_project(request).at("ok") == true, "fixture init failed");
+        const auto initialized = local_project(request);
+        check(initialized.at("ok") == true, "fixture init failed");
+        if (broken_link)
+            check(initialized.at("local_ready") == true &&
+                initialized.at("readiness").at("documentation_warnings") == 1,
+                "initial bootstrap blocked context or hid its documentation warning");
         manifest = home / "projects" / digest(root.string()) / "index/docs/kb/generated/manifest.json";
         request.command = "watch";
     }
@@ -144,6 +162,17 @@ void hard_failure(const fs::path& profiles, const std::string& code) {
           "real failure was weakened");
 }
 
+void broken_document_links_do_not_block_initial_bootstrap(const fs::path& profiles) {
+    Fixture fixture(profiles, true);
+    auto query = fixture.request;
+    query.command = "query"; query.query = "readLimit";
+    const auto response = local_project(query);
+    check(response.at("ok") == true &&
+        response.at("source_context").get<std::string>().find("return 7") != std::string::npos &&
+        response.at("readiness").at("documentation_warnings") == 1,
+        "initial documentation warning prevented querying verified source");
+}
+
 void broken_document_links_remain_usable(const fs::path& profiles) {
     Fixture fixture(profiles);
     fixture.write(19);
@@ -154,7 +183,10 @@ void broken_document_links_remain_usable(const fs::path& profiles) {
           "bootstrap validation lost its failing gate diagnostics");
     std::ofstream(fixture.root / "README.md") << "# Retry ceiling\n\nSee [planned guide](docs/planned.md).\n";
     LocalTelemetry telemetry;
-    const auto report = [&](const fs::path& root, const Json& state) { telemetry.record(root, state); };
+    Json last_sample;
+    const auto report = [&](const fs::path& root, const Json& state) {
+        telemetry.record(root, state); last_sample = state;
+    };
     const auto refreshed = watch_local_projects(fixture.request, {fixture.root}, 3,
         [] { return false; }, {}, {}, report);
     check(refreshed.at("watch").at("failures") == 0 && refreshed.at("watch").at("publications") == 1,
@@ -163,14 +195,22 @@ void broken_document_links_remain_usable(const fs::path& profiles) {
     query.command = "query"; query.query = "readLimit";
     for (int attempt = 0; attempt < 2; ++attempt) {
         const auto response = local_project(query);
-        check(response.at("ok") == true && response.contains("source_context"),
+        check(response.at("ok") == true &&
+              response.at("source_context").get<std::string>().find("return 19") != std::string::npos,
               "a documentation warning withheld verified source context");
         check(response.at("readiness").value("documentation_warnings", 0) == 1,
               "documentation warning was lost during qualification reuse");
+        if (attempt == 1)
+            check(response.at("readiness").at("quality_reuse").at("reused") == true,
+                  "repeated query did not exercise cached qualification");
     }
     const auto project = telemetry.snapshot().at("project_states").at(0);
     check(project.at("active_issue") == false && project.value("documentation_warnings", 0) == 1,
           "documentation warning was lost or became a UI blocker");
+    last_sample["phase"] = "checking"; last_sample["last_result"] = nullptr;
+    telemetry.record(fixture.root, last_sample);
+    check(telemetry.snapshot().at("project_states").at(0).at("documentation_warnings") == 1,
+          "a transient sample erased the last verified documentation warning");
     fs::create_directory(fixture.root / "docs");
     std::ofstream(fixture.root / "docs/planned.md") << "# Retry guide\n\nreadLimit owns the retry ceiling.\n";
     const auto repaired = watch_local_projects(fixture.request, {fixture.root}, 3,
@@ -178,6 +218,10 @@ void broken_document_links_remain_usable(const fs::path& profiles) {
     check(repaired.at("watch").at("failures") == 0 &&
           telemetry.snapshot().at("project_states").at(0).value("documentation_warnings", 99) == 0,
           "documentation warning did not clear after its target appeared");
+    const auto response = local_project(query);
+    check(response.at("ok") == true && response.at("readiness").at("documentation_warnings") == 0 &&
+          response.at("source_context").get<std::string>().find("return 19") != std::string::npos,
+          "repaired documentation did not restore warning-free verified queries");
 }
 
 void documentation_warnings_do_not_waive_other_checks() {
@@ -186,6 +230,10 @@ void documentation_warnings_do_not_waive_other_checks() {
         {"issues", Json::array({{{"severity", "warning"}, {"id", "broken-local-link"}}})}};
     check(local_gate_ready(true, "doctor", doctor) && !local_gate_ready(false, "doctor", doctor),
           "documentation policy escaped bootstrap ownership");
+    auto non_strict = doctor; non_strict["strict"] = false;
+    check(!local_gate_ready(true, "doctor", non_strict), "documentation policy accepted a non-strict result");
+    check(!local_gate_ready(true, "doctor", Json()) && !local_gate_ready(true, "check", doctor),
+          "documentation policy accepted a missing result or an unrelated gate");
     doctor["error"] = {{"code", "access-denied"}};
     check(!local_gate_ready(true, "doctor", doctor), "documentation warning waived an execution error");
     doctor.erase("error");
@@ -200,6 +248,12 @@ void documentation_warnings_do_not_waive_other_checks() {
             {"missing_files", 0}, {"stale_files", 0}, {"orphan_files", 0}, {"expected_files", 16}, {"current_files", 16}}}};
     check(local_gate_ready(true, "vacuum", vacuum) && !local_gate_ready(false, "vacuum", vacuum),
           "link-only vacuum diagnostic escaped bootstrap ownership");
+    for (const auto& [path, value] : std::vector<std::pair<std::string, Json>>{
+            {"/apply", true}, {"/strict", false}, {"/summary/changes_needed", true},
+            {"/summary/expected_files", 0}, {"/summary/current_files", 15}}) {
+        auto invalid = vacuum; invalid[Json::json_pointer(path)] = value;
+        check(!local_gate_ready(true, "vacuum", invalid), "documentation warning waived invalid vacuum state");
+    }
     for (const auto* field : {"missing_files", "stale_files", "orphan_files"}) {
         vacuum["summary"][field] = 1;
         check(!local_gate_ready(true, "vacuum", vacuum), "documentation warning waived output drift");
@@ -537,7 +591,13 @@ void reader_final_binding_race(const fs::path& profiles, bool replace_binding) {
 
 int main(int argc, char** argv) {
     try {
-        check(argc == 2, "profile registry argument required");
+        check(argc == 2 || (argc == 4 && std::string(argv[2]) == "--group"), "profile registry and optional group required");
+        const std::string group = argc == 4 ? argv[3] : "all";
+        check(group == "all" || group == "documentation" || group == "races" || group == "safety", "unknown test group");
+        const auto started = core::SteadyClock::now();
+        const auto progress = [&](const char* phase) {
+            std::cout << phase << ": " << core::elapsed_ms_since(started) << " ms\n" << std::flush;
+        };
         constexpr std::uintmax_t gib = 1024ULL*1024*1024;
         verify_storage_capacity(7*gib,gib,3*gib);
         for (const auto& failure : {std::pair{8*gib,"storage-quota-exceeded"},std::pair{std::uintmax_t{0},"storage-free-space-low"}}) {
@@ -545,25 +605,37 @@ int main(int argc, char** argv) {
             catch (const Error& error) { check(error.code==failure.second,"wrong storage failure classification"); }
         }
         const auto profiles = fs::canonical(argv[1]);
-        documentation_warnings_do_not_waive_other_checks();
-        broken_document_links_remain_usable(profiles);
-        for (const auto* mode : {"core", "worker", "superseded", "source-binding", "stale-index", "qualification"}) source_race(profiles, mode);
-        returned_observation_race_recovers(profiles);
-        returned_observation_remains_blocked(profiles, "source-observation-failed", true);
-        returned_observation_remains_blocked(profiles, "access-denied", false);
-        returned_observation_remains_blocked(profiles, "incomplete-source-observation", true, "incomplete");
-        returned_observation_preserves_conflicting_error(profiles);
-        for (bool revoke : {false, true}) for (bool stale : {false, true})
-            unchanged_qualification_failure(profiles, revoke, stale);
-        unchanged_binding_failure(profiles, false);
-        unchanged_binding_failure(profiles, true);
-        for (const auto* code : {"refresh-validation-failed", "refresh-output-budget", "refresh-root-changed",
-                                "route-revision-conflict", "qualification-inputs-changed", "refresh-base-changed",
-                                "generation-admission-changed", "file-changed-during-verification-other", "source-read-hash-mismatch"})
-            hard_failure(profiles, code);
-        config_revision_during_final_verification(profiles);
-        config_revision_during_final_verification(profiles, true);
-        for (bool changed : {false, true}) reader_final_binding_race(profiles, changed);
+        if (group == "all" || group == "documentation") {
+            documentation_warnings_do_not_waive_other_checks();
+            broken_document_links_do_not_block_initial_bootstrap(profiles);
+            broken_document_links_remain_usable(profiles);
+            progress("documentation regressions");
+        }
+        if (group == "all" || group == "races") {
+            for (const auto* mode : {"core", "worker", "superseded", "source-binding", "stale-index", "qualification"}) source_race(profiles, mode);
+            progress("source races");
+            returned_observation_race_recovers(profiles);
+            returned_observation_remains_blocked(profiles, "source-observation-failed", true);
+            returned_observation_remains_blocked(profiles, "access-denied", false);
+            returned_observation_remains_blocked(profiles, "incomplete-source-observation", true, "incomplete");
+            returned_observation_preserves_conflicting_error(profiles);
+            progress("returned observations");
+        }
+        if (group == "all" || group == "safety") {
+            for (bool revoke : {false, true}) for (bool stale : {false, true})
+                unchanged_qualification_failure(profiles, revoke, stale);
+            unchanged_binding_failure(profiles, false);
+            unchanged_binding_failure(profiles, true);
+            progress("unchanged safety fences");
+            for (const auto* code : {"refresh-validation-failed", "refresh-output-budget", "refresh-root-changed",
+                                    "route-revision-conflict", "qualification-inputs-changed", "refresh-base-changed",
+                                    "generation-admission-changed", "file-changed-during-verification-other", "source-read-hash-mismatch"})
+                hard_failure(profiles, code);
+            progress("hard failures");
+            config_revision_during_final_verification(profiles);
+            config_revision_during_final_verification(profiles, true);
+            for (bool changed : {false, true}) reader_final_binding_race(profiles, changed);
+        }
         std::cout << "source races retry; real failures remain blocked\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

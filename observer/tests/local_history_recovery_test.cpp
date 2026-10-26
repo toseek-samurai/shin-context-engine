@@ -5,7 +5,9 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
-#ifndef _WIN32
+#ifdef _WIN32
+#include "../../tests/core/windows_private_acl.h"
+#else
 #include <sys/stat.h>
 #endif
 using namespace shin::observer;
@@ -136,6 +138,9 @@ void replaced_during_retry() {
     const auto file = fixture.root / "telemetry.sqlite";
     const auto saved = fixture.root / "retained.sqlite";
     fs::rename(file, saved); fs::copy_file(saved, file);
+#ifdef _WIN32
+    fixture_private_acl(file);
+#endif
     event(history, "must-not-write");
     auto refused = wait(history, [](const auto& s) { return s.value("error_code", "") == "history-file-changed"; });
     check(!refused.at("retry_pending"), "identity refusal kept retrying");
@@ -167,7 +172,11 @@ void unsupported_existing_file() {
     Fixture fixture;
     const auto file = fixture.root / "telemetry.sqlite";
     { std::ofstream empty(file); }
+#ifdef _WIN32
+    fixture_private_acl(file);
+#else
     fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+#endif
     LocalHistory history(fixture.root);
     auto refused = wait(history, [](const auto& s) { return s.value("error_code", "") == "history-schema-unsupported"; });
     check(!refused.at("retry_pending") && refused.at("recovery_attempts") == 0 && fs::file_size(file) == 0,

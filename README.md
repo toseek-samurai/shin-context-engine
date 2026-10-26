@@ -20,7 +20,8 @@ its CLI and MCP integrations, and the Monitor interface.
 
 [Get started](#get-started-on-macos) · [CLI guide](docs/cli.md) ·
 [Connect an MCP client](docs/native-client-setup.md) ·
-[Build from source](docs/building.md) · [Architecture](docs/architecture.md)
+[Build from source](docs/building.md) · [Windows source status](docs/windows-desktop.md) ·
+[Architecture](docs/architecture.md)
 
 [Report a bug or suggest a feature](https://github.com/toseek-samurai/shin-context-engine/issues/new/choose) ·
 [Contribute](CONTRIBUTING.md)
@@ -131,12 +132,16 @@ project data and restores the previous kit if activation fails.
 
 ## Choose the component you need
 
-| Component | What it does | Current distribution scope |
+| Component | What it does | Current build and distribution scope |
 | --- | --- | --- |
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
-| Core | Indexing and bounded retrieval for tools and integrations | macOS and Linux source builds; [build instructions](docs/building.md) |
-| Observer tools | Local service, CLI, terminal monitor, and MCP | macOS and Linux source builds; [Linux/WSL instructions](docs/building.md#linux-and-wsl2-terminal-tools) |
+| Core | Indexing and bounded retrieval for tools and integrations | macOS, Linux and native Windows x64 source builds; [build instructions](docs/building.md) |
+| Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | macOS and Linux source builds; [Linux/WSL instructions](docs/building.md#linux-and-wsl2-terminal-tools) |
+| Windows desktop source | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [Development builds and checks](docs/building.md#native-windows-development-builds); ZIP/MSI distribution qualification pending |
 
+Windows support adds platform adapters to the same Core, profiles and protocols.
+Its source checks do not qualify a Windows installer or imply feature parity;
+see the [Windows scope and remaining gates](docs/windows-desktop.md).
 Linux desktop packaging, Windows distribution, and macOS Intel package
 qualification remain pending. Configuring an AI client may send the context it retrieves to that
 client's chosen model provider.

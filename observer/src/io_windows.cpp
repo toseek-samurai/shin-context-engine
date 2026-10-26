@@ -92,6 +92,12 @@ void replace_user_archive(const fs::path& path, const std::string& expected, con
     io([&] { parent->replace(leaf, expected, content, kMaximumStateBytes); }, "unsafe-file", "archive-conflict");
 }
 
+void replace_user_config(const fs::path& path, const std::string& expected, const std::string& content, const std::string& identity) {
+    // Profile relocation owns a private configuration. Keep that exact ACL
+    // contract; automatic editing of broader client ACLs is not enabled here.
+    replace_user_archive(path, expected, content, identity);
+}
+
 class StateStore::Impl {
 public:
     std::unique_ptr<windows::Directory> directory;

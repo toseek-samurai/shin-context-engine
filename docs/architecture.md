@@ -14,11 +14,13 @@ Shin is split into components with distinct responsibilities. The current source
 
 Project profiles determine the source scope. Generated indexes and caches are outputs and must be placed separately from source. Observer connections are explicit and project-bound; a read command does not enroll a project or grant publication rights. Existing indexes require an explicit owner decision before management or replacement.
 
-The packaged local kit does not configure client credentials, edit client settings, or register an operating-system service during extraction. Optional installation and service commands are per-user operations that a person must choose deliberately. See the packaged local-kit guide for the exact native commands.
+Extracting a kit does not configure client credentials, edit client settings, or register an operating-system service. The macOS installation and service commands are explicit per-user operations. The Windows MSI design uses an elevated machine host to supervise separate unelevated user runtimes; its installation and lifecycle qualification are separate from source testing. Project authority remains with the user runtime, not with the UI or installer.
 
 ## Platform and release scope
 
-The Core source provides a CMake route for macOS and Linux. Observer includes local platform implementations, while the complete native local kit is a macOS package path. Source presence does not qualify other platforms or installers. Windows remains unqualified.
+Core and Observer provide CMake source routes for macOS, Linux and native Windows x64. Windows adds adapters to the same engine, profile registry, freshness checks and versioned protocols. Private storage uses Windows file identities and ACL checks, local transport authenticates named-pipe peers, and worker lifetime is bounded through Job Objects. These adapters preserve the shared authority and refusal contracts.
+
+The published local-kit route remains macOS. Windows has development build/test presets and a separate source-check workflow; these do not qualify ZIP/MSI distribution, installed SCM behavior, or feature parity. See [Windows source status](windows-desktop.md) for implemented scope and pending gates, and [building](building.md) for commands. Linux/macOS qualification remains independently required.
 
 Component identities and qualification state come from the checked-in version files and product manifest. Source builds do not qualify a Stable release.
 
@@ -54,7 +56,7 @@ source scope, and `docs/machine/` holds versioned contracts.
 Observer's `ui/` owns the shared status, timing, usage presentation and compiled
 EN/RU catalog. `tray/` adapts it to macOS/Windows and `tui/` adapts it to the
 terminal. Language preferences never change protocol fields or project data.
-The Sand TUI uses statically linked FTXUI for layout, input and line charts.
+The macOS/Linux Sand TUI uses statically linked FTXUI for layout, input and line charts.
 It reads the existing local service, usage snapshot and storage inventory; opening
 it does not enroll projects, start another service or publish an index.
 The former optional web query panel and its HTTP adapter have been removed;

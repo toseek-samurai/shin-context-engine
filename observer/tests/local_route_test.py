@@ -1009,13 +1009,42 @@ class LocalRouteTests(unittest.TestCase):
         marker, value = self.marker()
         self.managed(service=True)
         self.assertIn('return 7;', self.ce('query', 'readLimit')['source_context'])
+        approved = hashlib.sha256(marker.read_bytes()).hexdigest()
+        unapproved_grant = json.loads(self.grant_path().read_text())
         value['engine']['minimumVersion'] = '2.0.0'
         marker.write_text(json.dumps(value))
         run = subprocess.run([str(CE), 'query', 'readLimit', '--service', '--root', str(self.f.root),
                               '--home', str(self.home)], capture_output=True, text=True, timeout=30)
         self.assertNotEqual(run.returncode, 0)
         self.assertFalse(json.loads(run.stdout or run.stderr).get('source_context'))
-        self.marker_accept(marker)
+        reviewed = hashlib.sha256(marker.read_bytes()).hexdigest()
+        self.assertNotEqual(reviewed, approved)
+        # The live publisher and explicit approval share an exclusive writer.
+        # Refusal happens before mutation; it does not approve or bypass fences.
+        with (self.workspace() / 'observer.lock').open('rb') as writer:
+            fcntl.flock(writer, fcntl.LOCK_EX)
+            refused = self.marker_accept(marker, expected=2)
+            self.assertEqual(refused['error']['code'], 'writer-busy')
+            self.assertEqual(json.loads(self.grant_path().read_text()), unapproved_grant)
+        approval_deadline = time.monotonic() + 10
+        while True:
+            run = subprocess.run([str(CE), 'marker-accept', reviewed, '--root', str(self.f.root),
+                                  '--home', str(self.home)], capture_output=True, text=True, timeout=30,
+                                 env={**os.environ, 'PATH': '', 'LC_ALL': 'C'}, umask=0o077)
+            if run.returncode == 0:
+                self.assertFalse(run.stderr, run.stderr)
+                accepted = json.loads(run.stdout)
+                self.assertEqual(accepted['previous_marker_hash'], approved)
+                self.assertEqual(accepted['approved_marker_hash'], reviewed)
+                break
+            self.assertEqual(run.returncode, 2, run.stdout + run.stderr)
+            self.assertFalse(run.stdout)
+            self.assertEqual(json.loads(run.stderr)['error']['code'], 'writer-busy')
+            self.assertEqual(json.loads(self.grant_path().read_text()), unapproved_grant)
+            self.assertLess(time.monotonic(), approval_deadline, 'publisher did not release the writer')
+            time.sleep(.02)
+        self.assertEqual(hashlib.sha256(marker.read_bytes()).hexdigest(), reviewed)
+        self.assertEqual(json.loads(self.grant_path().read_text())['approved_marker_hash'], reviewed)
         deadline = time.monotonic() + 20
         while time.monotonic() < deadline:
             run = subprocess.run([str(CE), 'query', 'readLimit', '--service', '--root', str(self.f.root),

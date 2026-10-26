@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
             for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
@@ -341,12 +341,14 @@ int main(int argc, char** argv) {
                         view.data["telemetry"]["mcp_activity"] = {{"status","ready"},{"window_start_ms",0},{"dropped_updates",0},{"unconfirmed_updates",0},{"sessions_truncated",kind=="sessions-partial"},
                             {"session_rows",Json::array({{{"session_id",session_id},{"context_calls",21},{"errors",2},{"tasks",3},
                                 {"recovery_requests",4},{"model_unknown",21},{"models",Json::object()},
-                                {"query_times",Json::array({3500})},{"queries_complete",true},
-                                {"timeline",Json::array({{{"method","query"},{"intent","context-recovery"},{"outcome","success"}},
-                                    {{"method","resume"},{"intent","context-recovery"},{"outcome","success"}}})}}})}};
+                                {"query_times",Json::array({1792920003500LL})},{"queries_complete",true},
+                                {"timeline",Json::array({{{"method","query"},{"intent","context-recovery"},{"outcome","success"},{"at_ms",1792920003500LL}},
+                                    {{"method","read"},{"intent","follow-up"},{"outcome","success"},{"at_ms",1792920004500LL}},
+                                    {{"method","query"},{"intent","explore"},{"outcome","tool-error"},{"at_ms",1792920005500LL}},
+                                    {{"method","inspect"},{"intent","explore"},{"outcome","unfinished"},{"at_ms",1792920006500LL}}})}}})}};
                         view.usage = std::make_shared<const Json>(Json{{"context_events",{{"complete",kind=="sessions"},
-                            {"events",Json::array({{{"session_id",session_id},{"at_ms",2000},{"kind","compaction"}},
-                                {{"session_id",session_id},{"at_ms",1000},{"kind","turn-model"},{"model_id","history-model"}}})}}}});
+                            {"events",Json::array({{{"session_id",session_id},{"at_ms",1792920002000LL},{"kind","compaction"}},
+                                {{"session_id",session_id},{"at_ms",1792920001000LL},{"kind","turn-model"},{"model_id","history-model"}}})}}}});
                     }
                     if (kind.starts_with("sessions")) {
                         auto& row = view.data["telemetry"]["mcp_activity"]["session_rows"][0];
@@ -355,6 +357,27 @@ int main(int argc, char** argv) {
                             {"episodes",Json::array({{{"start_ms",1792920000000LL},{"kind","compaction"},{"closed",true},
                                 {"context_calls",7},{"errors",1},{"interval_complete",kind=="sessions"},
                                 {"reads",{{"same_version_repeats",2},{"previously_seen_versions",1}}}}})}};
+                        session_details_open.clear(); session_notes_open = false;
+                        if (kind == "sessions-empty" || kind == "sessions-notes")
+                            view.data["telemetry"]["mcp_activity"]["session_rows"] = Json::array();
+                        if (kind == "sessions-unavailable") view.data["telemetry"].erase("mcp_activity");
+                        if (kind == "sessions-partial") view.data["telemetry"]["mcp_activity"]["dropped_updates"] = 1;
+                        if (kind.starts_with("sessions-full")) {
+                            auto& rows = view.data["telemetry"]["mcp_activity"]["session_rows"];
+                            auto row = rows[0]; rows = Json::array();
+                            for (int i = 0; i < 8; ++i) {
+                                row["session_id"] = std::string(64,static_cast<char>('0'+i));
+                                row["timeline"] = Json::array();
+                                for (int event = 0; event < 8; ++event)
+                                    row["timeline"].push_back({{"method","query"},{"intent","context-recovery"},
+                                        {"outcome",event%2 ? "tool-error" : "success"},{"at_ms",1792920000000LL+event*1000+i}});
+                                rows.push_back(row);
+                            }
+                        }
+                        if (kind == "sessions-notes") activate(90);
+                        if (kind == "sessions-details") {
+                            session_row_ids[0] = std::string(64,'a'); activate(91);
+                        }
                     }
                     selected = kind.starts_with("projects") || kind == "project-states" ? "" : "fixture";
                     project_page = kind == "projects-last-page" ? 100 : 0;
@@ -386,6 +409,9 @@ int main(int argc, char** argv) {
                         if (kind == "models-details" && frame > 0) {
                             const auto badge = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) { return item.chart == 52; });
                             if (badge != ui_actions.end()) io.AddMousePosEvent(badge->origin.x + 2, badge->origin.y + 2);
+                        } else if (kind == "sessions-full-end") {
+                            io.AddMousePosEvent(size.x/2,size.y-60);
+                            if (frame > 0) io.AddMouseWheelEvent(0,-1000);
                         } else io.AddMousePosEvent(-100, -100);
                         ImGui_ImplMetal_NewFrame(pass);
                         ImGui::NewFrame(); render(view); ImGui::Render();
@@ -449,6 +475,26 @@ int main(int argc, char** argv) {
                     }
                     if(kind=="update" && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& a){return a.chart==86 && a.enabled;}))
                         throw std::runtime_error("release offer is not actionable");
+                    if (kind.starts_with("sessions") && size.y >= 440) {
+                        const auto has = [&](const char* key) { return std::any_of(ui_actions.begin(),ui_actions.end(),[&](const auto& action) {
+                            return action.label == shin::ui::tr(key);
+                        }); };
+                        if (kind != "sessions-full-end" && !has("MCP calls linked to agent chats.")) throw std::runtime_error("session explanation is inaccessible: " + context);
+                        if ((kind == "sessions-empty" || kind == "sessions-notes") && !has("No linked sessions yet"))
+                            throw std::runtime_error("session empty state is missing: " + context);
+                        if (kind == "sessions-unavailable" && (has("No linked sessions yet") || !has("Session activity is unavailable.")))
+                            throw std::runtime_error("unavailable sessions look empty: " + context);
+                        if (kind == "sessions" && (!has("Recorded activity · UTC") || has("Caller-reported recovery and explicit host compaction are different events.")))
+                            throw std::runtime_error("session details are not disclosed separately: " + context);
+                        if (kind == "sessions-notes" && size.y >= 620 && !has("Hide recording notes")) throw std::runtime_error("recording notes cannot be opened: " + context);
+                        if (kind == "sessions-details" && session_details_open != std::string(64,'a')) throw std::runtime_error("session details cannot be opened: " + context);
+                        if (kind == "sessions-full" && size.y >= 620) {
+                            char limit[128]; std::snprintf(limit,sizeof(limit),shin::ui::tr("Shown: %zu events · limit %zu"),std::size_t{48},std::size_t{48});
+                            if (!has(limit)) throw std::runtime_error("full journal does not disclose its bound: " + context);
+                        }
+                        if (kind == "sessions-full-end" && size.y >= 620 && !has("What is recorded?"))
+                            throw std::runtime_error("full journal cannot scroll to its final controls: " + context);
+                    }
                     if (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
                         return action.chart == 87 && action.informational && action.label == "v" SHIN_OBSERVER_VERSION;
                     })) throw std::runtime_error("installed version is not visible and accessible: " + context);
@@ -463,6 +509,8 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("diagnostic text overlaps footer: " + context + " " + action.label);
                         if (timing_open && action.chart >= 60 && action.chart <= 69 && action.origin.y + action.size.y > size.y - 34)
                             throw std::runtime_error("timing content overlaps footer: " + context + " " + action.label);
+                        if (action.chart >= 90 && action.origin.y + action.size.y > size.y - 39 + .5f)
+                            throw std::runtime_error("session content overlaps footer: " + context + " " + action.label);
                     }
                     if (kind == "projects") {
                         const auto add = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 80; });

@@ -10,6 +10,8 @@ is read. Displayed metrics are fixture values, not performance measurements.
 | `monitor-projects.png` | `project-states-448x620.png` |
 | `monitor-project.png` | `current-448x620.png` |
 | `monitor-timing.png` | `timing-retained-448x620.png` |
+| `monitor-sessions.png` | `sessions-448x620.png` (EN) |
+| `monitor-sessions-ru.png` | `sessions-448x620.png` (RU) |
 
 After building the macOS kit with testing enabled, render again:
 
@@ -19,15 +21,24 @@ After building the macOS kit with testing enabled, render again:
 ```
 
 Metal must be available; a skipped render is not a new screenshot. Inspect the
-outputs visually, then copy only the three selected PNGs here without modifying
+outputs visually, then copy only the selected PNGs here without modifying
 their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
-The images show the dev.34 Sand appearance at the standard 448×620 panel size.
+The project and timing images show the dev.34 Sand appearance. The Sessions
+images come from dev.51 source, including the 48-event display ceiling, readable
+monospace journal, outcome colors and vector icons. All use the standard
+448×620 panel size. Generate EN and RU into separate output directories before
+copying the selected Sessions images.
 The project list deliberately mixes ready, preparing, partial, blocked, on-demand,
 waiting and recovering states to demonstrate their distinct colors and symbols.
 The blocked project and displayed counters are synthetic examples. The
 compact layout remains available. Memory curves retain observation gaps and
 service-run boundaries.
+
+<p>
+  <img src="monitor-sessions.png" width="340" alt="English Sessions journal rendered with synthetic MCP events">
+  <img src="monitor-sessions-ru.png" width="340" alt="Russian Sessions journal with the same synthetic MCP events">
+</p>
 
 ## Terminal views
 

@@ -271,6 +271,8 @@ void select_language_preference(int preference) {
     apply_language_preference(preference);
 }
 std::string platform_font();
+std::string platform_console_font();
+ImFont* console_font = nullptr;
 std::string platform_version();
 bool platform_reduce_motion();
 void draw_brand(ImVec2 origin, float size);
@@ -504,6 +506,10 @@ int dashboard_view = 0, history_hours = 1, project_page = 0, model_page = 0;
 std::string model_project;
 bool diagnostic_history_first = false;
 bool timing_open = false, timing_retained = false;
+bool session_notes_open = false;
+int session_content_mode = -1;
+std::string session_details_open;
+std::array<std::string, shin::ui::session_activity_max_sessions> session_row_ids;
 int timing_filter = 0;
 std::string diagnostic_project, diagnostic_copy, diagnostic_root, history_project, diagnostic_report_text;
 std::atomic<bool> project_management_busy{false};
@@ -574,6 +580,11 @@ void activate(int code) {
     else if (code == 61) timing_open = false;
     else if (code >= 63 && code <= 65) timing_filter = code - 63;
     else if (code == 67 || code == 68) timing_retained = code == 68;
+    else if (code == 90) session_notes_open = !session_notes_open;
+    else if (code >= 91 && code <= 98 && !session_row_ids[code - 91].empty()) {
+        const auto& id = session_row_ids[code - 91];
+        session_details_open = session_details_open == id ? "" : id;
+    }
     else if (code == 80) {
         bool expected = false;
         if (project_management_busy.compare_exchange_strong(expected, true)) platform_action(code);
@@ -1695,6 +1706,8 @@ void configure_imgui() {
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
     if (auto* font = io.Fonts->AddFontFromFileTTF(platform_font().c_str(), 13)) io.FontDefault = font;
+    const auto console_path = platform_console_font();
+    console_font = fs::is_regular_file(console_path) ? io.Fonts->AddFontFromFileTTF(console_path.c_str(),14) : io.FontDefault;
     ImGui::StyleColorsDark();
     auto& style = ImGui::GetStyle();
     style.WindowPadding = {18, 14};
@@ -1735,6 +1748,144 @@ void configure_imgui() {
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = muted;
     style.Colors[ImGuiCol_ScrollbarGrabActive] = sand;
     style.Colors[ImGuiCol_TextSelectedBg] = {sand.x, sand.y, sand.z, .25f};
+}
+
+// Only expose visible content through accessibility; scrolled text must not
+// create offscreen controls or cover the fixed footer.
+void session_accessible(const std::string& label, const std::string& key, int action = 99) {
+    const auto origin = ImGui::GetItemRectMin(), end = ImGui::GetItemRectMax();
+    const auto window = ImGui::GetWindowPos(), size = ImGui::GetWindowSize();
+    if (ImGui::IsItemVisible() && origin.x >= window.x && origin.y >= window.y &&
+        end.x <= window.x + size.x && end.y <= window.y + size.y)
+        ui_actions.push_back({label, key, origin, {end.x-origin.x,end.y-origin.y}, action, true, action == 99});
+}
+
+void session_text(const std::string& text, const std::string& key, float size = 14, ImVec4 color = ink, ImFont* font = nullptr) {
+    ImGui::PushFont(font,size);
+    ImGui::PushStyleColor(ImGuiCol_Text,color);
+    ImGui::TextWrapped("%s",text.c_str());
+    session_accessible(text,key);
+    ImGui::PopStyleColor(); ImGui::PopFont();
+}
+
+void session_disclosure(const char* label, int code) {
+    ImGui::PushFont(nullptr,14);
+    ImGui::PushID(code);
+    if (ImGui::Button(label,{ImGui::GetContentRegionAvail().x,32})) activate(code);
+    session_accessible(label,"",code);
+    ImGui::PopID(); ImGui::PopFont();
+}
+
+void session_journal(const shin::ui::SessionActivity& activity) {
+    struct Row { const shin::ui::SessionActivityEntry* session; const shin::ui::SessionActivityEvent* event; };
+    std::vector<Row> rows;
+    rows.reserve(shin::ui::session_activity_max_journal_events);
+    for (std::size_t session_index = 0; session_index < std::min(activity.sessions.size(),shin::ui::session_activity_max_sessions); ++session_index) {
+        const auto& session = activity.sessions[session_index];
+        for (std::size_t event_index = 0; event_index < std::min(session.events.size(),shin::ui::session_activity_max_events); ++event_index)
+            rows.push_back({&session,&session.events[event_index]});
+    }
+    std::stable_sort(rows.begin(),rows.end(),[](const auto& a,const auto& b) { return a.event->at_ms > b.event->at_ms; });
+    if (rows.empty()) return;
+    session_text(shin::ui::tr("Recorded activity · UTC"),"sessions-journal-title",14,sand);
+    char limit[128];
+    std::snprintf(limit,sizeof(limit),shin::ui::tr("Shown: %zu events · limit %zu"),rows.size(),shin::ui::session_activity_max_journal_events);
+    session_text(limit,"sessions-journal-limit",14,muted);
+    ImGui::PushStyleColor(ImGuiCol_TableRowBg,{.085f,.094f,.080f,1});
+    ImGui::PushStyleColor(ImGuiCol_TableRowBgAlt,raised);
+    ImGui::PushStyleVar(ImGuiStyleVar_CellPadding,{8,9});
+    if (ImGui::BeginTable("session-journal",2,ImGuiTableFlags_RowBg | ImGuiTableFlags_BordersInnerH)) {
+        ImGui::TableSetupColumn("icon",ImGuiTableColumnFlags_WidthFixed,18);
+        ImGui::TableSetupColumn("event",ImGuiTableColumnFlags_WidthStretch);
+        for (std::size_t i = 0; i < rows.size(); ++i) {
+            const auto& event = *rows[i].event;
+            using Tone = shin::ui::SessionEventTone;
+            const auto color = event.tone == Tone::error ? red : event.tone == Tone::success ? green :
+                event.tone == Tone::pending ? amber : event.tone == Tone::host ? sand : blue;
+            const auto icon = event.tone == Tone::error ? Icon::blocked : event.tone == Tone::host ? Icon::history :
+                event.tone == Tone::pending ? Icon::pending : event.method == "read" ? Icon::details : Icon::requests;
+            ImGui::TableNextRow(); ImGui::TableNextColumn();
+            draw_icon(icon,ImGui::GetCursorScreenPos(),16,color); ImGui::Dummy({16,16});
+            ImGui::TableNextColumn();
+            const auto epoch = static_cast<std::time_t>(event.at_ms/1000);
+            std::tm utc{}; char time[24]{};
+#if defined(_WIN32)
+            const bool valid = event.at_ms > 0 && ::gmtime_s(&utc,&epoch) == 0;
+#else
+            const bool valid = event.at_ms > 0 && ::gmtime_r(&epoch,&utc) != nullptr;
+#endif
+            if (valid) (void)std::strftime(time,sizeof(time),"%m-%d %H:%M:%S",&utc);
+            const auto key = "session-event-"+std::to_string(i);
+            ImGui::PushFont(console_font,13);
+            ImGui::TextColored(muted,"%s",valid ? time : "--:--");
+            session_accessible(valid ? time : "--:--",key+"-time");
+            ImGui::SameLine();
+            const auto id = rows[i].session->id.substr(0,8);
+            ImGui::TextColored(sand,"%s",id.c_str());
+            session_accessible(std::string(shin::ui::tr("Session "))+id,key+"-session");
+            ImGui::PopFont();
+            session_text(event.label.empty() ? shin::ui::tr("Recorded MCP call") : event.label,key,14,color,console_font);
+        }
+        ImGui::EndTable();
+    }
+    ImGui::PopStyleVar(); ImGui::PopStyleColor(2);
+    ImGui::Spacing();
+}
+
+void render_sessions(const ViewState& view, const Json& telemetry) {
+    const auto activity = shin::ui::session_activity(telemetry,*view.usage);
+    session_row_ids.fill("");
+    ImGui::BeginChild("session-observations",{0,0});
+    const int mode = !activity.available ? 0 : activity.sessions.empty() ? 1 : 2;
+    if (mode != session_content_mode) { ImGui::SetScrollY(0); session_content_mode = mode; }
+    session_text(shin::ui::tr("Sessions"),"sessions-title",18);
+    session_text(shin::ui::tr("MCP calls linked to agent chats."),"sessions-intro",14,muted);
+    ImGui::Spacing();
+    if (!view.connected) session_text(shin::ui::tr("Offline · last received data"),"sessions-offline",14,amber);
+    if (!activity.available) {
+        session_text(shin::ui::tr("Session activity is unavailable."),"sessions-unavailable",16);
+        session_text(shin::ui::tr("Session data will appear when the service provides it."),"sessions-unavailable-help");
+    } else {
+        if (activity.incomplete)
+            session_text(shin::ui::tr("MCP history has unobserved updates; totals may be incomplete."),"sessions-partial",14,amber);
+        if (activity.sessions.empty()) {
+            session_text(shin::ui::tr("No linked sessions yet"),"sessions-empty",17);
+            session_text(shin::ui::tr("A session appears after an agent sends its session ID with an MCP call. Calls without an ID still count in overall statistics."),"sessions-empty-help");
+        }
+        session_journal(activity);
+        for (std::size_t i = 0; i < activity.sessions.size(); ++i) {
+            const auto& session = activity.sessions[i];
+            session_row_ids[i] = session.id;
+            ImGui::PushID(session.id.c_str());
+            ImGui::Separator(); ImGui::Spacing();
+            session_text(std::string(shin::ui::tr("Session "))+session.id.substr(0,8),session.id,16);
+            if (ImGui::BeginTable("session-counts",2,ImGuiTableFlags_SizingStretchSame)) {
+                const char* labels[]{shin::ui::tr("Context calls"),shin::ui::tr("Errors")};
+                const std::string values[]{session.calls,session.errors};
+                for (int column = 0; column < 2; ++column) {
+                    ImGui::TableNextColumn();
+                    session_text(labels[column],session.id+"-label-"+std::to_string(column),14,muted);
+                    session_text(values[column],session.id+"-count-"+std::to_string(column),25,
+                        column == 1 && session.errors != "0" && session.errors != "—" ? red : ink);
+                }
+                ImGui::EndTable();
+            }
+            session_disclosure(shin::ui::tr(session_details_open == session.id ? "Hide session details" : "Session details"),91+static_cast<int>(i));
+            if (session_details_open == session.id) {
+                session_text(std::string(shin::ui::tr("Tasks: "))+session.tasks,session.id+"-tasks");
+                for (std::size_t line = 0; line < session.details.size(); ++line)
+                    session_text(session.details[line],session.id+"-detail-"+std::to_string(line));
+            }
+            ImGui::Spacing();
+            ImGui::PopID();
+        }
+        ImGui::Spacing();
+        session_disclosure(shin::ui::tr(session_notes_open ? "Hide recording notes" : "What is recorded?"),90);
+        if (session_notes_open) for (std::size_t i = 0; i < activity.notes.size(); ++i) {
+            ImGui::Spacing(); session_text(activity.notes[i],"sessions-note-"+std::to_string(i));
+        }
+    }
+    ImGui::EndChild();
 }
 
 void render(const ViewState& view) {
@@ -1833,13 +1984,7 @@ void render(const ViewState& view) {
     else if (dashboard_view == 0) render_overview(view, telemetry, history);
     else if (dashboard_view == 1) render_projects(view, telemetry, history);
     else if (dashboard_view == 2) render_models(view, telemetry, history);
-    else {
-        ImGui::BeginChild("session-observations",{0,0});
-        ImGui::PushFont(nullptr,12);
-        if (!view.connected) ImGui::TextWrapped("%s",shin::ui::tr("Offline · last received data"));
-        for (const auto& line : shin::ui::session_activity_lines(telemetry,*view.usage)) ImGui::TextWrapped("%s",line.c_str());
-        ImGui::PopFont(); ImGui::EndChild();
-    }
+    else render_sessions(view,telemetry);
     ImGui::EndChild();
     ImGui::PopStyleVar();
     ImGui::SetCursorPosY(footer_y);

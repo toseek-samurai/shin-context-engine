@@ -49,6 +49,17 @@ English and Russian; these examples use English. Names, counts, and timings abov
   timing, storage, and model-usage tabs. Text and JSON status remain available. See the
   [UI-to-CLI map](docs/cli.md#monitor-and-cli).
 
+## Follow agent sessions
+
+<img src="docs/images/monitor-sessions.png" width="360" alt="Monitor Sessions displays a Sand journal with timestamps, session IDs, vector icons and colored outcomes, with an explicit 48-event display limit">
+
+The dev.51 source adds a readable **Sessions** journal: recent MCP calls and
+explicit client events, session counters and expandable details. Up to eight
+sessions and six events per session keep the view bounded; this display limit
+does not reduce stored history or analysis totals. The screenshot uses synthetic
+data. See [Sessions and recording boundaries](docs/cli.md#sessions-and-optional-recovery-notes-dev45)
+and the [Russian screenshot](docs/images/monitor-sessions-ru.png).
+
 ## Also in your terminal
 
 <img src="docs/images/tui-overview.svg" width="864" alt="Shin Sand TUI with a memory line graph, metrics and five example projects showing distinct search and coverage states">
@@ -109,8 +120,8 @@ open "$HOME/.local/opt/shin-local/Shin Monitor.app"
 You can add further folders in Monitor or with
 `shin-ce project-add --root /path/to/another/project`. For terminal-only use, run
 `shin-ce stats` (or `shin-ce service-status --text` for a single status report).
-Use Tab or 1–5 to switch views, Enter for project details, and q to exit.
-Unreleased source adds **Sessions** as view 6 for MCP activity and context recovery.
+Use Tab or 1–7 to switch views, Enter for project details, and q to exit.
+**Sessions** is view 6; **Updates** is view 7.
 To use Shin from a coding agent,
 [configure the included MCP adapter](docs/native-client-setup.md). Automatic
 startup at login is a separate opt-in step in the

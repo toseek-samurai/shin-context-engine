@@ -141,6 +141,7 @@ void platform_save_view(int view) {
 #endif
 }
 std::string platform_font() { return "/System/Library/Fonts/SFNS.ttf"; }
+std::string platform_console_font() { return "/System/Library/Fonts/Menlo.ttc"; }
 bool platform_reduce_motion() { return NSWorkspace.sharedWorkspace.accessibilityDisplayShouldReduceMotion; }
 std::string platform_version() {
     NSString* value = [NSBundle.mainBundle objectForInfoDictionaryKey:@"CFBundleShortVersionString"];

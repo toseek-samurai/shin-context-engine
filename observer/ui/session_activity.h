@@ -11,16 +11,41 @@
 #include <ctime>
 
 namespace shin::ui {
-inline std::vector<std::string> session_activity_lines(const nlohmann::json& telemetry, const nlohmann::json& usage = {}) {
+// The service exports eight recent sessions with at most eight call events.
+// The view merges those with host markers and keeps six recent events per session.
+inline constexpr std::size_t session_activity_max_sessions = 8;
+inline constexpr std::size_t session_activity_max_call_events = 8;
+inline constexpr std::size_t session_activity_max_events = 6;
+inline constexpr std::size_t session_activity_max_journal_events = session_activity_max_sessions * session_activity_max_events;
+enum class SessionEventTone { neutral, success, error, pending, host };
+struct SessionActivityEvent {
+    std::int64_t at_ms = 0;
+    std::string label, method;
+    SessionEventTone tone = SessionEventTone::neutral;
+};
+struct SessionActivityEntry {
+    std::string id, calls, errors, tasks;
+    std::vector<std::string> details;
+    std::vector<SessionActivityEvent> events;
+};
+struct SessionActivity {
+    bool available = false;
+    bool incomplete = false;
+    std::vector<SessionActivityEntry> sessions;
+    std::vector<std::string> notes;
+};
+// Structured presentation keeps the desktop summary separate from detailed
+// observations. Terminal clients retain the same full text through the adapter below.
+inline SessionActivity session_activity(const nlohmann::json& telemetry, const nlohmann::json& usage = {}) {
     using Json = nlohmann::json;
-    if (!telemetry.is_object()) return {tr("Session activity is unavailable.")};
+    SessionActivity result;
+    if (!telemetry.is_object()) return result;
     const auto activity = telemetry.value("mcp_activity",Json::object());
-    if (!activity.is_object() || activity.value("status",Json()) != "ready") return {tr("Session activity is unavailable.")};
+    if (!activity.is_object() || activity.value("status",Json()) != "ready") return result;
     const auto rows = activity.value("session_rows",Json::array());
-    if (!rows.is_array() || rows.size() > 8) return {tr("Session activity is unavailable.")};
-    std::vector<std::string> lines{tr("Sessions · retained MCP observations"),
-        tr("Caller-reported recovery and explicit host compaction are different events.")};
-    if (rows.empty()) lines.push_back(tr("No correlated MCP sessions have been recorded yet."));
+    if (!rows.is_array() || rows.size() > session_activity_max_sessions) return result;
+    result.available = true;
+    result.notes.push_back(tr("Caller-reported recovery and explicit host compaction are different events."));
     const auto events = usage.is_object() ? usage.value("context_events",Json::object()) : Json::object();
     const auto markers = events.is_object() ? events.value("events",Json::array()) : Json::array();
     const auto n = [](const Json& row, const char* key) { const auto value = row.value(key,Json());
@@ -31,8 +56,8 @@ inline std::vector<std::string> session_activity_lines(const nlohmann::json& tel
         if (!identity.is_string()) continue;
         const auto id = identity.get<std::string>();
         if (id.size() != 64 || id.find_first_not_of("0123456789abcdef") != std::string::npos) continue;
-        lines.push_back(""); lines.push_back(std::string(tr("Session ")) + id.substr(0,8));
-        lines.push_back(std::string(tr("Context calls: "))+n(row,"context_calls")+tr(" · Errors: ")+n(row,"errors")+tr(" · Tasks: ")+n(row,"tasks"));
+        result.sessions.push_back({id,n(row,"context_calls"),n(row,"errors"),n(row,"tasks"),{}, {}});
+        auto& lines = result.sessions.back().details;
         lines.push_back(std::string(tr("Recovery requests: "))+n(row,"recovery_requests"));
         std::string models;
         const auto reported = row.value("models",Json::object());
@@ -111,16 +136,16 @@ inline std::vector<std::string> session_activity_lines(const nlohmann::json& tel
             lines.push_back(std::string(tr("Context calls outside known intervals: "))+n(analysis,"unassigned_context_calls"));
             if (analysis.value("calls_complete",Json()) != true) lines.push_back(tr("Read counts cover retained observations with gaps."));
         }
-        std::vector<std::pair<std::int64_t,std::string>> recent;
+        std::vector<SessionActivityEvent> recent;
         if (markers.is_array() && markers.size() <= 64) for (const auto& marker : markers) {
             if (!marker.is_object() || marker.value("session_id",Json()) != id || !marker.value("at_ms",Json()).is_number_integer()) continue;
             const auto kind = marker.value("kind",Json());
             const char* title = kind == "compaction" ? "Host compaction" : kind == "turn-start" ? "Client turn started" :
                 kind == "turn-finish" ? "Client turn ended" : kind == "turn-abort" ? "Client turn aborted" : nullptr;
-            if (title) recent.emplace_back(marker.at("at_ms").get<std::int64_t>(),tr(title));
+            if (title) recent.push_back({marker.at("at_ms").get<std::int64_t>(),tr(title),"",SessionEventTone::host});
         }
         const auto timeline = row.value("timeline",Json::array());
-        if (timeline.is_array()) for (std::size_t i = 0; i < std::min<std::size_t>(8,timeline.size()); ++i) {
+        if (timeline.is_array()) for (std::size_t i = 0; i < std::min(session_activity_max_call_events,timeline.size()); ++i) {
             const auto& call = timeline.at(i);
             if (!call.is_object()) continue;
             std::string text;
@@ -131,28 +156,49 @@ inline std::vector<std::string> session_activity_lines(const nlohmann::json& tel
                     text += (text.empty() ? "" : " · ") + std::string(tr(token.get_ref<const std::string&>().c_str()));
             }
             const auto when = call.value("at_ms",Json());
-            recent.emplace_back(when.is_number_integer() ? when.get<std::int64_t>() : 0,std::move(text));
+            const auto outcome = call.value("outcome",Json());
+            const auto method = call.value("method",Json());
+            const auto tone = outcome == "success" ? SessionEventTone::success : outcome == "tool-error" || outcome == "rpc-error" ?
+                SessionEventTone::error : outcome == "unfinished" ? SessionEventTone::pending : SessionEventTone::neutral;
+            recent.push_back({when.is_number_integer() ? when.get<std::int64_t>() : 0,std::move(text),
+                method.is_string() && (method == "query" || method == "read" || method == "inspect") ? method.get<std::string>() : "",tone});
         }
-        std::stable_sort(recent.begin(),recent.end(),[](const auto& a,const auto& b) { return a.first > b.first; });
+        std::stable_sort(recent.begin(),recent.end(),[](const auto& a,const auto& b) { return a.at_ms > b.at_ms; });
+        result.sessions.back().events.assign(recent.begin(),recent.begin()+std::min(session_activity_max_events,recent.size()));
         if (!recent.empty()) lines.push_back(tr("Timeline (UTC)"));
-        for (std::size_t i = 0; i < std::min<std::size_t>(6,recent.size()); ++i) {
-            const auto epoch = static_cast<std::time_t>(recent[i].first/1000); std::tm utc{}; char time[24]{};
+        for (std::size_t i = 0; i < std::min(session_activity_max_events,recent.size()); ++i) {
+            const auto epoch = static_cast<std::time_t>(recent[i].at_ms/1000); std::tm utc{}; char time[24]{};
 #if defined(_WIN32)
-            const bool valid = recent[i].first > 0 && ::gmtime_s(&utc,&epoch) == 0;
+            const bool valid = recent[i].at_ms > 0 && ::gmtime_s(&utc,&epoch) == 0;
 #else
-            const bool valid = recent[i].first > 0 && ::gmtime_r(&epoch,&utc) != nullptr;
+            const bool valid = recent[i].at_ms > 0 && ::gmtime_r(&epoch,&utc) != nullptr;
 #endif
             if (valid) (void)std::strftime(time,sizeof(time),"%m-%d %H:%M",&utc);
-            lines.push_back(std::string("  ")+time+"  "+recent[i].second);
+            lines.push_back(std::string("  ")+time+"  "+recent[i].label);
         }
     }
+    auto& lines = result.notes;
     if (activity.value("sessions_truncated",Json()) == true || !events.is_object() || events.value("complete",Json()) != true)
         lines.push_back(tr("Recent bounded observations only; missing markers do not establish absence of compaction."));
-    if (activity.value("dropped_updates",Json()) != 0 || activity.value("unconfirmed_updates",Json()) != 0)
-        lines.push_back(tr("MCP history has unobserved updates; totals may be incomplete."));
+    result.incomplete = activity.value("dropped_updates",Json()) != 0 || activity.value("unconfirmed_updates",Json()) != 0;
+    if (result.incomplete) lines.push_back(tr("MCP history has unobserved updates; totals may be incomplete."));
     lines.push_back(tr("Read counts cover shin_read only; local and IDE readers are not observed."));
     lines.push_back(tr("Repeated reads can be useful; file versions do not measure wasted work."));
     lines.push_back(tr("These observations do not prove context use, recovery quality or task success."));
+    return result;
+}
+
+inline std::vector<std::string> session_activity_lines(const nlohmann::json& telemetry, const nlohmann::json& usage = {}) {
+    const auto activity = session_activity(telemetry,usage);
+    if (!activity.available) return {tr("Session activity is unavailable.")};
+    std::vector<std::string> lines{tr("Sessions · retained MCP observations"),activity.notes.front()};
+    if (activity.sessions.empty()) lines.push_back(tr("No correlated MCP sessions have been recorded yet."));
+    for (const auto& session : activity.sessions) {
+        lines.push_back(""); lines.push_back(std::string(tr("Session "))+session.id.substr(0,8));
+        lines.push_back(std::string(tr("Context calls: "))+session.calls+tr(" · Errors: ")+session.errors+tr(" · Tasks: ")+session.tasks);
+        lines.insert(lines.end(),session.details.begin(),session.details.end());
+    }
+    lines.insert(lines.end(),activity.notes.begin()+1,activity.notes.end());
     return lines;
 }
 }

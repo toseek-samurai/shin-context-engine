@@ -497,7 +497,7 @@ checks or choose **Check for updates…** in the tray menu. Failed checks do not
 interrupt offline retrieval. Manual checks fetch the current offer even after a
 recent check; concurrent checks are coalesced.
 
-Unreleased Monitor source uses one persistent **Shin updates** window for manual
+Monitor uses one persistent **Shin updates** window for manual
 checks, the offer, launch failures and saved results. Opening it closes the tray
 popover and brings that window forward. Release notes open the browser while
 preserving the review; copying diagnostics preserves the result and its actions.

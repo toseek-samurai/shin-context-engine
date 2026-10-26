@@ -59,6 +59,7 @@ void platform_save_language(int preference) {
 }
 void platform_save_view(int view) { settings["view"] = view; save_settings(); }
 std::string platform_font() { return (known_folder(FOLDERID_Fonts) / "segoeui.ttf").string(); }
+std::string platform_console_font() { return (known_folder(FOLDERID_Fonts) / "consola.ttf").string(); }
 std::string platform_version() { return SHIN_OBSERVER_VERSION; }
 bool platform_reduce_motion() {
     BOOL enabled = FALSE;

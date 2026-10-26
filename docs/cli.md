@@ -248,6 +248,21 @@ an old snapshot usable again.
 
 ### Sessions and optional recovery notes (dev.45)
 
+Monitor's dev.51 source presents these observations as a Sand journal with UTC
+timestamps, short opaque session IDs, a monospace font and vector icons. Success,
+error, unfinished and explicit host events have distinct colors and text labels.
+Session counters and details remain available below the journal; **What is
+recorded?** opens its interpretation and coverage notes. Empty sessions and
+unavailable data have separate explanations. See the [EN/RU native screenshots](images/README.md).
+
+The desktop journal shows up to **eight sessions × six recent events = 48 events**,
+including host markers and MCP calls. Its count and ceiling appear above the
+list. Wrapped rows scroll within the content area and preserve the fixed footer.
+The view replaces its bounded snapshot on refresh instead of appending events
+indefinitely. These display bounds do not prune stored calls or sample analysis
+totals; storage retention and collection gaps still apply. TUI text keeps the
+same observation and attribution boundaries.
+
 Monitor now has a **Sessions** view; `shin-ce stats` opens the same observations
 with key **6**. The latest eight correlated sessions show context calls, errors,
 caller task labels, recovery requests and recent invocation outcomes. Calls can

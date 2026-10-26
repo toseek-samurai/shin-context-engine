@@ -44,9 +44,9 @@ the Sand TUI included in preview dev.39 and later.
 All names, paths, tokens and counts are synthetic; example model labels do not
 represent real client attribution.
 
-The Overview, Timing, Russian, compact and offline captures also show unreleased
-graph improvements: visible measurement counts, the last observed value and
-explicit period labels. Their values remain synthetic. Live-data diagnostic
+The Overview, Timing, Russian, compact and offline captures also show graph
+improvements included in dev.49 and later: visible measurement counts, the last
+observed value and explicit period labels. Their values remain synthetic. Live-data diagnostic
 captures are private and do not belong in this gallery.
 
 After building Observer with testing enabled, refresh the gallery with:
@@ -62,10 +62,10 @@ terminal font and color capabilities still affect the actual application.
 The JSON, plain-text and ANSI frame exports stay in the disposable capture
 directory; only the selected SVGs belong in this documentation.
 
-`tui-updates.svg` and `tui-update-progress.svg` show unreleased source, not the
-published dev.45 kit. They come from `updates-offer-en.json` and
+`tui-updates.svg` and `tui-update-progress.svg` show the Updates view included
+in dev.49 and later. They come from `updates-offer-en.json` and
 `updates-progress-en.json` in the same render fixture. To regenerate only these
-two views without replacing screenshots of the published UI:
+two views:
 
 ```sh
 python3 observer/tui/capture.py /path/to/disposable-captures/updates-offer-en.json docs/images/tui-updates.svg

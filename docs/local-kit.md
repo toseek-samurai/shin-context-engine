@@ -9,14 +9,15 @@ Mac may require manual approval. This is not a stable release.
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.45).
-The release contains the original kit ZIP, its SHA-256 file, and `install.sh`.
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.49).
+The release contains the kit and independent Updater ZIPs, their SHA-256 files,
+and `install.sh`.
 Public release downloads do not require a GitHub account.
 
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.45/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.49/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -557,10 +558,11 @@ native recovery, **Acknowledge verified result** verifies the installed payload
 and completed journal before clearing the review gate and cleaning its identified
 private staging folder. A stale review or unfinished native operation is refused.
 
-### Independent Updater (unreleased source)
+### Independent Updater (dev.49 and later)
 
-New source separates the installed bootstrap from the updater shipped with each
-release. The release adds `shin-updater-v1-macos-arm64.zip` and its SHA-256 file.
+Starting with dev.49, Shin separates the installed bootstrap from the updater
+shipped with each release. The release adds `shin-updater-v1-macos-arm64.zip` and
+its SHA-256 file.
 The bootstrap understands only the stable [updater envelope and protocol](machine/updater-bootstrap-v1.json),
 not the application's manifest, Core generator or native recovery journal.
 

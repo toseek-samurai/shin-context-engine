@@ -269,9 +269,18 @@ if len(sys.argv) > 3:
                 screen.key(b'r'); screen.expect('2.0.5-dev.99')
                 screen.key(b'\n'); screen.expect('A Shin update is available')
                 screen.key(b'i'); screen.expect('Install the reviewed release?')
-                # ESC is also the prefix of terminal key sequences. Deliver it
-                # alone before a redraw, so it cannot become Alt-Ctrl-L.
-                screen.key(b'\x1b', redraw=False)
+                # Exercise a delayed input reader. A fixed pump interval cannot
+                # prove that FTXUI consumed standalone ESC: queuing Ctrl-L next
+                # would turn it into Alt-Ctrl-L. Wait for the cancelled offer's
+                # action before sending any more input.
+                screen.child.send_signal(signal.SIGSTOP)
+                _, stopped = os.waitpid(screen.child.pid, os.WUNTRACED)
+                assert os.WIFSTOPPED(stopped), 'TUI fixture did not stop'
+                try:
+                    screen.key(b'\x1b', redraw=False)
+                finally:
+                    screen.child.send_signal(signal.SIGCONT)
+                screen.expect('[i Install]')
                 screen.key(b'\x0c'); screen.expect('A Shin update is available')
                 assert b'Install the reviewed release?' not in screen.data, 'Esc did not cancel confirmation'
                 screen.key(b'y'); screen.expect('A Shin update is available')

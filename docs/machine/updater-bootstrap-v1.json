@@ -1,6 +1,6 @@
 {
   "schema_version": "shin.updater-bootstrap.v1",
-  "status": "unreleased-source",
+  "status": "accepted",
   "platform": "macos-arm64",
   "protocol": 1,
   "releaseAssets": ["shin-updater-v1-macos-arm64.zip", "shin-updater-v1-macos-arm64.zip.sha256"],

@@ -18,7 +18,7 @@ shin-ce stats
 ```
 
 The Sand dashboard is included in preview dev.39 and later; Sessions arrived in
-dev.45. Controls for Updates below describe unreleased source.
+dev.45. Updates and the graph improvements below are included in dev.49 and later.
 See the [native screen gallery](tui.md), including EN/RU and compact layouts.
 
 For a portable kit, pass `--home /absolute/path/to/private-data`. An installed
@@ -40,7 +40,7 @@ next step and any reported excluded file paths.
 
 | Key | Action |
 | --- | --- |
-| `1`–`7`, Tab, Left/Right | Overview, Projects, Timing, Storage, Models, Sessions, Updates (Updates is unreleased source) |
+| `1`–`7`, Tab, Left/Right | Overview, Projects, Timing, Storage, Models, Sessions, Updates |
 | Up/Down or `j`/`k` | Select a project; scroll other views |
 | Enter, Esc | Open project details; return |
 | PageUp/PageDown | Scroll a page |
@@ -49,7 +49,7 @@ next step and any reported excluded file paths.
 | `t`, `f` | Toggle recent/retained timings; filter query traffic |
 | `p` | Next usage project in Models |
 | `r` | Refresh observations; explicitly rescan storage in Storage |
-| `u` / `7` | Open Updates (unreleased source) |
+| `u` / `7` | Open Updates |
 | Updates: `r`, `v` | Check public releases; read the saved update result |
 | Updates: `i`, then `y` / `n` | Review installation; explicitly confirm / cancel (`Esc` also cancels) |
 | Updates: `a` | Acknowledge a verified saved result using its exact revision |

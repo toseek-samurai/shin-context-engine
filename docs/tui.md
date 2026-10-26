@@ -19,7 +19,7 @@ Memory, active queries and search p50 stay visible above a line graph and the
 project table. Click a metric or press `g`; `h` cycles Live, one hour and 24 hours.
 Missing observations remain gaps rather than becoming zero.
 
-The graph improvements shown here describe unreleased source. The chart footer
+The graph improvements shown here are included in dev.49 and later. The chart footer
 shows the last measured value and the number of visible measurements. Live covers
 the last 60 seconds (or the elapsed uptime just after startup); retained views
 show local start/end times. A lone measurement has a visible point marker.
@@ -82,7 +82,7 @@ Press `l` to change the current terminal session immediately, or launch with
 
 ![The same overview rendered in Russian](images/tui-overview-ru.svg)
 
-## Updates (unreleased source)
+## Updates (dev.49 and later)
 
 Open view 7 or press `u`. On macOS, `r` checks for a complete release and shows
 the version and release-notes URL. `i` opens confirmation; `y` installs and

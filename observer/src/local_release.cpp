@@ -1,4 +1,5 @@
 #include "shin/observer/local_updates.h"
+#include "shin/observer/updater_bundle.h"
 #include "shin/observer/observer.h"
 #include <array>
 #include <regex>
@@ -17,7 +18,8 @@ std::optional<Version> version(const std::string& text) {
 }
 void require(bool ok) { if (!ok) throw Error("update-release-invalid", "The release metadata or archive is not a complete supported kit."); }
 }
-Json select_local_release(const Json& releases, const std::string& current) {
+namespace {
+Json select_release(const Json& releases, const std::string& current, bool updater) {
     const auto installed=version(current);
     require(installed.has_value() && releases.is_array() && releases.size() <= 30);
     Json result{{"ok",true},{"current_version",current},{"available",false},{"channel",(*installed)[3] == 2 ? "stable" : "preview"}};
@@ -28,11 +30,11 @@ Json select_local_release(const Json& releases, const std::string& current) {
             const auto tag=release.at("tag_name").get<std::string>();
             if (tag.empty() || tag.front()!='v') continue;
             const auto next=version(tag.substr(1));
-            if (!next || *next<=newest || (release.at("prerelease").get<bool>() != ((*next)[3]!=2)) ||
+            if (!next || *next<newest || (!updater && *next==newest) || (release.at("prerelease").get<bool>() != ((*next)[3]!=2)) ||
                 ((*installed)[3]==2 && (*next)[3]!=2)) continue;
             const auto page="https://github.com/toseek-samurai/shin-context-engine/releases/tag/"+tag;
             if (release.at("html_url")!=page || !release.at("assets").is_array() || release.at("assets").size()>20) continue;
-            const auto name="shin-local-"+tag.substr(1)+"-macos-arm64.zip";
+            const auto name=updater ? std::string(updater_archive_name) : "shin-local-"+tag.substr(1)+"-macos-arm64.zip";
             const auto download="https://github.com/toseek-samurai/shin-context-engine/releases/download/"+tag+"/";
             Json archive,checksum;
             bool duplicate=false;
@@ -48,7 +50,7 @@ Json select_local_release(const Json& releases, const std::string& current) {
                 archive.at("state")!="uploaded" || checksum.at("state")!="uploaded" ||
                 archive.at("browser_download_url")!=download+name || checksum.at("browser_download_url")!=download+name+".sha256") continue;
             const auto bytes=archive.at("size").get<std::uint64_t>();
-            if (!bytes || bytes>128U*1024*1024 || checksum.at("size").get<std::uint64_t>()>512) continue;
+            if (!bytes || bytes>(updater ? updater_archive_limit : 128U*1024*1024) || checksum.at("size").get<std::uint64_t>()>512) continue;
             newest=*next;
             result.update({{"available",true},{"version",tag.substr(1)},{"release_url",page},{"archive_url",download+name},
                 {"checksum_url",download+name+".sha256"},{"archive_name",name},{"sha256",hash.substr(7)},{"bytes",bytes}});
@@ -57,6 +59,9 @@ Json select_local_release(const Json& releases, const std::string& current) {
     if (result.at("available")==true) result["revision"]=digest(result.dump());
     return result;
 }
+} // namespace
+Json select_local_release(const Json& releases, const std::string& current) { return select_release(releases, current, false); }
+Json select_updater_release(const Json& releases, const std::string& current) { return select_release(releases, current, true); }
 void verify_release_listing(const std::string& listing,const std::string& release) {
     require(version(release).has_value() && listing.size()<=256U*1024);
     const std::string root="shin-local-"+release+"-macos-arm64";

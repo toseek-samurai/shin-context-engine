@@ -6,7 +6,7 @@ function(gp_item_default_embedded_path_override item path)
         set(${path} "@executable_path" PARENT_SCOPE)
     endif()
 endfunction()
-set(programs shin-context shin-observer shin-ce shin-mcp shin-usage)
+set(programs shin-context shin-observer shin-ce shin-mcp shin-usage shin-updater)
 # BundleUtilities visits every executable in the containing bin directory.
 fixup_bundle("${kit}/bin/shin-ce" "" "@OPENSSL_INCLUDE_DIR@/../lib")
 set(fixing_monitor ON)

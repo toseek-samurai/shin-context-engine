@@ -23,7 +23,10 @@ parser.add_argument('--previous-kit', required=True, type=Path)
 parser.add_argument('--candidate-kit', required=True, type=Path)
 parser.add_argument('--report', required=True, type=Path)
 parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted'], default='forward')
+parser.add_argument('--fresh-updater', action='store_true', help='exercise the independent updater entry for the forward transition')
 args = parser.parse_args()
+if args.fresh_updater and args.scenario != 'forward':
+    parser.error('--fresh-updater requires the forward scenario')
 old, candidate = args.previous_kit.resolve(), args.candidate_kit.resolve()
 old_manifest = json.loads((old / 'shin-kit.json').read_text())
 new_manifest = json.loads((candidate / 'shin-kit.json').read_text())
@@ -33,7 +36,7 @@ assert old_identity['version'] == old_manifest['core_version'] and new_identity[
 evidence = {'previous': old_manifest['version'], 'candidate': new_manifest['version'],
             'scenario': args.scenario, 'live_installation_changed': False}
 
-with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir='/tmp') as temporary:
+with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() if args.fresh_updater else '/tmp') as temporary:
     work = Path(temporary).resolve()
     user = work / 'user'; user.mkdir(mode=0o700)
     prefix, home, commands = user / 'kit', user / 'data', user / 'bin'
@@ -97,7 +100,9 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir='/tmp') as te
             assert time.monotonic() < history_deadline, 'both service queries must reach retained history'
             time.sleep(.02)
         if args.scenario == 'forward':
-            evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
+            evidence['update'] = call(candidate / 'bin/shin-updater', 'install-local', '--kit', candidate, '--prefix', prefix) if args.fresh_updater else \
+                call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
+            evidence['fresh_updater'] = args.fresh_updater
         else:
             # Progress is emitted after candidate publication and before final
             # qualification. A real project lock triggers rollback; killing at

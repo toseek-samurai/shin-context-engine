@@ -12,7 +12,7 @@ p = argparse.ArgumentParser()
 p.add_argument('script', type=Path)
 p.add_argument('archive', type=Path)
 a = p.parse_args()
-with tempfile.TemporaryDirectory(prefix='shin-bootstrap-') as directory:
+with tempfile.TemporaryDirectory(prefix='.shin-bootstrap-', dir=Path.home()) as directory:
     root = Path(directory).resolve()
     user = root / "user's space $not_a_variable"
     user.mkdir(mode=0o700)
@@ -63,6 +63,14 @@ esac
     assert commands[1][1] == 'client-targets'
     again = run()
     assert '"changed": false' in again.stdout
+    custom = user / 'custom kit'
+    data, commands = user / 'custom data', user / 'custom commands'
+    run('--prefix', custom, '--home', data, '--bin-dir', commands)
+    assert '"changed": false' in run('--prefix', custom).stdout
+    recorded = json.loads((custom / '.shin-installation.json').read_text())
+    assert recorded['home'] == str(data) and recorded['bin_dir'] == str(commands)
+    subprocess.run([str(custom / 'bin/shin-ce'), 'uninstall', '--prefix', str(custom)],
+                   env=env, check=True, capture_output=True, timeout=30)
     prefix = user / '.local/opt/shin-local'
     # Legacy installs must be explicitly adopted, never inferred from a directory.
     alien = user / 'foreign kit'
@@ -76,5 +84,5 @@ esac
     assert not prefix.exists()
     assert not list(root.glob('shin-install.*')), 'bootstrap leaked temporary downloads'
     print(json.dumps({'ok': True, 'checksum_refusal': True, 'install_and_repeat_update': True,
-                      'spaces_in_paths': True, 'implicit_adoption_refused': True,
+                      'spaces_in_paths': True, 'custom_paths_preserved': True, 'implicit_adoption_refused': True,
                       'transport': 'fixture', 'native_installer': 'real archive'}))

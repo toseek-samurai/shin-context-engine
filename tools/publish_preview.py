@@ -55,8 +55,8 @@ def qualification(run, jobs, artifact, repo, sha, run_id, attempt, recover_publi
 
 def verify_assets(directory, version, core):
     name = f'shin-local-{version}-macos-arm64.zip'
-    require({p.name for p in directory.iterdir()} == {name, name + '.sha256', 'install.sh'},
-            'Expected exactly the qualified archive, checksum and installer')
+    require({p.name for p in directory.iterdir()} == {name, name + '.sha256', 'install.sh', 'shin-updater-v1-macos-arm64.zip', 'shin-updater-v1-macos-arm64.zip.sha256'},
+            'Expected the qualified kit, updater, both checksums and installer')
     archive = directory / name
     require(archive.stat().st_size <= 128 * 1024 * 1024, 'Archive exceeds the release bound')
     digest = hashlib.sha256(archive.read_bytes()).hexdigest()
@@ -75,6 +75,32 @@ def verify_assets(directory, version, core):
             value = kit.read(info)
             require(len(value) == row['size'] and hashlib.sha256(value).hexdigest() == row['sha256'],
                     'Kit manifest hash mismatch')
+    updater_name = 'shin-updater-v1-macos-arm64.zip'
+    updater = directory / updater_name
+    updater_hash = hashlib.sha256(updater.read_bytes()).hexdigest()
+    require(updater.stat().st_size <= 64 * 1024 * 1024 and
+            (directory / (updater_name + '.sha256')).read_text() in
+            (f'{updater_hash}  {updater_name}', f'{updater_hash}  {updater_name}\n'), 'Updater checksum mismatch')
+    with zipfile.ZipFile(archive) as kit, zipfile.ZipFile(updater) as envelope:
+        root = 'shin-updater-v1/'
+        value = envelope.read(root + 'shin-updater.json')
+        manifest = json.loads(value)
+        require(manifest['schema_version'] == 'shin.updater.v1' and manifest['protocol'] == 1
+                and manifest['version'] == version, 'Updater protocol/version mismatch')
+        require(value == kit.read(prefix + 'shin-updater.json'), 'Updater differs from qualified kit')
+        expected_paths = {root + 'shin-updater.json', *(root + row['path'] for row in manifest['files'])}
+        directories = {'shin-updater-v1/'}
+        for row in manifest['files']:
+            directories.update(root + str(parent) + '/' for parent in Path(row['path']).parents if str(parent) != '.')
+        expected_paths |= directories
+        require(len(envelope.namelist()) == len(expected_paths) and set(envelope.namelist()) == expected_paths,
+                'Unexpected updater inventory')
+        require(root + 'bin/shin-updater' in expected_paths, 'Missing updater executable')
+        for row in manifest['files']:
+            require(not Path(row['path']).is_absolute() and '..' not in Path(row['path']).parts, 'Unsafe updater path')
+            payload = envelope.read(root + row['path'])
+            require(len(payload) == row['size'] and hashlib.sha256(payload).hexdigest() == row['sha256']
+                    and payload == kit.read(prefix + row['path']), 'Updater payload differs from qualified kit')
     return {p.name: 'sha256:' + hashlib.sha256(p.read_bytes()).hexdigest() for p in directory.iterdir()}
 
 

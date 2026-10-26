@@ -13,6 +13,7 @@ struct Chart {
     std::vector<ChartPoint> points;
     double begin = 0, end = 0, maximum = 1;
     bool retained = false, partial = false;
+    std::size_t omitted = 0;
 };
 // Existing telemetry only. Missing samples, time gaps and minute buckets
 // spanning service runs never become interpolated zeroes.

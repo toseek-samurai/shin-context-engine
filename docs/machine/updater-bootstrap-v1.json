@@ -1,0 +1,40 @@
+{
+  "schema_version": "shin.updater-bootstrap.v1",
+  "status": "unreleased-source",
+  "platform": "macos-arm64",
+  "protocol": 1,
+  "releaseAssets": ["shin-updater-v1-macos-arm64.zip", "shin-updater-v1-macos-arm64.zip.sha256"],
+  "envelope": {
+    "root": "shin-updater-v1",
+    "manifest": "shin-updater.json",
+    "schema": "shin.updater.v1",
+    "fields": ["schema_version", "protocol", "version", "files"],
+    "fileFields": ["path", "sha256", "size", "executable"],
+    "entrypoint": "bin/shin-updater",
+    "maxArchiveBytes": 67108864,
+    "maxExpandedBytes": 134217728,
+    "maxEntries": 256,
+    "types": "single-disk ordinary ZIP; regular files and directories only; no links, ZIP64, encryption, flags, comments or extra fields"
+  },
+  "authority": {
+    "bootstrap": "Resolve the recorded location without parsing a kit manifest or native journal; select the reviewed updater release; verify transport hashes, archive structure, updater inventory and protocol; hand off once.",
+    "updater": "Interpret installed/current kit formats, select and verify the application archive, perform native update and recovery, independently confirm completion, and own the outcome.",
+    "observation": "Progress never acknowledges completion or grants installation authority. TUI observes the fresh process through the bounded progress protocol.",
+    "desktop": "exec preserves the helper PID and original Monitor parent. The downloaded updater launches its own progress viewer, then reopens Monitor after its viewer exits.",
+    "offlineResult": "Use the verified updater referenced by an unresolved saved outcome, or the bundled updater. No release fetch is needed for status or acknowledgement."
+  },
+  "stableLocators": {
+    "installation": ".shin-installation.json retains prefix, prefix_identity, home and home_identity for protocol 1. Unknown fields and the native journal format are outside the bootstrap contract.",
+    "unresolvedUpdater": "The bounded private JSON object at <home>/updates/state.json retains an optional updater locator. Bootstrap ignores every other outcome field; future engines must preserve this locator projection independently of their journals."
+  },
+  "retention": {
+    "temporaryPrefix": "shin-updater.",
+    "stateField": "updater",
+    "locatorFields": ["directory", "identity", "manifest_sha256"],
+    "preserve": "Retain the immutable verified updater when the native saved outcome references it. Failed review or changed identity preserves artifacts.",
+    "cleanup": "Read-only probes never delete the envelope. The applying updater removes its temporary envelope after confirmed success, verified acknowledgement or a refusal before it owns a saved outcome."
+  },
+  "recoveryEntry": "The independently downloaded versioned install.sh fetches the new complete kit and launches its own shin-updater install-local. It needs no functioning installed launcher; the fresh kit owns installation and journal recovery.",
+  "publication": "The guarded publisher requires the exact qualified kit, separate updater, both checksums and installer. Updater bytes must match the updater inventory embedded in that exact kit.",
+  "previewTrust": "GitHub HTTPS plus GitHub asset digest and SHA-256 checksum. No independent publisher signature or Developer ID/notarization is claimed."
+}

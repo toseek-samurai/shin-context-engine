@@ -5,6 +5,7 @@
 #include <ftxui/screen/string.hpp>
 #include <algorithm>
 #include <cmath>
+#include <ctime>
 #include <iomanip>
 #include <sstream>
 
@@ -76,9 +77,11 @@ Element line_chart(const Chart& data, const Painter& paint, int height, bool con
         canvas.DrawText(0, row * 4, std::string(static_cast<std::size_t>(width), '.'), grid_color);
     std::optional<std::pair<int, int>> previous;
     std::size_t observed = 0;
-    for (const auto& point : data.points) {
+    std::optional<double> last;
+    for (std::size_t i = 0; i < data.points.size(); ++i) {
+        const auto& point = data.points[i];
         if (!point.value) { previous.reset(); continue; }
-        ++observed;
+        ++observed; last = point.value;
         const double span = std::max(1.0, data.end - data.begin);
         const int x = std::clamp(static_cast<int>(std::lround((point.at - data.begin) / span * xmax)), 0, xmax);
         const int y = std::clamp(static_cast<int>(std::lround((1 - *point.value / data.maximum) * ymax)), 0, ymax);
@@ -94,6 +97,10 @@ Element line_chart(const Chart& data, const Painter& paint, int height, bool con
             canvas.DrawText(x / 2 * 2, y / 4 * 4, "*", tint);
         } else {
             if (point.connect && previous) canvas.DrawPointLine(previous->first, previous->second, x, y, tint);
+            // Sparse requests and disconnected history buckets need a visible
+            // marker; joining them would invent measurements between requests.
+            if (!point.connect && (i + 1 == data.points.size() || !data.points[i + 1].connect))
+                canvas.DrawPointCircle(x, y, 1, tint);
             canvas.DrawPointOn(x, y);
             canvas.Style(x / 2 * 2, y / 4 * 4, [&](Cell& cell) { cell.foreground_color = tint; });
         }
@@ -107,13 +114,27 @@ Element line_chart(const Chart& data, const Painter& paint, int height, bool con
         axis.push_back(paint.label(terminal_text(value_text, 5, true) + (paint.ascii ? " | " : " │ "), Tone::muted, gutter));
     }
     auto plot = hbox({vbox(std::move(axis)), ftxui::canvas(std::move(canvas))});
-    const char* period = data.retained ? ui::tr("Interval averages; gaps are not zeroes.") : ui::tr("Live observations; gaps are not zeroes.");
     Elements result{plot};
-    const std::string left = data.retained ? ui::tr("period start") : "-60 s";
-    result.push_back(paint.pair(left, connected ? ui::tr("now") : ui::tr("last observation")));
-    if (!observed) result.push_back(paint.label(ui::tr("No measurements for this period"), Tone::muted));
-    else result.push_back(paint.label(std::string(period) + " · " + data.unit, Tone::muted));
-    if (data.partial) result.push_back(paint.label(ui::tr("Partial measurements; invalid rows omitted."), Tone::warning));
+    const auto clock_label = [&data](double at) {
+        if (at <= 0) return std::string("—");
+        const auto time = static_cast<std::time_t>(at / 1000);
+        std::tm local{};
+        if (!::localtime_r(&time, &local)) return std::string("—");
+        std::ostringstream out;
+        out << std::put_time(&local, data.end - data.begin > 3600000 ? "%d.%m %H:%M" : "%H:%M");
+        return out.str();
+    };
+    const std::string left = data.retained ? clock_label(data.begin) :
+        "-" + number((data.end - data.begin) / 1000) + ui::tr(" s");
+    const std::string right = data.retained ? clock_label(data.end) :
+        connected ? ui::tr("now") : ui::tr("last observation");
+    result.push_back(paint.pair(left, right));
+    if (!last) result.push_back(paint.label(data.omitted ? ui::tr("Measurements omitted from this response") :
+        !data.retained && data.unit == "ms" ? ui::tr("No query timings in the last 60 s") :
+        ui::tr("No measurements for this period"), Tone::muted));
+    else result.push_back(paint.pair(std::string(connected ? ui::tr("Last: ") : ui::tr("Last received: ")) + number(*last, 1, data.unit == "MiB" || data.unit == "ms" ? 1 : 0) + " " + data.unit,
+        std::string(ui::tr("Measurements: ")) + std::to_string(observed)));
+    if (data.partial) result.push_back(paint.label(ui::tr("Partial measurements; omitted/invalid rows are not treated as zero."), Tone::warning));
     return vbox(std::move(result));
 }
 Element project_table(const Snapshot& snapshot, State& state, const Painter& paint, HitTargets& hits, int capacity) {
@@ -182,7 +203,7 @@ Element text_page(const Snapshot& snapshot, State& state, const Painter& paint, 
     state.scroll = std::clamp(state.scroll, 0, std::max(0, static_cast<int>(body.size()) - available));
     Elements visible;
     for (int i = 0; i < available && state.scroll + i < static_cast<int>(body.size()); ++i) {
-        const auto& line = body[static_cast<std::size_t>(state.scroll + i)];
+        const auto& line = body[static_cast<std::size_t>(state.scroll) + static_cast<std::size_t>(i)];
         visible.push_back(line.tone == Tone::heading ? paint.section(line.text) : paint.label(line.text, line.tone));
     }
     return vbox(std::move(visible));
@@ -192,6 +213,7 @@ HitTargets::HitTargets() {
     const ftxui::Box absent{1, 0, 1, 0};
     tabs.fill(absent); metrics.fill(absent); ranges.fill(absent); projects.fill(absent);
     language = back = absent;
+    update_check = update_review = update_install = update_confirm = update_cancel = update_acknowledge = absent;
 }
 ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, int height,
                          HitTargets& hits, bool ascii, bool monochrome) {
@@ -211,20 +233,21 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
     const auto language = ui::language() == ui::Language::en ? "L RU" : "L EN";
     const std::string connection_text = std::string(online ? "● " : "○ ") + connection + " · " +
         ui::tr("Observation age: ") + age + ui::tr(" s") +
-        (columns >= 100 ? std::string(" · ") + ui::tr("read-only monitor") : "");
+        (snapshot.updates.installing() ? std::string(" · ") + ui::tr("Update in progress · 7 Updates") : "");
     Elements header{
         hbox({paint.label("SHIN  Context Engine", Tone::heading), filler(),
             paint.label(SHIN_OBSERVER_VERSION, Tone::muted), paint.label("   "),
             paint.label(language, Tone::heading) | reflect(hits.language)}),
         hbox({paint.label(connection_text, online ? Tone::good : Tone::warning), filler(),
             paint.label(std::string(ui::tr("Uptime: ")) + (online ? number(field(telemetry, "uptime_ms"), 1000) + ui::tr(" s") : "—"), Tone::muted)})};
-    const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Timing"), ui::tr("Storage"), ui::tr("Models"), ui::tr("Sessions")};
-    Elements tabs;
+    const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Timing"), ui::tr("Storage"), ui::tr("Models"), ui::tr("Sessions"), ui::tr("Updates")};
+    const bool two_rows = columns < 100;
+    Elements tabs, lower_tabs;
     for (std::size_t i = 0; i < names.size(); ++i) {
         auto element = paint.label(std::to_string(i + 1) + " " + names[i],
-            static_cast<int>(i) == state.tab ? Tone::selected : Tone::muted, paint.columns / 6) | reflect(hits.tabs[i]);
+            static_cast<int>(i) == state.tab ? Tone::selected : Tone::muted, paint.columns / (two_rows ? 4 : 7)) | reflect(hits.tabs[i]);
         if (static_cast<int>(i) == state.tab) element = element | underlined;
-        tabs.push_back(element);
+        (two_rows && i >= 4 ? lower_tabs : tabs).push_back(element);
     }
     Elements body;
     const int available = height - 7;
@@ -283,13 +306,41 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
         body.push_back(paint.label(ui::tr("Search availability and source coverage are separate."), Tone::muted));
     } else {
         int text_height = available;
+        if (state.tab == 6 && snapshot.updates.phase != UpdatePhase::unsupported) {
+            const auto& update = snapshot.updates;
+            Elements actions;
+            if (!update.busy()) {
+                actions.push_back(paint.label(ui::tr("[r Check]"), Tone::heading) | reflect(hits.update_check));
+                actions.push_back(paint.label(ui::tr(" [v Result]"), Tone::heading) | reflect(hits.update_review));
+                if (update.phase == UpdatePhase::offer && state.update_confirmation.empty())
+                    actions.push_back(paint.label(ui::tr(" [i Install]"), Tone::heading) | reflect(hits.update_install));
+                if (update.phase == UpdatePhase::result && update.result.value("can_acknowledge", false))
+                    actions.push_back(paint.label(ui::tr(" [a Acknowledge]"), Tone::heading) | reflect(hits.update_acknowledge));
+            }
+            body.push_back(hbox(std::move(actions))); --text_height;
+            if (update.phase == UpdatePhase::offer && !state.update_confirmation.empty()) {
+                body.push_back(hbox({paint.label(ui::tr("[y Install now]"), Tone::warning) | reflect(hits.update_confirm),
+                    paint.label(ui::tr(" [n Cancel]"), Tone::heading) | reflect(hits.update_cancel)}));
+                --text_height;
+            }
+            const auto progress = update.timeline.current;
+            auto percent = release_download_percent(progress);
+            if ((progress.step == ReleaseUpdateStep::staging || progress.step == ReleaseUpdateStep::preparing) && progress.total)
+                percent = static_cast<double>(std::min(100.0L,
+                    100.0L * static_cast<long double>(progress.received) / static_cast<long double>(progress.total)));
+            if (update.phase == UpdatePhase::installing && percent) {
+                body.push_back(hbox({gauge(static_cast<float>(*percent / 100)) | flex,
+                    paint.label(" " + number(*percent) + "%", Tone::heading)}));
+                --text_height;
+            }
+        }
         if (state.tab == 1 && state.detail) {
             body.push_back(paint.label(ui::tr("Esc back"), Tone::heading) | reflect(hits.back));
             --text_height;
         }
         if (state.tab == 2 && height >= 26) {
             const auto data = chart(snapshot, 2, 0, state.traffic);
-            body.push_back(paint.label(data.title + " · " + data.unit, Tone::heading));
+            body.push_back(paint.label(std::string(ui::tr("Live search time · last 60 s")) + " · " + data.unit, Tone::heading));
             body.push_back(line_chart(data, paint, 4, online));
             text_height -= 7;
         }
@@ -297,14 +348,17 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
     }
     header.push_back(separator() | (monochrome ? nothing : color(paint.colors.rule_ink)));
     header.push_back(hbox(std::move(tabs)));
-    header.push_back(text(""));
+    if (two_rows) header.push_back(hbox(std::move(lower_tabs)));
+    if (!two_rows) header.push_back(text(""));
     header.push_back(vbox(std::move(body)) | yframe | size(HEIGHT, EQUAL, available));
     header.push_back(separator() | (monochrome ? nothing : color(paint.colors.rule_ink)));
-    const auto hint = columns < 80 ? ui::tr("1-6 tabs  Enter details  ? help  q quit") :
+    const auto hint = snapshot.updates.installing() ? ui::tr("Update in progress. Keep this terminal open; quitting is available after it finishes.") :
+        columns < 80 ? ui::tr("1-7 tabs  Enter details  ? help  q quit") :
+        state.tab == 6 ? ui::tr("r check  i install  y/n confirm/cancel  v result  L EN/RU  q quit") :
         state.tab == 0 ? ui::tr("Enter details  g metric  h period  L EN/RU  ? help  q quit") :
         state.tab == 2 ? ui::tr("t recent/history  f traffic  j/k scroll  L EN/RU  q quit") :
         state.tab == 4 ? ui::tr("p usage project  j/k scroll  L EN/RU  ? help  q quit") :
-        ui::tr("1-6 tabs  j/k scroll  Enter details  r refresh  ? help  q quit");
+        ui::tr("1-7 tabs  j/k scroll  Enter details  r refresh  ? help  q quit");
     header.push_back(paint.label(hint, Tone::muted));
     auto result = vbox(std::move(header)) | size(WIDTH, EQUAL, paint.columns) |
         size(HEIGHT, EQUAL, height) | center;

@@ -101,9 +101,12 @@ Click the Shin icon in the menu bar. Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
 For the Sand terminal dashboard with line charts, run `shin-ce stats`.
-Use Tab or 1–5 for Overview, Projects, Timing, Storage and Models. Unreleased
-source adds **Sessions** as view 6, showing MCP activity and explicit host context
-markers when available. Enter opens project details,
+Use Tab or 1–6 for Overview, Projects, Timing, Storage, Models and Sessions,
+including MCP activity and explicit host context markers when available.
+Unreleased source adds **Updates** as view 7 (`u`): `r` checks releases, `i` reviews
+installation, `y` confirms and `n` or Esc cancels. Its progress and saved results
+use the same native updater as Monitor. Automatic release download is macOS-only.
+Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
 service. Model counters are collected automatically
 for enrolled projects and shown by default in both Monitor and the TUI. The first
@@ -493,6 +496,15 @@ checks or choose **Check for updates…** in the tray menu. Failed checks do not
 interrupt offline retrieval. Manual checks fetch the current offer even after a
 recent check; concurrent checks are coalesced.
 
+Unreleased Monitor source uses one persistent **Shin updates** window for manual
+checks, the offer, launch failures and saved results. Opening it closes the tray
+popover and brings that window forward. Release notes open the browser while
+preserving the review; copying diagnostics preserves the result and its actions.
+Async replies update the window without stealing focus from another application
+or reopening a window the user closed. A manual request during a background check
+shows that check's result instead of discarding the request. After selecting
+**Download and install**, the window shows the helper handoff before Monitor exits.
+
 A preview installation receives newer complete preview or stable kits; a stable
 installation receives stable releases only. Drafts, incomplete uploads, releases
 without a matching macOS ARM64 ZIP/checksum pair and invalid asset URLs are not
@@ -544,3 +556,44 @@ binaries acquire them only after an explicitly selected new kit is installed.
 native recovery, **Acknowledge verified result** verifies the installed payload
 and completed journal before clearing the review gate and cleaning its identified
 private staging folder. A stale review or unfinished native operation is refused.
+
+### Independent Updater (unreleased source)
+
+New source separates the installed bootstrap from the updater shipped with each
+release. The release adds `shin-updater-v1-macos-arm64.zip` and its SHA-256 file.
+The bootstrap understands only the stable [updater envelope and protocol](machine/updater-bootstrap-v1.json),
+not the application's manifest, Core generator or native recovery journal.
+
+A manual/background check selects a complete updater offer without downloading
+executable code. After installation is confirmed, the bootstrap rechecks that
+exact offer, verifies the updater archive, its file inventory and protocol, then
+hands off once. The fresh updater checks the installed kit and downloads/verifies
+the matching application release before invoking its native update. A malformed
+application manifest cannot prevent delivery of a newer updater; the fresh updater
+still refuses unsafe ownership, unsupported state or missing authority.
+
+Monitor's PID handoff is preserved with `exec`. The downloaded updater supplies
+its own progress window, so its update UI and recovery logic travel together.
+CLI uses that updater's terminal output; TUI observes its progress and native
+receipt. The initial Updater download stays in Monitor's opening-progress state;
+TUI shows its actual received bytes as preparation progress.
+
+Saved outcomes retain the verified updater when recovery/review is unresolved.
+Status and acknowledgement run it without network access. After confirmed success
+or verified acknowledgement, the owned temporary updater is removed; the complete
+installed kit includes an updater for subsequent offline result inspection.
+Read-only protocol/check probes never delete a downloaded updater awaiting handoff.
+
+If the installed launcher itself cannot run, download the versioned `install.sh`
+again. It fetches the fresh complete kit and starts that kit's `shin-updater
+install-local`, which validates it and delegates to the native installer. Existing
+identity, settings, projects and history remain under native ownership checks.
+An existing installation retains its recorded data and command directories when
+the caller supplies only its prefix; defaults apply only to a first installation.
+The independent entry also supports resuming an interrupted native update.
+
+This source change first takes effect after installing a kit that contains it.
+Older clients can acquire that kit through their existing full-kit update path or
+the independent installer. Release hashes provide download integrity under the
+existing GitHub HTTPS trust boundary; this preview has no independent publisher
+signature and remains without Developer ID/notarization.

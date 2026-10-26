@@ -5,11 +5,12 @@
 
 namespace shin::observer::tui {
 struct HitTargets {
-    std::array<ftxui::Box, 6> tabs;
+    std::array<ftxui::Box, 7> tabs;
     std::array<ftxui::Box, 3> metrics, ranges;
     std::array<ftxui::Box, 16> projects;
     std::array<std::string, 16> roots;
     ftxui::Box language, back;
+    ftxui::Box update_check, update_review, update_install, update_confirm, update_cancel, update_acknowledge;
     std::size_t project_count = 0;
     HitTargets();
 };

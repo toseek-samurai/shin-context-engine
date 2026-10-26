@@ -18,7 +18,7 @@ int main(int argc, char** argv) {
         std::vector<std::string> words{"shin-ce","update-install","--prefix",(work/"missing").string(),
             "--wait-pid",std::to_string(getppid()),"--ui-language","ru","--ui-version",version,"--revision","fixture"};
         std::vector<char*> pointers;for(auto& word:words)pointers.push_back(word.data());
-        try { (void)local_updates(static_cast<int>(pointers.size()),pointers.data(),work); }
+        try { (void)run_updater_request(static_cast<int>(pointers.size()),pointers.data(),work); }
         catch(const Error& error) { return error.code; }
         return std::string("unexpected-success");
     };

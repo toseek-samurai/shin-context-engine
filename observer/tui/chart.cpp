@@ -28,6 +28,13 @@ Chart chart(const Snapshot& snapshot, int metric, int range, int traffic) {
         metric == 1 ? (range == 0 ? ui::tr("Active queries") : ui::tr("Requests per interval")) : ui::tr("Search time");
     result.unit = metric == 0 ? "MiB" : metric == 2 ? "ms" : range == 1 ? ui::tr("/ min") : range == 2 ? ui::tr("/ h") : ui::tr("queries");
     const auto& telemetry = field(snapshot.service, "telemetry");
+    const auto* path = range == 1 ? "/history/minute_timeline" : range == 2 ? "/history/timeline" :
+        metric == 2 ? "/request_metrics/recent" : "/samples";
+    const auto omitted = measured(field(field(field(telemetry, "projection"), "omitted_rows"), path));
+    if (omitted && std::floor(*omitted) == *omitted) {
+        result.omitted = static_cast<std::size_t>(*omitted);
+        result.partial = result.omitted != 0;
+    }
     const auto& owner = range ? field(telemetry, "history") : telemetry;
     if (range && field(owner, "status") != "ready") return result;
     const auto end = measured(field(owner, range ? "captured_at_ms" : "uptime_ms"));
@@ -40,7 +47,7 @@ Chart chart(const Snapshot& snapshot, int metric, int range, int traffic) {
     const auto& rows = range ? field(owner, range == 1 ? "minute_timeline" : "timeline") :
         metric == 2 ? field(field(telemetry, "request_metrics"), "recent") : field(telemetry, "samples");
     const std::size_t limit = range == 1 ? 61 : range == 2 ? 169 : metric == 2 ? 64 : 120;
-    if (!rows.is_array() || rows.size() > limit) { result.partial = !rows.is_null(); return result; }
+    if (!rows.is_array() || rows.size() > limit) { result.partial = result.partial || !rows.is_null(); return result; }
     const double interval = range == 1 ? 60000 : 3600000;
     double previous_at = -1, peak = metric == 0 ? 16 : metric == 1 ? 2 : 1;
     bool previous_valid = false;

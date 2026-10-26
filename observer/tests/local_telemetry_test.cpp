@@ -580,6 +580,10 @@ int telemetry_scenario() {
         for (int i = 0; i < 120; ++i)
             data["samples"].push_back({{"elapsed_ms", 123456789 + i}, {"rss_bytes", 123456789},
                                       {"workers", 4}, {"requests_started", 123456789}});
+        data["request_metrics"]["recent"] = Json::array();
+        for (int i = 0; i < 64; ++i)
+            data["request_metrics"]["recent"].push_back({{"elapsed_ms", i * 1000}, {"method", "query"},
+                {"duration_ms", 12.5}, {"metadata", std::string(400, 'x')}});
         auto& history = data["history"];
         history = {{"status", "ready"}, {"rows", 20000}, {"request_cohorts_truncated", false},
             {"timeline", Json::array()}, {"minute_timeline", Json::array()},
@@ -602,6 +606,7 @@ int telemetry_scenario() {
         if (status.dump().size() > kLocalStatusByteLimit || data["projection"]["truncated"] != true ||
             data["project_states"] != full["telemetry"]["project_states"] ||
             status["resident_errors"] != full["resident_errors"] || history["rows"] != 20000) return 35;
+        if (data["samples"].size() < 61 || data["request_metrics"]["recent"].size() < 16) return 55;
         for (const auto* key : {"responses_ready", "response_errors", "query_sample_count", "query_p95_ms"})
             if (data["request_metrics"][key] != full["telemetry"]["request_metrics"][key]) return 36;
         for (const auto& [path, count] : data["projection"]["omitted_rows"].items()) {
@@ -617,6 +622,17 @@ int telemetry_scenario() {
         const auto projected = status;
         bound_local_service_status(status);
         if (status != projected) return 39;
+        Json crowded_status{{"essential", std::string(58000, 'x')}, {"telemetry", {
+            {"samples", full["telemetry"]["samples"]},
+            {"request_metrics", {{"recent", full["telemetry"]["request_metrics"]["recent"]}}}}}};
+        bound_local_service_status(crowded_status);
+        if (crowded_status.dump().size() > kLocalStatusByteLimit || crowded_status["essential"].get_ref<const std::string&>().size() != 58000 ||
+            crowded_status["telemetry"]["samples"].size() >= 61 ||
+            crowded_status["telemetry"]["projection"]["omitted_rows"]["/samples"].get<std::size_t>() +
+                crowded_status["telemetry"]["samples"].size() != 120) return 56;
+        const auto crowded_status_projection = crowded_status;
+        bound_local_service_status(crowded_status);
+        if (crowded_status != crowded_status_projection) return 57;
         status["essential"] = std::string(65536, 'x');
         try { bound_local_service_status(status); return 40; }
         catch (const Error& error) { if (error.code != "service-status-too-large") return 41; }

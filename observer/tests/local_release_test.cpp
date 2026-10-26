@@ -1,4 +1,5 @@
 #include "shin/observer/local_updates.h"
+#include "shin/observer/updater_bundle.h"
 #include <iostream>
 using namespace shin::observer;
 namespace {
@@ -33,6 +34,12 @@ int main()try {
     r=a;r["assets"][0]["state"]="new";refused(r);
     auto changed=a;changed["assets"][0]["digest"]="sha256:"+std::string(64,'b');
     check(select_local_release(Json::array({a}),"2.0.5-dev.16").at("revision")!=select_local_release(Json::array({changed}),"2.0.5-dev.16").at("revision"),"changed archive retained approval");
+    auto updater=release("2.0.5-dev.99");
+    const std::string updater_url="https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.99/";
+    updater["assets"][0]["name"]=updater_archive_name;updater["assets"][0]["browser_download_url"]=updater_url+updater_archive_name;
+    updater["assets"][1]["name"]=std::string(updater_archive_name)+".sha256";updater["assets"][1]["browser_download_url"]=updater_url+updater_archive_name+".sha256";
+    check(select_updater_release(Json::array({updater}),"2.0.5-dev.16").at("available"),"updater selection depends on a kit archive");
+    check(!select_local_release(Json::array({updater}),"2.0.5-dev.16").at("available"),"updater mistaken for a kit");
     const auto root=std::string("shin-local-2.0.5-dev.17-macos-arm64");
     const auto listing=root+"/\n"+root+"/shin-kit.json\n"+root+"/bin/shin-ce\n";
     verify_release_listing(listing,"2.0.5-dev.17");

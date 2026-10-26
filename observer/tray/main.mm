@@ -297,6 +297,9 @@ NSString* update_failure_text(const Json& result, NSString* failure) {
 }
 } // namespace
 
+enum class UpdateScreen { idle, checking, offer, current, checkFailed, starting, startFailed,
+                          resultLoading, resultReady, acknowledging, acknowledgeFailed };
+
 @interface ShinAction : NSAccessibilityElement
 @property(nonatomic, copy) void (^activate)(void);
 @end
@@ -398,6 +401,8 @@ static std::unique_ptr<Monitor> monitor;
 @interface ShinApp : NSObject<NSApplicationDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate> {
     Json _storageStatus;
     Json _updateOffer;
+    Json _reviewedUpdateOffer;
+    Json _updateResult;
 }
 @property(nonatomic, strong) NSStatusItem* item;
 @property(nonatomic, strong) NSPopover* popover;
@@ -436,6 +441,20 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, copy) NSString* setupConnectRoot;
 @property(nonatomic) BOOL setupConnecting;
 @property(nonatomic) BOOL updateChecking;
+@property(nonatomic) NSUInteger updateWindowEpoch;
+@property(nonatomic) NSUInteger updateCheckEpoch;
+@property(nonatomic) UpdateScreen updateScreen;
+@property(nonatomic) BOOL updateActionBusy;
+@property(nonatomic, copy) NSString* updateFailure;
+@property(nonatomic, strong) NSWindow* updateWindow;
+@property(nonatomic, strong) NSTextField* updateTitle;
+@property(nonatomic, strong) NSTextField* updateDetail;
+@property(nonatomic, strong) NSProgressIndicator* updateSpinner;
+@property(nonatomic, strong) NSButton* updateCheckButton;
+@property(nonatomic, strong) NSButton* updateInstallButton;
+@property(nonatomic, strong) NSButton* updateNotesButton;
+@property(nonatomic, strong) NSButton* updateCopyButton;
+@property(nonatomic, strong) NSButton* updateAcknowledgeButton;
 @property(nonatomic, strong) NSDate* lastUpdateCheck;
 @property(nonatomic, strong) NSDate* nextUpdateCheck;
 - (void)checkForUpdates:(id)sender;
@@ -445,6 +464,15 @@ static std::unique_ptr<Monitor> monitor;
 - (void)toggleAutomaticUpdates:(id)sender;
 - (void)showUpdateResult;
 - (void)showLastUpdateResult:(id)sender;
+- (void)ensureUpdateWindow;
+- (void)showUpdateWindow;
+- (void)renderUpdateWindow;
+- (void)installReviewedUpdate:(id)sender;
+- (void)openUpdateReleaseNotes:(id)sender;
+- (void)openUpdateReleaseURL:(NSURL*)url;
+- (void)copyUpdateResult:(id)sender;
+- (void)acknowledgeUpdateResult:(id)sender;
+- (void)setUpdatePending:(BOOL)pending;
 - (void)refreshLanguage:(id)sender;
 - (void)toggle:(id)sender;
 - (void)showDiagnosticReport:(id)sender;
@@ -535,7 +563,8 @@ static std::unique_ptr<Monitor> monitor;
         return;
     }
     NSArray<NSString*>* argv = [@[command, @"--home", self.shinHome] arrayByAddingObjectsFromArray:arguments];
-    const auto timeout = ([command isEqualToString:@"update-check"] || [command isEqualToString:@"update-install"]) ? std::chrono::seconds(20) : [command isEqualToString:@"project-add"] ? std::chrono::seconds(120) :
+    const auto timeout = [command isEqualToString:@"update-install"] ? std::chrono::seconds(360) :
+        [command isEqualToString:@"update-check"] ? std::chrono::seconds(20) : [command isEqualToString:@"project-add"] ? std::chrono::seconds(120) :
         [command isEqualToString:@"storage-clean"] ? std::chrono::seconds(90) :
         [command isEqualToString:@"detach"] ? std::chrono::seconds(90) : std::chrono::seconds(15);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
@@ -730,6 +759,7 @@ static std::unique_ptr<Monitor> monitor;
     (void)sender;
     refresh_setup_status(self.setupStatus);
     refresh_native_captions();
+    [self renderUpdateWindow];
     if (_storageStatus.is_object()) {
         const auto policyState = self.storageAutoClean.state;
         const bool policyEnabled = self.storageAutoClean.enabled, cleanEnabled = self.storageClean.enabled;
@@ -1131,7 +1161,7 @@ static std::unique_ptr<Monitor> monitor;
         if(!release_update_version.empty())self.item.button.toolTip=[NSString stringWithFormat:ui_text("Shin update available: %@"),diagnostic_text_content(release_update_version)];
         monitor->visible = self.popover.shown;
     }];
-    [self toggle:nil];
+    if (!self.updateWindow.visible) [self toggle:nil];
 }
 - (void)updatePanelSize {
     NSScreen* screen = self.item.button.window.screen;
@@ -1322,7 +1352,9 @@ static std::unique_ptr<Monitor> monitor;
 }
 @end
 
-#ifdef SHIN_TRAY_LAYOUT_TEST
+#ifdef SHIN_TRAY_UPDATE_WINDOW_TEST
+#include "updates_focus_test.inc"
+#elif defined(SHIN_TRAY_LAYOUT_TEST)
 #include "layout_test.inc"
 #else
 int main(int argc, char** argv) {

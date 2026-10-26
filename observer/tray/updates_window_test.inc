@@ -9,6 +9,7 @@
 @end
 
 @implementation UpdateOfferHarness
+- (void)showUpdateWindow {} // Action-only tests; native window/focus has its own harness.
 - (void)seedOldOffer {
     _updateOffer = {{"ok", true}, {"available", true}, {"version", "2.0.5-dev.21"}};
     self.lastUpdateCheck = NSDate.date;

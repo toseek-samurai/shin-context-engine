@@ -1,4 +1,5 @@
 #include "view.h"
+#include "../ui/update_progress.h"
 
 #include "../ui/project_diagnostics.h"
 #include "../ui/request_timing.h"
@@ -95,19 +96,75 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
     std::vector<Line> out;
     const bool connected = fresh(snapshot);
     if (state.help) return {
-        {shin::ui::tr("Keyboard"), Tone::heading}, {shin::ui::tr("1-6 / Tab / Left / Right  Switch view")},
+        {shin::ui::tr("Keyboard"), Tone::heading}, {shin::ui::tr("1-7 / Tab / Left / Right  Switch view")},
         {shin::ui::tr("Up / Down or j / k         Select a project, otherwise scroll")},
         {shin::ui::tr("Enter                     Project details")}, {shin::ui::tr("Esc / Backspace           Back")},
         {shin::ui::tr("PageUp / PageDown          Scroll a page")},
         {shin::ui::tr("t                         Recent / retained request timings")},
         {shin::ui::tr("f                         All / unclassified / diagnostic queries")},
         {shin::ui::tr("p                         Next model-usage project")},
+        {shin::ui::tr("u / 7                     Updates")},
+        {shin::ui::tr("Updates: r check, i install, y confirm, n cancel, v result, a acknowledge")},
         {shin::ui::tr("r                         Refresh (storage is refreshed on demand)")},
         {shin::ui::tr("g / h                     Chart metric / Live, 1 h, 24 h")},
         {shin::ui::tr("Mouse                     Select tabs, metrics, periods and projects")},
         {shin::ui::tr("? / Ctrl-L                Help / redraw screen")}, {shin::ui::tr("q / Ctrl-C                Quit")}, {shin::ui::tr("l                         Switch English / Russian")}, {},
-        {shin::ui::tr("Read-only monitor. No service startup, enrollment, cleanup or usage collection.")},
+        {shin::ui::tr("Monitoring does not start services, enroll projects or collect usage. Updates require explicit confirmation.")},
         {shin::ui::tr("Service observations are not new source audits or answer-quality scores.")}};
+    if (state.tab == 6) {
+        const auto& update = snapshot.updates;
+        out.push_back({shin::ui::tr("Updates"), Tone::heading});
+        if (update.phase == UpdatePhase::unsupported) {
+            out.push_back({shin::ui::tr("Automatic release updates are currently available on macOS only."), Tone::warning});
+            out.push_back({shin::ui::tr("For this platform, install a complete published kit using its installer.")});
+            out.push_back({"https://github.com/toseek-samurai/shin-context-engine/releases"});
+            return out;
+        }
+        if (update.phase == UpdatePhase::idle) {
+            out.push_back({shin::ui::tr("Check for a newer complete release or review the last update result.")});
+            out.push_back({shin::ui::tr("GitHub receives a normal HTTPS request. No project content is sent.")});
+        } else if (update.phase == UpdatePhase::checking) out.push_back({shin::ui::tr("Checking for updates…"), Tone::info});
+        else if (update.phase == UpdatePhase::current) out.push_back({shin::ui::tr("Shin is up to date"), Tone::good});
+        else if (update.phase == UpdatePhase::offer) {
+            out.push_back({shin::ui::tr("A Shin update is available"), Tone::good});
+            out.push_back({text(field(update.offer, "current_version")) + " -> " + text(field(update.offer, "version")), Tone::heading});
+            out.push_back({shin::ui::tr("Release notes"), Tone::heading});
+            out.push_back({text(field(update.offer, "release_url"))});
+            if (!state.update_confirmation.empty()) {
+                out.push_back({});
+                out.push_back({shin::ui::tr("Install the reviewed release? y confirms; n or Esc cancels."), Tone::warning});
+            }
+            out.push_back({shin::ui::tr("Projects, settings and history are preserved. Reconnect persistent MCP clients afterwards.")});
+        } else if (update.phase == UpdatePhase::installing) {
+            const auto& timeline = update.timeline;
+            out.push_back({shin::ui::tr(update_stage_key(timeline.current.step)), Tone::heading});
+            auto detail = update_detail(timeline.current);
+            const auto elapsed = std::chrono::duration_cast<std::chrono::seconds>(Clock::now() - update.changed).count();
+            out.push_back({detail + (detail.empty() ? "" : " · ") + std::to_string(elapsed) + shin::ui::tr(" s"), Tone::info});
+            for (std::size_t i = 0; i < update_steps.size(); ++i) {
+                const auto prefix = timeline.done[i] ? "✓ " : timeline.active == i ? "● " : "○ ";
+                out.push_back({prefix + std::string(shin::ui::tr(update_stage_key(update_steps[i]))),
+                    timeline.done[i] ? Tone::good : timeline.active == i ? Tone::heading : Tone::muted});
+            }
+        } else if (update.phase == UpdatePhase::acknowledging) out.push_back({shin::ui::tr("Verifying update result…"), Tone::info});
+        else {
+            const auto& result = update.result;
+            const auto phase = field(result, "phase");
+            const bool installed = phase == "installed" && field(result, "ok") == true;
+            out.push_back({installed ? shin::ui::tr("Shin was updated") : phase == "idle" || phase == "reviewed" ?
+                shin::ui::tr("No pending update result") : shin::ui::tr("Update needs review"), installed ? Tone::good : Tone::warning});
+            if (installed) out.push_back({shin::ui::tr("Restart this terminal dashboard and reconnect MCP clients to use the installed version.")});
+            else if (!update.error.empty()) out.push_back({update.error, Tone::error});
+            const auto& error = field(result, "error");
+            if (field(error, "message").is_string()) out.push_back({text(field(error, "message")), Tone::warning});
+            if (field(result, "candidate").is_string()) out.push_back({text(field(result, "candidate")), Tone::muted});
+            if (phase != "idle" && phase != "reviewed" && !installed) {
+                out.push_back({shin::ui::tr("Review shin-ce update-status before retrying an unconfirmed installation.")});
+            }
+        }
+        if (update.installing()) out.push_back({shin::ui::tr("Update in progress. Keep this terminal open; quitting is available after it finishes."), Tone::warning});
+        return out;
+    }
     if (!connected) {
         out.push_back({snapshot.error == "connecting" ? shin::ui::tr("Connecting to local service...") : shin::ui::tr("Service offline / observation unavailable"), Tone::warning});
         out.push_back({snapshot.connected ? shin::ui::tr("Last service response expired.") : snapshot.error});

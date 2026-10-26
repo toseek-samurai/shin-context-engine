@@ -72,6 +72,7 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
             backing:NSBackingStoreBuffered defer:NO];
         window.releasedWhenClosed = NO;
         window.restorable = NO;
+        window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
         window.title = ui_text("Updating Shin");
         window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
         window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
@@ -110,7 +111,7 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
         }
         [stack addArrangedSubview:steps]; [stack addArrangedSubview:footer];
         [bar.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
-        [window center]; [window makeKeyAndOrderFront:nil]; [app activate];
+        [window center]; [app activate]; [window makeKeyAndOrderFront:nil];
         [bar startAnimation:nil]; [window displayIfNeeded];
     } @catch (NSException* error) {
         NSLog(@"Shin update progress window unavailable: %@", error.reason);

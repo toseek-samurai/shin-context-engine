@@ -17,13 +17,14 @@ On macOS and Linux, open the Sand terminal dashboard:
 shin-ce stats
 ```
 
-The Sand layout and controls below are included in preview dev.39 and later.
+The Sand dashboard is included in preview dev.39 and later; Sessions arrived in
+dev.45. Controls for Updates below describe unreleased source.
 See the [native screen gallery](tui.md), including EN/RU and compact layouts.
 
 For a portable kit, pass `--home /absolute/path/to/private-data`. An installed
 kit uses its recorded home. The monitor reconnects automatically when the
 service returns, and labels retained observations as stale while disconnected.
-It does not start a service or enroll projects. It requires an interactive
+Viewing statistics does not start a service or enroll projects. It requires an interactive
 terminal with at least 60 columns and 12 rows; text/JSON commands work in pipes.
 An 80×24 terminal shows a compact dashboard; wider windows add the observer
 column. The header always shows the kit version and observation age.
@@ -39,7 +40,7 @@ next step and any reported excluded file paths.
 
 | Key | Action |
 | --- | --- |
-| `1`–`5`, Tab, Left/Right | Overview, Projects, Timing, Storage, Models |
+| `1`–`7`, Tab, Left/Right | Overview, Projects, Timing, Storage, Models, Sessions, Updates (Updates is unreleased source) |
 | Up/Down or `j`/`k` | Select a project; scroll other views |
 | Enter, Esc | Open project details; return |
 | PageUp/PageDown | Scroll a page |
@@ -48,6 +49,10 @@ next step and any reported excluded file paths.
 | `t`, `f` | Toggle recent/retained timings; filter query traffic |
 | `p` | Next usage project in Models |
 | `r` | Refresh observations; explicitly rescan storage in Storage |
+| `u` / `7` | Open Updates (unreleased source) |
+| Updates: `r`, `v` | Check public releases; read the saved update result |
+| Updates: `i`, then `y` / `n` | Review installation; explicitly confirm / cancel (`Esc` also cancels) |
+| Updates: `a` | Acknowledge a verified saved result using its exact revision |
 | `?`, `q` | Keyboard help; quit |
 | Ctrl-L | Redraw the screen |
 
@@ -55,6 +60,24 @@ The FTXUI renderer uses the same service telemetry and normalized usage data
 as Monitor. It requires no curses/terminfo package. Colors adapt to the terminal;
 `NO_COLOR` keeps a monochrome view. Basic `vt100`/`ansi` terminals use a simple
 character plot instead of Braille.
+
+Unreleased source adds an **Updates** view on macOS. It uses the existing native
+updater and the installed kit's recorded home. Opening the view performs no network
+request; `r` checks the public GitHub feed. Release notes are shown as a URL. The
+review pins the offered revision; neither Enter nor opening the tab installs it.
+Only `i`, then `y` starts installation. Checks run off the render thread and can
+be abandoned when quitting. Once installation or acknowledgement starts, `q`,
+Ctrl-D and Ctrl-C do not cancel it; the screen stays available until the native
+operation settles. Forced process termination still relies on the updater's
+durable recovery journal.
+
+The same twelve-step plan shows observed completed steps, current stage, elapsed
+time, real download/staging bytes and project counts. There is no estimated
+overall percentage. Completion comes from the native receipt, independently of
+progress. `v` reads retained outcomes; a recoverable result exposes `a` only when
+the native status permits acknowledgement. After a successful swap, restart
+Monitor, `shin-ce stats` and persistent MCP clients to load the new binaries. Linux shows
+the published-kit installation route; automatic release download remains macOS-only.
 
 Service observations refresh every two seconds. Storage is inspected when you
 open its tab or press `r`, not continuously. Usage is read every 30 seconds or

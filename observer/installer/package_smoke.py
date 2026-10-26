@@ -17,7 +17,7 @@ parser.add_argument('--test-results', type=Path, required=True)
 args = parser.parse_args()
 source = Path(__file__).resolve().parents[1]
 completed = 0
-stage_count = 6
+stage_count = 7
 
 
 @contextmanager
@@ -59,6 +59,19 @@ with stage('Native update and recovery'):
     run('installer/update_test.py', args.cmake, args.build, '--archive', args.archive)
 with stage('Bootstrap installer'):
     run('installer/bootstrap_test.py', args.build / 'packages/install.sh', args.archive)
+with stage('Independent updater envelope'):
+    updater = args.archive.parent / 'shin-updater-v1-macos-arm64.zip'
+    subprocess.run([str(args.build / 'shin-updater-bundle-tests'), 'archive', str(updater)], check=True, timeout=15)
+    with tempfile.TemporaryDirectory(prefix='shin-updater.', dir='/tmp') as folder:
+        payload = Path(folder).resolve() / 'payload'
+        payload.mkdir(mode=0o700)
+        subprocess.run([args.cmake, '-E', 'tar', 'xf', str(updater.resolve())], cwd=payload, check=True, timeout=30)
+        bundle = payload / 'shin-updater-v1'
+        subprocess.run([str(args.build / 'shin-updater-bundle-tests'), 'bundle', str(bundle)], check=True, timeout=15)
+        subprocess.run([str(bundle / 'bin/shin-updater'), '--protocol'], check=True, timeout=10)
+        probe = subprocess.run([str(bundle / 'bin/shin-updater'), 'update-check', '--prefix', str(payload / 'absent')],
+                               capture_output=True, text=True, timeout=15)
+        assert probe.returncode != 0 and bundle.exists(), 'read-only probe deleted the pending updater envelope'
 with stage('EN/RU terminal stats and restoration'):
     with tempfile.TemporaryDirectory(prefix='shin-package-stats-') as folder:
         # Preserve executable modes from the exact archive.

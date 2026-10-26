@@ -1,5 +1,5 @@
 #!/bin/sh
-# Versioned preview bootstrap. Native shin-ce owns installation and update state.
+# Versioned independent installer. The new kit's updater owns native installation.
 set -eu
 main() {
 version='@SHIN_OBSERVER_VERSION@'
@@ -58,7 +58,7 @@ kit="$temporary/unpacked/shin-local-$version-macos-arm64"
 [ -x "$kit/bin/shin-ce" ] || fail 'The release does not contain the expected complete kit.'
 action=install
 if [ -e "$prefix" ] || [ -L "$prefix" ]; then action=update; fi
-"$kit/bin/shin-ce" "$action" "$@"
+"$kit/bin/shin-updater" install-local --kit "$kit" "$@"
 printf 'Shin %s: %s complete.\n' "$version" "$action"
 shell_quote() {
     printf "'"

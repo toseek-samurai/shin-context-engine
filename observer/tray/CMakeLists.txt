@@ -52,6 +52,15 @@ if(BUILD_TESTING)
     add_test(NAME shin-tray-layout-en COMMAND shin-tray-layout-tests "${CMAKE_CURRENT_BINARY_DIR}/layout-check-en"
         -ShinHome /shin-monitor-test-home en)
     set_tests_properties(shin-tray-layout-en PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
+    add_executable(shin-tray-update-window-tests main.mm)
+    target_compile_definitions(shin-tray-update-window-tests PRIVATE SHIN_TRAY_UPDATE_WINDOW_TEST=1 IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
+    target_compile_options(shin-tray-update-window-tests PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)
+    target_link_libraries(shin-tray-update-window-tests PRIVATE shin-observer-native shin-imgui "-framework ImageIO")
+    foreach(language IN ITEMS en ru)
+        add_test(NAME shin-tray-update-window-${language} COMMAND shin-tray-update-window-tests
+            "${CMAKE_CURRENT_BINARY_DIR}/update-window-${language}" ${language})
+        set_tests_properties(shin-tray-update-window-${language} PROPERTIES TIMEOUT 45 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
+    endforeach()
     add_test(NAME shin-update-progress-transport COMMAND ${Python3_EXECUTABLE} -B
         "${CMAKE_CURRENT_SOURCE_DIR}/../tests/update_progress_transport_test.py" $<TARGET_FILE:shin-tray>)
     set_tests_properties(shin-update-progress-transport PROPERTIES TIMEOUT 45 RESOURCE_LOCK shin-tray-render)

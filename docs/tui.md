@@ -19,6 +19,17 @@ Memory, active queries and search p50 stay visible above a line graph and the
 project table. Click a metric or press `g`; `h` cycles Live, one hour and 24 hours.
 Missing observations remain gaps rather than becoming zero.
 
+The graph improvements shown here describe unreleased source. The chart footer
+shows the last measured value and the number of visible measurements. Live covers
+the last 60 seconds (or the elapsed uptime just after startup); retained views
+show local start/end times. A lone measurement has a visible point marker.
+Hourly memory observations remain separate points because those buckets cannot
+identify service restarts. They are not joined into a continuous curve.
+
+Large telemetry replies preserve a minute of live samples and recent requests
+before removing bulky diagnostics. If essential status still needs that space,
+the chart reports omitted measurements explicitly; omissions never become zeroes.
+
 ![Overview with memory graph and independent search and coverage states](images/tui-overview.svg)
 
 ## Projects
@@ -42,6 +53,9 @@ of the project searchable.
 Search time, total service time and cold-reader preparation are shown separately.
 `t` selects recent or retained measurements; `f` filters traffic. Diagnostic
 requests stay identified, and missing attribution is not guessed.
+The graph is explicitly labeled as live search time over the last 60 seconds;
+the retained/recent selector applies to the timing summary below it. An idle
+window says that no query timings are available for that minute.
 
 ![Timing with query counts, cold and warm reader measurements and phase means](images/tui-timing.svg)
 
@@ -67,6 +81,23 @@ Press `l` to change the current terminal session immediately, or launch with
 `--language en` / `--language ru`. Automatic selection follows the terminal locale.
 
 ![The same overview rendered in Russian](images/tui-overview-ru.svg)
+
+## Updates (unreleased source)
+
+Open view 7 or press `u`. On macOS, `r` checks for a complete release and shows
+the version and release-notes URL. `i` opens confirmation; `y` installs and
+`n` or Esc cancels. Opening the view and pressing Enter never install anything.
+
+![Native update review with explicit installation action](images/tui-updates.svg)
+
+Installation uses the same native verification and recovery path as Monitor.
+The full plan, actual byte percentages, completed-project counts and stage elapsed
+time remain visible. Quitting becomes available after installation settles;
+`v` shows the saved result and `a` acknowledges it only when native status permits.
+After success, restart the TUI and persistent MCP clients. Linux shows the
+published-kit installer route instead of offering unsupported automatic downloads.
+
+![Native update progress with measured download percentage](images/tui-update-progress.svg)
 
 ## Compact terminals
 

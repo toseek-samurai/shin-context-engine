@@ -53,14 +53,15 @@ void bound_local_service_status(Json& status) {
                                    {"omitted_rows", Json::object()}};
     auto& projection = telemetry.at("projection");
     auto bytes = status.dump().size();
-    // Trim copies, never the live rings or SQLite. Preserve current health and
-    // summary counters; discard duplicate current-run detail before history.
-    struct Detail { const char* path; bool newest_first; const char* flag; };
+    // Trim copies, never the live rings or SQLite. Preserve current health,
+    // counters and a useful live chart before bulky diagnostic/history detail.
+    // The final two entries release that reserve only if essential state needs it.
+    struct Detail { const char* path; bool newest_first; const char* flag; std::size_t keep = 0; };
     for (const auto& detail : {
             Detail{"/mcp_activity/session_rows", true, "/mcp_activity/sessions_truncated"},
-            Detail{"/request_metrics/recent", false, "/request_metrics/recent_truncated"},
+            Detail{"/request_metrics/recent", false, "/request_metrics/recent_truncated", 16},
             Detail{"/refresh_diagnostics", false, "/refresh_diagnostics_truncated"},
-            Detail{"/events", false, nullptr}, Detail{"/samples", false, nullptr},
+            Detail{"/events", false, nullptr}, Detail{"/samples", false, nullptr, 61},
             Detail{"/history/events", true, nullptr},
             Detail{"/history/model_cohorts", true, "/history/model_cohorts_truncated"},
             Detail{"/history/refresh_diagnostics", true, "/history/refresh_diagnostics_truncated"},
@@ -68,15 +69,17 @@ void bound_local_service_status(Json& status) {
             Detail{"/history/admission_cohorts", true, "/history/admission_cohorts_truncated"},
             Detail{"/history/request_cohorts", true, "/history/request_cohorts_truncated"},
             Detail{"/history/timeline", false, nullptr},
-            Detail{"/history/minute_timeline", false, nullptr}}) {
+            Detail{"/history/minute_timeline", false, nullptr},
+            Detail{"/request_metrics/recent", false, "/request_metrics/recent_truncated"},
+            Detail{"/samples", false, nullptr}}) {
         const Json::json_pointer path(detail.path);
         if (!telemetry.contains(path)) continue;
         auto& rows = telemetry.at(path);
-        while (bytes > kLocalStatusByteLimit && !rows.empty()) {
+        while (bytes > kLocalStatusByteLimit && rows.size() > detail.keep) {
             // Reserve metadata growth once per batch, not a full JSON dump per row.
             const auto excess = bytes - kLocalStatusByteLimit + 256;
             std::size_t freed = 0, removed = 0;
-            while (!rows.empty() && freed < excess) {
+            while (rows.size() > detail.keep && freed < excess) {
                 const auto index = detail.newest_first ? rows.size() - 1 : 0;
                 freed += rows.at(index).dump().size() + (rows.size() > 1 ? 1 : 0);
                 rows.erase(index);

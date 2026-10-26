@@ -13,7 +13,8 @@
     "docs/machine/mcp-activity-v1.json",
     "docs/machine/local-session-recovery-v1.json",
     "docs/machine/shin-component-profiles-v1.json",
-    "integrations/shin-development/shin-integration-bundle-v1.json"
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "docs/machine/updater-bootstrap-v1.json"
   ],
   "sourceExtensions": [
     ".md",
@@ -35,7 +36,8 @@
     "observer/VERSION",
     "docs/machine/shin-component-profiles-v1.json",
     "docs/machine/shin-companion-protocols-v1.json",
-    "docs/machine/shin-observer-recovery-v1.json"
+    "docs/machine/shin-observer-recovery-v1.json",
+    "docs/machine/updater-bootstrap-v1.json"
   ],
   "sourceFactRoots": [
     "observer/src",

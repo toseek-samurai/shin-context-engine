@@ -107,7 +107,8 @@
       "approval": "Owner approved an isolated Linux candidate on2026-10-02, not Stable installation or release approval."
     },
     "status": "development-preview",
-    "externalDependencies": "Observer requires OpenSSL Crypto. The macOS local kit bundles its runtime Crypto dependency and license; source builds require provisioned platform libraries."
+    "externalDependencies": "Observer requires OpenSSL Crypto. The macOS local kit bundles its runtime Crypto dependency and license; source builds require provisioned platform libraries.",
+    "updaterBootstrapContract": "updater-bootstrap-v1.json"
   },
   "executionEvidence": {
     "contract": "contracts/execution-evidence-v1.json",

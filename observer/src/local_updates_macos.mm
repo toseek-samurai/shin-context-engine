@@ -13,129 +13,10 @@
 #include <fcntl.h>
 #include <mutex>
 
-// Separate from service/refresh: no GitHub access occurs in retrieval or indexing.
-@interface ShinReleaseHTTP : NSObject<NSURLSessionDataDelegate>
-@property(nonatomic) NSUInteger limit;
-@property(nonatomic) NSUInteger received;
-@property(nonatomic) NSInteger status;
-@property(nonatomic) NSUInteger redirects;
-@property(nonatomic) BOOL refused;
-@property(nonatomic, strong) NSMutableData* bytes;
-@property(nonatomic, strong) NSFileHandle* file;
-@property(nonatomic, strong) dispatch_semaphore_t done;
-@property(nonatomic, copy) void (^progress)(NSUInteger);
-@end
-@implementation ShinReleaseHTTP
-- (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task willPerformHTTPRedirection:(NSHTTPURLResponse*)response
-    newRequest:(NSURLRequest*)request completionHandler:(void (^)(NSURLRequest*))completion {
-    (void)session;(void)task;(void)response;
-    const BOOL allowed=[request.URL.scheme isEqualToString:@"https"] && !request.URL.user && !request.URL.password &&
-        (!request.URL.port || request.URL.port.integerValue==443) &&
-        [@[@"api.github.com",@"github.com",@"release-assets.githubusercontent.com",@"objects.githubusercontent.com",@"github-releases.githubusercontent.com"] containsObject:request.URL.host] && ++self.redirects<=3;
-    if (!allowed) self.refused=YES;
-    completion(allowed ? request : nil);
-}
-- (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task didReceiveResponse:(NSURLResponse*)response
-    completionHandler:(void (^)(NSURLSessionResponseDisposition))completion {
-    (void)session;(void)task;
-    self.status=[(NSHTTPURLResponse*)response statusCode];
-    if (self.status!=200 || response.expectedContentLength>(int64_t)self.limit) {self.refused=YES;completion(NSURLSessionResponseCancel);}
-    else completion(NSURLSessionResponseAllow);
-}
-- (void)URLSession:(NSURLSession*)session dataTask:(NSURLSessionDataTask*)task didReceiveData:(NSData*)data {
-    (void)session;
-    if (data.length>self.limit-self.received) {self.refused=YES;[task cancel];return;}
-    self.received+=data.length;
-    @try {if (self.file) [self.file writeData:data]; else [self.bytes appendData:data];}
-    @catch (NSException*) {self.refused=YES;[task cancel];}
-    if (!self.refused && self.progress) self.progress(self.received);
-}
-- (void)URLSession:(NSURLSession*)session task:(NSURLSessionTask*)task didCompleteWithError:(NSError*)error {
-    (void)session;(void)task;if(error)self.refused=YES;dispatch_semaphore_signal(self.done);
-}
-@end
+#include "local_update_transport_macos.inc"
+#include "shin/observer/updater_bundle.h"
 namespace shin::observer {
 namespace {
-NSString* ns(const std::string& s) { return [[NSString alloc] initWithBytes:s.data() length:s.size() encoding:NSUTF8StringEncoding]; }
-void require(bool ok,const char* code,const char* message) {if(!ok)throw Error(code,message);}
-std::string fetch(const std::string& url,std::size_t limit,const fs::path& output={},
-                  const ReleaseUpdateProgressSink& progress={},std::uint64_t expected=0) {
-    ShinReleaseHTTP* receiver=[ShinReleaseHTTP new];receiver.limit=limit;receiver.done=dispatch_semaphore_create(0);receiver.bytes=[NSMutableData data];
-    if (progress) { const auto sink=progress;receiver.progress=^(NSUInteger received) { sink({ReleaseUpdateStep::downloading,received,expected}); }; }
-    if (!output.empty()) {require(write_private_archive(output,""),"update-download-failed","Cannot create the private download.");receiver.file=[NSFileHandle fileHandleForWritingAtPath:ns(output.string())];require(receiver.file!=nil,"update-download-failed","Cannot open the private download.");}
-    auto* config=[NSURLSessionConfiguration ephemeralSessionConfiguration];
-    const double seconds=output.empty() ? 12 : 180;
-    config.timeoutIntervalForRequest=seconds;config.timeoutIntervalForResource=seconds;
-    config.HTTPCookieStorage=nil;config.URLCredentialStorage=nil;config.URLCache=nil;config.requestCachePolicy=NSURLRequestReloadIgnoringLocalCacheData;
-    NSURLSession* session=[NSURLSession sessionWithConfiguration:config delegate:receiver delegateQueue:nil];
-    NSMutableURLRequest* request=[NSMutableURLRequest requestWithURL:[NSURL URLWithString:ns(url)]];
-    [request setValue:@"Shin-Context-Engine" forHTTPHeaderField:@"User-Agent"];
-    [request setValue:@"application/vnd.github+json" forHTTPHeaderField:@"Accept"];
-    [request setValue:@"2022-11-28" forHTTPHeaderField:@"X-GitHub-Api-Version"];
-    NSURLSessionDataTask* task=[session dataTaskWithRequest:request];[task resume];
-    const auto timedOut=dispatch_semaphore_wait(receiver.done,dispatch_time(DISPATCH_TIME_NOW,(int64_t)((seconds+2)*NSEC_PER_SEC)))!=0;
-    if(timedOut) { [task cancel];dispatch_semaphore_wait(receiver.done,dispatch_time(DISPATCH_TIME_NOW,2*NSEC_PER_SEC)); }
-    [session invalidateAndCancel];[receiver.file closeFile];
-    require(!timedOut && !receiver.refused && receiver.status==200,"update-network-unavailable","GitHub could not be checked or the download failed. The current installation is unchanged.");
-    return receiver.bytes.length ? std::string((const char*)receiver.bytes.bytes,receiver.bytes.length) : "";
-}
-Json run(const fs::path& exe,const std::vector<std::string>& args,int timeout,std::string* text=nullptr,
-         const ReleaseUpdateProgressSink& progress={}) {
-    NSTask* task=[NSTask new];task.executableURL=[NSURL fileURLWithPath:ns(exe.string())];
-    NSMutableArray* argv=[NSMutableArray array];for(const auto& a:args)[argv addObject:ns(a)];task.arguments=argv;
-    task.environment=@{@"PATH":@"/usr/bin:/bin",@"LC_ALL":@"C",@"HOME":NSHomeDirectory()};task.standardInput=[NSFileHandle fileHandleWithNullDevice];
-    // A file avoids pipe deadlock and inherited-pipe acknowledgement ambiguity.
-    char pattern[]="/tmp/shin-update-output.XXXXXXXX";const int fd=mkstemp(pattern);
-    require(fd>=0,"update-process-failed","Cannot prepare the updater output.");
-    const auto transcript=fs::canonical(pattern);
-    NSFileHandle* output=[[NSFileHandle alloc] initWithFileDescriptor:fd closeOnDealloc:YES];task.standardOutput=output;task.standardError=output;
-    // The child's stdout remains an independent native receipt. Read-only
-    // stderr frames are drained while it works, never interpreted as success.
-    NSPipe* channel=progress ? [NSPipe pipe] : nil;
-    const int progress_fd=channel ? channel.fileHandleForReading.fileDescriptor : -1;
-    if(channel) {
-        require(::fcntl(progress_fd,F_SETFL,O_NONBLOCK)==0,"update-process-failed","Cannot prepare update observation.");
-        task.standardError=channel;
-    }
-    std::string pending,errors;
-    const auto drain=[&] {
-        if(progress_fd<0)return;
-        char chunk[4096];ssize_t count;std::size_t read=0;
-        while(read<64*1024 && (count=::read(progress_fd,chunk,sizeof(chunk)))>0) {
-            read+=static_cast<std::size_t>(count);
-            pending.append(chunk,static_cast<std::size_t>(count));
-            for(auto end=pending.find('\n');end!=std::string::npos;end=pending.find('\n')) {
-                const auto line=pending.substr(0,end);pending.erase(0,end+1);
-                if(const auto value=parse_update_progress(Json::parse(line,nullptr,false))) {
-                    // Only the outer independent readback can finish the update.
-                    if(value->step!=ReleaseUpdateStep::completed && value->step!=ReleaseUpdateStep::failed)
-                        report_update(progress,*value);
-                } else if(errors.size()+line.size()<256*1024) errors+=line+"\n";
-            }
-            if(pending.size()>8192)pending.clear(); // Malformed observation is bounded, never a cancellation.
-        }
-    };
-    NSError* error=nil;
-    if(![task launchAndReturnError:&error]) {::unlink(pattern);throw Error("update-process-failed","Cannot start the native update tool.");}
-    if(channel)[channel.fileHandleForWriting closeFile];
-    const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(timeout);
-    bool exceeded=false;
-    while(task.running) {
-        drain();
-        if(std::chrono::steady_clock::now()>=until || fs::file_size(transcript)>256U*1024) {exceeded=true;[task terminate];break;}
-        std::this_thread::sleep_for(std::chrono::milliseconds(50));
-    }
-    if(exceeded) {std::this_thread::sleep_for(std::chrono::milliseconds(200));if(task.running)::kill(task.processIdentifier,SIGKILL);}
-    [task waitUntilExit];[output synchronizeFile];drain();errors+=pending;
-    std::string bytes;
-    try {bytes=read_text(transcript,256U*1024,true);} catch(...) {::unlink(pattern);throw;}
-    ::unlink(pattern);
-    require(!exceeded,"update-outcome-unknown","The updater did not acknowledge completion. Review installation status before retrying.");
-    if(text) {*text=bytes;require(task.terminationStatus==0,"update-archive-invalid","Cannot inspect or extract the release archive.");return Json();}
-    if(bytes.empty() && progress)bytes=errors;
-    Json result;try{result=parse_json(bytes);}catch(...){throw Error("update-outcome-unknown","The native updater returned no valid completion receipt. Review installation status before retrying.");}
-    return result;
-}
 fs::path own_prefix() {
     const auto exe=fs::canonical(current_executable_path());return exe.parent_path().parent_path();
 }
@@ -145,6 +26,25 @@ Json installation(const fs::path& prefix,const fs::path& user) {
 }
 Json offer(const std::string& current) {
     return select_local_release(parse_json(fetch("https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",1024U*1024)),current);
+}
+fs::path download_release_kit(const Json& selected,const fs::path& stage,const ReleaseUpdateProgressSink& sink) {
+    const auto archive=stage/selected.at("archive_name").get<std::string>();
+    report_update(sink,{ReleaseUpdateStep::downloading,0,selected.at("bytes").get<std::uint64_t>()});
+    fetch(selected.at("archive_url"),128U*1024*1024,archive,sink,selected.at("bytes").get<std::uint64_t>());
+    report_update(sink,{ReleaseUpdateStep::verifying_archive});
+    const auto hash=digest(read_text(archive,128U*1024*1024,true));
+    const auto checksum=fetch(selected.at("checksum_url"),512);
+    const auto expected=hash+"  "+selected.at("archive_name").get<std::string>();
+    require(fs::file_size(archive)==selected.at("bytes").get<std::uint64_t>() && hash==selected.at("sha256").get<std::string>() && (checksum==expected || checksum==expected+"\n"),"update-checksum-mismatch","The downloaded archive did not match the offered SHA-256. Installation was not started.");
+    std::string listing;run("/usr/bin/tar",{"-tf",archive.string()},15,&listing);verify_release_listing(listing,selected.at("version"));
+    report_update(sink,{ReleaseUpdateStep::extracting});
+    ensure_private_directory(stage/"unpacked",true);
+    std::string extracted;run("/usr/bin/tar",{"-xf",archive.string(),"-C",(stage/"unpacked").string()},30,&extracted);
+    const auto kit=stage/"unpacked"/("shin-local-"+selected.at("version").get<std::string>()+"-macos-arm64");
+    report_update(sink,{ReleaseUpdateStep::verifying_kit});
+    const auto checked=verify_local_kit(kit);
+    require(checked.at("version")==selected.at("version"),"update-release-invalid","The kit version differs from the offered release.");
+    return kit;
 }
 class UpdateProgressViewer {
     struct Pipe {
@@ -158,13 +58,14 @@ class UpdateProgressViewer {
     NSTask* task_=nil;
 public:
     UpdateProgressViewer(const fs::path& prefix,const std::string& version,const std::string& language,bool enabled) {
+        (void)prefix;
         if(!enabled)return;
         @try {
             NSPipe* channel=[NSPipe pipe];
             const int descriptor=channel.fileHandleForWriting.fileDescriptor;
             if(::fcntl(descriptor,F_SETFL,O_NONBLOCK)!=0 || ::fcntl(descriptor,F_SETNOSIGPIPE,1)!=0 ||
                 ::fcntl(descriptor,F_SETFD,FD_CLOEXEC)!=0)return;
-            task_=[NSTask new];task_.executableURL=[NSURL fileURLWithPath:ns((prefix/"Shin Monitor.app/Contents/MacOS/Shin Monitor").string())];
+            task_=[NSTask new];task_.executableURL=[NSURL fileURLWithPath:ns(current_executable_path().string())];
             task_.arguments=@[@"--update-progress",ns(version),ns(language.empty() ? "en" : language)];
             task_.standardInput=channel;task_.standardOutput=[NSFileHandle fileHandleWithNullDevice];task_.standardError=[NSFileHandle fileHandleWithNullDevice];
             if(![task_ launchAndReturnError:nullptr])return;
@@ -217,13 +118,13 @@ struct RelaunchMonitor {
 };
 
 }
-Json local_updates(int argc,char** argv,const fs::path& user) {
+Json run_updater_request(int argc,char** argv,const fs::path& user,const ReleaseUpdateProgressSink& observer) {
  @autoreleasepool {
-    const std::string command=argv[1];fs::path prefix=fs::absolute(own_prefix()).lexically_normal(),home;
-    std::string revision,language,display_version;int parent=0;bool force_progress=false;std::set<std::string> seen;
+    const std::string command=argv[1];fs::path prefix=user/".local/opt/shin-local",home;
+    std::string revision,language,display_version;int parent=0;bool force_progress=false,json_progress=false;std::set<std::string> seen;
     for(int i=2;i<argc;++i) {
         const std::string key=argv[i];
-        if(key=="--progress" && seen.insert(key).second) {force_progress=true;continue;}
+        if((key=="--progress" || key=="--progress-json") && seen.insert(key).second) {require(!force_progress && !json_progress,"invalid-arguments","Choose one progress format.");force_progress=key=="--progress";json_progress=!force_progress;continue;}
         require((key=="--prefix" || key=="--home" || key=="--revision" || key=="--wait-pid" || key=="--ui-language" || key=="--ui-version") && seen.insert(key).second && i+1<argc,"invalid-arguments","Invalid update option.");
         const std::string value=argv[++i];
         if(key=="--prefix")prefix=fs::absolute(value).lexically_normal();else if(key=="--home")home=fs::absolute(value).lexically_normal();else if(key=="--revision")revision=value;
@@ -235,8 +136,8 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
     }
     require(!parent || command=="update-install","invalid-arguments","Only an explicit Monitor installation may await its parent.");
     require((language.empty() && display_version.empty()) || parent,"invalid-arguments","Update window language requires the launching Monitor.");
-    require(!force_progress || (!parent && (command=="update-install" || command=="update-download")),"invalid-arguments","--progress is available for terminal downloads and updates.");
-    TerminalUpdateProgress terminal(force_progress,false,!parent && (command=="update-install" || command=="update-download"));
+    require(!(force_progress || json_progress) || (!parent && (command=="update-install" || command=="update-download" || command=="update-acknowledge")),"invalid-arguments","--progress is available for terminal downloads and updates.");
+    TerminalUpdateProgress terminal(force_progress,json_progress,!observer && !parent && (command=="update-install" || command=="update-download"));
     terminal.report({ReleaseUpdateStep::preparing});
     const auto installed=installation(prefix,user);require(installed.value("integrity_verified",false),"installation-integrity-failed","Verify the owned installation before checking updates.");
     const auto current=installed.at("version").get<std::string>();
@@ -261,14 +162,14 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
             require(stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-release.") && directory_identity(stage,true)==state.value("stage_identity",""),"update-staging-changed","The saved candidate location changed; preserve it for review.");
             fs::remove_all(stage);state.erase("staging");state.erase("stage_identity");state.erase("candidate");
         }
-        state["phase"]="reviewed";state["ok"]=true;review.save(state);return state;
+        state.erase("updater");state["phase"]="reviewed";state["ok"]=true;review.save(state);return state;
     }
     // The viewer must exit before LaunchServices reopens this bundle.
     RelaunchMonitor relaunch{prefix};
     // Display-only hint from the review. The release revision is still rechecked below.
     UpdateProgressViewer viewer(prefix,display_version,language,parent!=0);
-    const auto progress=[terminal_sink=terminal.sink(),viewer_sink=viewer.sink()](ReleaseUpdateProgress value) {
-        report_update(terminal_sink,value);report_update(viewer_sink,value);
+    const auto progress=[terminal_sink=terminal.sink(),viewer_sink=viewer.sink(),observer](ReleaseUpdateProgress value) {
+        report_update(terminal_sink,value);report_update(viewer_sink,value);report_update(observer,value);
     };
     report_update(progress,{ReleaseUpdateStep::checking_release});
     auto selected=offer(current);selected["prefix"]=prefix.string();
@@ -281,6 +182,11 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
     StateStore owner(directory,true);owner.recover_pending();
     if(auto prior=owner.load();prior && prior->value("phase","")!="installed" && prior->value("phase","")!="reviewed" && prior->value("phase","")!="failed")throw Error("update-outcome-unknown","A previous update has no completion receipt. Review its saved candidate and installation status before retrying.");
     Json state{{"ok",true},{"phase","downloading"},{"from_version",current},{"version",selected.at("version")},{"checked_at_ms",now_ms()}};
+    const auto self=own_prefix();
+    if(self.filename()==updater_bundle_name && self.parent_path().filename()=="payload" && self.parent_path().parent_path().filename().string().starts_with("shin-updater.")) {
+        const auto stage=self.parent_path().parent_path();
+        state["updater"]={{"directory",stage.string()},{"identity",directory_identity(stage,true)},{"manifest_sha256",digest(read_text(self/"shin-updater.json",64U*1024,false))}};
+    }
     owner.save(state);
     char temporary[]="/tmp/shin-release.XXXXXXXX";char* folder=mkdtemp(temporary);require(folder,"update-download-failed","Cannot create a private staging folder.");
     const fs::path stage=fs::canonical(folder);state["staging"]=stage.string();state["stage_identity"]=directory_identity(stage,true);bool installing=false;owner.save(state);
@@ -295,22 +201,7 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
             require(::kill(parent,0)!=0,"update-monitor-open","Close Monitor before applying the update.");
             state["phase"]="downloading";owner.save(state);
         }
-        const auto archive=stage/selected.at("archive_name").get<std::string>();
-        report_update(sink,{ReleaseUpdateStep::downloading,0,selected.at("bytes").get<std::uint64_t>()});
-        fetch(selected.at("archive_url"),128U*1024*1024,archive,sink,selected.at("bytes").get<std::uint64_t>());
-        report(ReleaseUpdateStep::verifying_archive);
-        const auto hash=digest(read_text(archive,128U*1024*1024,true));
-        const auto checksum=fetch(selected.at("checksum_url"),512);
-        const auto expected=hash+"  "+selected.at("archive_name").get<std::string>();
-        require(fs::file_size(archive)==selected.at("bytes").get<std::uint64_t>() && hash==selected.at("sha256").get<std::string>() && (checksum==expected || checksum==expected+"\n"),"update-checksum-mismatch","The downloaded archive did not match the offered SHA-256. Installation was not started.");
-        std::string listing;run("/usr/bin/tar",{"-tf",archive.string()},15,&listing);verify_release_listing(listing,selected.at("version"));
-        report(ReleaseUpdateStep::extracting);
-        ensure_private_directory(stage/"unpacked",true);
-        std::string extracted;run("/usr/bin/tar",{"-xf",archive.string(),"-C",(stage/"unpacked").string()},30,&extracted);
-        const auto kit=stage/"unpacked"/("shin-local-"+selected.at("version").get<std::string>()+"-macos-arm64");
-        report(ReleaseUpdateStep::verifying_kit);
-        const auto checked=verify_local_kit(kit);
-        require(checked.at("version")==selected.at("version"),"update-release-invalid","The kit version differs from the offered release.");
+        const auto kit=download_release_kit(selected,stage,sink);
         state["candidate"]=kit.string();state["phase"]="downloaded";owner.save(state);
         if(command=="update-download")return state;
         installing=true;state["phase"]="installing";owner.save(state);
@@ -318,11 +209,11 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
         const auto result=run(kit/"bin/shin-ce",{"update","--prefix",prefix.string(),"--progress-json"},600,nullptr,sink);
         state["result"]=result;state["ok"]=result.value("ok",false);state["phase"]=state.at("ok")==true ? "installed" : "review-required";
         owner.save(state);
-        if(state.at("ok")==true) {report(ReleaseUpdateStep::confirming);const auto confirmed=installation(prefix,user);require(confirmed.at("version")==selected.at("version") && confirmed.value("integrity_verified",false),"update-outcome-unknown","The installed version did not confirm the update receipt.");state.erase("candidate");state.erase("staging");state.erase("stage_identity");owner.save(state);fs::remove_all(stage);}
+        if(state.at("ok")==true) {report(ReleaseUpdateStep::confirming);const auto confirmed=installation(prefix,user);require(confirmed.at("version")==selected.at("version") && confirmed.value("integrity_verified",false),"update-outcome-unknown","The installed version did not confirm the update receipt.");state.erase("candidate");state.erase("staging");state.erase("stage_identity");state.erase("updater");owner.save(state);fs::remove_all(stage);}
     } catch(const std::exception& e) {
         const auto* typed=dynamic_cast<const Error*>(&e);
         state["ok"]=false;state["phase"]=installing ? "review-required" : "failed";state["error"]=typed ? error_json(*typed) : error_json(Error(installing ? "update-outcome-unknown" : "update-preparation-failed","The operation did not complete. Review the saved result before retrying."));state["staging"]=stage.string();owner.save(state);
-        if(!installing) {require(directory_identity(stage,true)==state.at("stage_identity").get<std::string>(),"update-staging-changed","Private staging changed; preserve it for review.");fs::remove_all(stage);state.erase("candidate");state.erase("staging");state.erase("stage_identity");owner.save(state);}
+        if(!installing) {require(directory_identity(stage,true)==state.at("stage_identity").get<std::string>(),"update-staging-changed","Private staging changed; preserve it for review.");fs::remove_all(stage);state.erase("candidate");state.erase("staging");state.erase("stage_identity");state.erase("updater");owner.save(state);}
     }
     report(state.value("ok",false) && state.value("phase","")=="installed" ? ReleaseUpdateStep::completed : ReleaseUpdateStep::failed);
     return state;
@@ -330,4 +221,32 @@ Json local_updates(int argc,char** argv,const fs::path& user) {
     return operation(progress);
  }
 }
+Json install_local_release(int argc,char** argv,const fs::path& user) {
+ @autoreleasepool {
+    require(argc>=4 && std::string_view(argv[2])=="--kit","invalid-arguments","Provide the complete extracted kit.");
+    const fs::path kit=fs::canonical(argv[3]);
+    const auto checked=verify_local_kit(kit);
+    require(checked.at("version")==SHIN_OBSERVER_VERSION,"update-release-invalid","Updater and local kit versions differ.");
+    fs::path prefix=user/".local/opt/shin-local";
+    std::vector<std::string> forwarded;
+    for(int i=4;i<argc;++i) {
+        const std::string key=argv[i];
+        if(key=="--adopt-existing") {forwarded.push_back(key);continue;}
+        require((key=="--prefix" || key=="--home" || key=="--bin-dir") && i+1<argc,"invalid-arguments","Invalid independent installer option.");
+        const std::string value=argv[++i];forwarded.push_back(key);forwarded.push_back(value);
+        if(key=="--prefix")prefix=fs::absolute(value).lexically_normal();
+    }
+    const bool updating=fs::exists(prefix) || fs::is_symlink(prefix);
+    // The native updater resolves an existing installation's recorded paths.
+    // Only a first installation receives the bootstrap's selected defaults.
+    for(const auto& [key,path]:std::array<std::pair<std::string,fs::path>,3>{{{"--prefix",prefix},{"--home",user/".shin-ce"},{"--bin-dir",user/".local/bin"}}})
+        if((!updating || key=="--prefix") && std::find(forwarded.begin(),forwarded.end(),key)==forwarded.end()) {forwarded.push_back(key);forwarded.push_back(path.string());}
+    std::vector<std::string> options{updating ? "update" : "install"};
+    options.insert(options.end(),forwarded.begin(),forwarded.end());
+    TerminalUpdateProgress terminal(true);const auto sink=terminal.sink();
+    if(options.front()=="update")options.push_back("--progress-json");
+    return run(kit/"bin/shin-ce",options,600,nullptr,sink);
+ }
+}
+
 } // namespace shin::observer

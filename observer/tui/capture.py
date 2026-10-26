@@ -22,6 +22,8 @@ GALLERY = {
     'overview-ru': 'tui-overview-ru.svg',
     'compact-en': 'tui-compact.svg',
     'offline-en': 'tui-offline.svg',
+    'updates-offer-en': 'tui-updates.svg',
+    'updates-progress-en': 'tui-update-progress.svg',
 }
 
 

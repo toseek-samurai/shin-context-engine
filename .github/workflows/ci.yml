@@ -98,11 +98,12 @@ jobs:
           cpack --config "$RUNNER_TEMP/observer/CPackConfig.cmake" 2>&1 | tee "$RUNNER_TEMP/package-build.log"
           archives=("$RUNNER_TEMP/observer/packages/"*.zip)
           test "${#archives[@]}" -eq 1
+          python3 -B tools/package_updater.py "${archives[0]}" "$RUNNER_TEMP/observer/packages"
           python3 -B observer/installer/package_smoke.py --cmake "$(command -v cmake)" \
             --build "$RUNNER_TEMP/observer" --archive "${archives[0]}" \
             --test-results "$RUNNER_TEMP/observer-tests.xml" 2>&1 | tee "$RUNNER_TEMP/package-smoke.log"
           cd "$RUNNER_TEMP/observer/packages"
-          shasum -a 256 -c "$(basename "${archives[0]}").sha256" | tee "$RUNNER_TEMP/package-checksum.log"
+          shasum -a 256 -c ./*.zip.sha256 | tee "$RUNNER_TEMP/package-checksum.log"
       - name: Upload qualified macOS kit
         if: success() && steps.qualify-kit.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2

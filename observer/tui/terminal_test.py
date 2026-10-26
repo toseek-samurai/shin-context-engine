@@ -17,7 +17,7 @@ import tempfile
 import termios
 import time
 
-tool, profiles = map(lambda p: str(Path(p).resolve()), sys.argv[1:])
+tool, profiles = map(lambda p: str(Path(p).resolve()), sys.argv[1:3])
 
 
 class Terminal:
@@ -55,11 +55,11 @@ class Terminal:
                 break
         assert text.encode() in self.data, (text, self.data[-2000:])
 
-    def key(self, value):
+    def key(self, value, redraw=True):
         self.data = b''
         # Request a full repaint after the action. Otherwise the UI can emit
         # only a changed suffix, which is not a complete visible screen.
-        os.write(self.master, value + b'\x0c')
+        os.write(self.master, value + (b'\x0c' if redraw else b''))
         self.pump()
 
     def close(self, sig=None):
@@ -111,6 +111,13 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
     offline = Terminal(missing)
     try:
         offline.expect('Service offline')
+        offline.key(b'7')
+        if sys.platform == 'darwin':
+            offline.expect('Check for a newer complete release')
+            offline.key(b'r')
+            offline.expect('No owned installation exists at this prefix.')
+        else:
+            offline.expect('Automatic release updates are currently available on macOS only.')
         offline.key(b'5')
         offline.expect('Model usage')
         offline.expect('--usage-file')
@@ -247,3 +254,42 @@ with tempfile.TemporaryDirectory(prefix='shin-stats-language-') as directory:
         screen.close()
     bad = subprocess.run([tool, 'stats', '--language', 'fr'], capture_output=True, text=True)
     assert bad.returncode == 2 and json.loads(bad.stderr)['error']['code'] == 'invalid-arguments'
+
+# Same real event loop with an injected, non-installing native operation. The
+# fixture executable is test-only; production has no simulation flag or env hook.
+if len(sys.argv) > 3:
+    real_tool, tool = tool, str(Path(sys.argv[3]).resolve())
+    try:
+        with tempfile.TemporaryDirectory(prefix='shin-tui-update-flow-') as directory:
+            home = Path(directory) / 'absent-home'
+            screen = Terminal(home)
+            try:
+                screen.expect('SHIN')
+                screen.key(b'7'); screen.expect('Check for a newer complete release')
+                screen.key(b'r'); screen.expect('2.0.5-dev.99')
+                screen.key(b'\n'); screen.expect('A Shin update is available')
+                screen.key(b'i'); screen.expect('Install the reviewed release?')
+                # ESC is also the prefix of terminal key sequences. Deliver it
+                # alone before a redraw, so it cannot become Alt-Ctrl-L.
+                screen.key(b'\x1b', redraw=False)
+                screen.key(b'\x0c'); screen.expect('A Shin update is available')
+                assert b'Install the reviewed release?' not in screen.data, 'Esc did not cancel confirmation'
+                screen.key(b'y'); screen.expect('A Shin update is available')
+                screen.key(b'i'); screen.expect('Install the reviewed release?')
+                screen.key(b'y'); screen.expect('Downloading the update')
+                screen.expect('50%')
+                screen.key(b'q')
+                assert screen.child.poll() is None, 'q interrupted a native update'
+                screen.key(b'\x03')
+                assert screen.child.poll() is None, 'Ctrl-C interrupted a native update'
+                screen.expect('Projects checked: 2 / 3')
+                screen.expect('Shin was updated')
+                screen.key(b'v'); screen.expect('Update needs review')
+                screen.key(b'a'); screen.expect('No pending update result')
+            finally:
+                screen.close()
+            assert b'fixture-installs=1 acknowledgements=1' in screen.data, screen.data[-3000:]
+            assert not home.exists(), 'TUI fixture mutated service data'
+    finally:
+        tool = real_tool
+    print('TUI update flow: explicit confirmation, cancellation, actual counters, quit guard, receipt, acknowledgement and terminal restore passed')

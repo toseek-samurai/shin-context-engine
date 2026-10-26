@@ -38,7 +38,8 @@ inline const char* update_stage_key(ReleaseUpdateStep step) {
 }
 inline std::string update_detail(ReleaseUpdateProgress value) {
     char bytes[160];
-    if (value.step == ReleaseUpdateStep::downloading || value.step == ReleaseUpdateStep::staging) {
+    if (value.step == ReleaseUpdateStep::downloading || value.step == ReleaseUpdateStep::staging ||
+        (value.step == ReleaseUpdateStep::preparing && value.total)) {
         if (value.total) std::snprintf(bytes, sizeof(bytes), shin::ui::tr("%.1f / %.1f MiB · %.0f%%"),
             value.received / 1048576.0, value.total / 1048576.0,
             static_cast<double>(std::min(100.0L, 100.0L * value.received / value.total)));

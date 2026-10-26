@@ -2,6 +2,7 @@
 """Offline publication gates and uncertain-outcome readback; no GitHub mutations."""
 import copy
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -37,11 +38,21 @@ def kit(directory):
     directory.mkdir(parents=True)
     name = f'shin-local-{VERSION}-macos-arm64.zip'
     data = b'independent synthetic kit payload'
+    updater_payload = b'independent synthetic updater'
+    updater_manifest = dict(schema_version='shin.updater.v1', protocol=1, version=VERSION,
+        files=[dict(path='bin/shin-updater', size=len(updater_payload), executable=True,
+                    sha256=hashlib.sha256(updater_payload).hexdigest())])
+    payloads = {'bin/fixture': data, 'bin/shin-updater': updater_payload,
+                'shin-updater.json': json.dumps(updater_manifest).encode()}
     manifest = dict(schema_version='shin.local-kit.v1', version=VERSION, core_version='2.0.5-dev.3',
-                    files=[dict(path='bin/fixture', size=len(data), sha256=hashlib.sha256(data).hexdigest())])
+                    files=[dict(path=path, size=len(value), executable=path.startswith('bin/'),
+                                sha256=hashlib.sha256(value).hexdigest()) for path, value in payloads.items()])
     with zipfile.ZipFile(directory / name, 'w') as archive:
         archive.writestr(f'shin-local-{VERSION}-macos-arm64/shin-kit.json', json.dumps(manifest))
-        archive.writestr(f'shin-local-{VERSION}-macos-arm64/bin/fixture', data)
+        for path, value in payloads.items():
+            archive.writestr(f'shin-local-{VERSION}-macos-arm64/' + path, value)
+    from package_updater import package
+    package(directory / name, directory)
     digest = hashlib.sha256((directory / name).read_bytes()).hexdigest()
     (directory / (name + '.sha256')).write_text(f'{digest}  {name}\n')
     (directory / 'install.sh').write_text(f"version='{VERSION}'\n")
@@ -232,7 +243,7 @@ class Publication(unittest.TestCase):
             before = len(github.calls)
             self.assertEqual(publisher.publish(REPO, SHA, TAG, 123, 1), 'fixture-release')
         self.assertEqual(sum(c[:3] == ('gh','release','create') for c in github.calls), 1)
-        self.assertEqual(sum(c[:3] == ('gh','release','upload') for c in github.calls), 3)
+        self.assertEqual(sum(c[:3] == ('gh','release','upload') for c in github.calls), 5)
         self.assertEqual(sum(c[:3] == ('gh','release','edit') for c in github.calls), 1)
         self.assertFalse(any(c[:2] == ('gh','release') for c in github.calls[before:]))
 
@@ -263,6 +274,27 @@ class Publication(unittest.TestCase):
             archive.write_bytes(archive.read_bytes() + b'changed')
             with self.assertRaises(ValueError):
                 publisher.verify_assets(assets, VERSION, '2.0.5-dev.3')
+
+    def test_updater_must_be_complete_and_match_the_qualified_kit(self):
+        for failure in ('missing', 'checksum', 'different-payload'):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as folder:
+                assets = Path(folder) / 'assets'
+                kit(assets)
+                updater = assets / 'shin-updater-v1-macos-arm64.zip'
+                if failure == 'missing':
+                    updater.unlink()
+                elif failure == 'checksum':
+                    updater.write_bytes(updater.read_bytes() + b'changed')
+                else:
+                    original = updater.read_bytes()
+                    with zipfile.ZipFile(io.BytesIO(original)) as before, zipfile.ZipFile(updater, 'w') as after:
+                        for entry in before.infolist():
+                            payload = before.read(entry)
+                            after.writestr(entry, b'changed updater' if entry.filename.endswith('/bin/shin-updater') else payload)
+                    checksum = hashlib.sha256(updater.read_bytes()).hexdigest()
+                    (assets / (updater.name + '.sha256')).write_text(f'{checksum}  {updater.name}\n')
+                with self.assertRaises(ValueError):
+                    publisher.verify_assets(assets, VERSION, '2.0.5-dev.3')
 
 
 if __name__ == '__main__':

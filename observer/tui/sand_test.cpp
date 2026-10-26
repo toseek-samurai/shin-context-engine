@@ -147,12 +147,65 @@ void chart_tests(tui::Snapshot s) {
     require(all.points.size() == normal.points.size() + diagnostic.points.size(), "query filter ignored");
     telemetry["request_metrics"]["recent"][0]["duration_ms"] = -1;
     require(!tui::chart(s, 2, 0).points[0].value, "invalid duration displayed");
+    telemetry["projection"] = {{"omitted_rows", {{"/samples", 120}, {"/request_metrics/recent", 48}}}};
+    telemetry["samples"] = Json::array();
+    series = tui::chart(s, 0, 0);
+    require(series.points.empty() && series.partial && series.omitted == 120, "projection loss hidden by empty graph");
+    require(tui::chart(s, 2, 0).partial && tui::chart(s, 2, 0).omitted == 48, "query projection loss hidden");
+    require(!tui::chart(s, 0, 2).partial, "unrelated projection loss marked historical graph partial");
+    tui::State state;
+    auto screen = render(s, state);
+    require(screen.plain.find("Measurements omitted from this response") != std::string::npos,
+        "omitted telemetry presented as no measurements");
+    telemetry.erase("projection");
+    telemetry["request_metrics"]["recent"] = Json::array();
+    state.metric = 2;
+    screen = render(s, state);
+    require(screen.plain.find("No query timings in the last 60 s") != std::string::npos, "idle queries unexplained");
+    telemetry["uptime_ms"] = 15000;
+    require(render(s, state).plain.find("-15 s") != std::string::npos, "startup chart has incorrect time span");
+    telemetry["request_metrics"]["recent"].push_back({{"elapsed_ms", 10000}, {"method", "query"}, {"duration_ms", 12.5}});
+    screen = render(s, state);
+    require(screen.plain.find("Last: 12.5 ms") != std::string::npos && screen.plain.find("Measurements: 1") != std::string::npos,
+        "sparse query value hidden");
+    int marker_cells = 0;
+    for (int y = 0; y < screen.screen.dimy(); ++y) for (int x = 0; x < screen.screen.dimx(); ++x) {
+        const auto& glyph = screen.screen.at(x, y);
+        if (glyph.size() == 3 && static_cast<unsigned char>(glyph[0]) == 0xe2 &&
+            static_cast<unsigned char>(glyph[1]) >= 0xa0 && static_cast<unsigned char>(glyph[1]) <= 0xa3 && glyph != "⠀")
+            ++marker_cells;
+    }
+    require(marker_cells >= 2, "isolated query has no visible marker");
+    shin::ui::set_language(shin::ui::Language::ru);
+    screen = render(s, state);
+    require(screen.plain.find("Последнее: 12,5 ms") != std::string::npos &&
+        screen.plain.find("Измерений: 1") != std::string::npos, "graph summary not localized");
+    shin::ui::set_language(shin::ui::Language::en);
+    history["status"] = "ready";
+    history["timeline"] = Json::array({Json::array({3600000, 0, 0, 0, 0, 0, 0, 10485760, 1, 0}),
+        Json::array({7200000, 0, 0, 0, 0, 0, 0, 20971520, 1, 0})});
+    series = tui::chart(s, 0, 2);
+    require(series.points.size() == 2 && !series.points[1].connect, "hourly memory bridged unknown service runs");
+    state.range = 2; state.metric = 1;
+    screen = render(s, state);
+    require(screen.plain.find("Last: 0 / h") != std::string::npos &&
+        screen.plain.find("Measurements: 2") != std::string::npos, "observed zero activity hidden");
 }
 }
 int main(int argc, char** argv) {
     try {
         std::setlocale(LC_CTYPE, "");
         ftxui::Terminal::SetColorSupport(ftxui::Terminal::TrueColor);
+        if (argc == 4 && std::string_view(argv[1]) == "--service-snapshot") {
+            tui::Snapshot live;
+            std::ifstream(argv[2]) >> live.service;
+            live.connected = true; live.received = tui::Clock::now(); live.error.clear();
+            for (int range = 0; range < 3; ++range) for (int metric = 0; metric < 3; ++metric) {
+                tui::State state; state.range = range; state.metric = metric;
+                capture(render(live, state), argv[3], "live-" + std::to_string(range) + "-" + std::to_string(metric));
+            }
+            return 0;
+        }
         auto snapshot = fixture();
         chart_tests(snapshot);
         const auto original = snapshot.service;
@@ -193,6 +246,39 @@ int main(int argc, char** argv) {
             require(result.plain.find(expected) != std::string::npos, "gallery view omitted available measurements");
             if (argc == 2) capture(result, argv[1], name);
         }
+        state = {}; state.tab = 6;
+        snapshot.updates.phase = tui::UpdatePhase::offer;
+        snapshot.updates.offer = {{"current_version", "2.0.5-dev.45"}, {"version", "2.0.5-dev.99"}, {"revision", "r1"},
+            {"release_url", "https://github.com/example/project/releases/tag/v2.0.5-dev.99"}};
+        result = render(snapshot, state);
+        require(result.plain.find("A Shin update is available") != std::string::npos &&
+            result.plain.find("[i Install]") != std::string::npos, "update offer or explicit action missing");
+        if (argc == 2) capture(result, argv[1], "updates-offer-en");
+        state.update_confirmation = "r1";
+        result = render(snapshot, state);
+        require(result.plain.find("[y Install now]") != std::string::npos && result.plain.find("[n Cancel]") != std::string::npos,
+            "update confirmation cannot be cancelled");
+        if (argc == 2) capture(result, argv[1], "updates-confirm-en");
+        state.update_confirmation.clear();
+        snapshot.updates.phase = tui::UpdatePhase::installing;
+        snapshot.updates.changed = tui::Clock::now();
+        snapshot.updates.timeline.observe({ReleaseUpdateStep::preparing});
+        snapshot.updates.timeline.observe({ReleaseUpdateStep::downloading, 5 * 1048576, 10 * 1048576});
+        result = render(snapshot, state);
+        require(result.plain.find("50%") != std::string::npos && result.plain.find("5.0 / 10.0 MiB") != std::string::npos,
+            "measured update progress missing");
+        require(result.plain.find("Shin was updated") == std::string::npos, "progress claimed an installation receipt");
+        if (argc == 2) capture(result, argv[1], "updates-progress-en");
+        shin::ui::set_language(shin::ui::Language::ru);
+        if (argc == 2) capture(render(snapshot, state), argv[1], "updates-progress-ru");
+        shin::ui::set_language(shin::ui::Language::en);
+        snapshot.updates.phase = tui::UpdatePhase::result;
+        snapshot.updates.result = {{"phase", "review-required"}, {"ok", false}, {"can_acknowledge", true}};
+        result = render(snapshot, state);
+        require(result.plain.find("Update needs review") != std::string::npos && result.plain.find("[a Acknowledge]") != std::string::npos,
+            "update recovery or acknowledgement hidden");
+        if (argc == 2) capture(result, argv[1], "updates-review-en");
+        snapshot.updates = {};
         state = {}; state.tab = 1; state.detail = true;
         auto long_path = snapshot;
         const auto root = "/workspace/" + std::string(96, 'a') + "/tail-marker";
@@ -206,7 +292,7 @@ int main(int argc, char** argv) {
         for (auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
             shin::ui::set_language(language);
             for (const auto& [width, height] : {std::pair{60, 12}, {80, 24}, {120, 36}}) {
-                for (int tab = 0; tab < 6; ++tab) {
+                for (int tab = 0; tab < 7; ++tab) {
                     state = {}; state.tab = tab;
                     result = render(snapshot, state, width, height);
                     require(result.plain.find("SHIN") != std::string::npos, "header clipped");
@@ -224,7 +310,9 @@ int main(int argc, char** argv) {
         result = render(snapshot, state);
         require(result.plain.find("OFFLINE") != std::string::npos &&
             result.plain.find("last successful observation") != std::string::npos, "stale data unlabeled");
-        require(result.plain.find("96.0 MiB") == std::string::npos, "stale memory shown as live");
+        const auto memory_card = result.plain.find('\n', result.plain.find("Memory")) + 1;
+        require(result.plain.substr(memory_card, result.plain.find('\n', memory_card) - memory_card).find("96.0 MiB") == std::string::npos &&
+            result.plain.find("Last received: 96.0 MiB") != std::string::npos, "stale memory shown as live");
         if (argc == 2) capture(result, argv[1], "offline-en");
         snapshot.service["telemetry"]["project_states"] = Json::array();
         require(render(snapshot, state).plain.find("project-add") != std::string::npos, "empty-state guidance absent");

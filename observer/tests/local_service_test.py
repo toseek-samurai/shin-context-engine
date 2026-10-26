@@ -735,7 +735,7 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(status['resident_errors'], {})
         self.assertTrue(self.raw('query', query='readLimit')['ok'])
 
-    def test_short_same_project_collision_waits_without_blocking_other_project(self):
+    def test_short_same_project_collision_waits_and_preserves_execution_capacity(self):
         other=self.base/'independent';other.mkdir()
         (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
         self.init(root=other);self.roots.append(other);self.start()
@@ -743,19 +743,42 @@ class LocalServiceTests(unittest.TestCase):
         first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='first'))+'\n').encode())
         self.wait_service_state(lambda state:state['query_workers']==1)
         second=self.connect();second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='second'))+'\n').encode())
-        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        waiting=self.wait_service_state(lambda state:state['waiting_requests']==1)
         # A queued request has not consumed the second execution slot.
-        began=time.monotonic();independent=self.raw('query',root=other,query='readLimit')
-        self.assertTrue(independent['ok'],independent);self.assertLess(time.monotonic()-began,2)
-        self.assertIn('return 99;',independent['result']['source_context'])
+        self.assertEqual(waiting['query_workers'],1)
+        # Release immediately: completing an unrelated request first used to
+        # spend this waiter's real 500 ms execution-admission deadline.
         os.kill(pid,signal.SIGCONT)
-        self.assertTrue(self.receive(first)['ok'])
+        original=self.receive(first);self.assertTrue(original['ok'],original)
         response=self.receive(second);self.assertTrue(response['ok'],response)
+        self.assertEqual(original['result']['snapshot_id'],response['result']['snapshot_id'])
         metrics=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
         queued=next(row for row in metrics if row['request_id']==hashlib.sha256(b'second').hexdigest())
         self.assertGreater(queued['wait_ms'],0)
         self.assertEqual(queued['reader_state'],'warm')
         self.assertEqual(queued['stage'],'execution')
+
+    def test_busy_project_waiter_does_not_block_an_independent_project(self):
+        other=self.base/'independent';other.mkdir()
+        (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other);self.roots.append(other);self.start()
+        pid=self.hold_reader()
+        first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='holding'))+'\n').encode())
+        self.wait_service_state(lambda state:state['query_workers']==1)
+        second=self.connect();second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='busy-waiter'))+'\n').encode())
+        self.wait_service_state(lambda state:state['waiting_requests']==1)
+        # The first reader remains stopped throughout the independent query.
+        # Its waiter must expire without execution, even on a slow CI worker.
+        began=time.monotonic();independent=self.raw('query',root=other,query='readLimit')
+        self.assertTrue(independent['ok'],independent);self.assertLess(time.monotonic()-began,2)
+        self.assertIn('return 99;',independent['result']['source_context'])
+        response=self.receive(second)
+        self.assertEqual(response['error']['code'],'service-busy',response)
+        self.assertEqual(response['error']['diagnostic']['execution_started'],False)
+        self.assertEqual(response['error']['diagnostic']['reason'],'project-executing')
+        self.assertEqual(self.raw('service-status')['result']['query_workers'],1)
+        os.kill(pid,signal.SIGCONT);self.assertTrue(self.receive(first)['ok'])
+        self.assertTrue(self.raw('query',query='readLimit')['ok'])
 
     def test_queued_busy_request_expires_once_without_execution(self):
         self.start();pid=self.hold_reader()
@@ -1006,7 +1029,12 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(telemetry['request_metrics']['responses_ready'], 64)
         self.assertEqual(len(telemetry['project_states']), 4)
         self.assertGreaterEqual(len(telemetry['history']['timeline']), 167)
-        self.assertEqual(len(telemetry['history']['request_cohorts']), 48)
+        omitted = telemetry['projection']['omitted_rows'].get('/history/request_cohorts', 0)
+        self.assertEqual(len(telemetry['history']['request_cohorts']) + omitted, 48)
+        if omitted:
+            self.assertTrue(telemetry['history']['request_cohorts_truncated'])
+        self.assertGreater(len(telemetry['samples']), 0)
+        self.assertGreaterEqual(len(telemetry['request_metrics']['recent']), 16)
         with self.connect() as client:
             client.sendall((json.dumps(self.frame('service-status')) + '\n').encode())
             # Expose partial writes instead of continuously emptying the receive queue.

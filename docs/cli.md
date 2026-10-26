@@ -248,7 +248,7 @@ an old snapshot usable again.
 
 ### Sessions and optional recovery notes (dev.45)
 
-Monitor's dev.51 source presents these observations as a Sand journal with UTC
+Monitor's dev.52 source presents these observations as a Sand journal with UTC
 timestamps, short opaque session IDs, a monospace font and vector icons. Success,
 error, unfinished and explicit host events have distinct colors and text labels.
 Session counters and details remain available below the journal; **What is

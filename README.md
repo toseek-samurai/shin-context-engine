@@ -53,7 +53,7 @@ English and Russian; these examples use English. Names, counts, and timings abov
 
 <img src="docs/images/monitor-sessions.png" width="360" alt="Monitor Sessions displays a Sand journal with timestamps, session IDs, vector icons and colored outcomes, with an explicit 48-event display limit">
 
-The dev.51 source adds a readable **Sessions** journal: recent MCP calls and
+The dev.52 source adds a readable **Sessions** journal: recent MCP calls and
 explicit client events, session counters and expandable details. Up to eight
 sessions and six events per session keep the view bounded; this display limit
 does not reduce stored history or analysis totals. The screenshot uses synthetic

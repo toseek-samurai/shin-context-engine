@@ -95,13 +95,18 @@ static std::vector<std::string> qualified_identifier_terms(const std::string& ra
 std::vector<std::string> parse_terms(const std::string& query) {
     std::vector<std::string> raw_terms;
     std::vector<std::string> meaningful_terms;
+    std::vector<std::pair<std::string,std::string>> tokens;
     std::istringstream input(unicode_query_spacing(query));
     std::string raw;
     while (input >> raw) {
         const std::string term = normalize_query_token(raw);
-        if (term.empty()) {
-            continue;
-        }
+        if (!term.empty()) tokens.emplace_back(raw,term);
+    }
+    const bool explanatory = !tokens.empty() &&
+        (tokens.front().second == "how" || tokens.front().second == "как") &&
+        tokens.front().first.find_first_of("`\"'(") == std::string::npos;
+    for (std::size_t index = 0; index < tokens.size(); ++index) {
+        const auto& [raw,term] = tokens[index];
         const auto components = qualified_identifier_terms(raw, term);
         if (!components.empty()) {
             // A qualifier such as "is" or "as" is not a natural-language stop word.
@@ -112,7 +117,15 @@ std::vector<std::string> parse_terms(const std::string& query) {
             continue;
         }
         append_unique_string(raw_terms, term);
-        if (!is_query_stop_word(term)) {
+        // In "how X work(s) with Y" and "how X works", the verb describes
+        // the question, not a required code/document word. Preserve nouns such
+        // as "work queue", quoted/call syntax and qualified identifiers.
+        const bool english_verb = (term == "work" || term == "works" || term == "working") &&
+            (index + 1 == tokens.size() || tokens[index + 1].second == "with");
+        const bool russian_verb = term == "работает" || term == "работают" || term == "работать";
+        const bool question_verb = explanatory && (english_verb || russian_verb) &&
+            raw.find_first_of("`\"'(") == std::string::npos;
+        if (!is_query_stop_word(term) && !question_verb) {
             append_unique_string(meaningful_terms, term);
         }
     }

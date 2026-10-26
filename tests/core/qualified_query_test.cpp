@@ -52,6 +52,21 @@ void check_unicode_queries() {
     expect(normalize_match_text(text) == "left right", "invalid UTF-8 cannot join words");
 }
 
+void check_explanatory_question_terms() {
+    for (const auto& query : {"how engines work with SQL", "How does an engine work?", "как работает движок", "как движки работают"}) {
+        const auto terms = parse_terms(query);
+        for (const auto& term : terms)
+            expect(term != "work" && term != "работает" && term != "работают", "explanatory verb: " + std::string(query));
+    }
+    expect(parse_terms("work queue") == std::vector<std::string>({"work","queue"}), "work noun remains meaningful");
+    expect(parse_terms("how work queues handle retries") == std::vector<std::string>({"work","queues","handle","retries"}),
+           "a question does not make every work token a verb");
+    expect(parse_terms("work") == std::vector<std::string>({"work"}), "single work symbol");
+    expect(parse_terms("how `work` works") == std::vector<std::string>({"work"}), "quoted work symbol");
+    expect(parse_terms("how engine::work works") == std::vector<std::string>({"engine","work"}), "qualified work symbol");
+    expect(parse_terms("how work() works") == std::vector<std::string>({"work"}), "call syntax names a symbol");
+}
+
 class Fixture {
 public:
     explicit Fixture(const fs::path& parent)
@@ -112,6 +127,34 @@ void check_unicode_retrieval_parity(const fs::path& parent) {
         expect(hit.at("path") != "other.md", "UTF-8 continuation bytes do not create word boundaries");
 }
 
+void check_explanatory_retrieval_parity(const fs::path& parent) {
+    Fixture fixture(parent);
+    fixture.options.profile.root_files = {"README.md", "guide.md"};
+    fixture.write("README.md", "# General operation\n\nConnector PAGE SLICE work native SQL server validation. Connector работает проверка сервера.\n");
+    fixture.write("guide.md", "# Focused pagination reference\n\nConnector PAGE SLICE native SQL server validation. Connector проверка сервера.\n");
+    {
+        const auto output = generate_outputs(fixture.options.profile,fixture.options.root);
+        shin::generated_io::IndexLock writer(fixture.options.out_root,
+            shin::generated_io::LockMode::exclusive,shin::generated_io::LockTarget::writer);
+        shin::generated_io::publish_snapshot(fixture.options.out_root,kGeneratedDir,output.files);
+    }
+    const auto snapshot = GeneratedSnapshot::load(fixture.options);
+    RetrievalSession disk(fixture.options,true), resident(snapshot,true);
+    for (const std::string query : {"how Connector PAGE and SLICE work with native SQL server validation",
+                                    "как работает Connector PAGE SLICE SQL проверка сервера"}) {
+        const auto request = make_command_query_request(fixture.options.profile,{query},8,3);
+        expect(std::find(request.terms.begin(),request.terms.end(),"work") == request.terms.end() &&
+               std::find(request.terms.begin(),request.terms.end(),"работает") == request.terms.end(),
+               "question verb remains a required query group: " + query);
+        const auto brief = disk.brief(request,BriefProjection::compact);
+        expect(brief == resident.brief(request,BriefProjection::compact), "explanatory disk/resident parity");
+        const auto& paths = brief.at("ranked_paths");
+        expect(std::any_of(paths.begin(),paths.end(),[](const auto& row) { return row.at("path") == "guide.md"; }),
+               "generic question verb excludes the focused guide: " + query);
+        expect(brief.at("query_coverage").at("covered_groups") == request.terms.size(), "meaningful query groups stay covered");
+    }
+}
+
 void check_qualified_retrieval_parity(const fs::path& parent) {
     Fixture fixture(parent);
     fixture.write("README.md", "# Neutral lexical lookup fixture\n");
@@ -164,9 +207,11 @@ int main(int argc, char** argv) {
         if (argc != 2) throw std::runtime_error("expected fixture parent");
         shin::context::check_qualified_token_boundaries();
         shin::context::check_unicode_queries();
+        shin::context::check_explanatory_retrieval_parity(argv[1]);
+        shin::context::check_explanatory_question_terms();
         shin::context::check_qualified_retrieval_parity(argv[1]);
         shin::context::check_unicode_retrieval_parity(argv[1]);
-        std::cout << "qualified query: 4 checks passed\n";
+        std::cout << "qualified query: 6 checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

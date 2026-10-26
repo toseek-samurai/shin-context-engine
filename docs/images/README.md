@@ -25,7 +25,7 @@ outputs visually, then copy only the selected PNGs here without modifying
 their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
 The project and timing images show the dev.34 Sand appearance. The Sessions
-images come from dev.51 source, including the 48-event display ceiling, readable
+images come from dev.52 source, including the 48-event display ceiling, readable
 monospace journal, outcome colors and vector icons. All use the standard
 448×620 panel size. Generate EN and RU into separate output directories before
 copying the selected Sessions images.

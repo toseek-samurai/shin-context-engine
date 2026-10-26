@@ -49,6 +49,21 @@ CMakeCache.txt
 cmake_install.cmake
 install_manifest.txt
 compile_commands.json
+CMakeUserPresets.json
+
+# Local IntelliJ project metadata
+/.idea/
+/*.iml
+
+# Gradle caches; retain the intentional cold-start exclusion fixture.
+**/.gradle/**
+!/tests/fixtures/cold-start/kotlin/.gradle/generated/
+!/tests/fixtures/cold-start/kotlin/.gradle/generated/GeneratedNoise.kt
+
+# IDE-generated wrappers in this source-discovery fixture only.
+/tests/fixtures/cold-start/kotlin/gradle/
+/tests/fixtures/cold-start/kotlin/gradlew
+/tests/fixtures/cold-start/kotlin/gradlew.bat
 
 # Temporary files
 *.tmp

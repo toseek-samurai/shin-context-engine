@@ -56,6 +56,9 @@ if(BUILD_TESTING)
     target_compile_definitions(shin-tray-update-window-tests PRIVATE SHIN_TRAY_UPDATE_WINDOW_TEST=1 IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
     target_compile_options(shin-tray-update-window-tests PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)
     target_link_libraries(shin-tray-update-window-tests PRIVATE shin-observer-native shin-imgui "-framework ImageIO")
+    add_test(NAME shin-tray-cli-handoff COMMAND ${Python3_EXECUTABLE} -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/cli_handoff_test.py" $<TARGET_FILE:shin-tray-update-window-tests>)
+    set_tests_properties(shin-tray-cli-handoff PROPERTIES TIMEOUT 45 RESOURCE_LOCK shin-tray-render)
     foreach(language IN ITEMS en ru)
         add_test(NAME shin-tray-update-window-${language} COMMAND shin-tray-update-window-tests
             "${CMAKE_CURRENT_BINARY_DIR}/update-window-${language}" ${language})

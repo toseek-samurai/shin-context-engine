@@ -82,6 +82,12 @@ esac
     output,error=child.communicate(timeout=20)
     assert child.returncode==0 and json.loads(output)['pid']==child.pid, (output,error)
     assert 'MiB' in error, 'the CLI bootstrap hid its actual transfer progress'
+    gui=subprocess.Popen([str(tool),str(fixtures),str(prefix),str(home),'exec-update-install','--revision',offered['revision'],
+                          '--wait-pid',str(os.getpid()),'--ui-version','9.0.0'],
+                         stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,env={**os.environ,'LANG':'C','LC_ALL':'C'})
+    output,error=gui.communicate(timeout=20)
+    assert gui.returncode==0 and json.loads(output)['pid']==gui.pid,(output,error)
+    assert 'Downloading the current updater' not in error and 'MiB' not in error, 'GUI bootstrap emitted terminal chatter'
     with tempfile.TemporaryDirectory(prefix='shin-updater.',dir='/tmp') as retained:
         stage=Path(retained).resolve();payload=stage/'payload';payload.mkdir(mode=0o700)
         with zipfile.ZipFile(fixtures/'updater.zip') as archive:archive.extractall(payload)

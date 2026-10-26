@@ -288,6 +288,10 @@ NSString* update_failure_text(const Json& result, NSString* failure) {
         if (error != result.end() && error->is_object()) {
             if (error->value("code", Json()) == "update-offer-changed")
                 return ui_text("The release offer changed. Check for updates again before installing.");
+            if (error->value("code", Json()) == "update-monitor-open")
+                return ui_text("Monitor could not hand over to the updater. Your current installation is unchanged. Restart Monitor and check for updates again.");
+            if (error->value("code", Json()) == "ui-operation-busy")
+                return ui_text("Finish the current Shin operation before updating.");
             const auto message = error->find("message");
             if (message != error->end() && message->is_string() && !message->get_ref<const std::string&>().empty())
                 return diagnostic_text_content(message->get_ref<const std::string&>());
@@ -448,7 +452,11 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, copy) NSString* updateFailure;
 @property(nonatomic, strong) NSWindow* updateWindow;
 @property(nonatomic, strong) NSTextField* updateTitle;
+@property(nonatomic, strong) NSTextField* updateVersion;
 @property(nonatomic, strong) NSTextField* updateDetail;
+@property(nonatomic, strong) NSStackView* updateLayout;
+@property(nonatomic, strong) NSScrollView* updateDetails;
+@property(nonatomic, strong) NSLayoutConstraint* updateDetailHeight;
 @property(nonatomic, strong) NSProgressIndicator* updateSpinner;
 @property(nonatomic, strong) NSButton* updateCheckButton;
 @property(nonatomic, strong) NSButton* updateInstallButton;
@@ -508,6 +516,7 @@ static std::unique_ptr<Monitor> monitor;
 - (void)refreshStorage:(id)sender;
 - (void)toggleStorageAutoClean:(id)sender;
 - (void)cleanStorage:(id)sender;
+- (NSString*)nativeCLIPath;
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion;
 - (void)closePanel:(id)sender;
 - (void)updatePanelSize;
@@ -549,15 +558,19 @@ static std::unique_ptr<Monitor> monitor;
     [self disconnectAndCleanProject:nil];
 }
 
-- (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
-    if (!self.shinHome.length) { completion(Json::object(), ui_text("Cannot locate the Shin folder.")); return; }
+- (NSString*)nativeCLIPath {
     const auto executable = current_executable_path();
     const auto canonical = fs::canonical(executable);
     const auto prefix = canonical.parent_path().filename() == "MacOS"
         ? canonical.parent_path().parent_path().parent_path().parent_path()
         : canonical.parent_path().parent_path();
     const auto cli_path = prefix / "bin" / "shin-ce";
-    NSString* cli = [NSString stringWithUTF8String:cli_path.c_str()];
+    return [NSString stringWithUTF8String:cli_path.c_str()];
+}
+
+- (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
+    if (!self.shinHome.length) { completion(Json::object(), ui_text("Cannot locate the Shin folder.")); return; }
+    NSString* cli = [self nativeCLIPath];
     if (!cli || ![NSFileManager.defaultManager isExecutableFileAtPath:cli]) {
         completion(Json::object(), ui_text("shin-ce is missing from the installed kit."));
         return;
@@ -576,38 +589,43 @@ static std::unique_ptr<Monitor> monitor;
                 task.executableURL = [NSURL fileURLWithPath:cli];
                 task.arguments = argv;
                 NSPipe* pipe = [NSPipe pipe];
+                NSPipe* errors = [NSPipe pipe];
                 task.standardOutput = pipe;
-                task.standardError = pipe;
+                task.standardError = errors;
                 NSError* launchError = nil;
                 if (![task launchAndReturnError:&launchError]) {
                     failure = launchError.localizedDescription.length ? launchError.localizedDescription : ui_text("Cannot start shin-ce.");
                 } else {
                     NSMutableData* bytes = [NSMutableData data];
-                    NSFileHandle* reader = pipe.fileHandleForReading;
+                    NSMutableData* diagnostics = [NSMutableData data];
+                    NSArray<NSFileHandle*>* readers = @[pipe.fileHandleForReading, errors.fileHandleForReading];
                     BOOL oversized = NO;
-                    BOOL timedOut = NO, pipeClosed = NO, sentKill = NO;
+                    BOOL timedOut = NO, sentKill = NO, handoffRequested = NO;
+                    std::array<bool, 2> closed{false, false};
+                    NSUInteger acknowledgementLength = 0;
                     const auto deadline = std::chrono::steady_clock::now() + timeout;
                     const auto stop_at = deadline - std::chrono::seconds(1) - std::chrono::milliseconds(100);
                     auto terminate_at = std::chrono::steady_clock::time_point{};
-                    const int descriptor = reader.fileDescriptor;
                     std::array<unsigned char, 16 * 1024> buffer{};
-                    while (!pipeClosed || task.isRunning) {
+                    while (!closed[0] || !closed[1] || task.isRunning) {
                         const auto now = std::chrono::steady_clock::now();
-                        if (!timedOut && !oversized && now >= stop_at && (!pipeClosed || task.isRunning)) {
+                        if (!timedOut && !oversized && now >= stop_at) {
                             timedOut = YES; terminate_at = now;
                             if (task.isRunning) [task terminate];
-                            else { [reader closeFile]; pipeClosed = YES; }
+                            else for (std::size_t i = 0; i < 2; ++i) if (!closed[i]) { [readers[i] closeFile]; closed[i] = true; }
                         } else if (task.isRunning && (timedOut || oversized) && !sentKill &&
                             now - terminate_at >= std::chrono::seconds(1)) {
                             // Kill only the NSTask child PID; never find or signal a process by name.
                             (void)::kill(static_cast<pid_t>(task.processIdentifier), SIGKILL);
                             sentKill = YES;
-                        } else if (!task.isRunning && !pipeClosed && (timedOut || oversized) &&
+                        } else if (!task.isRunning && (timedOut || oversized) &&
                             now - terminate_at >= std::chrono::seconds(1)) {
-                            [reader closeFile]; pipeClosed = YES;
+                            for (std::size_t i = 0; i < 2; ++i) if (!closed[i]) { [readers[i] closeFile]; closed[i] = true; }
                         }
-                        pollfd poll_descriptor{descriptor, static_cast<short>(pipeClosed ? 0 : POLLIN | POLLHUP), 0};
-                        const int ready = ::poll(pipeClosed ? nullptr : &poll_descriptor, pipeClosed ? 0 : 1, 100);
+                        std::array<pollfd, 2> descriptors{};
+                        for (std::size_t i = 0; i < 2; ++i)
+                            descriptors[i] = {closed[i] ? -1 : readers[i].fileDescriptor, POLLIN | POLLHUP, 0};
+                        const int ready = ::poll(descriptors.data(), descriptors.size(), 100);
                         if (ready < 0 && errno == EINTR) continue;
                         if (ready < 0) {
                             failure = ui_text("Could not wait for the shin-ce response.");
@@ -615,21 +633,26 @@ static std::unique_ptr<Monitor> monitor;
                             if (task.isRunning) [task terminate];
                             continue;
                         }
-                        if (!pipeClosed && ready > 0 && (poll_descriptor.revents & (POLLIN | POLLHUP | POLLERR))) {
-                            const ssize_t count = ::read(descriptor, buffer.data(), buffer.size());
-                            if (count == 0 || (count < 0 && errno != EINTR && errno != EAGAIN)) pipeClosed = YES;
+                        for (std::size_t i = 0; i < 2; ++i) if (!closed[i] && ready > 0 &&
+                            (descriptors[i].revents & (POLLIN | POLLHUP | POLLERR))) {
+                            const ssize_t count = ::read(descriptors[i].fd, buffer.data(), buffer.size());
+                            if (count == 0 || (count < 0 && errno != EINTR && errno != EAGAIN)) closed[i] = true;
                             else if (count > 0) {
                                 const auto length = static_cast<NSUInteger>(count);
-                                if (bytes.length + length > 1024 * 1024) {
+                                if (!oversized && bytes.length + diagnostics.length + length > 1024 * 1024) {
                                     oversized = YES; terminate_at = std::chrono::steady_clock::now();
                                     if (task.isRunning) [task terminate];
-                                } else if (!oversized) [bytes appendBytes:buffer.data() length:length];
-                                if ([command isEqualToString:@"update-install"] && !oversized) {
-                                    const auto ack=Json::parse(std::string((const char*)bytes.bytes,bytes.length),nullptr,false);
-                                    if(ack.is_object() && ack.value("accepted",false) && ack.value("pid",0)==task.processIdentifier) {
-                                        [reader closeFile];
-                                        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp terminate:nil]; });
-                                        return; // Native helper waits for this Monitor PID, records the outcome and reopens it.
+                                } else if (!oversized) [(i == 0 ? bytes : diagnostics) appendBytes:buffer.data() length:length];
+                                if (i == 0 && [command isEqualToString:@"update-install"] && !oversized && !handoffRequested) {
+                                    const std::string_view output((const char*)bytes.bytes, bytes.length);
+                                    const auto end = output.find('\n');
+                                    const auto ack = end == std::string_view::npos ? Json() : Json::parse(output.substr(0, end), nullptr, false);
+                                    if (ack.is_object() && ack.contains("accepted") && ack["accepted"] == true &&
+                                        ack.contains("pid") && ack["pid"].is_number_integer() && ack["pid"] == task.processIdentifier) {
+                                        handoffRequested = YES; acknowledgementLength = end + 1;
+                                        // Diagnostics stay on their own channel. Retain the reader until
+                                        // actual exit so a refused/deferred termination can still report why.
+                                        dispatch_async(dispatch_get_main_queue(), ^{ if (task.isRunning) [NSApp terminate:nil]; });
                                     }
                                 }
                             }
@@ -639,11 +662,10 @@ static std::unique_ptr<Monitor> monitor;
                     if (timedOut) failure = [NSString stringWithFormat:ui_text("The shin-ce command exceeded its time limit (%lld seconds) and was stopped."), static_cast<long long>(timeout.count())];
                     else if (oversized) failure = ui_text("The shin-ce response exceeded its size limit.");
                     else {
-                        NSString* output = [[NSString alloc] initWithData:bytes encoding:NSUTF8StringEncoding];
-                        if (output.length) {
-                            const char* text = output.UTF8String;
-                            if (text) result = Json::parse(text, nullptr, false);
-                        }
+                        const std::string output = bytes.length ? std::string((const char*)bytes.bytes, bytes.length) : "";
+                        const std::string error = diagnostics.length ? std::string((const char*)diagnostics.bytes, diagnostics.length) : "";
+                        result = Json::parse(output.substr(acknowledgementLength), nullptr, false);
+                        if (result.is_discarded() || !result.is_object()) result = Json::parse(error, nullptr, false);
                         if (result.is_discarded() || !result.is_object()) {
                             result = Json::object();
                             failure = task.terminationStatus == 0 ? ui_text("shin-ce returned an invalid response.") :

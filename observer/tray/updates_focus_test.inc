@@ -1,6 +1,8 @@
 // Native AppKit regression harness. Commands and URLs are intercepted; a second
 // test-owned process supplies a genuinely different foreground application.
 #include <iostream>
+#include <fstream>
+#include "cli_handoff_test.inc"
 
 @interface UpdateWindowHarness : ShinApp
 @property(nonatomic, copy) NSString* pendingCommand;
@@ -43,7 +45,7 @@ template<class Predicate> void await_update_ui(Predicate predicate, const char* 
 void save_update_window(UpdateWindowHarness* app, const fs::path& output, const char* name) {
     [app.updateWindow.contentView layoutSubtreeIfNeeded]; [app.updateWindow displayIfNeeded];
     NSView* body = app.updateWindow.contentView;
-    for (NSView* control in @[app.updateTitle, app.updateCheckButton, app.updateInstallButton,
+    for (NSView* control in @[app.updateTitle, app.updateVersion, app.updateCheckButton, app.updateInstallButton,
             app.updateNotesButton, app.updateCopyButton, app.updateAcknowledgeButton]) {
         if (control.hiddenOrHasHiddenAncestor) continue;
         const auto rect = [control convertRect:control.bounds toView:body];
@@ -63,9 +65,12 @@ void save_update_window(UpdateWindowHarness* app, const fs::path& output, const 
 
 int main(int argc, char** argv) {
     @autoreleasepool {
+        if (argc > 1 && std::string_view(argv[1]) == "--cli-helper") return native_cli_helper(argc, argv);
         [NSApplication sharedApplication];
         if (!NSScreen.screens.count) return 77;
         [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]; [NSApp finishLaunching];
+        if (argc == 6 && std::string_view(argv[1]) == "--cli-host")
+            return native_cli_host(argv[2], argv[3], argv[4], argv[5]);
         if (argc == 2 && std::string_view(argv[1]) == "--focus-peer") {
             NSWindow* peer = [[NSWindow alloc] initWithContentRect:NSMakeRect(20, 20, 320, 160)
                 styleMask:NSWindowStyleMaskTitled backing:NSBackingStoreBuffered defer:NO];
@@ -98,6 +103,7 @@ int main(int argc, char** argv) {
                                 "peer did not become foreground application");
             };
             const Json offer{{"ok", true}, {"available", true}, {"version", "2.0.5-dev.99"},
+                {"current_version", "2.0.5-dev.98"},
                 {"revision", "reviewed-revision"}, {"release_url", "https://github.com/example/project/releases/tag/v2.0.5-dev.99"}};
             [app beginUpdateCheck:NO];
             update_require(!app.updateWindow && app.pendingReply, "automatic check opened a window");
@@ -116,6 +122,11 @@ int main(int argc, char** argv) {
             [app showUpdateWindow];
             await_update_ui([&] { return NSApp.active && window.keyWindow; }, "existing review did not regain focus");
             save_update_window(app, output, "available");
+            update_require(window.contentView.bounds.size.height <= 360 &&
+                [app.updateVersion.stringValue containsString:@"2.0.5-dev.98"] &&
+                [app.updateVersion.stringValue containsString:@"2.0.5-dev.99"] &&
+                !app.updateCheckButton.keyEquivalent.length && !app.updateInstallButton.keyEquivalent.length,
+                "update review lost compact layout, versions or explicit installation");
             [app.updateNotesButton performClick:nil];
             update_require([app.openedURL.absoluteString isEqualToString:diagnostic_text_content(offer.at("release_url").get<std::string>())] &&
                 app.updateScreen == UpdateScreen::offer && window.visible, "release notes dismissed review");
@@ -137,6 +148,28 @@ int main(int argc, char** argv) {
                 NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier,
                 "failed install lost window, pending state or foreground ownership");
             save_update_window(app, output, "start-failed");
+            [app checkForUpdates:nil]; [app reply:offer failure:nil];
+            [app installReviewedUpdate:nil];
+            [app reply:{{"ok", false}, {"error", {{"code", "update-monitor-open"},
+                {"message", "Close Monitor before applying the update."}}}} failure:nil];
+            update_require(!app.updateCopyButton.hidden &&
+                [app.updateDetail.stringValue isEqualToString:ui_text("Monitor could not hand over to the updater. Your current installation is unchanged. Restart Monitor and check for updates again.")],
+                "actionable update error or diagnostic action was lost");
+            save_update_window(app, output, "monitor-open");
+            for (int change = 0; change < 2; ++change) {
+                shin::ui::set_language(shin::ui::language() == shin::ui::Language::ru ? shin::ui::Language::en : shin::ui::Language::ru);
+                [app refreshLanguage:nil];
+                update_require(app.updateScreen == UpdateScreen::startFailed && app.updateWindow == window &&
+                    [app.updateDetail.stringValue isEqualToString:ui_text("Monitor could not hand over to the updater. Your current installation is unchanged. Restart Monitor and check for updates again.")],
+                    "live language switch lost or failed to translate the update error");
+            }
+            [app showUpdateResult];
+            [app reply:{{"ok", false}, {"phase", "failed"}, {"can_acknowledge", true}, {"review_revision", "failed-review"},
+                {"error", {{"code", "update-monitor-open"}, {"message", "Close Monitor before applying the update."}}}} failure:nil];
+            update_require(!app.updateCopyButton.hidden && !app.updateAcknowledgeButton.hidden &&
+                [app.updateDetail.stringValue isEqualToString:ui_text("Monitor could not hand over to the updater. Your current installation is unchanged. Restart Monitor and check for updates again.")],
+                "saved failure hid its cause or recovery actions");
+            save_update_window(app, output, "saved-monitor-open");
             [app.updateCheckButton performClick:nil]; [window close];
             [app reply:offer failure:nil];
             update_require(!window.visible && app.updateScreen == UpdateScreen::offer, "late check reopened a closed review");

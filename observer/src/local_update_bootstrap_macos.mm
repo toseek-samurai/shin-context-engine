@@ -73,7 +73,8 @@ Json local_updates(int argc,char** argv,const fs::path& user,const ReleaseUpdate
     const auto home=bootstrap_home(prefix,requested);
     const bool read_result=command=="update-status" || command=="update-acknowledge";
     require(command=="update-check" || command=="update-install" || command=="update-download" || read_result,"invalid-command","Unknown update command.");
-    TerminalUpdateProgress terminal(force_progress,false,!observer && !read_result && command!="update-check");
+    const bool monitor = seen.contains("--wait-pid");
+    TerminalUpdateProgress terminal(force_progress,false,!observer && !monitor && !read_result && command!="update-check");
     fs::path executable,stage;
     struct Cleanup { fs::path path; ~Cleanup() { if(!path.empty()) {std::error_code error;fs::remove_all(path,error);} } } cleanup;
     std::vector<std::string> arguments{command,"--prefix",prefix.string(),"--home",home.string()};
@@ -91,7 +92,7 @@ Json local_updates(int argc,char** argv,const fs::path& user,const ReleaseUpdate
         char temporary[]="/tmp/shin-updater.XXXXXXXX";const auto created=::mkdtemp(temporary);
         require(created,"update-download-failed","Cannot create the private updater location.");stage=fs::canonical(created);cleanup.path=stage;
         const auto archive=stage/updater_archive_name;
-        if(!observer) std::fprintf(stderr,"%s\n",shin::ui::tr("Downloading the current updater…"));
+        if(!observer && !monitor) std::fprintf(stderr,"%s\n",shin::ui::tr("Downloading the current updater…"));
         const auto observe=[observer,&terminal](ReleaseUpdateProgress value) { value.step=ReleaseUpdateStep::preparing;report_update(observer,value);terminal.report(value); };
         fetch(selected.at("archive_url"),updater_archive_limit,archive,observe,selected.at("bytes").get<std::uint64_t>());
         const auto bytes=read_text(archive,updater_archive_limit,true),hash=digest(bytes);

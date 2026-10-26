@@ -194,11 +194,11 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
         if(parent) {
             relaunch.active=true;state["phase"]="waiting-for-monitor";state["helper_pid"]=getpid();owner.save(state);
             std::cout << Json{{"accepted",true},{"pid",getpid()}}.dump() << std::endl;
-            (void)freopen("/dev/null","w",stdout);
             report(ReleaseUpdateStep::waiting_for_monitor);
             const auto end=std::chrono::steady_clock::now()+std::chrono::seconds(15);
             while(::kill(parent,0)==0 && std::chrono::steady_clock::now()<end)std::this_thread::sleep_for(std::chrono::milliseconds(50));
             require(::kill(parent,0)!=0,"update-monitor-open","Close Monitor before applying the update.");
+            (void)freopen("/dev/null","w",stdout);
             state["phase"]="downloading";owner.save(state);
         }
         const auto kit=download_release_kit(selected,stage,sink);

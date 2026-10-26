@@ -3,7 +3,7 @@
 // never its visibility, ordering or activation: only an explicit user action does.
 - (void)ensureUpdateWindow {
     if (self.updateWindow) return;
-    NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 580, 400)
+    NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 560, 300)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
         backing:NSBackingStoreBuffered defer:NO];
     window.releasedWhenClosed = NO; window.restorable = NO;
@@ -15,17 +15,36 @@
     window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
     NSStackView* stack = [NSStackView new];
     stack.orientation = NSUserInterfaceLayoutOrientationVertical;
-    stack.alignment = NSLayoutAttributeLeading; stack.spacing = 16;
+    stack.alignment = NSLayoutAttributeLeading; stack.spacing = 12;
+    stack.distribution = NSStackViewDistributionFill; stack.detachesHiddenViews = YES;
+    self.updateLayout = stack;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
     [window.contentView addSubview:stack];
     [NSLayoutConstraint activateConstraints:@[
         [stack.leadingAnchor constraintEqualToAnchor:window.contentView.leadingAnchor constant:24],
         [stack.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-24],
-        [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:24],
-        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:window.contentView.bottomAnchor constant:-24]]];
+        [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:22],
+        [stack.bottomAnchor constraintLessThanOrEqualToAnchor:window.contentView.bottomAnchor constant:-22]]];
+    NSColor* sand = [NSColor colorWithCalibratedRed:.84 green:.74 blue:.57 alpha:1];
+    NSImageView* icon = [NSImageView new];
+    NSImage* logo = [NSBundle.mainBundle imageForResource:@"shin-logo"];
+    icon.image = logo ? logo : [NSImage imageWithSystemSymbolName:@"arrow.down.circle.fill" accessibilityDescription:nil];
+    icon.contentTintColor = sand; icon.imageScaling = NSImageScaleProportionallyDown;
+    [icon.widthAnchor constraintEqualToConstant:30].active = YES;
+    [icon.heightAnchor constraintEqualToConstant:30].active = YES;
+    NSTextField* brand = [NSTextField labelWithString:@"SHIN"];
+    brand.font = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold]; brand.textColor = sand;
+    NSTextField* channel = [NSTextField labelWithString:@""]; live_text(channel, @"stringValue", "Preview channel");
+    channel.font = [NSFont systemFontOfSize:11]; channel.textColor = NSColor.secondaryLabelColor;
+    NSStackView* identity = [NSStackView stackViewWithViews:@[brand, channel]];
+    identity.orientation = NSUserInterfaceLayoutOrientationVertical; identity.alignment = NSLayoutAttributeLeading; identity.spacing = 2;
+    NSStackView* header = [NSStackView stackViewWithViews:@[icon, identity]]; header.spacing = 10;
     self.updateTitle = [NSTextField wrappingLabelWithString:@""];
     self.updateTitle.font = [NSFont systemFontOfSize:20 weight:NSFontWeightSemibold];
     self.updateTitle.textColor = [NSColor colorWithCalibratedRed:.914 green:.914 blue:.867 alpha:1];
+    self.updateVersion = [NSTextField wrappingLabelWithString:@""];
+    self.updateVersion.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightMedium];
+    self.updateVersion.textColor = sand;
     self.updateDetail = [NSTextField wrappingLabelWithString:@""];
     self.updateDetail.font = [NSFont systemFontOfSize:13]; self.updateDetail.selectable = YES;
     self.updateDetail.textColor = [NSColor colorWithCalibratedRed:.76 green:.78 blue:.72 alpha:1];
@@ -33,10 +52,11 @@
     // the actions outside the window (full JSON remains available via Copy).
     NSScrollView* details = [NSScrollView new]; details.drawsBackground = NO;
     details.hasVerticalScroller = YES; details.autohidesScrollers = YES;
+    self.updateDetails = details;
     self.updateDetail.translatesAutoresizingMaskIntoConstraints = NO;
     details.documentView = self.updateDetail;
     [self.updateDetail.widthAnchor constraintEqualToAnchor:details.contentView.widthAnchor].active = YES;
-    [details.heightAnchor constraintEqualToConstant:128].active = YES;
+    self.updateDetailHeight = [details.heightAnchor constraintEqualToConstant:48]; self.updateDetailHeight.active = YES;
     self.updateSpinner = [NSProgressIndicator new];
     self.updateSpinner.style = NSProgressIndicatorStyleBar; self.updateSpinner.indeterminate = YES;
     self.updateSpinner.displayedWhenStopped = NO;
@@ -45,17 +65,28 @@
     self.updateNotesButton = live_button("Release notes", self, @selector(openUpdateReleaseNotes:));
     self.updateCopyButton = live_button("Copy diagnostic report", self, @selector(copyUpdateResult:));
     self.updateAcknowledgeButton = live_button("Acknowledge verified result", self, @selector(acknowledgeUpdateResult:));
-    NSStackView* primary = [NSStackView stackViewWithViews:@[self.updateCheckButton, self.updateInstallButton]];
-    NSStackView* secondary = [NSStackView stackViewWithViews:@[self.updateNotesButton, self.updateCopyButton]];
-    primary.spacing = 12; secondary.spacing = 12;
-    for (NSView* view in @[self.updateTitle, details, self.updateSpinner, primary, secondary, self.updateAcknowledgeButton])
+    for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton]) {
+        button.bezelColor = sand; button.contentTintColor = [NSColor colorWithCalibratedRed:.16 green:.17 blue:.14 alpha:1];
+        button.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
+    }
+    for (NSButton* button in @[self.updateNotesButton, self.updateCopyButton]) {
+        button.bordered = NO; button.bezelStyle = NSBezelStyleInline; button.contentTintColor = sand;
+        button.font = [NSFont systemFontOfSize:12];
+    }
+    NSView* spacer = [NSView new]; [spacer.widthAnchor constraintGreaterThanOrEqualToConstant:8].active = YES;
+    [spacer setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
+    NSStackView* actions = [NSStackView stackViewWithViews:@[self.updateNotesButton, self.updateCopyButton, spacer, self.updateCheckButton, self.updateInstallButton]];
+    actions.spacing = 10; actions.distribution = NSStackViewDistributionFill; actions.detachesHiddenViews = YES;
+    NSBox* separator = [NSBox new]; separator.boxType = NSBoxSeparator;
+    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, separator, actions])
         [stack addArrangedSubview:view];
-    for (NSView* view in @[self.updateTitle, details, self.updateSpinner])
+    for (NSView* view in @[self.updateTitle, self.updateVersion, details, self.updateSpinner, separator, actions])
         [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
     // Installing is deliberate; Return must never start it just by opening review.
-    self.updateCheckButton.keyEquivalent = @"\r";
-    self.updateWindow = window; [window center];
+    self.updateCheckButton.keyEquivalent = @"";
+    self.updateWindow = window;
     [self renderUpdateWindow];
+    [window center];
 }
 - (void)showUpdateWindow {
     [self closePanel:nil];
@@ -77,9 +108,13 @@
     self.updateInstallButton.hidden = !offer && !starting;
     self.updateInstallButton.enabled = offer && !self.updateActionBusy;
     self.updateNotesButton.hidden = !offer;
-    self.updateCopyButton.hidden = !result;
+    self.updateCopyButton.hidden = !result && self.updateScreen != UpdateScreen::startFailed;
     self.updateAcknowledgeButton.hidden = !result || installed || !_updateResult.value("can_acknowledge", false);
     self.updateAcknowledgeButton.enabled = !self.updateActionBusy;
+    self.updateCheckButton.title = ui_text(offer || self.updateScreen == UpdateScreen::startFailed ? "Check again" : "Check for updates…");
+    for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton])
+        button.attributedTitle = [[NSAttributedString alloc] initWithString:button.title attributes:@{
+            NSFontAttributeName:button.font, NSForegroundColorAttributeName:[NSColor colorWithCalibratedRed:.16 green:.17 blue:.14 alpha:1]}];
     self.updateSpinner.hidden = !(checking || starting || loading || acknowledging);
     if (self.updateSpinner.hidden) [self.updateSpinner stopAnimation:nil];
     else [self.updateSpinner startAnimation:nil];
@@ -91,7 +126,7 @@
         detail = ui_text("Shin continues to work while the release is checked. You can leave this window open or close it."); break;
     case UpdateScreen::offer:
         title = ui_text("A Shin update is available");
-        detail = [NSString stringWithFormat:ui_text("Version %@ is available. An update window will show progress while Monitor closes and the kit is replaced. Projects, settings and history stay in place. Reconnect persistent MCP clients afterwards."), diagnostic_text_content(_reviewedUpdateOffer.value("version", ""))]; break;
+        detail = ui_text("Monitor will close while the updater installs the new version, then reopen. Projects, settings and history stay in place. Reconnect persistent MCP clients afterwards."); break;
     case UpdateScreen::current: title = ui_text("Shin is up to date"); break;
     case UpdateScreen::checkFailed:
         title = ui_text("Could not check for updates");
@@ -99,7 +134,7 @@
     case UpdateScreen::starting:
         title = ui_text("Opening update progress…");
         detail = ui_text("The update helper is starting. This window stays open until the progress window takes over."); break;
-    case UpdateScreen::startFailed: title = ui_text("Update was not started"); detail = self.updateFailure; break;
+    case UpdateScreen::startFailed: title = ui_text("Update was not started"); detail = update_failure_text(_updateResult, self.updateFailure); break;
     case UpdateScreen::resultLoading:
         title = ui_text("Reading update result…"); break;
     case UpdateScreen::acknowledging:
@@ -109,6 +144,8 @@
     case UpdateScreen::resultReady:
         if (_updateResult.value("phase", "") == "idle" || _updateResult.value("phase", "") == "reviewed") {
             title = ui_text("No pending update result"); self.updateCopyButton.hidden = YES;
+        } else if (_updateResult.value("phase", "") == "failed" && _updateResult.contains("error")) {
+            title = ui_text("Update was not started"); detail = update_failure_text(_updateResult, nil);
         } else {
             title = installed ? ui_text("Shin was updated") : ui_text("Update needs review");
             detail = installed ? ui_text("The installed kit was verified. Reconnect persistent MCP clients to use the new version.") :
@@ -117,7 +154,27 @@
         break;
     case UpdateScreen::idle: break;
     }
-    self.updateTitle.stringValue = title; self.updateDetail.stringValue = detail ? detail : @"";
+    self.updateTitle.stringValue = title;
+    const bool reviewed = offer || starting || self.updateScreen == UpdateScreen::startFailed;
+    self.updateVersion.hidden = !reviewed || !_reviewedUpdateOffer.contains("version");
+    if (!self.updateVersion.hidden) self.updateVersion.stringValue = [NSString stringWithFormat:@"%@  →  %@",
+        diagnostic_text_content(_reviewedUpdateOffer.value("current_version", std::string(SHIN_OBSERVER_VERSION))),
+        diagnostic_text_content(_reviewedUpdateOffer.value("version", ""))];
+    self.updateDetails.hidden = !detail.length;
+    NSMutableParagraphStyle* paragraph = [NSMutableParagraphStyle new]; paragraph.lineSpacing = 3;
+    self.updateDetail.attributedStringValue = [[NSAttributedString alloc] initWithString:detail ? detail : @""
+        attributes:@{NSFontAttributeName:self.updateDetail.font, NSForegroundColorAttributeName:self.updateDetail.textColor,
+            NSParagraphStyleAttributeName:paragraph}];
+    const CGFloat width = self.updateWindow.contentView.bounds.size.width - 48;
+    const auto textBounds = [self.updateDetail.attributedStringValue boundingRectWithSize:NSMakeSize(width, CGFLOAT_MAX)
+        options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
+    self.updateDetailHeight.constant = std::clamp(std::ceil(textBounds.size.height) + 6.0, 22.0, 112.0);
+    [self.updateWindow.contentView layoutSubtreeIfNeeded];
+    const CGFloat height = std::clamp(std::ceil(self.updateLayout.fittingSize.height) + 44.0, 210.0, 440.0);
+    const NSRect before = self.updateWindow.frame;
+    NSRect frame = [self.updateWindow frameRectForContentRect:NSMakeRect(0, 0, 560, height)];
+    frame.origin = NSMakePoint(before.origin.x, NSMaxY(before) - frame.size.height);
+    [self.updateWindow setFrame:frame display:self.updateWindow.visible];
     [self.updateWindow.contentView layoutSubtreeIfNeeded];
     [self.updateDetail.enclosingScrollView.contentView scrollToPoint:NSZeroPoint];
 }
@@ -140,11 +197,13 @@
     if (self.updateScreen != UpdateScreen::offer || self.updateActionBusy) return;
     bool expected = false;
     if (!project_management_busy.compare_exchange_strong(expected, true)) {
+        _updateResult = {{"ok", false}, {"error", {{"code", "ui-operation-busy"}}}};
         self.updateScreen = UpdateScreen::startFailed;
-        self.updateFailure = ui_text("Finish the current Shin operation before updating.");
+        self.updateFailure = nil;
         [self renderUpdateWindow]; return;
     }
     const auto offered = _reviewedUpdateOffer;
+    _updateResult = Json::object();
     self.updateActionBusy = YES; self.updateScreen = UpdateScreen::starting;
     [self renderUpdateWindow];
     [self setUpdatePending:YES];
@@ -157,7 +216,9 @@
             self.nextUpdateCheck = NSDate.date;
         }
         self.updateScreen = UpdateScreen::startFailed;
-        self.updateFailure = update_failure_text(result, failure);
+        _updateResult = result.is_object() ? result : Json::object();
+        if (failure.length && _updateResult.empty()) _updateResult = {{"ok", false}, {"error", {{"message", failure.UTF8String}}}};
+        self.updateFailure = failure;
         [self renderUpdateWindow];
     }];
 }

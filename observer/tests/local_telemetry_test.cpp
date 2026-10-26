@@ -600,6 +600,10 @@ int telemetry_scenario() {
             history["request_cohorts"].push_back(row);
         }
         for (int i = 0; i < 16; ++i) history["events"].push_back({{"at_ms", 16 - i}, {"phase", "current"}});
+        data["mcp_activity"] = {{"status","ready"},{"attempts",144},{"sessions_truncated",false},{"session_rows",Json::array()}};
+        for (int i = 0; i < 8; ++i)
+            data["mcp_activity"]["session_rows"].push_back({{"session_id",std::string(64,static_cast<char>('0'+i))},
+                {"context_calls",72},{"details",std::string(800,'s')}});
         const auto full = status;
         if (full.dump().size() <= 65536) return 34;
         bound_local_service_status(status);
@@ -607,6 +611,8 @@ int telemetry_scenario() {
             data["project_states"] != full["telemetry"]["project_states"] ||
             status["resident_errors"] != full["resident_errors"] || history["rows"] != 20000) return 35;
         if (data["samples"].size() < 61 || data["request_metrics"]["recent"].size() < 16) return 55;
+        if (data["mcp_activity"]["session_rows"].empty() || data["mcp_activity"]["attempts"] != 144 ||
+            data["mcp_activity"]["session_rows"][0] != full["telemetry"]["mcp_activity"]["session_rows"][0]) return 58;
         for (const auto* key : {"responses_ready", "response_errors", "query_sample_count", "query_p95_ms"})
             if (data["request_metrics"][key] != full["telemetry"]["request_metrics"][key]) return 36;
         for (const auto& [path, count] : data["projection"]["omitted_rows"].items()) {
@@ -615,7 +621,7 @@ int telemetry_scenario() {
             const auto& projected = data.at(pointer);
             const auto removed = count.get<std::size_t>();
             if (projected.size() + removed != original.size()) return 37;
-            const bool newest_first = path == "/history/events" || path == "/history/request_cohorts";
+            const bool newest_first = path == "/history/events" || path == "/history/request_cohorts" || path == "/mcp_activity/session_rows";
             for (std::size_t i = 0; i < projected.size(); ++i)
                 if (projected[i] != original[i + (newest_first ? 0 : removed)]) return 38;
         }

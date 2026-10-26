@@ -54,11 +54,11 @@ void bound_local_service_status(Json& status) {
     auto& projection = telemetry.at("projection");
     auto bytes = status.dump().size();
     // Trim copies, never the live rings or SQLite. Preserve current health,
-    // counters and a useful live chart before bulky diagnostic/history detail.
-    // The final two entries release that reserve only if essential state needs it.
+    // counters, a recent MCP session and useful live charts before bulky history.
+    // The final entries release those reserves only if essential state needs it.
     struct Detail { const char* path; bool newest_first; const char* flag; std::size_t keep = 0; };
     for (const auto& detail : {
-            Detail{"/mcp_activity/session_rows", true, "/mcp_activity/sessions_truncated"},
+            Detail{"/mcp_activity/session_rows", true, "/mcp_activity/sessions_truncated", 1},
             Detail{"/request_metrics/recent", false, "/request_metrics/recent_truncated", 16},
             Detail{"/refresh_diagnostics", false, "/refresh_diagnostics_truncated"},
             Detail{"/events", false, nullptr}, Detail{"/samples", false, nullptr, 61},
@@ -70,6 +70,7 @@ void bound_local_service_status(Json& status) {
             Detail{"/history/request_cohorts", true, "/history/request_cohorts_truncated"},
             Detail{"/history/timeline", false, nullptr},
             Detail{"/history/minute_timeline", false, nullptr},
+            Detail{"/mcp_activity/session_rows", true, "/mcp_activity/sessions_truncated"},
             Detail{"/request_metrics/recent", false, "/request_metrics/recent_truncated"},
             Detail{"/samples", false, nullptr}}) {
         const Json::json_pointer path(detail.path);

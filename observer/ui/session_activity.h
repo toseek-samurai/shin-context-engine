@@ -30,6 +30,7 @@ struct SessionActivityEntry {
 };
 struct SessionActivity {
     bool available = false;
+    bool projection_limited = false;
     bool incomplete = false;
     std::vector<SessionActivityEntry> sessions;
     std::vector<std::string> notes;
@@ -44,6 +45,15 @@ inline SessionActivity session_activity(const nlohmann::json& telemetry, const n
     if (!activity.is_object() || activity.value("status",Json()) != "ready") return result;
     const auto rows = activity.value("session_rows",Json::array());
     if (!rows.is_array() || rows.size() > session_activity_max_sessions) return result;
+    const auto projection = telemetry.value("projection",Json::object());
+    if (projection.is_object()) {
+        const auto omissions = projection.value("omitted_rows",Json::object());
+        if (omissions.is_object()) {
+            const auto omitted = omissions.value("/mcp_activity/session_rows",Json());
+            result.projection_limited = omitted.is_number_integer() && omitted.get<std::int64_t>() > 0;
+        }
+    }
+    if (rows.empty() && result.projection_limited) return result;
     result.available = true;
     result.notes.push_back(tr("Caller-reported recovery and explicit host compaction are different events."));
     const auto events = usage.is_object() ? usage.value("context_events",Json::object()) : Json::object();
@@ -190,7 +200,8 @@ inline SessionActivity session_activity(const nlohmann::json& telemetry, const n
 
 inline std::vector<std::string> session_activity_lines(const nlohmann::json& telemetry, const nlohmann::json& usage = {}) {
     const auto activity = session_activity(telemetry,usage);
-    if (!activity.available) return {tr("Session activity is unavailable.")};
+    if (!activity.available) return {tr(activity.projection_limited ?
+        "Session details were omitted to keep the service response bounded." : "Session activity is unavailable.")};
     std::vector<std::string> lines{tr("Sessions · retained MCP observations"),activity.notes.front()};
     if (activity.sessions.empty()) lines.push_back(tr("No correlated MCP sessions have been recorded yet."));
     for (const auto& session : activity.sessions) {

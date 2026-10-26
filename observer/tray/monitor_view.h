@@ -1844,8 +1844,11 @@ void render_sessions(const ViewState& view, const Json& telemetry) {
     if (!view.connected) session_text(shin::ui::tr("Offline · last received data"),"sessions-offline",14,amber);
     if (!activity.available) {
         session_text(shin::ui::tr("Session activity is unavailable."),"sessions-unavailable",16);
-        session_text(shin::ui::tr("Session data will appear when the service provides it."),"sessions-unavailable-help");
+        session_text(shin::ui::tr(activity.projection_limited ? "Session details were omitted to keep the service response bounded." :
+            "Session data will appear when the service provides it."),"sessions-unavailable-help",14,activity.projection_limited ? amber : ink);
     } else {
+        if (activity.projection_limited)
+            session_text(shin::ui::tr("Session details were omitted to keep the service response bounded."),"sessions-projection",14,amber);
         if (activity.incomplete)
             session_text(shin::ui::tr("MCP history has unobserved updates; totals may be incomplete."),"sessions-partial",14,amber);
         if (activity.sessions.empty()) {

@@ -621,6 +621,7 @@
     {"Session activity is unavailable.", "Статистика сессий недоступна."},
     {"Session data will appear when the service provides it.", "Данные сессий появятся, когда их передаст служба."},
     {"Session details", "Подробности сессии"},
+    {"Session details were omitted to keep the service response bounded.", "Часть сведений о сессиях не вошла в ограниченный ответ службы."},
     {"Session totals available without a daily breakdown", "Есть итоги сессий, без дневной разбивки"},
     {"Sessions", "Сессии"},
     {"Sessions with skipped long lines", "Сессии с пропущенными длинными строками"},

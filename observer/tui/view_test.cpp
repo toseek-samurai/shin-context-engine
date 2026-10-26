@@ -133,6 +133,11 @@ int main() {
         empty_sessions["mcp_activity"]["session_rows"] = Json::array();
         require(shin::ui::session_activity(empty_sessions).available && shin::ui::session_activity(empty_sessions).sessions.empty());
         require(!shin::ui::session_activity(Json::object()).available);
+        empty_sessions["projection"] = {{"truncated",true},{"omitted_rows",{{"/mcp_activity/session_rows",8}}}};
+        const auto omitted_sessions = shin::ui::session_activity(empty_sessions);
+        require(!omitted_sessions.available && omitted_sessions.projection_limited);
+        require(shin::ui::session_activity_lines(empty_sessions).front() == "Session details were omitted to keep the service response bounded.");
+        empty_sessions.erase("projection");
         empty_sessions["mcp_activity"]["session_rows"] = Json::array({{{"session_id","invalid"}}});
         require(shin::ui::session_activity(empty_sessions).sessions.empty());
         require(observed.find("Same version again: 3") != std::string::npos && observed.find("After host compaction") != std::string::npos);

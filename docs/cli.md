@@ -263,6 +263,12 @@ indefinitely. These display bounds do not prune stored calls or sample analysis
 totals; storage retention and collection gaps still apply. TUI text keeps the
 same observation and attribution boundaries.
 
+The service reserves the latest session alongside its live chart and request
+samples while shortening oversized status replies. Essential state can still
+require omitting session rows; the UI then reports that omission rather than an
+empty history. The response ceiling remains 60 KiB, independently of the
+48-event desktop display limit.
+
 Monitor now has a **Sessions** view; `shin-ce stats` opens the same observations
 with key **6**. The latest eight correlated sessions show context calls, errors,
 caller task labels, recovery requests and recent invocation outcomes. Calls can

@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
             for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
@@ -358,8 +358,10 @@ int main(int argc, char** argv) {
                                 {"context_calls",7},{"errors",1},{"interval_complete",kind=="sessions"},
                                 {"reads",{{"same_version_repeats",2},{"previously_seen_versions",1}}}}})}};
                         session_details_open.clear(); session_notes_open = false;
-                        if (kind == "sessions-empty" || kind == "sessions-notes")
+                        if (kind == "sessions-empty" || kind == "sessions-notes" || kind == "sessions-omitted")
                             view.data["telemetry"]["mcp_activity"]["session_rows"] = Json::array();
+                        if (kind == "sessions-omitted")
+                            view.data["telemetry"]["projection"] = {{"truncated",true},{"omitted_rows",{{"/mcp_activity/session_rows",8}}}};
                         if (kind == "sessions-unavailable") view.data["telemetry"].erase("mcp_activity");
                         if (kind == "sessions-partial") view.data["telemetry"]["mcp_activity"]["dropped_updates"] = 1;
                         if (kind.starts_with("sessions-full")) {
@@ -484,6 +486,8 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("session empty state is missing: " + context);
                         if (kind == "sessions-unavailable" && (has("No linked sessions yet") || !has("Session activity is unavailable.")))
                             throw std::runtime_error("unavailable sessions look empty: " + context);
+                        if (kind == "sessions-omitted" && (has("No linked sessions yet") || !has("Session details were omitted to keep the service response bounded.")))
+                            throw std::runtime_error("omitted sessions look empty: " + context);
                         if (kind == "sessions" && (!has("Recorded activity · UTC") || has("Caller-reported recovery and explicit host compaction are different events.")))
                             throw std::runtime_error("session details are not disclosed separately: " + context);
                         if (kind == "sessions-notes" && size.y >= 620 && !has("Hide recording notes")) throw std::runtime_error("recording notes cannot be opened: " + context);

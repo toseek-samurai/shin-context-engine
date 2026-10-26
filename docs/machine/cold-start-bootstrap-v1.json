@@ -209,6 +209,7 @@
     ],
     "partialLayoutEvidence": "A Retool repository containing apps without resources or workflows passes strict profile bootstrap and reports missing conventional roots as informational.",
     "imperfectDocumentationEvidence": "A bootstrap docs corpus with a broken local link publishes a current diagnostic snapshot, passes non-strict doctor with zero errors, fails strict doctor on the warning, and remains queryable with --require-current.",
+    "localServiceDocumentationPolicy": "Local bootstrap qualification accepts only a link-only strict doctor or vacuum failure when errors, other warnings, generated drift and unfinished changes are absent. Strict Core audit results and explicit permanent-profile gates remain unchanged. Service status exposes a bounded documentation_warnings count; Monitor and TUI explain the warning while serving verified context and clear it after a qualified correction.",
     "result": "passed"
   },
   "nonGoals": [

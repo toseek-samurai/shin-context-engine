@@ -1,6 +1,7 @@
 #include "view.h"
 #include "../ui/language.h"
 #include "../ui/session_activity.h"
+#include "../ui/project_diagnostics.h"
 #include <clocale>
 #include <iostream>
 #include <stdexcept>
@@ -17,6 +18,11 @@ std::string render(const tui::Snapshot& snapshot, tui::State& state) {
 int main() {
     try {
         std::setlocale(LC_CTYPE, "");
+        Json warned{{"phase", "current"}, {"query_ready", true}, {"documentation_warnings", 1}};
+        require(shin::ui::diagnostic_overview(warned, true).title == "Ready with documentation warnings");
+        require(shin::ui::diagnostic_overview(warned, true).summary.find("1") != std::string::npos);
+        warned["active_issue"] = true;
+        require(shin::ui::diagnostic_overview(warned, true).title != "Ready with documentation warnings");
         tui::Snapshot snapshot;
         snapshot.connected = true; snapshot.received = tui::Clock::now(); snapshot.error.clear();
         snapshot.service = {{"command", "service-status"}, {"service_running", true},

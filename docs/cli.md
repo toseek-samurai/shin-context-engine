@@ -38,6 +38,11 @@ Colors, symbols and text distinguish ready, on-demand, preparing and blocked
 search; partial source coverage has its own column. Enter opens the cause,
 next step and any reported excluded file paths.
 
+In dev.53 source, project details also explain nonblocking documentation warnings.
+The default bootstrap route keeps serving verified context when local links are
+broken; `documentation_warnings` counts these warnings in readiness and service
+project rows. Strict Core audits still report the documentation defect.
+
 | Key | Action |
 | --- | --- |
 | `1`–`7`, Tab, Left/Right | Overview, Projects, Timing, Storage, Models, Sessions, Updates |

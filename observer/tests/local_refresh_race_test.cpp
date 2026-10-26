@@ -144,6 +144,71 @@ void hard_failure(const fs::path& profiles, const std::string& code) {
           "real failure was weakened");
 }
 
+void broken_document_links_remain_usable(const fs::path& profiles) {
+    Fixture fixture(profiles);
+    fixture.write(19);
+    auto stale_request = fixture.request;
+    stale_request.command = "status";
+    const auto stale = local_project(stale_request);
+    check(!validation_diagnostic(stale.at("readiness")).at("gates").empty(),
+          "bootstrap validation lost its failing gate diagnostics");
+    std::ofstream(fixture.root / "README.md") << "# Retry ceiling\n\nSee [planned guide](docs/planned.md).\n";
+    LocalTelemetry telemetry;
+    const auto report = [&](const fs::path& root, const Json& state) { telemetry.record(root, state); };
+    const auto refreshed = watch_local_projects(fixture.request, {fixture.root}, 3,
+        [] { return false; }, {}, {}, report);
+    check(refreshed.at("watch").at("failures") == 0 && refreshed.at("watch").at("publications") == 1,
+          "a broken documentation link blocked automatic refresh");
+    auto query = fixture.request;
+    query.command = "query"; query.query = "readLimit";
+    for (int attempt = 0; attempt < 2; ++attempt) {
+        const auto response = local_project(query);
+        check(response.at("ok") == true && response.contains("source_context"),
+              "a documentation warning withheld verified source context");
+        check(response.at("readiness").value("documentation_warnings", 0) == 1,
+              "documentation warning was lost during qualification reuse");
+    }
+    const auto project = telemetry.snapshot().at("project_states").at(0);
+    check(project.at("active_issue") == false && project.value("documentation_warnings", 0) == 1,
+          "documentation warning was lost or became a UI blocker");
+    fs::create_directory(fixture.root / "docs");
+    std::ofstream(fixture.root / "docs/planned.md") << "# Retry guide\n\nreadLimit owns the retry ceiling.\n";
+    const auto repaired = watch_local_projects(fixture.request, {fixture.root}, 3,
+        [] { return false; }, {}, {}, report);
+    check(repaired.at("watch").at("failures") == 0 &&
+          telemetry.snapshot().at("project_states").at(0).value("documentation_warnings", 99) == 0,
+          "documentation warning did not clear after its target appeared");
+}
+
+void documentation_warnings_do_not_waive_other_checks() {
+    Json doctor{{"ok", false}, {"strict", true},
+        {"counts", {{"errors", 0}, {"warnings", 1}, {"broken_links", 1}}},
+        {"issues", Json::array({{{"severity", "warning"}, {"id", "broken-local-link"}}})}};
+    check(local_gate_ready(true, "doctor", doctor) && !local_gate_ready(false, "doctor", doctor),
+          "documentation policy escaped bootstrap ownership");
+    doctor["error"] = {{"code", "access-denied"}};
+    check(!local_gate_ready(true, "doctor", doctor), "documentation warning waived an execution error");
+    doctor.erase("error");
+    doctor["counts"]["errors"] = 1;
+    check(!local_gate_ready(true, "doctor", doctor), "documentation warning waived a safety error");
+    doctor["counts"]["errors"] = 0; doctor["counts"]["warnings"] = 2;
+    check(!local_gate_ready(true, "doctor", doctor), "documentation warning waived another warning");
+    doctor["counts"]["warnings"] = 1; doctor["issues"][0]["id"] = "unknown-warning";
+    check(!local_gate_ready(true, "doctor", doctor), "documentation policy accepted an unknown issue");
+    Json vacuum{{"ok", false}, {"strict", true}, {"apply", false},
+        {"summary", {{"broken_local_links", 1}, {"changes_needed", false}, {"changes_remaining", false},
+            {"missing_files", 0}, {"stale_files", 0}, {"orphan_files", 0}, {"expected_files", 16}, {"current_files", 16}}}};
+    check(local_gate_ready(true, "vacuum", vacuum) && !local_gate_ready(false, "vacuum", vacuum),
+          "link-only vacuum diagnostic escaped bootstrap ownership");
+    for (const auto* field : {"missing_files", "stale_files", "orphan_files"}) {
+        vacuum["summary"][field] = 1;
+        check(!local_gate_ready(true, "vacuum", vacuum), "documentation warning waived output drift");
+        vacuum["summary"][field] = 0;
+    }
+    vacuum["summary"]["changes_remaining"] = true;
+    check(!local_gate_ready(true, "vacuum", vacuum), "documentation warning waived unfinished output changes");
+}
+
 Json failed_observation(const std::string& code, const std::string& status = "error") {
     Json observation{{"status", status}, {"reason_code", code}};
     if (status != "error") return observation;
@@ -480,6 +545,8 @@ int main(int argc, char** argv) {
             catch (const Error& error) { check(error.code==failure.second,"wrong storage failure classification"); }
         }
         const auto profiles = fs::canonical(argv[1]);
+        documentation_warnings_do_not_waive_other_checks();
+        broken_document_links_remain_usable(profiles);
         for (const auto* mode : {"core", "worker", "superseded", "source-binding", "stale-index", "qualification"}) source_race(profiles, mode);
         returned_observation_race_recovers(profiles);
         returned_observation_remains_blocked(profiles, "source-observation-failed", true);

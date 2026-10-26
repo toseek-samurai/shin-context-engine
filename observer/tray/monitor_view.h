@@ -1368,6 +1368,8 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     const auto state = project_state(project, view.connected);
     const auto overview = diagnostic_overview(project, view.connected);
     const bool partial_coverage = overview.title == shin::ui::tr("Context partially available");
+    const bool documentation_warning = (state == ProjectState::current || state == ProjectState::standby) &&
+        count(project, "documentation_warnings") > 0;
     const auto name = text_field(project, "name");
     const auto prior_code = historical_code(project);
     auto current_code = view.connected ? error_code(project, "error_code") : error_code(Json{{"code", view.error}}, "code");
@@ -1413,8 +1415,8 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
 
     if (!diagnostic_history_first) {
         const auto origin = ImGui::GetCursorScreenPos();
-        const auto color = partial_coverage ? amber : project_color(state, project);
-        draw_icon(partial_coverage ? Icon::blocked : state_icon(state), {origin.x, origin.y + 1}, 24, color);
+        const auto color = partial_coverage || documentation_warning ? amber : project_color(state, project);
+        draw_icon(partial_coverage || documentation_warning ? Icon::blocked : state_icon(state), {origin.x, origin.y + 1}, 24, color);
         ImGui::SetCursorPosX(32);
         bounded_text(overview.title, width - 32, minimal ? 14.0f : compact_diagnostics ? 16.0f : 18.0f, color, minimal ? 1 : 2, 54);
         ImGui::SetCursorPosX(0);
@@ -1608,11 +1610,13 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             const auto state = shin::ui::project_state(p, view.connected);
             const auto overview = shin::ui::diagnostic_overview(p, view.connected);
             const bool partial = overview.title == shin::ui::tr("Context partially available");
+            const bool documentation_warning = (state == shin::ui::ProjectState::current ||
+                state == shin::ui::ProjectState::standby) && shin::ui::count(p, "documentation_warnings") > 0;
             const bool preparing = state == shin::ui::ProjectState::checking || state == shin::ui::ProjectState::recovering ||
                 (state == shin::ui::ProjectState::pending && shin::ui::text_field(p, "query_phase") == "preparing");
-            const auto state_label = state == shin::ui::ProjectState::blocked || partial || preparing
+            const auto state_label = state == shin::ui::ProjectState::blocked || partial || preparing || documentation_warning
                 ? overview.title : std::string(shin::ui::state_text(state));
-            const auto state_color = partial ? amber : project_color(state, p);
+            const auto state_color = partial || documentation_warning ? amber : project_color(state, p);
             const auto elapsed = view.received == Clock::time_point{} ? 0 : std::chrono::duration<double, std::milli>(Clock::now() - view.received).count();
             const auto success = shin::ui::age_ms(p, "last_success_age_ms", elapsed);
             const auto age = shin::ui::tr("Successful: ") + shin::ui::age_text(success);

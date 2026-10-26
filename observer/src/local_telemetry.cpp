@@ -148,7 +148,12 @@ void LocalTelemetry::record(const fs::path& root, const Json& state) {
         {"authority", state.at("refresh_authority")}, {"last_tick_ms", state.value("last_tick_duration_ms", 0.0)},
         {"error_code", ""}, {"next_action", ""}};
     const auto result = state.value("last_result", Json(nullptr));
+    value["documentation_warnings"] = project.value.is_object() ?
+        project.value.value("documentation_warnings", Json(0)) : Json(0);
     if (result.is_object()) {
+        const auto warnings = result.value("documentation_warnings", Json());
+        if (warnings.is_number_integer() && warnings >= 0)
+            value["documentation_warnings"] = std::min<std::uint64_t>(warnings.get<std::uint64_t>(), 1000000);
         if (result.contains("source_coverage") && result.at("source_coverage").is_object())
             value["source_coverage"] = {{"state", "partial"}, {"reason", "profile-revision-pending"}};
         if (result.contains("candidate_diagnostic")) {

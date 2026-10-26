@@ -46,13 +46,18 @@ template<class Invoke> Json core_result(Invoke&& invoke) {
 
 Json bootstrap_readiness(const core::RuntimeOptions& options) {
     Json result = {{"ok", false}, {"scope", "local-integrity-and-currentness"},
-                   {"project_quality", "not-configured"}, {"gates", Json::array()}};
+                   {"project_quality", "not-configured"}, {"local_link_policy", "diagnostic"}, {"gates", Json::array()}};
     try {
         const auto lock = core::lock_index_for_read(options.out_root);
         auto add = [&](const char* name, auto&& invoke) {
             auto detail = core_result(invoke);
-            const bool ok = detail.at("ok").template get<bool>();
-            result["gates"].push_back({{"id", name}, {"ok", ok}, {"detail", std::move(detail)}});
+            const bool ok = local_gate_ready(true, name, detail);
+            if (std::string_view(name) == "doctor")
+                result["documentation_warnings"] = detail.at("counts").at("broken_links");
+            // Use the same gate envelope as canonical validation so bounded
+            // diagnostics retain real bootstrap failures rather than empty gates.
+            result["gates"].push_back({{"id", name}, {"status", ok ? "passed" : "failed"},
+                {"result", std::move(detail)}});
             return ok;
         };
         bool ok = add("profile-check", [&] { return core::run_profile_check(options, {"--strict"}); });
@@ -64,6 +69,7 @@ Json bootstrap_readiness(const core::RuntimeOptions& options) {
         result["ok"] = ok && freshness.current;
     } catch (const core::CliError& error) {
         result["error"] = {{"code", error.code()}, {"message", error.what()}};
+        result["gates"].push_back({{"id", "bootstrap"}, {"status", "failed"}, {"error", result.at("error")}});
     }
     return result;
 }
@@ -441,10 +447,13 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
             m.values["qualification_reused_output_bytes"] = options.generation_admission->reused_output_bytes();
             m.values["qualification_reused_output_files"] = options.generation_admission->reused_output_files();
             auto checks = Json::array({{{"id", "verified-generation"}, {"ok", true}}});
+            Json documentation_warnings = 0;
             const auto check = [&](const char* id, const char* metric, auto&& invoke) {
                 auto value = m.measure(metric, [&] { return core_result(invoke); });
-                checks.push_back({{"id", id}, {"ok", value.at("ok")}});
-                return value.at("ok").template get<bool>();
+                if (std::string_view(id) == "doctor") documentation_warnings = value.at("counts").at("broken_links");
+                const bool ready = local_gate_ready(options.profile.bootstrap_only, id, value);
+                checks.push_back({{"id", id}, {"ok", ready}});
+                return ready;
             };
             bool ok = check("profile-check", "qualification_profile_ms", [&] { return core::run_profile_check(options, {"--strict"}); });
             ok = check("doctor", "qualification_doctor_ms", [&] { return core::run_doctor(options, {"--strict"}); }) && ok;
@@ -462,6 +471,7 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                 {"quality_reuse", {{"reused", !candidate.has_value()}, {"cache_status", candidate ? "published-candidate" : "hit"}, {"scope", "exact-qualified-generation"},
                     {"qualified_at_ms", saved->at("qualified_at_ms")}}},
                 {"qualified_resources", saved->at("resource")},
+                {"documentation_warnings", documentation_warnings},
                 {"summary", {{"attempted", checks.size()}, {"passed", checks.size()}, {"failed", 0},
                     {"validation_passed", true}, {"worktree_current", true}}}};
           }
@@ -1397,6 +1407,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             options.generation_admission->verify_content(options);
             authority();
             qualify(readiness);
+            result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
             return result;
         }
         if (request.maintenance_worktree != observation.at("worktree_id").get<std::string>()) {
@@ -1435,6 +1446,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         result["recovery_pending"] = false;
         result["snapshot_id"] = freshness.snapshot_id;
         result["observation"] = observed.at("observation");
+        result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
         return result;
     }
     // Initial bootstrap may not have an index/lock yet; established readers

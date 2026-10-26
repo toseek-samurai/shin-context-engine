@@ -222,6 +222,11 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
         project.at("source_coverage").is_object() && count(project.at("source_coverage"), "quarantined_files") > 0)
         return {shin::ui::tr("Context partially available"), shin::ui::tr("Files with possible secrets were excluded. Search over the rest of the project works."),
             shin::ui::tr("Review the excluded files. Shin will restore them automatically after correction.")};
+    if ((state == ProjectState::current || state == ProjectState::standby) && count(project, "documentation_warnings") > 0)
+        return {shin::ui::tr("Ready with documentation warnings"),
+            std::string(shin::ui::tr("Broken documentation links: ")) + std::to_string(count(project, "documentation_warnings")) +
+                ". " + shin::ui::tr("Available context remains usable."),
+            shin::ui::tr("Fix the links when convenient. Shin will clear the warning automatically.")};
     switch (state) {
     case ProjectState::offline: return {shin::ui::tr("Service offline"), shin::ui::tr("Previous data was retained but is not currently verified."), shin::ui::tr("Waiting for a fresh service response.")};
     case ProjectState::current: return {shin::ui::tr("Context is current"), shin::ui::tr("Checks passed. Shin is ready to answer project queries."), shin::ui::tr("No action needed.")};
@@ -300,6 +305,7 @@ inline std::string diagnostic_summary(const Json& project, const Json& service, 
         {"active_issue_last_observed", active_issue(project)}, {"error_code", error_code(project, "error_code")},
         {"last_error_code", historical_code(project)}, {"connection_code", error_code(Json{{"code", connection_code}}, "code")},
         {"authority", text_field(project, "authority", 96)}};
+    summary["documentation_warnings"] = count(project, "documentation_warnings");
     const auto validation = shin::observer::bounded_validation_diagnostic(project.value("validation_diagnostic", Json()));
     if (!validation.is_null()) summary["validation_diagnostic"] = validation;
     if (project.contains("source_coverage") && project.at("source_coverage").is_object()) {

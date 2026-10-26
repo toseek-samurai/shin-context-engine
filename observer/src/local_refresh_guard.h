@@ -4,6 +4,44 @@
 #include <functional>
 
 namespace shin::observer {
+// Local bootstrap promises verified context, not perfect documentation.
+// Keep strict Core verdicts intact and accept only their known link-only
+// diagnostic. Permanent routes and every other failure retain strict behavior.
+inline bool local_gate_ready(bool bootstrap, std::string_view id, const Json& detail) {
+    if (!detail.is_object()) return false;
+    if (detail.value("ok", Json()) == true) return true;
+    if (!bootstrap || detail.value("ok", Json()) != false || detail.value("strict", Json()) != true) return false;
+    if (detail.contains("error") && !detail.at("error").is_null()) return false;
+    if (id == "doctor") {
+        const auto counts = detail.value("counts", Json::object());
+        if (!counts.is_object()) return false;
+        const auto links = counts.value("broken_links", Json());
+        if (!links.is_number_integer() || links <= 0 || counts.value("errors", Json()) != 0 ||
+            counts.value("warnings", Json()) != links) return false;
+        const auto issues = detail.value("issues", Json());
+        if (!issues.is_array() || issues.empty()) return false;
+        return std::any_of(issues.begin(), issues.end(), [](const Json& issue) {
+            return issue.is_object() && issue.value("severity", Json()) == "warning" &&
+                issue.value("id", Json()) == "broken-local-link";
+        }) && std::all_of(issues.begin(), issues.end(), [](const Json& issue) {
+            return issue.is_object() && (issue.value("severity", Json()) == "info" ||
+                (issue.value("severity", Json()) == "warning" && issue.value("id", Json()) == "broken-local-link"));
+        });
+    }
+    if (id == "vacuum") {
+        const auto summary = detail.value("summary", Json::object());
+        if (!summary.is_object()) return false;
+        const auto links = summary.value("broken_local_links", Json());
+        const auto expected = summary.value("expected_files", Json());
+        return detail.value("apply", Json()) == false && links.is_number_integer() && links > 0 &&
+            summary.value("changes_needed", Json()) == false && summary.value("changes_remaining", Json()) == false &&
+            summary.value("missing_files", Json()) == 0 && summary.value("stale_files", Json()) == 0 &&
+            summary.value("orphan_files", Json()) == 0 && expected.is_number_integer() && expected > 0 &&
+            summary.value("current_files", Json()) == expected;
+    }
+    return false;
+}
+
 inline void refresh_progress(const std::function<void(const std::string&)>& progress, const char* stage) noexcept {
     if (!progress) return;
     try { progress(stage); } catch (...) { return; /* Diagnostics never grant or revoke authority. */ }

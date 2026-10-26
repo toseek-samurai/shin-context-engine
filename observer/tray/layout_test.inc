@@ -193,12 +193,13 @@ int main(int argc, char** argv) {
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
             for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
-                for (const auto* scenario : {"first-run", "update", "cold", "current", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
+                for (const auto* scenario : {"first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
+                    if (kind == "documentation-warning") project["documentation_warnings"] = 1;
                     release_update_version=kind=="update" ? "2.0.5-dev.18" : "";
                     apply_language_preference(initial_language == shin::ui::Language::ru ? 2 : 1);
 
@@ -270,6 +271,7 @@ int main(int argc, char** argv) {
                             if (i == 4) other["query_phase"] = "standby";
                             if (i == 5) other.update({{"phase", "coalescing"}, {"query_ready", false}});
                             if (i == 6) other["recovering"] = true;
+                            if (i == 7) other["documentation_warnings"] = 1;
                         }
                         projects.push_back(other);
                     }

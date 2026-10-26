@@ -87,6 +87,12 @@ Wait for search readiness in `status --text`; on a large first import, inspect
 the setup without starting the service. Adding a project does not modify its
 source files.
 
+In dev.53 source, a project using the default bootstrap profile keeps serving
+verified context when local Markdown links are broken. Projects and its details
+show a documentation warning, which clears after the corrected sources qualify.
+Index integrity, source freshness, secrets and resource checks remain required.
+Explicit project profiles retain their declared quality gates.
+
 Open the menu bar application:
 
 ```sh

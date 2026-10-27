@@ -68,6 +68,39 @@ Observer. Installation does not enroll projects or rewrite client configuration.
 Project sources, indexes, history and credentials are outside the MSI payload
 and must be preserved during maintenance and removal.
 
+## Installer presentation checks
+
+The source MSI wizard uses Shin branding, Segoe UI and separate welcome,
+preview-notes, confirmation, progress and completion pages. The confirmation
+shows the fixed protected Program Files destination. Repair and removal use
+the standard WiX maintenance dialogs. These are development-source changes,
+not evidence of a published or qualified Windows installer.
+
+After building the Windows kit with `SHIN_OBSERVER_WINDOWS_KIT=ON`, package it
+using CPack 4.3+ and matching WiX 4 UI/Util extensions. From the checkout root,
+inspect the exact resulting MSI without installing it:
+
+```powershell
+python observer/tests/windows_msi_test.py $msi --phase metadata
+python observer/installer/preview_windows_msi.py $msi --dialog WelcomeDlg
+```
+
+Set `$msi` to the absolute package path. Repeat the preview for
+`LicenseAgreementDlg`, `VerifyReadyDlg`, `ProgressDlg`, `ExitDialog`,
+`MaintenanceWelcomeDlg`, `MaintenanceTypeDlg`, `FatalError` and `UserExit`.
+The helper opens the MSI database read-only with `MsiEnableUIPreview` and
+automatically closes after 60 seconds (`--seconds` changes the interval).
+It does not run installation actions. Preview properties are not populated by
+costing or an installation session, so the destination and some conditional
+controls may be absent; check their actual behavior in a disposable installed
+lifecycle test. Metadata checks also verify wizard navigation, note acceptance,
+the protected root and the Monitor launch action.
+
+Artwork is checked in under `observer/installer/assets`; normal packaging
+does not regenerate it. To refresh it from the project logo on Windows, run
+`python observer/installer/generate_windows_branding.py` with Pillow installed.
+Keep the WiX bitmap canvases at 493 x 58 and 493 x 312 pixels.
+
 ## Remaining distribution gates
 
 Windows release work still requires qualification of the exact extracted

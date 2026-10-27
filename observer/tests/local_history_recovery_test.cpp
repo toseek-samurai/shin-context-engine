@@ -22,10 +22,10 @@ struct Fixture {
 };
 struct Connection {
     sqlite3* db = nullptr;
-    explicit Connection(const fs::path& directory) {
+    explicit Connection(const fs::path& directory, const char* vfs = nullptr) {
         const auto text = (directory / "telemetry.sqlite").u8string();
         check(sqlite3_open_v2(reinterpret_cast<const char*>(text.c_str()), &db,
-            SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOFOLLOW, nullptr) == SQLITE_OK, "open fixture history");
+            SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOFOLLOW, vfs) == SQLITE_OK, "open fixture history");
         sqlite3_busy_timeout(db, 1000);
     }
     ~Connection() { sqlite3_close(db); }
@@ -103,7 +103,13 @@ void commit_failure_is_not_replayed() {
 }
 void full_recovery() {
     Fixture fixture; LocalHistory history(fixture.root); seed(history);
+#ifdef _WIN32
+    // The pressure writer creates rollback journals too. Use the registered
+    // private VFS so elevated runners cannot give those files a different owner.
+    Connection other(fixture.root, "shin-private-history-win-v1");
+#else
     Connection other(fixture.root);
+#endif
     other.sql("PRAGMA max_page_count=8192; CREATE TABLE pressure(value BLOB)");
     // Fill only this disposable 32 MiB database, never the host filesystem.
     int result = SQLITE_OK;

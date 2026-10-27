@@ -29,7 +29,11 @@ struct Connection {
         sqlite3_busy_timeout(db, 1000);
     }
     ~Connection() { sqlite3_close(db); }
-    void sql(const char* text) { check(sqlite3_exec(db, text, nullptr, nullptr, nullptr) == SQLITE_OK, sqlite3_errmsg(db)); }
+    void sql(const char* text) {
+        const int result = sqlite3_exec(db, text, nullptr, nullptr, nullptr);
+        if (result != SQLITE_OK) throw std::runtime_error("fixture SQL code=" + std::to_string(result) +
+            ", extended=" + std::to_string(sqlite3_extended_errcode(db)) + ": " + sqlite3_errmsg(db));
+    }
     std::int64_t number(const char* text) {
         sqlite3_stmt* raw = nullptr;
         check(sqlite3_prepare_v2(db, text, -1, &raw, nullptr) == SQLITE_OK, "prepare fixture count");
@@ -111,16 +115,26 @@ void full_recovery() {
     Connection other(fixture.root);
 #endif
     other.sql("PRAGMA max_page_count=8192; CREATE TABLE pressure(value BLOB)");
+    std::cout << "pressure SQLite=" << sqlite3_libversion()
+        << ", page_size=" << other.number("PRAGMA page_size")
+        << ", max_pages=" << other.number("PRAGMA max_page_count")
+        << ", temp_store=" << other.number("PRAGMA temp_store") << std::endl;
     // Fill only this disposable 32 MiB database, never the host filesystem.
     int result = SQLITE_OK;
+    std::string failure = "code=0 (fill budget exhausted)";
     for (int batch = 0; batch < 100 && result == SQLITE_OK; ++batch) {
         other.sql("BEGIN IMMEDIATE");
         for (int i = 0; i < 64 && result == SQLITE_OK; ++i)
             result = sqlite3_exec(other.db, "INSERT INTO pressure VALUES(zeroblob(8192))", nullptr, nullptr, nullptr);
+        if (result != SQLITE_OK) {
+            failure = "batch=" + std::to_string(batch) + ", code=" + std::to_string(result) +
+                ", extended=" + std::to_string(sqlite3_extended_errcode(other.db)) + ": " + sqlite3_errmsg(other.db);
+            if (result != SQLITE_FULL) std::cerr << "pressure writer before rollback: " << failure << std::endl;
+        }
         if (result == SQLITE_OK) other.sql("COMMIT");
         else if (!sqlite3_get_autocommit(other.db)) other.sql("ROLLBACK");
     }
-    check(result == SQLITE_FULL, "bounded fixture did not reach page limit");
+    if (result != SQLITE_FULL) throw std::runtime_error("bounded fixture did not reach page limit: " + failure);
     for (int i = 0; i < 64; ++i) {
         result = sqlite3_exec(other.db, "INSERT INTO pressure VALUES(zeroblob(8192))", nullptr, nullptr, nullptr);
         if (result == SQLITE_FULL) break;
@@ -193,6 +207,14 @@ int main() try {
 #ifndef _WIN32
     ::umask(0077);
 #endif
-    busy_recovery(); startup_busy_recovery(); commit_failure_is_not_replayed(); full_recovery(); replaced_during_retry(); truncated_during_retry(); stop_during_retry(); unsupported_existing_file();
+    const auto run = [](const char* name, auto test) { std::cout << name << std::endl; test(); };
+    run("busy recovery", busy_recovery);
+    run("startup busy recovery", startup_busy_recovery);
+    run("commit failure is not replayed", commit_failure_is_not_replayed);
+    run("full recovery", full_recovery);
+    run("replaced during retry", replaced_during_retry);
+    run("truncated during retry", truncated_during_retry);
+    run("stop during retry", stop_during_retry);
+    run("unsupported existing file", unsupported_existing_file);
     std::cout << "BUSY/FULL recovery, retained queue/rows/rollups, stable identity and hard refusals passed\n";
 } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

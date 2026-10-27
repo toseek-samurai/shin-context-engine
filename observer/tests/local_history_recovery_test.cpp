@@ -14,6 +14,9 @@ using namespace shin::observer;
 using namespace std::chrono_literals;
 namespace {
 void check(bool value, const char* reason) { if (!value) throw std::runtime_error(reason); }
+void sqlite_log(void*, int code, const char* message) {
+    if ((code & 255) == SQLITE_CANTOPEN) std::cerr << "SQLite open diagnostic: " << message << std::endl;
+}
 struct Fixture {
     fs::path root = fs::canonical(fs::temp_directory_path()) / ("shin-history-recovery-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -204,6 +207,7 @@ void unsupported_existing_file() {
 }
 }
 int main() try {
+    check(sqlite3_config(SQLITE_CONFIG_LOG, sqlite_log, nullptr) == SQLITE_OK, "configure SQLite diagnostics");
 #ifndef _WIN32
     ::umask(0077);
 #endif

@@ -1200,12 +1200,13 @@ static std::unique_ptr<Monitor> monitor;
     if (!self.updateWindow.visible) [self toggle:nil];
 }
 - (void)updatePanelSize {
-    NSScreen* screen = self.item.button.window.screen;
+    NSScreen* screen = self.monitorWindow.visible ? self.monitorWindow.screen : self.item.button.window.screen;
     if (!screen) screen = NSScreen.mainScreen;
     const NSSize available = screen ? screen.visibleFrame.size : NSMakeSize(800, 600);
     const bool compact = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"];
     self.popover.contentSize = NSMakeSize(std::min(compact ? 360.0 : 448.0, std::max(280.0, available.width - 24)),
         std::min(compact ? 440.0 : 620.0, std::max(240.0, available.height - 40)));
+    if (self.monitorWindow) [self.monitorWindow setContentSize:self.popover.contentSize];
 }
 - (void)closePanel:(id)sender {
     (void)sender;
@@ -1235,6 +1236,7 @@ static std::unique_ptr<Monitor> monitor;
     }
     self.popover.contentViewController = nil;
     self.monitorWindow.contentViewController = self.content;
+    [self updatePanelSize];
     ((MTKView*)self.content.view).paused = NO;
     monitor->visible = true;
     [NSApp activateIgnoringOtherApps:YES];
@@ -1250,11 +1252,8 @@ static std::unique_ptr<Monitor> monitor;
 }
 - (void)toggle:(id)sender {
     (void)sender;
-    if (self.monitorWindow.visible || !shin_status_can_anchor(self.item)) {
-        [self showMonitorWindow];
-        return;
-    }
-    if (NSApp.currentEvent.type == NSEventTypeRightMouseUp) {
+    const bool anchored = shin_status_can_anchor(self.item);
+    if (anchored && NSApp.currentEvent.type == NSEventTypeRightMouseUp) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* open = [menu addItemWithTitle:ui_text("Open panel") action:@selector(toggle:) keyEquivalent:@""];
         open.target = self;
@@ -1271,6 +1270,10 @@ static std::unique_ptr<Monitor> monitor;
         NSMenuItem* quit = [menu addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(quitMonitor:) keyEquivalent:@""];
         quit.target = self;
         [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, self.item.button.bounds.size.height) inView:self.item.button];
+        return;
+    }
+    if (self.monitorWindow.visible || !anchored) {
+        [self showMonitorWindow];
         return;
     }
     if (self.popover.shown) [self.popover close];

@@ -12,6 +12,7 @@ inline NSImage* shin_status_image(NSImage* base, bool update) {
         return YES;
     }];
     [image setTemplate:YES];
+    image.accessibilityDescription = base.accessibilityDescription;
     return image;
 }
 

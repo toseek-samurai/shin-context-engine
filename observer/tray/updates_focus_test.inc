@@ -211,6 +211,7 @@ int main(int argc, char** argv) {
                 shin_status_presentation(app.item, i % 2 ? logo : badge);
                 update_require(app.item.length == NSSquareStatusItemLength && !app.item.button.title.length &&
                     app.item.button.imagePosition == NSImageOnly && app.item.button.image.isTemplate &&
+                    [app.item.button.image.accessibilityDescription isEqualToString:logo.accessibilityDescription] &&
                     NSEqualSizes(app.item.button.image.size, NSMakeSize(20, 20)), "update badge changed the status slot");
             }
             app.content = [ShinView new]; app.popover = [NSPopover new];
@@ -223,6 +224,14 @@ int main(int argc, char** argv) {
                 !((MTKView*)app.content.view).paused, "fallback window lost rendering ownership");
             [app applicationDidResignActive:nil];
             update_require(app.monitorWindow.visible, "fallback window disappeared when focus changed");
+            const NSSize originalSize = app.monitorWindow.contentView.bounds.size;
+            [app toggleCompact:nil];
+            update_require(!NSEqualSizes(app.monitorWindow.contentView.bounds.size, originalSize) &&
+                NSEqualSizes(app.monitorWindow.contentView.bounds.size, app.popover.contentSize),
+                "standalone Monitor ignored Compact view");
+            [app toggleCompact:nil];
+            update_require(NSEqualSizes(app.monitorWindow.contentView.bounds.size, originalSize),
+                "standalone Monitor did not restore its size");
             [app.monitorWindow close];
             update_require(!monitor->visible && ((MTKView*)app.content.view).paused &&
                 app.popover.contentViewController == app.content, "window close did not restore popover ownership");

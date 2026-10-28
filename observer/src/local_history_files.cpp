@@ -2,8 +2,11 @@
 #include <sqlite3.h>
 #ifdef _WIN32
 #include "shin/windows/file.h"
+#include <windows.h>
+#include <chrono>
 #include <map>
 #include <mutex>
+#include <thread>
 #else
 #include <cerrno>
 #include <fcntl.h>
@@ -26,27 +29,59 @@ sqlite3_vfs* original_vfs = nullptr;
 sqlite3_vfs history_vfs{};
 std::once_flag registration;
 constexpr const char* vfs_name = "shin-private-history-win-v1";
+template<class Action> auto journal_operation(Action action) {
+    // A deleted journal can retain its name until the last metadata handle
+    // closes. Reopen and revalidate it; never adopt unsafe ACLs or ownership.
+    for (int attempt = 0;; ++attempt) {
+        try { return action(); }
+        catch (const shin::windows::Changed&) { if (attempt == 7) throw; }
+        catch (const std::system_error& error) {
+            if (attempt == 7 || (error.code().value() != ERROR_ACCESS_DENIED &&
+                error.code().value() != ERROR_DELETE_PENDING)) throw;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(2));
+    }
+}
 int private_open(sqlite3_vfs*, sqlite3_filename name, sqlite3_file* file, int flags, int* out_flags) noexcept {
     file->pMethods = nullptr;
     try {
-        if (!name || !(flags & (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_MAIN_JOURNAL))) return SQLITE_CANTOPEN;
+        if (!name || !(flags & (SQLITE_OPEN_MAIN_DB | SQLITE_OPEN_MAIN_JOURNAL))) {
+            sqlite3_log(SQLITE_CANTOPEN, "private history VFS: unsupported file kind, flags=%d", flags);
+            return SQLITE_CANTOPEN;
+        }
         const std::string_view utf8(name);
         const auto path = fs::absolute(fs::path(std::u8string(utf8.begin(), utf8.end()))).lexically_normal();
         const std::lock_guard lock(leases_mutex);
         const auto found = leases.find(path.parent_path());
-        if (found == leases.end()) return SQLITE_CANTOPEN;
+        if (found == leases.end()) {
+            sqlite3_log(SQLITE_CANTOPEN, "private history VFS: directory lease unavailable");
+            return SQLITE_CANTOPEN;
+        }
         const auto leaf = path.filename().string();
         if (leaf != "telemetry.sqlite" && leaf != "telemetry.sqlite-journal") return SQLITE_CANTOPEN;
         auto& directory = found->second->directory;
-        if (flags & SQLITE_OPEN_CREATE) {
-            const bool created = directory.create_empty_file(leaf);
-            if ((flags & SQLITE_OPEN_EXCLUSIVE) && !created) return SQLITE_CANTOPEN;
-            if (created) flags &= ~SQLITE_OPEN_EXCLUSIVE;
-        }
-        if (!directory.metadata(leaf, maximum)) return SQLITE_CANTOPEN;
-        // SQLite's native Windows VFS still owns locks, journals, flushes and IO.
-        return original_vfs->xOpen(original_vfs, name, file, flags, out_flags);
-    } catch (...) { return SQLITE_CANTOPEN; }
+        const auto open = [&] {
+            int native_flags = flags;
+            if (flags & SQLITE_OPEN_CREATE) {
+                const bool created = directory.create_empty_file(leaf);
+                if ((flags & SQLITE_OPEN_EXCLUSIVE) && !created) return SQLITE_CANTOPEN;
+                if (created) native_flags &= ~SQLITE_OPEN_EXCLUSIVE;
+            }
+            if (!directory.metadata(leaf, maximum)) {
+                if (leaf == "telemetry.sqlite-journal") throw shin::windows::Changed();
+                return SQLITE_CANTOPEN;
+            }
+            // SQLite's native Windows VFS still owns locks, journals, flushes and IO.
+            return original_vfs->xOpen(original_vfs, name, file, native_flags, out_flags);
+        };
+        return leaf == "telemetry.sqlite-journal" ? journal_operation(open) : open();
+    } catch (const std::system_error& error) {
+        sqlite3_log(SQLITE_CANTOPEN, "private history VFS: file operation refused, system=%d", error.code().value());
+        return SQLITE_CANTOPEN;
+    } catch (...) {
+        sqlite3_log(SQLITE_CANTOPEN, "private history VFS: file metadata refused");
+        return SQLITE_CANTOPEN;
+    }
 }
 void register_history_vfs() {
     std::call_once(registration, [] {
@@ -91,7 +126,7 @@ public:
         require(directory_identity(directory, true) == identity, "history-directory-changed");
         const auto current = lease.directory.metadata("telemetry.sqlite", maximum);
         require(current && current->volume == initial.volume && current->file == initial.file, "history-file-changed");
-        (void)lease.directory.metadata("telemetry.sqlite-journal", maximum);
+        journal_operation([&] { return lease.directory.metadata("telemetry.sqlite-journal", maximum); });
         for (const auto* suffix : {"-wal", "-shm"})
             require(!lease.directory.metadata(std::string("telemetry.sqlite") + suffix, maximum), "history-sidecar-unsafe");
     }

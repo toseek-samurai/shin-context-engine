@@ -5,6 +5,9 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#ifdef _WIN32
+#include "../../tests/core/windows_private_acl.h"
+#endif
 using namespace shin::observer;
 namespace {
 void check(bool value, const char* message) { if (!value) throw std::runtime_error(message); }
@@ -79,7 +82,11 @@ int main() try {
         digest("project")+"','"+digest("chat")+"','','','',1,'unclassified','','unclassified','','');";
     check(sqlite3_exec(old,legacy.c_str(),nullptr,nullptr,nullptr) == SQLITE_OK,"seed old schema");
     sqlite3_close(old);
+#ifdef _WIN32
+    fixture_private_acl(legacy_path);
+#else
     fs::permissions(legacy_path,fs::perms::owner_read|fs::perms::owner_write);
+#endif
     {
         LocalMcpActivity upgraded(legacy_dir,true);
         await([&] { return upgraded.snapshot().value("attempts",0) == 1; });

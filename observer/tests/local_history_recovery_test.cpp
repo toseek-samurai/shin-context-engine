@@ -5,13 +5,18 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
-#ifndef _WIN32
+#ifdef _WIN32
+#include "../../tests/core/windows_private_acl.h"
+#else
 #include <sys/stat.h>
 #endif
 using namespace shin::observer;
 using namespace std::chrono_literals;
 namespace {
 void check(bool value, const char* reason) { if (!value) throw std::runtime_error(reason); }
+void sqlite_log(void*, int code, const char* message) {
+    if ((code & 255) == SQLITE_CANTOPEN) std::cerr << "SQLite open diagnostic: " << message << std::endl;
+}
 struct Fixture {
     fs::path root = fs::canonical(fs::temp_directory_path()) / ("shin-history-recovery-" +
         std::to_string(std::chrono::steady_clock::now().time_since_epoch().count()));
@@ -20,14 +25,18 @@ struct Fixture {
 };
 struct Connection {
     sqlite3* db = nullptr;
-    explicit Connection(const fs::path& directory) {
+    explicit Connection(const fs::path& directory, const char* vfs = nullptr) {
         const auto text = (directory / "telemetry.sqlite").u8string();
         check(sqlite3_open_v2(reinterpret_cast<const char*>(text.c_str()), &db,
-            SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOFOLLOW, nullptr) == SQLITE_OK, "open fixture history");
+            SQLITE_OPEN_READWRITE | SQLITE_OPEN_NOFOLLOW, vfs) == SQLITE_OK, "open fixture history");
         sqlite3_busy_timeout(db, 1000);
     }
     ~Connection() { sqlite3_close(db); }
-    void sql(const char* text) { check(sqlite3_exec(db, text, nullptr, nullptr, nullptr) == SQLITE_OK, sqlite3_errmsg(db)); }
+    void sql(const char* text) {
+        const int result = sqlite3_exec(db, text, nullptr, nullptr, nullptr);
+        if (result != SQLITE_OK) throw std::runtime_error("fixture SQL code=" + std::to_string(result) +
+            ", extended=" + std::to_string(sqlite3_extended_errcode(db)) + ": " + sqlite3_errmsg(db));
+    }
     std::int64_t number(const char* text) {
         sqlite3_stmt* raw = nullptr;
         check(sqlite3_prepare_v2(db, text, -1, &raw, nullptr) == SQLITE_OK, "prepare fixture count");
@@ -101,18 +110,34 @@ void commit_failure_is_not_replayed() {
 }
 void full_recovery() {
     Fixture fixture; LocalHistory history(fixture.root); seed(history);
+#ifdef _WIN32
+    // The pressure writer creates rollback journals too. Use the registered
+    // private VFS so elevated runners cannot give those files a different owner.
+    Connection other(fixture.root, "shin-private-history-win-v1");
+#else
     Connection other(fixture.root);
+#endif
     other.sql("PRAGMA max_page_count=8192; CREATE TABLE pressure(value BLOB)");
+    std::cout << "pressure SQLite=" << sqlite3_libversion()
+        << ", page_size=" << other.number("PRAGMA page_size")
+        << ", max_pages=" << other.number("PRAGMA max_page_count")
+        << ", temp_store=" << other.number("PRAGMA temp_store") << std::endl;
     // Fill only this disposable 32 MiB database, never the host filesystem.
     int result = SQLITE_OK;
+    std::string failure = "code=0 (fill budget exhausted)";
     for (int batch = 0; batch < 100 && result == SQLITE_OK; ++batch) {
         other.sql("BEGIN IMMEDIATE");
         for (int i = 0; i < 64 && result == SQLITE_OK; ++i)
             result = sqlite3_exec(other.db, "INSERT INTO pressure VALUES(zeroblob(8192))", nullptr, nullptr, nullptr);
+        if (result != SQLITE_OK) {
+            failure = "batch=" + std::to_string(batch) + ", code=" + std::to_string(result) +
+                ", extended=" + std::to_string(sqlite3_extended_errcode(other.db)) + ": " + sqlite3_errmsg(other.db);
+            if (result != SQLITE_FULL) std::cerr << "pressure writer before rollback: " << failure << std::endl;
+        }
         if (result == SQLITE_OK) other.sql("COMMIT");
         else if (!sqlite3_get_autocommit(other.db)) other.sql("ROLLBACK");
     }
-    check(result == SQLITE_FULL, "bounded fixture did not reach page limit");
+    if (result != SQLITE_FULL) throw std::runtime_error("bounded fixture did not reach page limit: " + failure);
     for (int i = 0; i < 64; ++i) {
         result = sqlite3_exec(other.db, "INSERT INTO pressure VALUES(zeroblob(8192))", nullptr, nullptr, nullptr);
         if (result == SQLITE_FULL) break;
@@ -136,6 +161,9 @@ void replaced_during_retry() {
     const auto file = fixture.root / "telemetry.sqlite";
     const auto saved = fixture.root / "retained.sqlite";
     fs::rename(file, saved); fs::copy_file(saved, file);
+#ifdef _WIN32
+    fixture_private_acl(file);
+#endif
     event(history, "must-not-write");
     auto refused = wait(history, [](const auto& s) { return s.value("error_code", "") == "history-file-changed"; });
     check(!refused.at("retry_pending"), "identity refusal kept retrying");
@@ -167,7 +195,11 @@ void unsupported_existing_file() {
     Fixture fixture;
     const auto file = fixture.root / "telemetry.sqlite";
     { std::ofstream empty(file); }
+#ifdef _WIN32
+    fixture_private_acl(file);
+#else
     fs::permissions(file, fs::perms::owner_read | fs::perms::owner_write, fs::perm_options::replace);
+#endif
     LocalHistory history(fixture.root);
     auto refused = wait(history, [](const auto& s) { return s.value("error_code", "") == "history-schema-unsupported"; });
     check(!refused.at("retry_pending") && refused.at("recovery_attempts") == 0 && fs::file_size(file) == 0,
@@ -175,9 +207,18 @@ void unsupported_existing_file() {
 }
 }
 int main() try {
+    check(sqlite3_config(SQLITE_CONFIG_LOG, sqlite_log, nullptr) == SQLITE_OK, "configure SQLite diagnostics");
 #ifndef _WIN32
     ::umask(0077);
 #endif
-    busy_recovery(); startup_busy_recovery(); commit_failure_is_not_replayed(); full_recovery(); replaced_during_retry(); truncated_during_retry(); stop_during_retry(); unsupported_existing_file();
+    const auto run = [](const char* name, auto test) { std::cout << name << std::endl; test(); };
+    run("busy recovery", busy_recovery);
+    run("startup busy recovery", startup_busy_recovery);
+    run("commit failure is not replayed", commit_failure_is_not_replayed);
+    run("full recovery", full_recovery);
+    run("replaced during retry", replaced_during_retry);
+    run("truncated during retry", truncated_during_retry);
+    run("stop during retry", stop_during_retry);
+    run("unsupported existing file", unsupported_existing_file);
     std::cout << "BUSY/FULL recovery, retained queue/rows/rollups, stable identity and hard refusals passed\n";
 } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

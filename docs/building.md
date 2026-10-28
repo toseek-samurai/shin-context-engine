@@ -3,12 +3,15 @@
 For the complete macOS application, follow the [local kit guide](local-kit.md).
 Core can be built alone for development or embedding. Linux and WSL2 can also
 build the local service, CLI, terminal monitor and MCP without the desktop app.
+Native Windows development builds provide Core, Observer, CLI, MCP and a
+Win32/DX11 Monitor; their scope is described in [Windows source status](windows-desktop.md).
 
 ## Dependencies
 
-Use a C++20 compiler and CMake 3.24 or newer. Tests require Python 3.11 or newer,
-Bash, and jq. Local source discovery requires SQLite with FTS5, version 3.38 or
-newer. Observer also requires OpenSSL Crypto.
+Use a C++20 compiler and CMake 3.24 or newer. Tests require Python 3.11 or newer;
+the Linux/macOS suites also require Bash and jq. On those platforms, local source
+discovery requires SQLite with FTS5, version 3.38 or newer, and Observer requires
+OpenSSL Crypto. Windows uses a pinned static SQLite build and native cryptography.
 CMake downloads pinned dependencies and checks their hashes.
 
 macOS CI uses Xcode 26.3 on macOS 15. The C++20 standard library must provide
@@ -47,6 +50,11 @@ managed by Observer must be refreshed by its publisher, not by a manual build.
 
 ## Linux and WSL2 terminal tools
 
+Shell runners must retain LF line endings, including when a Windows checkout is
+used from WSL. The repository attributes enforce LF for project shell files.
+An older checkout may still contain CRLF copies; a fresh checkout applies the
+policy without changing global Git settings.
+
 On Ubuntu 24.04, including WSL2, install the build and test prerequisites:
 
 ```sh
@@ -82,6 +90,69 @@ install the commands, replace another kit or enable login startup. In WSL, use
 a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
 native desktop Monitor or prebuilt local-kit download yet.
 
+## Native Windows development builds
+
+The Windows source route uses Visual Studio 2022 with the C++ desktop workload,
+a Windows SDK, CMake 3.24+, and Python 3.11+. Run the commands in PowerShell with
+CMake, CTest and Python available on PATH. The first target is x64 on local NTFS;
+UNC paths and reparse-point traversal are refused by the Windows IO adapter.
+
+For the full native test suite, use an **unelevated interactive desktop session**.
+The user runtime rejects elevated tokens, and the Monitor checks need a desktop
+with Direct3D 11 support. The filesystem refusal tests deliberately create
+symlinks: the test account needs symlink creation rights, normally through
+[Windows Developer Mode](https://learn.microsoft.com/en-us/windows/win32/api/winbase/nf-winbase-createsymboliclinkw).
+This is a test prerequisite, not a requirement for running Shin. Do not elevate
+the full suite to work around a missing symlink privilege.
+
+Use a protected CMake installation, such as the one bundled with Visual Studio
+under Program Files. `shin-windows-machine-code` uses the configured CMake
+executable as its machine-owned image fixture; a user-writable CMake installation
+does not satisfy that check. Missing prerequisites must be reported as failures,
+not replaced with a reduced test set described as full qualification.
+
+Keep both the checkout and its absolute external build root outside AppData
+and TEMP. MSBuild does not reliably track dependencies in those directories;
+the build rejects them.
+The presets are enabled only on Windows with `SHIN_BUILD_ROOT` set. From the
+repository root:
+
+```powershell
+$env:SHIN_BUILD_ROOT = Join-Path $env:USERPROFILE 'ShinBuild/windows-development'
+cmake --preset windows-native
+cmake --build --preset windows-native
+ctest --preset windows-native-smoke
+
+Push-Location observer
+cmake --preset windows-desktop
+cmake --build --preset windows-desktop
+ctest --preset windows-desktop
+Pop-Location
+```
+
+The root preset builds Core, source discovery and native Observer/CE/MCP tools
+under `core/Release`. Its smoke preset exercises native Core retrieval, source
+reading, publication ownership, cache reuse, Unicode and long paths. It is an
+explicit subset: the full Core suite still includes POSIX shell runners whose
+Windows equivalents remain pending. No tests are removed from the Core suite.
+
+The standalone Observer preset builds CE/MCP and Win32/DX11 Monitor under
+`desktop/Release` and `desktop/tray/Release`, then runs all tests registered in
+that configuration. Both routes use the same Core and Observer sources. They
+do not install a service or enroll a real project; tests use disposable state.
+Runtime binaries do not require WSL, Bash or Python.
+
+The Windows suite also runs the shared refresh-race regressions, including
+bootstrap with broken documentation links, cached queries, warning recovery,
+and strict rejection of unrelated failures. Monitor renders cover the warning
+in English and Russian in project lists and details at all five tested sizes.
+
+These are development source checks, not Windows distribution qualification.
+The presets leave ZIP/MSI packaging disabled. The existing MSI recipe separately
+requires CPack 4.3+ and WiX 4; exact-archive and installed SCM lifecycle checks
+are still required before a Windows release. TUI, automatic client connection,
+automatic usage collection and in-app updating remain pending on Windows.
+
 ## Continuous integration
 
 CI qualifies standalone Core and Observer independently on Linux and macOS.
@@ -89,17 +160,29 @@ The macOS Observer job also builds Monitor and qualifies the exact kit archive.
 Core checks in that kit exercise the embedded build configuration; they do not
 replace the standalone Core job.
 
+The separate [Windows source workflow](../.github/workflows/windows.yml) is
+configured to build both Windows presets on Windows Server 2022 runners.
+It uses `windows-native-smoke` and
+`windows-desktop-smoke`, which explicitly select source/runtime-unit checks.
+[Hosted Windows runners run as administrators with UAC disabled](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#administrative-privileges),
+while the Shin user service refuses elevation. The full `windows-desktop` test
+preset remains required in an unelevated interactive session, including the
+real product lifecycle, SCM contract, protected-image and tray-render checks.
+No full-suite tests are disabled or removed. This initial CI uploads test
+reports, not a distributable kit; it does not replace the Linux/macOS matrix,
+change the guarded macOS publisher, or establish Windows release qualification.
+
 Configure, compilation, tests and package qualification are separate workflow
-steps so their durations are visible. Ninja schedules compilation with four
-jobs. CTest runs up to four isolated suites concurrently, starting the longest
-lifecycle suites first. Install tests share a resource lock because CMake writes
-one build-tree install manifest; native layout renders also share a lock.
+steps so their durations are visible. In the Linux/macOS workflow, Ninja schedules
+compilation with four jobs. CTest runs up to four isolated suites concurrently,
+starting the longest lifecycle suites first. Install tests share a resource lock
+because CMake writes one build-tree install manifest; native layout renders also share a lock.
 The short client-hook deadline suite runs alone to preserve its real one-second
 process deadline without unrelated CPU contention.
 Timeouts, assertions, resource bounds and the complete test inventory remain in
-force. The archive is uploaded only after its own installation and UI checks.
+force. The macOS archive is uploaded only after its own installation and UI checks.
 
-CI uses [ccache](https://ccache.dev/manual/latest.html) for compiler outputs,
+The Linux/macOS workflow uses [ccache](https://ccache.dev/manual/latest.html) for compiler outputs,
 partitioned by operating system, architecture and component. Compiler contents,
 flags and source/header inputs still determine cache validity. Build trees,
 test state, indexes and qualification results are never restored from this cache.
@@ -107,7 +190,12 @@ A cache miss runs a normal build; a cache hit still runs every test. Cache
 statistics are printed separately. Superseded runs on the same branch or pull
 request are cancelled automatically.
 
-To use the same bounded test scheduling locally, add `--parallel 4` to the CTest
+To use the same Linux/macOS test scheduling locally, add `--parallel 4` to the CTest
 command. Ninja and ccache are optional development tools, not application runtime
 dependencies. Compare cold and warm CI runs separately; job time also includes
 failure/recovery scenarios that deliberately wait for deadlines and watchers.
+
+The Windows presets use Visual Studio x64 Release builds with four build jobs
+and two CTest jobs. The shared refresh suite reserves three processors for its
+isolated subprocess groups while retaining one 45-second CTest deadline; see
+the [test guide](../tests/README.md#shared-refresh-regressions).

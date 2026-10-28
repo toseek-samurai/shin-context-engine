@@ -1,0 +1,44 @@
+{
+  "version": 3,
+  "cmakeMinimumRequired": { "major": 3, "minor": 24, "patch": 0 },
+  "configurePresets": [
+    {
+      "name": "windows-native",
+      "displayName": "Windows x64 Core and native Observer tools",
+      "generator": "Visual Studio 17 2022",
+      "architecture": "x64",
+      "binaryDir": "$env{SHIN_BUILD_ROOT}/core",
+      "condition": {
+        "type": "allOf",
+        "conditions": [
+          { "type": "equals", "lhs": "${hostSystemName}", "rhs": "Windows" },
+          { "type": "notEquals", "lhs": "$env{SHIN_BUILD_ROOT}", "rhs": "" }
+        ]
+      },
+      "cacheVariables": {
+        "BUILD_TESTING": true,
+        "SHIN_CONTEXT_BUILD_CLI": true,
+        "SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY": true,
+        "SHIN_CONTEXT_BUILD_OBSERVER": true,
+        "SHIN_OBSERVER_MCP": true
+      }
+    }
+  ],
+  "buildPresets": [
+    { "name": "windows-native", "configurePreset": "windows-native", "configuration": "Release", "jobs": 4 }
+  ],
+  "testPresets": [
+    {
+      "name": "windows-native-smoke",
+      "configurePreset": "windows-native",
+      "configuration": "Release",
+      "output": { "outputOnFailure": true },
+      "execution": { "noTestsAction": "error", "jobs": 2 },
+      "filter": {
+        "include": {
+          "name": "^(shin-context-(windows-smoke|windows-source-cache|source-discovery|publisher-ownership|qualified-query|source-read)|shin-windows-file)$"
+        }
+      }
+    }
+  ]
+}

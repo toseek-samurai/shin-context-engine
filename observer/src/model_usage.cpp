@@ -103,7 +103,7 @@ Json summarize_model_usage(const Json& input, std::int64_t now) {
     require(input.at("buckets").is_array() && input.at("buckets").size() <= 4000);
     std::set<std::tuple<std::string, std::string, std::string, std::string>> seen;
     for (const auto& row : input.at("buckets")) {
-        std::set<std::string> expected{"date", "project", "client", "model", "measurement"}; expected.insert(counters.begin(), counters.end()); keys(row, std::move(expected));
+        std::set<std::string> bucket_fields{"date", "project", "client", "model", "measurement"}; bucket_fields.insert(counters.begin(), counters.end()); keys(row, std::move(bucket_fields));
         const auto project = label(row.at("project"), 80, true), client = label(row.at("client"), 16, true), model = label(row.at("model"), 120, true);
         require(groups.contains(project) && (client == "codex" || client == "hermes" || client == "opencode"));
         const auto day = row.at("date").get<std::string>(); const auto timestamp = date_ms(row.at("date"));

@@ -16,6 +16,15 @@ add_test(NAME shin-windows-machine-code COMMAND shin-observer-windows-storage-te
 set_tests_properties(shin-windows-machine-code PROPERTIES TIMEOUT 30)
 shin_windows_test(shin-observer-windows-runtime-tests windows_runtime_test.cpp shin-observer-windows-runtime)
 shin_windows_test(shin-local-changes-tests local_changes_test.cpp shin-local-changes)
+find_package(Python3 REQUIRED COMPONENTS Interpreter)
+add_executable(shin-local-refresh-race-tests "${observer_root}/tests/local_refresh_race_test.cpp")
+target_link_libraries(shin-local-refresh-race-tests PRIVATE shin-observer-native advapi32)
+target_compile_definitions(shin-local-refresh-race-tests PRIVATE NOMINMAX WIN32_LEAN_AND_MEAN _WIN32_WINNT=0x0A00)
+target_compile_options(shin-local-refresh-race-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
+add_test(NAME shin-local-refresh-races COMMAND ${Python3_EXECUTABLE}
+    "${observer_root}/tests/run_refresh_race_tests.py"
+    $<TARGET_FILE:shin-local-refresh-race-tests> "${observer_root}/../profiles")
+set_tests_properties(shin-local-refresh-races PROPERTIES TIMEOUT 45 PROCESSORS 3)
 shin_windows_test(shin-observer-windows-project-tests windows_project_test.cpp shin-observer-windows-project)
 shin_windows_test(shin-observer-windows-worker-tests windows_worker_test.cpp shin-observer-windows-worker)
 shin_windows_test(shin-local-worker-process-tests local_worker_process_test.cpp shin-local-worker-process)

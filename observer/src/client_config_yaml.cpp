@@ -67,7 +67,7 @@ class Document {
         next(); return value;
     }
 public:
-    Json value;
+    Json root;
     std::map<std::vector<std::string>, Span> spans;
     explicit Document(const std::string& source) {
         for (std::size_t i = 0; i < source.size(); ++i)
@@ -78,9 +78,9 @@ public:
         try {
             next(); if (event.type != YAML_STREAM_START_EVENT) throw Error("client-config-invalid", "Invalid YAML stream.");
             next();
-            if (event.type == YAML_STREAM_END_EVENT) { value = Json::object(); return; }
+            if (event.type == YAML_STREAM_END_EVENT) { root = Json::object(); return; }
             if (event.type != YAML_DOCUMENT_START_EVENT) throw Error("client-config-invalid", "Invalid YAML document.");
-            next(); value = node({}, 0);
+            next(); root = node({}, 0);
             if (event.type != YAML_DOCUMENT_END_EVENT) throw Error("client-config-invalid", "Invalid YAML document end.");
             next(); if (event.type != YAML_STREAM_END_EVENT) throw Error("client-config-unsupported", "Multiple YAML documents require manual review.");
         } catch (...) { if (live) yaml_event_delete(&event); yaml_parser_delete(&parser); throw; }
@@ -103,8 +103,8 @@ public:
 std::string merge_yaml(const std::string& source, const Json& desired) {
     const auto input = source.empty() ? std::string("{}\n") : source;
     Document document(input);
-    if (!document.value.is_object()) throw Error("client-config-invalid", "Hermes settings must be a YAML mapping.");
-    auto expected = document.value;
+    if (!document.root.is_object()) throw Error("client-config-invalid", "Hermes settings must be a YAML mapping.");
+    auto expected = document.root;
     if (!expected.contains("mcp_servers")) expected["mcp_servers"] = Json::object();
     if (!expected["mcp_servers"].is_object()) throw Error("client-config-invalid", "mcp_servers must be a YAML mapping.");
     const auto before = expected["mcp_servers"].value("shin", Json());
@@ -112,8 +112,8 @@ std::string merge_yaml(const std::string& source, const Json& desired) {
     if (before == after) return source;
     expected["mcp_servers"]["shin"] = after;
     std::string result;
-    if (!document.value.contains("mcp_servers")) result = document.add(input, {}, "mcp_servers", expected["mcp_servers"]);
-    else if (!document.value.at("mcp_servers").contains("shin")) result = document.add(input, {"mcp_servers"}, "shin", after);
+    if (!document.root.contains("mcp_servers")) result = document.add(input, {}, "mcp_servers", expected["mcp_servers"]);
+    else if (!document.root.at("mcp_servers").contains("shin")) result = document.add(input, {"mcp_servers"}, "shin", after);
     else {
         result = input;
         std::vector<std::pair<Span, std::string>> edits;
@@ -125,7 +125,7 @@ std::string merge_yaml(const std::string& source, const Json& desired) {
         std::sort(edits.begin(), edits.end(), [](const auto& a, const auto& b) { return a.first.begin > b.first.begin; });
         for (const auto& [span, text] : edits) result.replace(span.begin, span.end - span.begin, text);
     }
-    if (Document(result).value != expected) throw Error("client-config-invalid", "YAML validation failed; the original file was preserved.");
+    if (Document(result).root != expected) throw Error("client-config-invalid", "YAML validation failed; the original file was preserved.");
     return result;
 }
 }

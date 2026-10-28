@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WixLocalization xmlns="http://wixtoolset.org/schemas/v4/wxl" Culture="en-US">
+  <UI Dialog="WelcomeDlg" Control="Description" Height="130"/>
+  <UI Dialog="VerifyReadyDlg" Control="InstallText" Height="136"/>
+  <String Id="WelcomeDlgTitle" Value="{\WixUI_Font_Bigger}Welcome to Shin"/>
+  <String Id="WelcomeDlgDescription" Value="Local code context for your AI tools.&#13;&#10;&#13;&#10;Core, Observer, MCP clients and Monitor for Windows.&#13;&#10;&#13;&#10;Preview [SHIN_PREVIEW_VERSION]&#13;&#10;Click Next to review the installation."/>
+  <String Id="LicenseAgreementDlgTitle" Value="{\WixUI_Font_Title}Before you install"/>
+  <String Id="LicenseAgreementDlgDescription" Value="Please review these preview and installation notes."/>
+  <String Id="LicenseAgreementDlgLicenseAcceptedCheckBox" Value="I have read the preview and installation notes"/>
+  <String Id="VerifyReadyDlgInstallTitle" Value="{\WixUI_Font_Title}Ready to install Shin"/>
+  <String Id="VerifyReadyDlgInstallText" Value="Install for all users in:&#13;&#10;[INSTALL_ROOT]&#13;&#10;&#13;&#10;Windows will ask for administrator approval.&#13;&#10;Monitor starts at sign-in; Observer runs in the background.&#13;&#10;&#13;&#10;Projects and client configuration are set up separately."/>
+  <String Id="ProgressDlgTitleInstalling" Value="{\WixUI_Font_Title}Installing Shin"/>
+  <String Id="ProgressDlgTextInstalling" Value="Setting up Shin. This may take a moment."/>
+  <String Id="ExitDialogTitle" Value="{\WixUI_Font_Bigger}Setup complete"/>
+  <String Id="ExitDialogDescription" Value="Click Finish to close the installer."/>
+</WixLocalization>

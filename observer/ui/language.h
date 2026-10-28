@@ -3,6 +3,7 @@
 #include <atomic>
 #include <cstdlib>
 #include <iterator>
+#include <memory>
 #include <string_view>
 #include <string>
 
@@ -49,7 +50,15 @@ inline std::string decimal(std::string value) {
 // Called at terminal startup, before worker threads. Empty variables are ignored.
 inline Language terminal_language(std::string_view preference) {
     for (const auto* name : {"LC_ALL", "LC_MESSAGES", "LANG"}) {
-        if (const auto* value = std::getenv(name); value && *value) return resolve_language(preference, value);
+#ifdef _MSC_VER
+        char* buffer = nullptr;
+        if (_dupenv_s(&buffer, nullptr, name) != 0) continue;
+        const std::unique_ptr<char, decltype(&std::free)> owned(buffer, &std::free);
+        const auto* value = owned.get();
+#else
+        const auto* value = std::getenv(name);
+#endif
+        if (value && *value) return resolve_language(preference, value);
     }
     return resolve_language(preference, "en");
 }

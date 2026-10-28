@@ -7,6 +7,9 @@ The current development preview targets macOS 15+ on Apple Silicon. It uses an
 ad-hoc signature, without Developer ID or notarization; first launch on another
 Mac may require manual approval. This is not a stable release.
 
+This guide covers the macOS kit. Native Windows source builds and the separate,
+not yet qualified Windows packaging route are described in [Windows source status](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
+
 ## Download a preview release
 
 Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.50).
@@ -355,9 +358,9 @@ rollback checks still apply; an expired wait reports `service-enrollment-timeout
 
 Updating with the exact installed archive is a no-op. A changed archive must have
 a newer version; downgrades and altered same-version kits are refused. The updater
-supports the same Core version and the qualified Core patch transitions
-described in [Core patch compatibility](#core-patch-compatibility). Other Core changes
-require an explicit migration. It does not download releases or change shell,
+applies the version and project-qualification rules described in
+[Core transitions and index rebuilds](#core-transitions-and-index-rebuilds).
+It does not download releases or change shell,
 client, project or model-usage configuration.
 
 ### Preview publication and CI

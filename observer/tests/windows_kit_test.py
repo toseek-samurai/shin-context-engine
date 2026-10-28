@@ -13,6 +13,51 @@ import time
 import zipfile
 
 
+def check_msi_ui(rows, properties):
+    """Check the compiled wizard, including maintenance and the acceptance gate."""
+    styles = rows('SELECT `TextStyle`, `FaceName`, `Size` FROM `TextStyle`', 3)
+    assert ['WixUI_Font_Normal', 'Segoe UI', '9'] in styles, styles
+    assert properties['SHIN_PREVIEW_VERSION']
+    assert properties['ARPPRODUCTICON'] == 'ProductIcon.ico'
+    assert ['ProductIcon.ico'] in rows('SELECT `Name` FROM `Icon`', 1)
+    controls = {(row[0], row[1]): row[2:] for row in rows(
+        'SELECT `Dialog_`, `Control`, `Type`, `Height`, `Text` FROM `Control`', 5)}
+    assert 'Welcome to Shin' in controls['WelcomeDlg', 'Title'][2]
+    assert int(controls['WelcomeDlg', 'Description'][1]) >= 130
+    assert 'SHIN_PREVIEW_VERSION' in controls['WelcomeDlg', 'Description'][2]
+    assert '[INSTALL_ROOT]' in controls['VerifyReadyDlg', 'InstallText'][2]
+    assert int(controls['VerifyReadyDlg', 'InstallText'][1]) >= 136
+    notice = controls['LicenseAgreementDlg', 'LicenseText'][2]
+    assert r'\f0 Segoe UI;' in notice and r'\fs18' in notice, notice[:100]
+    assert 'Apache-2.0' in notice and 'preserved during removal' in notice
+    assert not any(dialog == 'InstallDirDlg' for dialog, _ in controls), 'Protected install root must not become editable'
+    sequence = dict(rows('SELECT `Action`, `Sequence` FROM `InstallUISequence`', 2))
+    assert 'WelcomeEulaDlg' not in sequence
+    assert int(sequence['WelcomeDlg']) < int(sequence['ProgressDlg'])
+    events = rows('SELECT `Dialog_`, `Control_`, `Event`, `Argument`, `Condition`, `Ordering` FROM `ControlEvent`', 6)
+    for dialog, control, target, condition in (
+            ('WelcomeDlg', 'Next', 'LicenseAgreementDlg', 'NOT Installed'),
+            ('WelcomeDlg', 'Next', 'VerifyReadyDlg', 'Installed AND PATCH'),
+            ('LicenseAgreementDlg', 'Back', 'WelcomeDlg', '1'),
+            ('LicenseAgreementDlg', 'Next', 'VerifyReadyDlg', 'LicenseAccepted = "1"'),
+            ('VerifyReadyDlg', 'Back', 'LicenseAgreementDlg', 'NOT Installed'),
+            ('VerifyReadyDlg', 'Back', 'MaintenanceTypeDlg', 'Installed AND NOT PATCH'),
+            ('VerifyReadyDlg', 'Back', 'WelcomeDlg', 'Installed AND PATCH'),
+            ('MaintenanceWelcomeDlg', 'Next', 'MaintenanceTypeDlg', '1'),
+            ('MaintenanceTypeDlg', 'RepairButton', 'VerifyReadyDlg', '1'),
+            ('MaintenanceTypeDlg', 'RemoveButton', 'VerifyReadyDlg', '1'),
+            ('MaintenanceTypeDlg', 'Back', 'MaintenanceWelcomeDlg', '1')):
+        assert any(row[:5] == [dialog, control, 'NewDialog', target, condition] for row in events), (dialog, control, target)
+    gate = rows("SELECT `Action`, `Condition` FROM `ControlCondition` WHERE `Dialog_` = 'LicenseAgreementDlg' AND `Control_` = 'Next'", 2)
+    assert ['Enable', 'LicenseAccepted = "1"'] in gate
+    assert ['Disable', 'LicenseAccepted <> "1"'] in gate
+    finish = [row for row in events if row[:2] == ['ExitDialog', 'Finish']]
+    launch = next(row for row in finish if row[2:4] == ['DoAction', 'ShinLaunchMonitor'])
+    end = next(row for row in finish if row[2:4] == ['EndDialog', 'Return'])
+    assert int(launch[5]) < int(end[5]), finish
+    print('MSI UI: branding, readable notes, protected root, install/maintenance navigation and acceptance gate passed')
+
+
 def check_msi(path):
     """Read MSI tables without starting installation or changing machine state."""
     api = ctypes.WinDLL('msi', use_last_error=True)
@@ -75,6 +120,7 @@ def check_msi(path):
         launch = rows("SELECT `Dialog_`, `Control_`, `Event`, `Argument`, `Condition` FROM `ControlEvent` WHERE `Argument` = 'ShinLaunchMonitor'", 5)
         assert len(launch) == 1 and launch[0][:4] == ['ExitDialog', 'Finish', 'DoAction', 'ShinLaunchMonitor']
         assert 'NOT Installed' in launch[0][4] and 'WIXUI_EXITDIALOGOPTIONALCHECKBOX' in launch[0][4]
+        assert 'NOT REMOVE~="ALL"' in launch[0][4]
         sequence = {row[0]: int(row[1]) for row in rows('SELECT `Action`, `Sequence` FROM `InstallExecuteSequence`', 2)}
         for name, command, rollback in (('ShinScmInstall', '_scm-install', False),
                                         ('ShinScmStop', '_scm-stop', False),
@@ -94,6 +140,7 @@ def check_msi(path):
         assert sequence['ShinScmUndoInstall'] < sequence['ShinScmInstall']
         startup = rows("SELECT `Name`, `Value` FROM `Registry` WHERE `Key` = 'Software\\Microsoft\\Windows\\CurrentVersion\\Run'", 2)
         assert ['ShinMonitor', '"[#CM_FP_bin.shin_tray.exe]"'] in startup, startup
+        check_msi_ui(rows, properties)
         print('MSI metadata: per-machine, Program Files, HKLM, native SCM actions/rollback, separate Monitor startup passed')
         return properties
     finally:
@@ -150,7 +197,8 @@ def main():
         assert (kit / 'share/shin-observer/licenses/imgui/LICENSE.txt').is_file()
         run([kit / 'bin/shin-tray.exe', '--render-test', base / 'renders'])
         rendered = json.loads((base / 'renders/result.json').read_text())
-        assert rendered['frames'] == 24 and rendered['cold_frames'] == 12
+        assert rendered['frames'] == 30 and rendered['cold_frames'] == 15
+        assert rendered['documentation_frames'] == 20
         root = base / 'project'
         root.mkdir()
         (root / 'quota.cpp').write_text('int quotaLimit() { return 42; }\n', encoding='utf-8')

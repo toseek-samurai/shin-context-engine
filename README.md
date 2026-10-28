@@ -82,11 +82,11 @@ Sand TUI is included in preview dev.39 and later.
 The preview includes a first-run setup window, automatic agent connections
 and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.50)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.54)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.50/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.54/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it

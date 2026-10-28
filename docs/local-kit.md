@@ -12,7 +12,7 @@ not yet qualified Windows packaging route are described in [Windows source statu
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.50).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.54).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -20,7 +20,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.50/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.54/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.

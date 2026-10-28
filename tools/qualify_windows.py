@@ -54,9 +54,9 @@ def package(archive, msi, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--phase', choices=('package', 'runtime', 'receipt'), required=True)
-    parser.add_argument('--archive', type=Path, required=True)
-    parser.add_argument('--msi', type=Path, required=True)
+    parser.add_argument('--phase', choices=('probe', 'package', 'runtime', 'receipt'), required=True)
+    parser.add_argument('--archive', type=Path)
+    parser.add_argument('--msi', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--sha', required=True)
     parser.add_argument('--run-id', type=int, required=True)
@@ -64,15 +64,23 @@ def main():
     args = parser.parse_args()
     assert sys.platform == 'win32' and re.fullmatch('[0-9a-f]{40}', args.sha)
     assert args.run_id > 0 and args.attempt > 0
-    archive, msi, output = args.archive.resolve(), args.msi.resolve(), args.output.resolve()
+    output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
+    if args.phase in ('probe', 'runtime'):
+        elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
+        (output / (args.phase + '-started.json')).write_text(json.dumps({'elevated': elevated}) + '\n')
+        assert not elevated, 'Runtime qualification must be unelevated'
+    if args.phase == 'probe':
+        (output / 'probe.json').write_text(json.dumps({'unelevated': True}) + '\n')
+        return
+    assert args.archive and args.msi, 'Both package paths are required'
+    archive, msi = args.archive.resolve(), args.msi.resolve()
     assets = hashes(archive, msi)
     identity = dict(source_sha=args.sha, run_id=args.run_id, attempt=args.attempt, assets=assets)
     if args.phase == 'package':
         manifest = package(archive, msi, output)
         proof = dict(identity, version=manifest['version'], core_version=manifest['core_version'])
     elif args.phase == 'runtime':
-        assert not ctypes.windll.shell32.IsUserAnAdmin(), 'Runtime qualification must be unelevated'
         with (output / 'runtime.log').open('w', encoding='utf-8') as log:
             subprocess.run([sys.executable, '-X', 'utf8', '-B', str(ROOT / 'observer/tests/windows_kit_test.py'), str(archive)],
                            stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)

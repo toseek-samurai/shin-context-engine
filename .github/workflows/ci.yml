@@ -164,6 +164,9 @@ jobs:
           $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE '../shin-windows-${{ matrix.component }}'))
           "SHIN_BUILD_ROOT=$buildRoot" >> $env:GITHUB_ENV
           "build_root=$buildRoot" >> $env:GITHUB_OUTPUT
+      - name: Check standard-user launcher
+        if: matrix.component == 'desktop'
+        run: ../tools/qualify_windows.ps1 -Probe -Output "$env:SHIN_BUILD_ROOT/user-probe"
       - name: Packaging toolchain
         if: matrix.component == 'desktop'
         run: |
@@ -194,28 +197,30 @@ jobs:
       - name: Build Windows packages
         if: matrix.component == 'desktop'
         run: |
-          cmake --preset windows-kit
+          # Source tests have completed. Reuse their objects with the production
+          # preset; BUILD_TESTING=OFF keeps POSIX-only Core gates out of packaging.
+          cmake --preset windows-kit -B "$env:SHIN_BUILD_ROOT/desktop"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cmake --build --preset windows-kit
+          cmake --build "$env:SHIN_BUILD_ROOT/desktop" --config Release --parallel 4
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cpack --config "$env:SHIN_BUILD_ROOT/kit/CPackConfig.cmake" -C Release -G ZIP
+          cpack --config "$env:SHIN_BUILD_ROOT/desktop/CPackConfig.cmake" -C Release -G ZIP
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
-          cpack --config "$env:SHIN_BUILD_ROOT/kit/CPackConfig.cmake" -C Release -G WIX
+          cpack --config "$env:SHIN_BUILD_ROOT/desktop/CPackConfig.cmake" -C Release -G WIX
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
       - name: Exact Windows kit qualification
         id: qualify-windows
         if: matrix.component == 'desktop'
-        run: ../tools/qualify_windows.ps1 -Packages "$env:SHIN_BUILD_ROOT/kit/packages" -Output "$env:SHIN_BUILD_ROOT/proof"
+        run: ../tools/qualify_windows.ps1 -Packages "$env:SHIN_BUILD_ROOT/desktop/packages" -Output "$env:SHIN_BUILD_ROOT/proof"
       - name: Upload qualified Windows kit
         if: success() && steps.qualify-windows.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: shin-desktop-windows-X64-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
-            ${{ steps.paths.outputs.build_root }}/kit/packages/*.zip
-            ${{ steps.paths.outputs.build_root }}/kit/packages/*.msi
-            ${{ steps.paths.outputs.build_root }}/kit/packages/*.sha256
-            ${{ steps.paths.outputs.build_root }}/kit/packages/windows-qualification.json
+            ${{ steps.paths.outputs.build_root }}/desktop/packages/*.zip
+            ${{ steps.paths.outputs.build_root }}/desktop/packages/*.msi
+            ${{ steps.paths.outputs.build_root }}/desktop/packages/*.sha256
+            ${{ steps.paths.outputs.build_root }}/desktop/packages/windows-qualification.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -227,7 +232,8 @@ jobs:
           path: |
             ${{ steps.paths.outputs.build_root }}/tests.xml
             ${{ steps.paths.outputs.build_root }}/proof/**
-            ${{ steps.paths.outputs.build_root }}/kit/_CPack_Packages/win64/WIX/*.log
+            ${{ steps.paths.outputs.build_root }}/user-probe/**
+            ${{ steps.paths.outputs.build_root }}/desktop/_CPack_Packages/win64/WIX/*.log
             ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTest.log
             ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTestsFailed.log
             ${{ steps.paths.outputs.build_root }}/**/CMakeFiles/CMakeConfigureLog.yaml

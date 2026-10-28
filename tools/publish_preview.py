@@ -239,7 +239,10 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
                 (platform / name).rename(directory / name)
             expected.update(checked)
         notes += f'\nQualified source: `{sha}`. [CI qualification](https://github.com/{repo}/actions/runs/{run_id}).\n'
-        notes += f"\nArchive SHA-256: `{expected[f'shin-local-{version}-macos-arm64.zip'][7:]}`.\n"
+        notes += '\nQualified download SHA-256 values:\n\n'
+        for name in sorted(expected):
+            if name.endswith(('.zip', '.msi')):
+                notes += f'- `{name}`: `{expected[name][7:]}`\n'
         body = Path(folder) / 'notes.md'
         body.write_text(notes)
         current = receipt()

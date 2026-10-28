@@ -169,7 +169,9 @@ replace the standalone Core job.
 
 The same [source workflow](../.github/workflows/ci.yml) builds both Windows
 presets on Windows Server 2022. Its smoke selections avoid POSIX-only drivers.
-The desktop job additionally packages the exact ZIP and MSI with CPack 4.3.5 and
+After source tests pass, the desktop job reconfigures the same build directory
+with the production `windows-kit` preset and tests disabled, reusing compiler
+outputs. It packages the exact ZIP and MSI with CPack 4.3.5 and
 WiX 4.0.6, verifies compiled MSI policy, extracts its payload without installing
 it, and compares every file with the ZIP. It runs the relocated ZIP's native
 Monitor render and init/query/stop checks under a disposable standard account.

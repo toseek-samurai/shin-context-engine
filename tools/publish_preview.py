@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publish only the exact macOS artifact from the matching, successful CI matrix."""
+"""Publish exact macOS and Windows artifacts from one successful CI matrix."""
 import argparse
 import hashlib
 import json
@@ -12,6 +12,7 @@ import zipfile
 
 MATRIX = {f'native ({system}, {component})'
           for system in ('ubuntu-24.04', 'macos-15') for component in ('core', 'observer')}
+MATRIX |= {'windows (native)', 'windows (desktop)'}
 VERSION = r'(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})\.(?:0|[1-9][0-9]{0,8})-dev\.(?:0|[1-9][0-9]{0,8})'
 
 
@@ -24,7 +25,7 @@ class PackageProofPending(ValueError):
     """Completed-job step metadata has not reached the API yet."""
 
 
-def qualification(run, jobs, artifact, repo, sha, run_id, attempt, recover_publisher=False):
+def qualification(run, jobs, artifacts, repo, sha, run_id, attempt, recover_publisher=False):
     require(run['head_sha'] == sha and run['id'] == run_id and run['run_attempt'] == attempt,
             'CI identity or attempt differs from the requested source')
     require(run['repository']['full_name'] == repo and run['head_repository']['full_name'] == repo
@@ -42,15 +43,73 @@ def qualification(run, jobs, artifact, repo, sha, run_id, attempt, recover_publi
         matches = [job for job in jobs if job['name'] == name]
         require(len(matches) == 1 and matches[0]['status'] == 'completed'
                 and matches[0]['conclusion'] == 'success', f'Unqualified matrix job: {name}')
-    mac = next(job for job in jobs if job['name'] == 'native (macos-15, observer)')
-    for step in ('Exact macOS kit qualification', 'Upload qualified macOS kit'):
-        matches = [row for row in mac['steps'] if row['name'] == step]
-        if not matches or (len(matches) == 1 and matches[0]['conclusion'] is None):
-            raise PackageProofPending(f'Package proof metadata is pending: {step}')
-        require(len(matches) == 1 and matches[0]['conclusion'] == 'success', f'Missing package proof: {step}')
-    require(not artifact['expired'] and artifact['name'] == f'shin-local-macos-ARM64-{run_id}-{attempt}'
-            and artifact['workflow_run']['id'] == run_id and artifact['workflow_run']['head_sha'] == sha,
-            'Artifact does not belong to this qualified run')
+    for job_name, steps in (
+            ('native (macos-15, observer)', ('Exact macOS kit qualification', 'Upload qualified macOS kit')),
+            ('windows (desktop)', ('Exact Windows kit qualification', 'Upload qualified Windows kit'))):
+        job = next(job for job in jobs if job['name'] == job_name)
+        for step in steps:
+            matches = [row for row in job['steps'] if row['name'] == step]
+            if not matches or (len(matches) == 1 and matches[0]['conclusion'] is None):
+                raise PackageProofPending(f'Package proof metadata is pending: {step}')
+            require(len(matches) == 1 and matches[0]['conclusion'] == 'success', f'Missing package proof: {step}')
+    require(len(artifacts) == 2 and {a['name'] for a in artifacts} == artifact_names(run_id, attempt),
+            'Both platform artifacts are required')
+    for artifact in artifacts:
+        require(not artifact['expired'] and artifact['workflow_run']['id'] == run_id
+                and artifact['workflow_run']['head_sha'] == sha,
+                'Artifact does not belong to this qualified run')
+
+
+def artifact_names(run_id, attempt):
+    return {f'shin-local-macos-ARM64-{run_id}-{attempt}', f'shin-desktop-windows-X64-{run_id}-{attempt}'}
+
+
+def verify_windows_assets(directory, version, core, sha, run_id, attempt):
+    stem = f'shin-desktop-{version}-windows-AMD64'
+    names = {stem + suffix for suffix in ('.zip', '.zip.sha256', '.msi', '.msi.sha256')}
+    require({p.name for p in directory.iterdir()} == names | {'windows-qualification.json'},
+            'Expected qualified Windows ZIP, MSI, checksums and receipt')
+    expected = {}
+    for name in names:
+        path = directory / name
+        require(0 < path.stat().st_size <= 128 * 1024 * 1024, 'Windows asset exceeds release bound')
+        expected[name] = 'sha256:' + hashlib.sha256(path.read_bytes()).hexdigest()
+    for suffix in ('.zip', '.msi'):
+        name = stem + suffix
+        require((directory / (name + '.sha256')).read_text() in
+                (f'{expected[name][7:]}  {name}', f'{expected[name][7:]}  {name}\n'), 'Windows checksum mismatch')
+    require((directory / (stem + '.msi')).read_bytes()[:8] == bytes.fromhex('d0cf11e0a1b11ae1'),
+            'Invalid Windows Installer database')
+    receipt = json.loads((directory / 'windows-qualification.json').read_text())
+    require(receipt == dict(schema_version='shin.windows-qualification.v1', version=version, core_version=core,
+                           source_sha=sha, run_id=run_id, attempt=attempt, assets=expected,
+                           checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime']),
+            'Windows qualification receipt differs from this source, attempt or package')
+    with zipfile.ZipFile(directory / (stem + '.zip')) as kit:
+        prefix = stem + '/'
+        entries = kit.infolist()
+        require(len(entries) <= 2048 and len({i.filename for i in entries}) == len(entries),
+                'Duplicate or excessive Windows archive members')
+        require(all(i.filename.startswith(prefix) and '..' not in Path(i.filename).parts
+                    and '\\' not in i.filename and ':' not in i.filename
+                    and (i.external_attr >> 16) & 0o170000 != 0o120000 for i in entries), 'Unsafe Windows kit paths')
+        require(sum(i.file_size for i in entries) <= 512 * 1024 * 1024, 'Windows payload exceeds release bound')
+        manifest = json.loads(kit.read(prefix + 'shin-kit.json'))
+        require(manifest['schema_version'] == 'shin.local-kit.v1' and manifest['version'] == version
+                and manifest['core_version'] == core, 'Windows kit component identity mismatch')
+        paths = [row['path'] for row in manifest['files']]
+        require(0 < len(paths) <= 1024 and len(set(paths)) == len(paths), 'Invalid Windows inventory')
+        require({prefix + p for p in paths} | {prefix + 'shin-kit.json'} ==
+                {i.filename for i in entries if not i.is_dir()}, 'Unlisted Windows payload')
+        require({'bin/shin-ce.exe', 'bin/shin-context.exe', 'bin/shin-observer.exe', 'bin/shin-mcp.exe',
+                 'bin/shin-tray.exe', 'bin/vcruntime140.dll', 'bin/msvcp140.dll'} <= set(paths),
+                'Incomplete Windows runtime')
+        for row in manifest['files']:
+            require(not Path(row['path']).is_absolute(), 'Unsafe Windows manifest path')
+            value = kit.read(prefix + row['path'])
+            require(len(value) == row['size'] and hashlib.sha256(value).hexdigest() == row['sha256'],
+                    'Windows manifest hash mismatch')
+    return expected
 
 
 def verify_assets(directory, version, core):
@@ -140,12 +199,12 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
         require(page['total_count'] == len(page['jobs']), 'CI job list is incomplete')
         artifacts = api(f'actions/runs/{run_id}/artifacts?per_page=100')
         require(artifacts['total_count'] == len(artifacts['artifacts']), 'Artifact list is incomplete')
-        selected = [a for a in artifacts['artifacts'] if a['name'] == f'shin-local-macos-ARM64-{run_id}-{attempt}']
-        require(len(selected) == 1, 'Qualified artifact is missing or ambiguous')
+        selected = [a for a in artifacts['artifacts'] if a['name'] in artifact_names(run_id, attempt)]
+        require(len(selected) == 2, 'Qualified platform artifact is missing or ambiguous')
         require(run['head_branch'] == tag, 'Qualification did not run for this preview tag')
-        qualification(run, page['jobs'], selected[0], repo, sha, run_id, attempt, recover_publisher)
+        qualification(run, page['jobs'], selected, repo, sha, run_id, attempt, recover_publisher)
         require(api(f'commits/{tag}')['sha'] == sha, 'Release tag moved away from qualified source')
-        return selected[0]['name']
+        return sorted(a['name'] for a in selected)
 
     def gate():
         for retry in range(10):
@@ -164,11 +223,21 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
             return None
         return json.loads(result.stdout)
 
-    artifact = gate()  # No release mutation can precede this proof.
+    artifacts = gate()  # No release mutation can precede this proof.
     with tempfile.TemporaryDirectory(prefix='shin-qualified-release-') as folder:
         directory = Path(folder) / 'assets'
-        command('gh', 'run', 'download', str(run_id), '--repo', repo, '--name', artifact, '--dir', str(directory))
-        expected = verify_assets(directory, version, (root / 'VERSION').read_text().strip())
+        directory.mkdir()
+        expected = {}
+        for artifact in artifacts:
+            platform = Path(folder) / artifact
+            command('gh', 'run', 'download', str(run_id), '--repo', repo, '--name', artifact, '--dir', str(platform))
+            core = (root / 'VERSION').read_text().strip()
+            checked = (verify_windows_assets(platform, version, core, sha, run_id, attempt)
+                       if artifact.startswith('shin-desktop-windows-') else verify_assets(platform, version, core))
+            require(not expected.keys() & checked.keys(), 'Duplicate platform asset')
+            for name in checked:
+                (platform / name).rename(directory / name)
+            expected.update(checked)
         notes += f'\nQualified source: `{sha}`. [CI qualification](https://github.com/{repo}/actions/runs/{run_id}).\n'
         notes += f"\nArchive SHA-256: `{expected[f'shin-local-{version}-macos-arm64.zip'][7:]}`.\n"
         body = Path(folder) / 'notes.md'

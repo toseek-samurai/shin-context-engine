@@ -13,6 +13,7 @@
 #include "imgui_impl_metal.h"
 #include "imgui_impl_osx.h"
 #include "monitor_view.h"
+#include "status_item.h"
 #include "../ui/update_window_macos.h"
 
 namespace {
@@ -327,7 +328,10 @@ static std::unique_ptr<Monitor> monitor;
 }
 - (void)loadView {
     self.device = MTLCreateSystemDefaultDevice();
-    if (!self.device) { [NSApp terminate:nil]; return; }
+    if (!self.device) {
+        os_log_error(OS_LOG_DEFAULT, "ShinMonitor lifecycle: Metal device unavailable");
+        [NSApp terminate:nil]; return;
+    }
     load_icons(self.device);
     self.queue = [self.device newCommandQueue];
     MTKView* view = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 432, 620) device:self.device];
@@ -410,6 +414,9 @@ static std::unique_ptr<Monitor> monitor;
     Json _updateResult;
 }
 @property(nonatomic, strong) NSStatusItem* item;
+@property(nonatomic, strong) NSImage* statusLogo;
+@property(nonatomic, strong) NSImage* statusUpdateLogo;
+@property(nonatomic, strong) NSWindow* monitorWindow;
 @property(nonatomic, strong) NSPopover* popover;
 @property(nonatomic, strong) ShinView* content;
 @property(nonatomic, strong) NSWindow* diagnosticWindow;
@@ -653,7 +660,12 @@ static std::unique_ptr<Monitor> monitor;
                                         handoffRequested = YES; acknowledgementLength = end + 1;
                                         // Diagnostics stay on their own channel. Retain the reader until
                                         // actual exit so a refused/deferred termination can still report why.
-                                        dispatch_async(dispatch_get_main_queue(), ^{ if (task.isRunning) [NSApp terminate:nil]; });
+                                        dispatch_async(dispatch_get_main_queue(), ^{
+                                            if (task.isRunning) {
+                                                os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: accepted updater handoff");
+                                                [NSApp terminate:nil];
+                                            }
+                                        });
                                     }
                                 }
                             }
@@ -1094,6 +1106,7 @@ static std::unique_ptr<Monitor> monitor;
 }
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
+    os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: launched");
     NSString* home = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinHome"];
     try {
         if (const auto installed = installed_local_home(current_executable_path()))
@@ -1103,6 +1116,7 @@ static std::unique_ptr<Monitor> monitor;
         alert.messageText = ui_text("Shin installation is incomplete");
         alert.informativeText = [NSString stringWithUTF8String:error.what()];
         [alert runModal];
+        os_log_error(OS_LOG_DEFAULT, "ShinMonitor lifecycle: installation validation failed");
         [NSApp terminate:nil];
         return;
     }
@@ -1125,12 +1139,13 @@ static std::unique_ptr<Monitor> monitor;
     self.item = [[NSStatusBar systemStatusBar] statusItemWithLength:NSSquareStatusItemLength];
     self.item.autosaveName = @"ShinMonitor";
     self.item.visible = YES;
-    self.item.button.image = tray_logo();
-    if (!self.item.button.image)
-        self.item.button.image = [NSImage imageWithSystemSymbolName:@"circle.hexagongrid.fill" accessibilityDescription:@"Shin Monitor"];
-    [self.item.button.image setTemplate:YES];
-    self.item.button.title = @"";
-    self.item.button.imagePosition = NSImageOnly;
+    self.statusLogo = tray_logo();
+    if (!self.statusLogo)
+        self.statusLogo = [NSImage imageWithSystemSymbolName:@"circle.hexagongrid.fill" accessibilityDescription:@"Shin Monitor"];
+    self.statusLogo.size = NSMakeSize(20, 20);
+    [self.statusLogo setTemplate:YES];
+    self.statusUpdateLogo = shin_status_image(self.statusLogo, true);
+    shin_status_presentation(self.item, self.statusLogo);
     self.item.button.target = self;
     self.item.button.action = @selector(toggle:);
     [self.item.button sendActionOn:NSEventMaskLeftMouseUp | NSEventMaskRightMouseUp];
@@ -1151,9 +1166,7 @@ static std::unique_ptr<Monitor> monitor;
         if (!monitor) return;
         if (![[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] &&
             self.nextUpdateCheck.timeIntervalSinceNow<=0) [self beginUpdateCheck:NO];
-        self.item.button.title=release_update_version.empty() ? @"" : @"↑";
-        self.item.length=release_update_version.empty() ? NSSquareStatusItemLength : NSVariableStatusItemLength;
-        self.item.button.imagePosition=release_update_version.empty() ? NSImageOnly : NSImageLeading;
+        shin_status_presentation(self.item, release_update_version.empty() ? self.statusLogo : self.statusUpdateLogo);
         NSWindow* statusWindow = self.item.button.window;
         NSScreen* screen = statusWindow.screen;
         if (!screen) screen = NSScreen.mainScreen;
@@ -1182,7 +1195,7 @@ static std::unique_ptr<Monitor> monitor;
             attention ? ui_text("Shin: projects: %lu, attention required") :
                         ui_text("Shin: observed projects: %lu"), static_cast<unsigned long>(count)];
         if(!release_update_version.empty())self.item.button.toolTip=[NSString stringWithFormat:ui_text("Shin update available: %@"),diagnostic_text_content(release_update_version)];
-        monitor->visible = self.popover.shown;
+        monitor->visible = self.popover.shown || self.monitorWindow.visible;
     }];
     if (!self.updateWindow.visible) [self toggle:nil];
 }
@@ -1197,17 +1210,50 @@ static std::unique_ptr<Monitor> monitor;
 - (void)closePanel:(id)sender {
     (void)sender;
     if (self.popover.shown) [self.popover close];
+    if (self.monitorWindow.visible) [self.monitorWindow close];
 }
 - (void)applicationDidResignActive:(NSNotification*)notification {
     (void)notification;
-    [self closePanel:nil];
+    if (self.popover.shown) [self.popover close];
 }
 - (void)activatedApplication:(NSNotification*)notification {
     NSRunningApplication* app = notification.userInfo[NSWorkspaceApplicationKey];
-    if (app && app.processIdentifier != NSRunningApplication.currentApplication.processIdentifier) [self closePanel:nil];
+    if (app && app.processIdentifier != NSRunningApplication.currentApplication.processIdentifier && self.popover.shown)
+        [self.popover close];
+}
+- (void)showMonitorWindow {
+    if (self.popover.shown) [self.popover close];
+    if (!self.monitorWindow) {
+        self.monitorWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 448, 620)
+            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
+            backing:NSBackingStoreBuffered defer:NO];
+        self.monitorWindow.title = @"Shin Monitor";
+        self.monitorWindow.releasedWhenClosed = NO;
+        self.monitorWindow.delegate = self;
+        self.monitorWindow.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        [self.monitorWindow center];
+    }
+    self.popover.contentViewController = nil;
+    self.monitorWindow.contentViewController = self.content;
+    ((MTKView*)self.content.view).paused = NO;
+    monitor->visible = true;
+    [NSApp activateIgnoringOtherApps:YES];
+    [self.monitorWindow makeKeyAndOrderFront:nil];
+}
+- (void)windowWillClose:(NSNotification*)notification {
+    if (notification.object != self.monitorWindow) return;
+    self.monitorWindow.contentViewController = nil;
+    self.popover.contentViewController = self.content;
+    ((MTKView*)self.content.view).paused = YES;
+    monitor_motion.initialized = false;
+    monitor->visible = false;
 }
 - (void)toggle:(id)sender {
     (void)sender;
+    if (self.monitorWindow.visible || !shin_status_can_anchor(self.item)) {
+        [self showMonitorWindow];
+        return;
+    }
     if (NSApp.currentEvent.type == NSEventTypeRightMouseUp) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* open = [menu addItemWithTitle:ui_text("Open panel") action:@selector(toggle:) keyEquivalent:@""];
@@ -1222,7 +1268,8 @@ static std::unique_ptr<Monitor> monitor;
         automatic.state=[[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] ? NSControlStateValueOff : NSControlStateValueOn;
         compact.state = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"] ? NSControlStateValueOn : NSControlStateValueOff;
         [menu addItem:[NSMenuItem separatorItem]];
-        [menu addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(terminate:) keyEquivalent:@""];
+        NSMenuItem* quit = [menu addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(quitMonitor:) keyEquivalent:@""];
+        quit.target = self;
         [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, self.item.button.bounds.size.height) inView:self.item.button];
         return;
     }
@@ -1353,14 +1400,23 @@ static std::unique_ptr<Monitor> monitor;
     if (self.escapeMonitor) { [NSEvent removeMonitor:self.escapeMonitor]; self.escapeMonitor = nil; }
 }
 - (BOOL)applicationShouldTerminateAfterLastWindowClosed:(NSApplication*)app { (void)app; return NO; }
+- (void)quitMonitor:(id)sender {
+    (void)sender;
+    os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: explicit Quit action");
+    [NSApp terminate:nil];
+}
 - (BOOL)applicationShouldHandleReopen:(NSApplication*)app hasVisibleWindows:(BOOL)visible {
     (void)app; (void)visible;
     // An explicit app-open request is distinct from ordinary focus/activation.
-    if (!self.popover.shown) [self toggle:nil];
+    if (!self.popover.shown) {
+        self.item.visible = YES;
+        [self showMonitorWindow];
+    }
     return YES;
 }
 - (void)applicationWillTerminate:(NSNotification*)notification {
     (void)notification;
+    os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: normal termination requested");
     [self.timer invalidate];
     [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
     if (self.outsideMonitor) { [NSEvent removeMonitor:self.outsideMonitor]; self.outsideMonitor = nil; }
@@ -1414,7 +1470,8 @@ int main(int argc, char** argv) {
         setup.target = delegate;
         NSMenuItem* storage = [application addItemWithTitle:ui_text("Storage…") action:@selector(openStorageWindow:) keyEquivalent:@""];
         storage.target = delegate;
-        [application addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(terminate:) keyEquivalent:@"q"];
+        NSMenuItem* quit = [application addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(quitMonitor:) keyEquivalent:@"q"];
+        quit.target = delegate;
         item.submenu = application;
         [menu addItem:item];
         NSApp.mainMenu = menu;

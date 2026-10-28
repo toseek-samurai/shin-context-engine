@@ -167,17 +167,20 @@ The macOS Observer job also builds Monitor and qualifies the exact kit archive.
 Core checks in that kit exercise the embedded build configuration; they do not
 replace the standalone Core job.
 
-The separate [Windows source workflow](../.github/workflows/windows.yml) is
-configured to build both Windows presets on Windows Server 2022 runners.
-It uses `windows-native-smoke` and
-`windows-desktop-smoke`, which explicitly select source/runtime-unit checks.
-[Hosted Windows runners run as administrators with UAC disabled](https://docs.github.com/en/actions/reference/runners/github-hosted-runners#administrative-privileges),
-while the Shin user service refuses elevation. The full `windows-desktop` test
-preset remains required in an unelevated interactive session, including the
-real product lifecycle, SCM contract, protected-image and tray-render checks.
-No full-suite tests are disabled or removed. This initial CI uploads test
-reports, not a distributable kit; it does not replace the Linux/macOS matrix,
-change the guarded macOS publisher, or establish Windows release qualification.
+The same [source workflow](../.github/workflows/ci.yml) builds both Windows
+presets on Windows Server 2022. Its smoke selections avoid POSIX-only drivers.
+The desktop job additionally packages the exact ZIP and MSI with CPack 4.3.5 and
+WiX 4.0.6, verifies compiled MSI policy, extracts its payload without installing
+it, and compares every file with the ZIP. It runs the relocated ZIP's native
+Monitor render and init/query/stop checks under a disposable standard account.
+Hosted runner elevation is never used as evidence of a supported user runtime.
+
+Both Windows jobs and all four Linux/macOS jobs are mandatory for publication.
+The publisher verifies both artifacts from the same commit, tag, run and attempt;
+Windows runtime evidence and all four Windows asset hashes are bound in a receipt.
+These CI package checks complement the real interactive-session MSI lifecycle
+rehearsal; they do not claim to repeat logon, installed SCM recovery or upgrade
+rehearsals on a hosted runner. See [Windows gates](windows-desktop.md#package-publication-and-remaining-gates).
 
 Configure, compilation, tests and package qualification are separate workflow
 steps so their durations are visible. In the Linux/macOS workflow, Ninja schedules

@@ -118,3 +118,18 @@ a substitute for the bounded CTest run.
 - Use disposable external state for indexes, installations, reports and model
   assets. Preserve safety, failure, concurrency and resource assertions when
   changing a check.
+
+### Windows release artifacts and macOS status item
+
+`tools/qualify_windows.py` verifies MSI tables and compares the administratively
+extracted MSI payload with the ZIP, then runs `windows_kit_test.py` without
+elevation. `tools/qualify_windows.ps1` supplies a disposable standard account on
+GitHub-hosted VMs only. It never installs an MSI or enrolls a real project. The
+result binds archive hashes, source commit and run attempt for the guarded
+publisher. `tools/test_publish_preview.py` rejects incomplete platform matrices,
+wrong provenance, changed receipts and payloads before release visibility.
+
+The EN/RU `shin-tray-update-window-*` native AppKit regressions also verify the
+fixed status-item width across update states, hidden-anchor window fallback,
+rendering ownership, focus changes, close/reopen and icon visibility restoration.
+They do not prove that macOS will never clip a menu-bar extra.

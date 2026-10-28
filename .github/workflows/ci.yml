@@ -133,9 +133,110 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  windows:
+    name: windows (${{ matrix.component }})
+    runs-on: windows-2022
+    timeout-minutes: 45
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - component: native
+            directory: .
+            preset: windows-native
+            tests: windows-native-smoke
+          - component: desktop
+            directory: observer
+            preset: windows-desktop
+            tests: windows-desktop-smoke
+    defaults:
+      run:
+        shell: pwsh
+        working-directory: ${{ matrix.directory }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Prepare build paths
+        id: paths
+        run: |
+          # Stay outside source/AppData/TEMP, with no '..' for upload-artifact.
+          $buildRoot = [System.IO.Path]::GetFullPath((Join-Path $env:GITHUB_WORKSPACE '../shin-windows-${{ matrix.component }}'))
+          "SHIN_BUILD_ROOT=$buildRoot" >> $env:GITHUB_ENV
+          "build_root=$buildRoot" >> $env:GITHUB_OUTPUT
+      - name: Packaging toolchain
+        if: matrix.component == 'desktop'
+        run: |
+          # The upstream CMake release is pinned separately from PyPI wheels.
+          $archive = "$env:RUNNER_TEMP/cmake.zip"
+          Invoke-WebRequest 'https://github.com/Kitware/CMake/releases/download/v4.3.5/cmake-4.3.5-windows-x86_64.zip' -OutFile $archive
+          if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'c05a60d22d5df22d75a72ae9b6628ef5f20daee4f4ba380920e1fbbeaf244fc1') { throw 'CMake checksum mismatch' }
+          Expand-Archive $archive -DestinationPath "$env:RUNNER_TEMP/cmake"
+          "$env:RUNNER_TEMP/cmake/cmake-4.3.5-windows-x86_64/bin" >> $env:GITHUB_PATH
+          dotnet tool install --tool-path "$env:RUNNER_TEMP/wix" wix --version 4.0.6
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          $env:WIX = "$env:RUNNER_TEMP/wix"
+          $env:WIX_EXTENSIONS = "$env:RUNNER_TEMP/wix-extensions"
+          "WIX=$env:WIX" >> $env:GITHUB_ENV
+          "WIX_EXTENSIONS=$env:WIX_EXTENSIONS" >> $env:GITHUB_ENV
+          & "$env:WIX/wix.exe" extension add WixToolset.UI.wixext/4.0.6 WixToolset.Util.wixext/4.0.6
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Toolchain
+        run: |
+          cmake --version
+          python --version
+      - name: Configure
+        run: cmake --preset ${{ matrix.preset }}
+      - name: Build
+        run: cmake --build --preset ${{ matrix.preset }}
+      - name: Tests
+        run: ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+      - name: Build Windows packages
+        if: matrix.component == 'desktop'
+        run: |
+          cmake --preset windows-kit
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cmake --build --preset windows-kit
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cpack --config "$env:SHIN_BUILD_ROOT/kit/CPackConfig.cmake" -C Release -G ZIP
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          cpack --config "$env:SHIN_BUILD_ROOT/kit/CPackConfig.cmake" -C Release -G WIX
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+      - name: Exact Windows kit qualification
+        id: qualify-windows
+        if: matrix.component == 'desktop'
+        run: ../tools/qualify_windows.ps1 -Packages "$env:SHIN_BUILD_ROOT/kit/packages" -Output "$env:SHIN_BUILD_ROOT/proof"
+      - name: Upload qualified Windows kit
+        if: success() && steps.qualify-windows.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shin-desktop-windows-X64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.paths.outputs.build_root }}/kit/packages/*.zip
+            ${{ steps.paths.outputs.build_root }}/kit/packages/*.msi
+            ${{ steps.paths.outputs.build_root }}/kit/packages/*.sha256
+            ${{ steps.paths.outputs.build_root }}/kit/packages/windows-qualification.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload test reports
+        if: always() && steps.paths.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: windows-source-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ steps.paths.outputs.build_root }}/tests.xml
+            ${{ steps.paths.outputs.build_root }}/proof/**
+            ${{ steps.paths.outputs.build_root }}/kit/_CPack_Packages/win64/WIX/*.log
+            ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTest.log
+            ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTestsFailed.log
+            ${{ steps.paths.outputs.build_root }}/**/CMakeFiles/CMakeConfigureLog.yaml
+          if-no-files-found: warn
+          retention-days: 14
+
   publish-preview:
-    needs: native
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.native.result == 'success'
+    needs: [native, windows]
+    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.native.result == 'success' && needs.windows.result == 'success'
     runs-on: ubuntu-24.04
     timeout-minutes: 10
     permissions:

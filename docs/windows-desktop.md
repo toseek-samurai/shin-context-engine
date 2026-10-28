@@ -5,9 +5,9 @@ same Core, profiles, generated-index contracts, Observer and MCP protocol as
 macOS and Linux. It does not replace their implementations or qualification.
 
 This is a development source route targeting **Windows x64 on local NTFS**.
-Windows distribution qualification is pending. The presence of an installer
-recipe, this document, or passing source tests does not identify a qualified
-Windows release.
+The published dev.54 release has no Windows download. Unreleased source adds
+guarded ZIP/MSI publication alongside macOS; only a published Release containing
+the MSI/ZIP and their checksums is a downloadable Windows preview.
 
 ## Current scope
 
@@ -44,7 +44,7 @@ Keep the checkout and an absolute external `SHIN_BUILD_ROOT` outside AppData
 and TEMP. Full local tests need an unelevated interactive desktop, symlink
 creation rights for refusal fixtures, and a protected CMake installation. Do not substitute an
 elevated shell for the user-runtime checks. The source workflow uploads test
-reports; it does not publish Windows packages.
+reports. Unreleased source also qualifies Windows packages before publication.
 
 The shared refresh regressions cover initial bootstrap, refresh and cached
 queries when documentation has a broken local link, warning retention and
@@ -123,21 +123,33 @@ does not regenerate it. To refresh it from the project logo on Windows, run
 `python observer/installer/generate_windows_branding.py` with Pillow installed.
 Keep the WiX bitmap canvases at 493 x 58 and 493 x 312 pixels.
 
-## Remaining distribution gates
+## Package publication and remaining gates
 
-Windows release work still requires qualification of the exact extracted
-archive, matching component versions, runtime dependencies, notices and portable
-documentation. The MSI route additionally needs installation, repair, upgrade,
-removal, multi-user SCM lifecycle and preserved-data checks in disposable
-environments. Its current recipe requires CPack 4.3+ and WiX 4.
+In unreleased source, the [unified CI](../.github/workflows/ci.yml) requires both
+Windows source jobs and all four Linux/macOS jobs before publishing either
+platform. The Windows desktop job builds ZIP/MSI with pinned CPack 4.3.5 and WiX
+4.0.6. Qualification checks the compiled MSI identity, UI, upgrade bounds and
+SCM actions, compares its extracted payload byte-for-byte with the ZIP, and runs
+native Monitor rendering plus init/query/stop from the relocated ZIP under a
+standard user. A receipt binds these checks to the commit, run attempt and exact
+asset hashes. Failed or missing Windows proof prevents publication of the release.
 
-The source version policy below distinguishes preview upgrades. Actual
-preview-to-preview replacement, rollback and preserved-data proof still require
-the disposable installed lifecycle checks.
+`qualify_windows.ps1` creates a temporary standard account only on disposable
+GitHub-hosted VMs, then removes the task and account/profile. It does not change
+UAC or install an MSI. The runtime test uses a private temporary project and home;
+Monitor renders with software D3D11/WARP on the task's noninteractive desktop.
 
-Existing Linux/macOS release gates and the guarded publisher remain independent
-requirements. Source checks, archive checks and installed-service checks are
-different evidence; none substitutes for the others.
+Real interactive-session installation, repair, upgrade, downgrade refusal,
+uninstall/reinstall and data/history preservation were rehearsed for the dev.54
+packaging policy. That is separate installed evidence, not a claim that every
+hosted package check repeats the lifecycle rehearsal. Changes to installer or
+SCM behavior still need a new installed rehearsal, including multi-user and
+rollback scenarios where affected. TUI, automatic client setup/usage collection
+and in-app Windows updating remain pending.
+
+Linux/macOS gates, Windows source checks, exact-archive checks and installed
+service checks retain separate proof boundaries. Local binaries never substitute
+for the CI artifact that is published.
 
 ## MSI version policy
 

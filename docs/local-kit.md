@@ -8,7 +8,7 @@ ad-hoc signature, without Developer ID or notarization; first launch on another
 Mac may require manual approval. This is not a stable release.
 
 This guide covers the macOS kit. Native Windows source builds and the separate,
-not yet qualified Windows packaging route are described in [Windows source status](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
+Windows ZIP/MSI packaging route are described in [Windows source status](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
 
 ## Download a preview release
 
@@ -107,7 +107,15 @@ the panel; it applies immediately, including open native windows and menus. Syst
 uses the operating system language, with English as fallback. Translations are
 compiled into the kit and need no downloads.
 
-Click the Shin icon in the menu bar. Add more projects with the folder picker or
+Click the Shin icon in the menu bar. In unreleased source, the update indicator
+stays inside the same square icon. macOS can still hide menu-bar extras when
+space is tight; it provides no public always-visible priority for an app's icon.
+Reopening **Shin Monitor.app** opens a standalone Monitor window, and a missing
+menu-bar anchor also falls back to that window. Closing it leaves Monitor
+running; an explicit Quit exits the app. Service startup at login does not start
+Monitor itself.
+
+Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
 For the Sand terminal dashboard with line charts, run `shin-ce stats`.
@@ -367,11 +375,12 @@ client, project or model-usage configuration.
 
 Only a CI-qualified published Release is offered to users. Maintainers prepare
 `docs/releases/<tag>.md`, commit the matching Observer version, and push its
-reviewed `vX.Y.Z-dev.N` tag. The tag workflow waits for all four Linux/macOS Core
-and Observer jobs, including exact macOS kit qualification, before publishing.
+reviewed `vX.Y.Z-dev.N` tag. In unreleased source, the tag workflow waits for all
+four Linux/macOS Core and Observer jobs and both Windows jobs, including exact
+macOS and Windows package qualification, before publishing either platform.
 `tools/publish_preview.py` independently checks the source commit, workflow,
 attempt, job results and artifact provenance, then downloads that run's exact
-archive, checksum and installer. Local binaries cannot be substituted. A pending
+macOS kit/updater and Windows ZIP/MSI with their checksums. Local binaries cannot be substituted. A pending
 or failed qualification leaves no published offer; a mismatched existing release
 is preserved for review rather than overwritten.
 

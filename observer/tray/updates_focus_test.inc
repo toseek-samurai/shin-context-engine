@@ -199,7 +199,40 @@ int main(int argc, char** argv) {
             update_require(app.updateScreen == beforeLanguage && app.updateWindow == window &&
                 [window.title isEqualToString:ui_text("Shin updates")] &&
                 [app.updateTitle.stringValue isEqualToString:ui_text("Could not check for updates")], "language switch reset update review");
+            [window close];
+            // Exercise actual AppKit ownership and reopening without a usable
+            // menu-bar anchor. All Monitor reads target this disposable home.
+            monitor = std::make_unique<Monitor>(output / "no-service-home");
+            app.item = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
+            NSImage* logo = [NSImage imageWithSystemSymbolName:@"circle.fill" accessibilityDescription:@"Shin Monitor"];
+            logo.size = NSMakeSize(20, 20); [logo setTemplate:YES];
+            NSImage* badge = shin_status_image(logo, true);
+            for (int i = 0; i < 20; ++i) {
+                shin_status_presentation(app.item, i % 2 ? logo : badge);
+                update_require(app.item.length == NSSquareStatusItemLength && !app.item.button.title.length &&
+                    app.item.button.imagePosition == NSImageOnly && app.item.button.image.isTemplate &&
+                    NSEqualSizes(app.item.button.image.size, NSMakeSize(20, 20)), "update badge changed the status slot");
+            }
+            app.content = [ShinView new]; app.popover = [NSPopover new];
+            app.popover.delegate = app; app.popover.contentViewController = app.content;
+            app.item.visible = NO;
+            update_require(!shin_status_can_anchor(app.item), "hidden item treated as popover anchor");
+            [app toggle:nil];
+            await_update_ui([&] { return app.monitorWindow.visible; }, "hidden status item prevented opening Monitor");
+            update_require(app.monitorWindow.contentViewController == app.content && monitor->visible &&
+                !((MTKView*)app.content.view).paused, "fallback window lost rendering ownership");
+            [app applicationDidResignActive:nil];
+            update_require(app.monitorWindow.visible, "fallback window disappeared when focus changed");
+            [app.monitorWindow close];
+            update_require(!monitor->visible && ((MTKView*)app.content.view).paused &&
+                app.popover.contentViewController == app.content, "window close did not restore popover ownership");
+            [app applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+            update_require(app.item.visible && app.monitorWindow.visible, "explicit reopen did not restore access");
+            [app.monitorWindow close];
+            [NSStatusBar.systemStatusBar removeStatusItem:app.item]; app.item = nil;
+            [app applicationWillTerminate:nil];
             std::cout << "Native update review: retained window, foreground handoff, no background focus theft, closed-window suppression, pinned installation and acknowledgement, EN/RU passed\n";
+            std::cout << "Status item: fixed update width, retained template, hidden-anchor fallback and explicit reopen passed\n";
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
             [app.updateWindow close]; if (peer.running) [peer terminate];

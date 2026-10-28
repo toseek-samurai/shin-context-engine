@@ -139,6 +139,13 @@ GitHub-hosted VMs, then removes the account/profile. It does not change
 UAC or install an MSI. The runtime test uses a private temporary project and home;
 A bounded child process runs with that user's loaded profile; Monitor renders
 with software D3D11/WARP. A short preflight checks the launcher before compilation.
+The CI account has no Explorer shell: `--render-headless-test` retains all 65
+rendered states, action bounds, focus-loss and Escape checks, and reports
+`shell_integration=false` and `taskbar_recreated_event=null`. The receipt records
+`render_scope=headless`; it never certifies notification-area integration.
+The default `--render-test`, the full local CTest preset and `windows_kit_test.py`
+without `--headless-render` still require actual icon registration and recovery
+after `TaskbarCreated` in a signed-in Windows session.
 
 Real interactive-session installation, repair, upgrade, downgrade refusal,
 uninstall/reinstall and data/history preservation were rehearsed for the dev.54

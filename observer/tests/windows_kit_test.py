@@ -190,6 +190,8 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('archive', type=Path)
     parser.add_argument('--msi', type=Path)
+    parser.add_argument('--headless-render', action='store_true',
+                        help='Render without Explorer; the default also requires real notification-area checks')
     parser.add_argument('--keep', action='store_true', help='Retain this disposable fixture for failure diagnosis')
     args = parser.parse_args()
     assert os.name == 'nt', 'Run against native Windows binaries'
@@ -228,10 +230,13 @@ def main():
         assert json.loads(run([ce, '--version']))['version'] == manifest['version']
         assert json.loads(run([kit / 'bin/shin-context.exe', '--version']))['version'] == manifest['core_version']
         assert (kit / 'share/shin-observer/licenses/imgui/LICENSE.txt').is_file()
-        run([kit / 'bin/shin-tray.exe', '--render-test', base / 'renders'])
+        run([kit / 'bin/shin-tray.exe', '--render-headless-test' if args.headless_render else '--render-test', base / 'renders'])
         rendered = json.loads((base / 'renders/result.json').read_text())
         assert rendered['frames'] == 30 and rendered['cold_frames'] == 15
         assert rendered['documentation_frames'] == 20
+        assert rendered['shell_integration'] is (not args.headless_render)
+        assert rendered['taskbar_recreated_event'] is (None if args.headless_render else True)
+        assert rendered['focus_dismissal'] and rendered['escape']
         root = base / 'project'
         root.mkdir()
         (root / 'quota.cpp').write_text('int quotaLimit() { return 42; }\n', encoding='utf-8')

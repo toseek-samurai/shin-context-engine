@@ -374,7 +374,7 @@ unsigned documentation_warning_render(ViewState state, const fs::path& output, I
     return frames;
 }
 
-int render_test(const fs::path& output) {
+int render_test(const fs::path& output, bool shell) {
     fs::create_directories(output);
     ViewState state; state.connected=true;
     const Json project{{"id","shin"},{"name","Shin Context Engine"},{"root","C:\\Projects\\Shin"},
@@ -405,13 +405,15 @@ int render_test(const fs::path& output) {
     {
         struct Restore { ~Restore(){test_mode=true;} } restore;
         test_mode=false;
-        taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");
-        register_icon();
-        if(!Shell_NotifyIconW(NIM_MODIFY,&tray)) throw std::runtime_error("Notification icon was not registered.");
-        Shell_NotifyIconW(NIM_DELETE,&tray);
-        SendMessageW(panel,taskbar_created,0,0);
-        if(!Shell_NotifyIconW(NIM_MODIFY,&tray)) throw std::runtime_error("Notification icon was not restored after TaskbarCreated.");
-        Shell_NotifyIconW(NIM_DELETE,&tray);
+        if(shell) {
+            taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");
+            register_icon();
+            if(!Shell_NotifyIconW(NIM_MODIFY,&tray)) throw std::runtime_error("Notification icon was not registered.");
+            Shell_NotifyIconW(NIM_DELETE,&tray);
+            SendMessageW(panel,taskbar_created,0,0);
+            if(!Shell_NotifyIconW(NIM_MODIFY,&tray)) throw std::runtime_error("Notification icon was not restored after TaskbarCreated.");
+            Shell_NotifyIconW(NIM_DELETE,&tray);
+        }
         ShowWindow(panel,SW_SHOWNOACTIVATE);SendMessageW(panel,WM_ACTIVATE,WA_INACTIVE,0);
         if(IsWindowVisible(panel)) throw std::runtime_error("Popover did not dismiss on focus loss.");
         ShowWindow(panel,SW_SHOWNOACTIVATE);SendMessageW(panel,WM_KEYDOWN,VK_ESCAPE,0);
@@ -419,7 +421,8 @@ int render_test(const fs::path& output) {
     }
     std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},
         {"nonblank",true},{"action_bounds",true},{"logo",true},
-        {"taskbar_recreated_event",true},{"focus_dismissal",true},{"escape",true}}.dump(2);
+        {"shell_integration",shell},{"taskbar_recreated_event",shell ? Json(true) : Json(nullptr)},
+        {"focus_dismissal",true},{"escape",true}}.dump(2);
     return 0;
 }
 }
@@ -434,7 +437,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         std::vector<std::wstring> args(argv,argv+argc);LocalFree(argv);
         fs::path home=known_folder(FOLDERID_Profile)/".shin-ce", output;
         std::wstring caption=L"Shin Monitor test";
-        if(args.size()==3 && args[1]==L"--render-test") {test_mode=true;output=args[2];}
+        bool test_shell=true;
+        if(args.size()==3 && (args[1]==L"--render-test" || args[1]==L"--render-headless-test")) {
+            test_mode=true;output=args[2];test_shell=args[1]==L"--render-test";
+        }
         else if(args.size()==3 && args[1]==L"--home") home=args[2];
         else if(args.size()!=1) throw std::runtime_error(shin::ui::tr("Use shin-tray [--home DIRECTORY]."));
         if(!test_mode) {
@@ -482,7 +488,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         symbols=ImGui::GetIO().Fonts->AddFontFromFileTTF((known_folder(FOLDERID_Fonts)/"segmdl2.ttf").string().c_str(),17);
         if(!symbols) throw std::runtime_error(shin::ui::tr("Windows icon font is unavailable."));
         ImGui_ImplWin32_Init(panel);ImGui_ImplDX11_Init(device.Get(),context.Get());
-        if(test_mode) exit_code=render_test(output);
+        if(test_mode) exit_code=render_test(output,test_shell);
         else {
             taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");register_icon();SetTimer(panel,1,2000,nullptr);
             MSG message{};bool running=true;

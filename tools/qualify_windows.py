@@ -82,17 +82,19 @@ def main():
         proof = dict(identity, version=manifest['version'], core_version=manifest['core_version'])
     elif args.phase == 'runtime':
         with (output / 'runtime.log').open('w', encoding='utf-8') as log:
-            subprocess.run([sys.executable, '-X', 'utf8', '-B', str(ROOT / 'observer/tests/windows_kit_test.py'), str(archive)],
+            subprocess.run([sys.executable, '-X', 'utf8', '-B', str(ROOT / 'observer/tests/windows_kit_test.py'),
+                            str(archive), '--headless-render'],
                            stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
-        proof = dict(identity, unelevated=True)
+        proof = dict(identity, unelevated=True, render_scope='headless')
     else:
         metadata = json.loads((output / 'package.json').read_text())
         runtime = json.loads((output / 'runtime.json').read_text())
         assert all(metadata.get(k) == v and runtime.get(k) == v for k, v in identity.items())
         assert runtime.get('unelevated') is True
+        assert runtime.get('render_scope') == 'headless'
         assert metadata['version'] == (ROOT / 'observer/VERSION').read_text().strip()
         assert metadata['core_version'] == (ROOT / 'VERSION').read_text().strip()
-        receipt = dict(schema_version='shin.windows-qualification.v1', **metadata,
+        receipt = dict(schema_version='shin.windows-qualification.v1', **metadata, render_scope='headless',
                        checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime'])
         (archive.parent / 'windows-qualification.json').write_text(json.dumps(receipt, indent=2) + '\n')
         print('Windows ZIP/MSI qualified; installed interactive-session lifecycle is a separate gate.')

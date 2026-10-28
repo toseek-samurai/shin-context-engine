@@ -4,6 +4,10 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
     throw 'This account-isolation harness is restricted to disposable GitHub-hosted VMs'
 }
+# Task Scheduler's working-directory field is a Win32 path, unlike PowerShell
+# provider paths. Never hand it the workflow's mixed slash spelling.
+$Output = [System.IO.Path]::GetFullPath($Output)
+if ($Packages) { $Packages = [System.IO.Path]::GetFullPath($Packages) }
 $python = (Get-Command python).Source
 $script = Join-Path $PSScriptRoot 'qualify_windows.py'
 $arguments = @('-B', $script, '--output', $Output, '--sha', $env:GITHUB_SHA,
@@ -67,6 +71,14 @@ try {
         & $python @arguments --phase receipt
         if ($LASTEXITCODE) { throw 'Windows receipt did not confirm qualification' }
     }
+} catch {
+    if ($task) {
+        Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational'; StartTime=$started} `
+            -ErrorAction SilentlyContinue | Where-Object { $_.Message -like "*$user*" } |
+            Select-Object Id, TimeCreated, Message | ConvertTo-Json -Depth 4 |
+            Set-Content (Join-Path $Output 'task-events.json')
+    }
+    throw
 } finally {
     if ($task) {
         Stop-ScheduledTask -TaskName $user -ErrorAction SilentlyContinue

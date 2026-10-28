@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 """Exact Windows package gate. MSI extraction does not install or enroll projects."""
 import argparse
+from contextlib import contextmanager
 import ctypes
 import hashlib
 import json
+import os
 from pathlib import Path
 import re
 import subprocess
@@ -13,6 +15,34 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'observer/tests'))
+
+
+@contextmanager
+def user_environment():
+    """Do not inherit the runner administrator's TEMP into a different user."""
+    kernel = ctypes.WinDLL('kernel32', use_last_error=True)
+    security = ctypes.WinDLL('advapi32', use_last_error=True)
+    userenv = ctypes.WinDLL('userenv', use_last_error=True)
+    kernel.GetCurrentProcess.restype = ctypes.c_void_p
+    kernel.CloseHandle.argtypes = [ctypes.c_void_p]
+    security.OpenProcessToken.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.POINTER(ctypes.c_void_p)]
+    userenv.GetUserProfileDirectoryW.argtypes = [ctypes.c_void_p, ctypes.c_wchar_p, ctypes.POINTER(ctypes.c_uint)]
+    token = ctypes.c_void_p()
+    assert security.OpenProcessToken(kernel.GetCurrentProcess(), 8, ctypes.byref(token)), ctypes.get_last_error()
+    try:
+        buffer = ctypes.create_unicode_buffer(32768)
+        size = ctypes.c_uint(len(buffer))
+        assert userenv.GetUserProfileDirectoryW(token, buffer, ctypes.byref(size)), ctypes.get_last_error()
+        profile = Path(buffer.value)
+        assert profile.is_absolute() and profile.is_dir()
+    finally:
+        kernel.CloseHandle(token)
+    # Short paths also keep the longest archive members below legacy Win32 limits.
+    with tempfile.TemporaryDirectory(prefix='s-', dir=profile) as directory:
+        environment = os.environ.copy()
+        environment.update(TEMP=directory, TMP=directory, TMPDIR=directory, USERPROFILE=str(profile),
+                           HOMEDRIVE=profile.drive, HOMEPATH=str(profile)[len(profile.drive):])
+        yield environment
 
 
 def hashes(archive, msi):
@@ -71,6 +101,9 @@ def main():
         (output / (args.phase + '-started.json')).write_text(json.dumps({'elevated': elevated}) + '\n')
         assert not elevated, 'Runtime qualification must be unelevated'
     if args.phase == 'probe':
+        with user_environment() as environment:
+            subprocess.run([sys.executable, '-c', 'import pathlib,tempfile; p=pathlib.Path(tempfile.gettempdir())/"probe"; p.write_text("ok"); p.unlink()'],
+                           env=environment, check=True, timeout=10)
         (output / 'probe.json').write_text(json.dumps({'unelevated': True}) + '\n')
         return
     assert args.archive and args.msi, 'Both package paths are required'
@@ -81,10 +114,10 @@ def main():
         manifest = package(archive, msi, output)
         proof = dict(identity, version=manifest['version'], core_version=manifest['core_version'])
     elif args.phase == 'runtime':
-        with (output / 'runtime.log').open('w', encoding='utf-8') as log:
+        with user_environment() as environment, (output / 'runtime.log').open('w', encoding='utf-8') as log:
             subprocess.run([sys.executable, '-X', 'utf8', '-B', str(ROOT / 'observer/tests/windows_kit_test.py'),
                             str(archive), '--headless-render'],
-                           stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
+                           env=environment, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
         proof = dict(identity, unelevated=True, render_scope='headless')
     else:
         metadata = json.loads((output / 'package.json').read_text())

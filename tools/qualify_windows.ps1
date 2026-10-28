@@ -4,8 +4,7 @@ $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
     throw 'This account-isolation harness is restricted to disposable GitHub-hosted VMs'
 }
-# Task Scheduler's working-directory field is a Win32 path, unlike PowerShell
-# provider paths. Never hand it the workflow's mixed slash spelling.
+# Pass canonical Win32 directories to the process launcher.
 $Output = [System.IO.Path]::GetFullPath($Output)
 if ($Packages) { $Packages = [System.IO.Path]::GetFullPath($Packages) }
 $python = (Get-Command python).Source
@@ -25,7 +24,7 @@ if (!$Probe) {
 $user = 'shinproof' + [guid]::NewGuid().ToString('N').Substring(0, 8)
 $password = 'Sh1n!' + [guid]::NewGuid().ToString('N')
 $account = $null
-$task = $null
+$child = $null
 try {
     $account = New-LocalUser -Name $user -Password (ConvertTo-SecureString $password -AsPlainText -Force)
     Add-LocalGroupMember -SID 'S-1-5-32-545' -Member $user
@@ -38,51 +37,36 @@ try {
     }
     & icacls $Output /grant "${user}:(OI)(CI)M" /T /Q | Out-Null
     if ($LASTEXITCODE) { throw 'Proof access could not be granted' }
-    # Password logon gives this standard user a private noninteractive desktop;
-    # Monitor's render test uses WARP. No administrative runtime or WSL substitute.
+    # CreateProcessWithLogonW via Start-Process: a direct, bounded child with a
+    # loaded standard-user profile. No Scheduler/interactive-logon dependency.
     $phase = if ($Probe) { 'probe' } else { 'runtime' }
     $quoted = ($arguments + @('--phase', $phase) | ForEach-Object { '"' + $_ + '"' }) -join ' '
-    $action = New-ScheduledTaskAction -Execute $python -Argument $quoted -WorkingDirectory $Output
-    $settings = New-ScheduledTaskSettingsSet -ExecutionTimeLimit (New-TimeSpan -Minutes 5) -Compatibility Win8 `
-        -AllowStartIfOnBatteries -DontStopIfGoingOnBatteries -StartWhenAvailable
-    $principal = New-ScheduledTaskPrincipal -UserId "$env:COMPUTERNAME\$user" -LogonType Password -RunLevel Limited
-    $definition = New-ScheduledTask -Action $action -Settings $settings -Principal $principal
-    $task = Register-ScheduledTask -TaskName $user -InputObject $definition -User "$env:COMPUTERNAME\$user" -Password $password
-    Export-ScheduledTask -TaskName $user | Set-Content (Join-Path $Output 'task.xml')
-    $started = Get-Date
-    Start-ScheduledTask -TaskName $user
-    $deadline = $started.AddMinutes(6)
-    do {
-        Start-Sleep -Seconds 2
-        $info = Get-ScheduledTaskInfo -TaskName $user
-        $state = (Get-ScheduledTask -TaskName $user).State
-        $diagnostic = @{ state = "$state"; lastResult = $info.LastTaskResult; lastRun = $info.LastRunTime.ToString('o') }
-        $diagnostic | ConvertTo-Json | Set-Content (Join-Path $Output 'task-state.json')
-        $ran = $info.LastRunTime -ge $started.AddSeconds(-5)
-        if (!$ran -and (Get-Date) -gt $started.AddSeconds(30)) {
-            throw "Standard-user task did not start: $($diagnostic | ConvertTo-Json -Compress)"
-        }
-        if ((Get-Date) -gt $deadline) { throw "Unelevated runtime timed out: $($diagnostic | ConvertTo-Json -Compress)" }
-    } while ($state -eq 'Running' -or $state -eq 'Queued' -or !$ran)
-    if ($info.LastTaskResult -ne 0 -or !(Test-Path (Join-Path $Output "$phase.json"))) {
-        throw "Unelevated runtime failed: $($diagnostic | ConvertTo-Json -Compress)"
+    $credential = [System.Management.Automation.PSCredential]::new("$env:COMPUTERNAME\$user",
+        (ConvertTo-SecureString $password -AsPlainText -Force))
+    $child = Start-Process -FilePath $python -ArgumentList $quoted -WorkingDirectory $Output `
+        -Credential $credential -LoadUserProfile -PassThru `
+        -RedirectStandardOutput (Join-Path $Output 'launcher.stdout.log') `
+        -RedirectStandardError (Join-Path $Output 'launcher.stderr.log')
+    $timeout = if ($Probe) { 30000 } else { 300000 }
+    if (!$child.WaitForExit($timeout)) {
+        $child.Kill($true)
+        $child.WaitForExit()
+        throw 'Standard-user child timed out'
+    }
+    $child.Refresh()
+    @{ pid = $child.Id; exitCode = $child.ExitCode } | ConvertTo-Json | Set-Content (Join-Path $Output 'launcher.json')
+    if ($child.ExitCode -ne 0 -or !(Test-Path (Join-Path $Output "$phase.json"))) {
+        Get-Content (Join-Path $Output 'launcher.stderr.log') -ErrorAction SilentlyContinue
+        throw "Standard-user child failed: $($child.ExitCode)"
     }
     if (!$Probe) {
         & $python @arguments --phase receipt
         if ($LASTEXITCODE) { throw 'Windows receipt did not confirm qualification' }
     }
-} catch {
-    if ($task) {
-        Get-WinEvent -FilterHashtable @{LogName='Microsoft-Windows-TaskScheduler/Operational'; StartTime=$started} `
-            -ErrorAction SilentlyContinue | Where-Object { $_.Message -like "*$user*" } |
-            Select-Object Id, TimeCreated, Message | ConvertTo-Json -Depth 4 |
-            Set-Content (Join-Path $Output 'task-events.json')
-    }
-    throw
 } finally {
-    if ($task) {
-        Stop-ScheduledTask -TaskName $user -ErrorAction SilentlyContinue
-        Unregister-ScheduledTask -TaskName $user -Confirm:$false
+    if ($child) {
+        if (!$child.HasExited) { $child.Kill($true); $child.WaitForExit() }
+        $child.Dispose()
     }
     if ($account) {
         $sid = $account.SID.Value

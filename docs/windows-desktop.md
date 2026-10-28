@@ -135,9 +135,10 @@ standard user. A receipt binds these checks to the commit, run attempt and exact
 asset hashes. Failed or missing Windows proof prevents publication of the release.
 
 `qualify_windows.ps1` creates a temporary standard account only on disposable
-GitHub-hosted VMs, then removes the task and account/profile. It does not change
+GitHub-hosted VMs, then removes the account/profile. It does not change
 UAC or install an MSI. The runtime test uses a private temporary project and home;
-Monitor renders with software D3D11/WARP on the task's noninteractive desktop.
+A bounded child process runs with that user's loaded profile; Monitor renders
+with software D3D11/WARP. A short preflight checks the launcher before compilation.
 
 Real interactive-session installation, repair, upgrade, downgrade refusal,
 uninstall/reinstall and data/history preservation were rehearsed for the dev.54

@@ -1248,7 +1248,7 @@ static std::unique_ptr<Monitor> monitor;
     self.popover.contentViewController = self.content;
     ((MTKView*)self.content.view).paused = YES;
     monitor_motion.initialized = false;
-    monitor->visible = false;
+    if (monitor) monitor->visible = false;
 }
 - (void)toggle:(id)sender {
     (void)sender;
@@ -1397,7 +1397,7 @@ static std::unique_ptr<Monitor> monitor;
     (void)notification;
     ((MTKView*)self.content.view).paused = YES;
     monitor_motion.initialized = false;
-    monitor->visible = false;
+    if (monitor) monitor->visible = false;
     NSLog(@"ShinMonitor panel-close: rendering paused");
     if (self.outsideMonitor) { [NSEvent removeMonitor:self.outsideMonitor]; self.outsideMonitor = nil; }
     if (self.escapeMonitor) { [NSEvent removeMonitor:self.escapeMonitor]; self.escapeMonitor = nil; }
@@ -1424,6 +1424,9 @@ static std::unique_ptr<Monitor> monitor;
     [NSWorkspace.sharedWorkspace.notificationCenter removeObserver:self];
     if (self.outsideMonitor) { [NSEvent removeMonitor:self.outsideMonitor]; self.outsideMonitor = nil; }
     if (self.escapeMonitor) { [NSEvent removeMonitor:self.escapeMonitor]; self.escapeMonitor = nil; }
+    // AppKit closes remaining windows after this callback. Detach their live
+    // presentation before destroying the model; late close events stay harmless.
+    [self closePanel:nil];
     ((MTKView*)self.content.view).paused = YES;
     monitor.reset();
     if (ImGui::GetCurrentContext()) {

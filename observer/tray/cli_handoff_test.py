@@ -13,7 +13,8 @@ with tempfile.TemporaryDirectory(prefix='shin-monitor-cli-') as temporary:
     cli = base / 'fake shin-ce'
     cli.write_text('#!/bin/sh\nexec ' + shlex.quote(str(tool)) + ' --cli-helper "$@"\n')
     cli.chmod(0o700)
-    for mode in ('noisy-ack', 'split-ack', 'receipt', 'stderr-error', 'refused-exit', 'wrong-pid', 'stderr-ack', 'oversized'):
+    for mode in ('window-noisy-ack', 'window-split-ack', 'window-refused-exit',
+                 'noisy-ack', 'split-ack', 'receipt', 'stderr-error', 'refused-exit', 'wrong-pid', 'stderr-ack', 'oversized'):
         output = base / (mode + '.json')
         child = subprocess.run([str(tool), '--cli-host', str(cli), str(base / 'absent-home'), mode, str(output)],
                                capture_output=True, text=True, timeout=15)
@@ -29,11 +30,13 @@ with tempfile.TemporaryDirectory(prefix='shin-monitor-cli-') as temporary:
             reply = json.loads(output.read_text())
             if mode == 'receipt':
                 assert reply['result'].get('value') == 17 and not reply['failure'], reply
-            elif mode in ('stderr-error', 'refused-exit'):
+            elif mode in ('stderr-error', 'refused-exit', 'window-refused-exit'):
                 assert reply['result']['error']['code'] == 'update-monitor-open', reply
+                if mode == 'window-refused-exit':
+                    assert reply['window_visible'], 'refused exit closed the Monitor window'
             elif mode == 'oversized':
                 assert 'exceeded its size limit' in reply['failure'], reply
             else:
                 assert reply['failure'] or not reply['result'].get('ok', False), reply
     assert not (base / 'absent-home').exists(), 'fixture touched service state'
-print('Native Monitor pipes: stderr noise, fragmented ack, actual exit, refused exit, receipt, error and PID/channel refusal passed')
+print('Native Monitor pipes: open-window exit, refused exit preserves window, stderr noise, fragmented ack, receipt, error and PID/channel refusal passed')

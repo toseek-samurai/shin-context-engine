@@ -5,6 +5,11 @@
 @end
 @implementation NativeCLIHost
 - (NSString*)nativeCLIPath { return self.fixtureCLI; }
+- (void)applicationDidFinishLaunching:(NSNotification*)notification {
+    // NSApp can deliver this after finishLaunching. Keep the fixture's home,
+    // windows and reads independent of the installed Monitor and preferences.
+    (void)notification;
+}
 - (NSApplicationTerminateReply)applicationShouldTerminate:(NSApplication*)application {
     (void)application;
     if (!self.refusalMarker) return NSTerminateNow;
@@ -14,7 +19,8 @@
 @end
 
 int native_cli_helper(int argc, char** argv) {
-    const std::string mode = argv[argc - 2];
+    std::string_view mode = argv[argc - 2];
+    if (mode.starts_with("window-")) mode.remove_prefix(7);
     const fs::path receipt = argv[argc - 1];
     const auto parent = getppid();
     if (mode == "oversized") {
@@ -63,21 +69,32 @@ int native_cli_helper(int argc, char** argv) {
     return exited ? 0 : 1;
 }
 
-int native_cli_host(const char* cli, const char* home, const char* mode, const char* output) {
-    NativeCLIHost* app = [NativeCLIHost new];
+int native_cli_host(const char* cli, const char* home, const char* modeText, const char* output) {
+    const std::string_view mode = modeText;
+    const auto scenario = mode.starts_with("window-") ? mode.substr(7) : mode;
+    // NSApplication and NSWindow keep weak delegate references.
+    __attribute__((objc_precise_lifetime)) NativeCLIHost* app = [NativeCLIHost new];
     app.fixtureCLI = diagnostic_text_content(cli);
     app.shinHome = diagnostic_text_content(home);
-    if (std::string_view(mode) == "refused-exit") app.refusalMarker = diagnostic_text_content(std::string(output) + ".handoff.refused");
+    if (scenario == "refused-exit") app.refusalMarker = diagnostic_text_content(std::string(output) + ".handoff.refused");
     NSApp.delegate = app;
-    [app runCLI:std::string_view(mode) == "receipt" ? @"update-check" : @"update-install"
-        arguments:@[diagnostic_text_content(mode), diagnostic_text_content(std::string(output) + ".handoff")]
+    if (mode.starts_with("window-")) {
+        monitor = std::make_unique<Monitor>(home);
+        app.content = [ShinView new]; app.popover = [NSPopover new];
+        app.popover.delegate = app; app.popover.contentViewController = app.content;
+        [app showMonitorWindow];
+    }
+    [app runCLI:scenario == "receipt" ? @"update-check" : @"update-install"
+        arguments:@[diagnostic_text_content(modeText), diagnostic_text_content(std::string(output) + ".handoff")]
         completion:^(Json result, NSString* failure) {
-            std::ofstream(output) << Json{{"result", result}, {"failure", failure ? failure.UTF8String : ""}}.dump();
+            std::ofstream(output) << Json{{"result", result}, {"failure", failure ? failure.UTF8String : ""},
+                {"window_visible", (bool)app.monitorWindow.visible}}.dump();
             [NSApp stop:nil];
             [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint
                 modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];
         }];
     [NSApp run];
     NSApp.delegate = nil;
+    [app applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
     return 0;
 }

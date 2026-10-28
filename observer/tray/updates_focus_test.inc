@@ -222,7 +222,7 @@ int main(int argc, char** argv) {
             await_update_ui([&] { return app.monitorWindow.visible; }, "hidden status item prevented opening Monitor");
             update_require(app.monitorWindow.contentViewController == app.content && monitor->visible &&
                 !((MTKView*)app.content.view).paused, "fallback window lost rendering ownership");
-            [app applicationDidResignActive:nil];
+            [app applicationDidResignActive:[NSNotification notificationWithName:NSApplicationDidResignActiveNotification object:NSApp]];
             update_require(app.monitorWindow.visible, "fallback window disappeared when focus changed");
             const NSSize originalSize = app.monitorWindow.contentView.bounds.size;
             [app toggleCompact:nil];
@@ -237,11 +237,15 @@ int main(int argc, char** argv) {
                 app.popover.contentViewController == app.content, "window close did not restore popover ownership");
             [app applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
             update_require(app.item.visible && app.monitorWindow.visible, "explicit reopen did not restore access");
-            [app.monitorWindow close];
             [NSStatusBar.systemStatusBar removeStatusItem:app.item]; app.item = nil;
-            [app applicationWillTerminate:nil];
+            [app applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
+            update_require(!monitor && !app.monitorWindow.visible && ((MTKView*)app.content.view).paused,
+                "termination left a live presentation without its model");
+            [app windowWillClose:[NSNotification notificationWithName:NSWindowWillCloseNotification object:app.monitorWindow]];
+            [app popoverDidClose:[NSNotification notificationWithName:NSPopoverDidCloseNotification object:app.popover]];
             std::cout << "Native update review: retained window, foreground handoff, no background focus theft, closed-window suppression, pinned installation and acknowledgement, EN/RU passed\n";
             std::cout << "Status item: fixed update width, retained template, hidden-anchor fallback and explicit reopen passed\n";
+            std::cout << "Termination: open-window teardown and late window/popover close notifications passed\n";
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
             [app.updateWindow close]; if (peer.running) [peer terminate];

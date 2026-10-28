@@ -154,3 +154,9 @@ versioned separately.
 
 Licensed under [Apache-2.0](LICENSE). [Third-party notices](THIRD_PARTY.md)
 and [private security reporting](SECURITY.md).
+
+<p align="center">
+  <a href="docs/local-kit.md"><img src="docs/images/platform-macos.svg" width="230" height="56" alt="macOS 15+ Apple Silicon — preview binary kit"></a>
+  <a href="docs/building.md#linux-and-wsl2-terminal-tools"><img src="docs/images/platform-linux.svg" width="230" height="56" alt="Linux and WSL2 — build from source"></a>
+  <a href="docs/windows-desktop.md"><img src="docs/images/platform-windows.svg" width="230" height="56" alt="Windows x64 — development source build; installer qualification pending"></a>
+</p>

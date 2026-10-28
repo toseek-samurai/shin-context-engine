@@ -88,3 +88,9 @@ python3 observer/tui/capture.py /path/to/disposable-captures/updates-progress-en
 `shin-logo.png` is the existing Shin project mark. PNG text metadata records
 Shin Context Engine, Anton Petropavlovskiy and Apache-2.0. It contains no source
 file paths or inherited EXIF/XMP metadata. The original pixel stream is preserved.
+## Platform badges
+
+`platform-macos.svg`, `platform-linux.svg` and `platform-windows.svg` are local,
+project-authored vector badges for the README footer. Each links to the relevant
+installation or build guide and distinguishes binary previews from source builds.
+They contain no remote resources, scripts, screenshots or embedded fonts.

@@ -5,12 +5,43 @@ import contextlib
 import hashlib
 import json
 import os
+import re
 from pathlib import Path
 import subprocess
 import tempfile
 import threading
 import time
 import zipfile
+import uuid
+
+
+def check_msi_version(rows, properties):
+    """Verify compiled MSI identity and the actual upgrade/downgrade bounds."""
+    source = properties['SHIN_PREVIEW_VERSION']
+    match = re.fullmatch(r'(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-(dev|rc)\.(0|[1-9][0-9]*))?', source)
+    assert match, source
+    major, minor, patch = map(int, match.group(1, 2, 3))
+    channel, serial = match.group(4, 5)
+    assert major <= 255 and minor <= 255 and patch <= 64, source
+    offset = 999
+    if channel:
+        serial = int(serial)
+        assert serial <= (899 if channel == 'dev' else 98), source
+        offset = serial if channel == 'dev' else 900 + serial
+    version = f'{major}.{minor}.{patch * 1000 + offset}'
+    assert properties['ProductVersion'] == version, properties['ProductVersion']
+    namespace = uuid.UUID('4D5D4627-1B39-4F4A-ABEE-17CE51649F28')
+    assert uuid.UUID(properties['UpgradeCode']) == namespace
+    assert uuid.UUID(properties['ProductCode']) == uuid.uuid5(namespace, f'windows-x64:{source}')
+    upgrades = rows('SELECT `UpgradeCode`, `VersionMin`, `VersionMax`, `Attributes`, `ActionProperty` FROM `Upgrade`', 5)
+    older = [row for row in upgrades if row[4] == 'WIX_UPGRADE_DETECTED']
+    newer = [row for row in upgrades if row[4] == 'WIX_DOWNGRADE_DETECTED']
+    assert len(older) == len(newer) == 1, upgrades
+    assert all(uuid.UUID(row[0]) == namespace for row in (older[0], newer[0]))
+    assert older[0][1:3] == ['', version] and not int(older[0][3]) & (2 | 512), older
+    assert newer[0][1:3] == [version, ''] and int(newer[0][3]) & 2, newer
+    conditions = rows('SELECT `Condition` FROM `LaunchCondition`', 1)
+    assert any('NOT WIX_DOWNGRADE_DETECTED' in row[0] for row in conditions), conditions
 
 
 def check_msi_ui(rows, properties):
@@ -97,6 +128,7 @@ def check_msi(path):
 
     try:
         properties = dict(rows('SELECT `Property`, `Value` FROM `Property`', 2))
+        check_msi_version(rows, properties)
         assert properties.get('ALLUSERS', '') == '1', properties.get('ALLUSERS')
         assert properties['ProductName'] == 'Shin Desktop Preview'
         directories = {item[0]: item[1] for item in rows('SELECT `Directory`, `Directory_Parent` FROM `Directory`', 2)}
@@ -161,8 +193,7 @@ def main():
     parser.add_argument('--keep', action='store_true', help='Retain this disposable fixture for failure diagnosis')
     args = parser.parse_args()
     assert os.name == 'nt', 'Run against native Windows binaries'
-    if args.msi:
-        check_msi(args.msi)
+    msi_properties = check_msi(args.msi) if args.msi else None
     storage = contextlib.nullcontext(tempfile.mkdtemp(prefix='shin-windows-kit-')) if args.keep else tempfile.TemporaryDirectory(prefix='shin-windows-kit-')
     with storage as temporary:
         base = Path(temporary)
@@ -178,6 +209,8 @@ def main():
         kit = base / 'relocated kit'
         manifests[0].parent.rename(kit)
         manifest = json.loads((kit / 'shin-kit.json').read_text())
+        if msi_properties:
+            assert manifest['version'] == msi_properties['SHIN_PREVIEW_VERSION'], 'ZIP and MSI versions differ'
         expected = {'shin-kit.json'}
         for item in manifest['files']:
             relative = item['path']

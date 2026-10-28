@@ -70,6 +70,12 @@ machine-image check. Read the build guide's prerequisites before running it.
 `windows-desktop-smoke` selects the hosted-runner subset and does not replace
 the full local suite or ZIP/MSI and installed SCM qualification.
 
+`shin-windows-package-version` exercises MSI version ordering, numeric bounds,
+invalid-version refusal and reproducible product identities on every platform.
+It is also in Windows smoke CI. The separate `windows-kit` preset disables
+source-test registration; qualify its exact ZIP/MSI with the procedure in
+[Windows source status](../docs/windows-desktop.md#installer-presentation-checks).
+
 Monitor render checks write PNGs and `result.json` under the external build's
 `tray/render-check/` directory. Overview, Projects and Models have 30 connected
 or retained-disconnected frames and 15 first-run frames without a service reply.

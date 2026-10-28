@@ -96,6 +96,9 @@ if(BUILD_TESTING)
     add_test(NAME shin-ui-terminal-language COMMAND ${Python3_EXECUTABLE} -B
         "${SHIN_OBSERVER_ROOT}/ui/terminal_language_test.py" $<TARGET_FILE:shin-ui-language-tests>)
     set_tests_properties(shin-ui-terminal-language PROPERTIES TIMEOUT 30)
+    add_test(NAME shin-windows-package-version COMMAND ${Python3_EXECUTABLE} -B
+        "${SHIN_OBSERVER_ROOT}/tests/windows_package_version_test.py" "${CMAKE_COMMAND}")
+    set_tests_properties(shin-windows-package-version PROPERTIES TIMEOUT 30)
     if(NOT WIN32)
         add_executable(shin-update-progress-tests "${SHIN_OBSERVER_ROOT}/tests/update_progress_test.cpp")
         target_link_libraries(shin-update-progress-tests PRIVATE shin-observer-native)

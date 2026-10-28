@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="230" height="56" viewBox="0 0 230 56" role="img" aria-labelledby="title">
+  <title id="title">Linux and WSL2 — build from source</title>
+  <rect x=".5" y=".5" width="229" height="55" rx="12" fill="#242827" stroke="#48504a"/>
+  <g stroke-linecap="round" stroke-linejoin="round">
+    <path d="M18 36c-4-8 4-10 4-18 0-8 13-8 13 0 0 8 8 10 4 18" fill="none" stroke="#dec9a1" stroke-width="1.8"/>
+    <ellipse cx="28.5" cy="31" rx="8" ry="11" fill="#e6e7dc"/>
+    <circle cx="25" cy="18" r="1.5" fill="#e6e7dc"/><circle cx="32" cy="18" r="1.5" fill="#e6e7dc"/>
+    <path d="m25 22 3.5 3 3.5-3zM19 39l-4 4h11M37 39l5 4H31" fill="#dec9a1" stroke="#dec9a1" stroke-width="1.5"/>
+  </g>
+  <g font-family="system-ui, -apple-system, Segoe UI, sans-serif">
+    <text x="57" y="25" font-size="14" font-weight="600" fill="#f0eee6">Linux · WSL2</text>
+    <text x="57" y="42" font-size="11" fill="#c0c6b7">Build from source</text>
+  </g>
+</svg>

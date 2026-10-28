@@ -148,10 +148,17 @@ and strict rejection of unrelated failures. Monitor renders cover the warning
 in English and Russian in project lists and details at all five tested sizes.
 
 These are development source checks, not Windows distribution qualification.
-The presets leave ZIP/MSI packaging disabled. The existing MSI recipe separately
-requires CPack 4.3+ and WiX 4; exact-archive and installed SCM lifecycle checks
+The desktop presets leave ZIP/MSI packaging disabled. The separate `windows-kit`
+preset builds production binaries in `kit/`, with source tests disabled; run
+the desktop test preset first, then the [exact ZIP/MSI checks](windows-desktop.md#installer-presentation-checks).
+MSI packaging requires CPack 4.3+ and WiX 4; exact-archive and installed SCM lifecycle checks
 are still required before a Windows release. TUI, automatic client connection,
 automatic usage collection and in-app updating remain pending on Windows.
+
+Do not run an unfiltered CTest against a manually configured packaging build
+with `BUILD_TESTING=ON`: enabling the Core CLI also registers POSIX-only Core
+gates. The desktop preset and the Core smoke preset are the supported native
+Windows source-test inventories; neither requires Bash/jq.
 
 ## Continuous integration
 

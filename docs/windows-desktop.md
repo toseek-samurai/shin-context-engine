@@ -37,6 +37,8 @@ also describes the distinction between local and hosted-runner checks.
   its full test preset runs all checks registered in that configuration.
 - `windows-desktop-smoke` is the hosted-runner subset. It does not include
   interactive desktop, full user-service lifecycle or protected-image checks.
+- `windows-kit` builds production binaries for ZIP/MSI in a separate `kit/`
+  directory. It does not register source tests; first run `windows-desktop`.
 
 Keep the checkout and an absolute external `SHIN_BUILD_ROOT` outside AppData
 and TEMP. Full local tests need an unelevated interactive desktop, symlink
@@ -76,9 +78,29 @@ shows the fixed protected Program Files destination. Repair and removal use
 the standard WiX maintenance dialogs. These are development-source changes,
 not evidence of a published or qualified Windows installer.
 
-After building the Windows kit with `SHIN_OBSERVER_WINDOWS_KIT=ON`, package it
-using CPack 4.3+ and matching WiX 4 UI/Util extensions. From the checkout root,
-inspect the exact resulting MSI without installing it:
+Use CPack 4.3+ and WiX 4 with matching UI/Util extensions. With the external
+`SHIN_BUILD_ROOT` from the build guide still set, run from the checkout root:
+
+```powershell
+Push-Location observer
+cmake --preset windows-kit
+cmake --build --preset windows-kit
+cpack --config "$env:SHIN_BUILD_ROOT/kit/CPackConfig.cmake" -C Release -G ZIP
+cpack --config "$env:SHIN_BUILD_ROOT/kit/CPackConfig.cmake" -C Release -G WIX
+$version = (Get-Content VERSION -Raw).Trim()
+$zip = "$env:SHIN_BUILD_ROOT/kit/packages/shin-desktop-$version-windows-AMD64.zip"
+$msi = "$env:SHIN_BUILD_ROOT/kit/packages/shin-desktop-$version-windows-AMD64.msi"
+python -B tests/windows_kit_test.py $zip --msi $msi
+Pop-Location
+```
+
+Run this archive check unelevated in an interactive session. It verifies both
+package identities, hashes, runtime dependencies, relocated Monitor renders,
+and init/query/stop using disposable project data. MSI inspection is read-only;
+no installation actions execute. Stop on a failed command before proceeding.
+Keep the exact archives and their `.sha256` files together.
+
+For MSI-only metadata checks or visual dialog previews, from the checkout root:
 
 ```powershell
 python observer/tests/windows_msi_test.py $msi --phase metadata
@@ -109,10 +131,43 @@ documentation. The MSI route additionally needs installation, repair, upgrade,
 removal, multi-user SCM lifecycle and preserved-data checks in disposable
 environments. Its current recipe requires CPack 4.3+ and WiX 4.
 
-The MSI recipe currently derives a numeric package version from the release
-prefix. Distinct development versions therefore need an explicit MSI upgrade
-version policy before preview-to-preview upgrades can be claimed.
+The source version policy below distinguishes preview upgrades. Actual
+preview-to-preview replacement, rollback and preserved-data proof still require
+the disposable installed lifecycle checks.
 
 Existing Linux/macOS release gates and the guarded publisher remain independent
 requirements. Source checks, archive checks and installed-service checks are
 different evidence; none substitutes for the others.
+
+## MSI version policy
+
+Windows Installer compares only three numeric fields, bounded by
+`255.255.65535`; a fourth field is ignored. See Microsoft's
+[ProductVersion contract](https://learn.microsoft.com/en-us/windows/win32/msi/productversion).
+The kit and UI retain the full Shin version. The internal MSI version is
+`major.minor.(patch * 1000 + channelOffset)`:
+
+| Shin version | MSI ProductVersion |
+| --- | --- |
+| `2.0.5-dev.53` | `2.0.5053` |
+| `2.0.5-dev.54` | `2.0.5054` |
+| `2.0.5-rc.0` | `2.0.5900` |
+| `2.0.5` | `2.0.5999` |
+| `2.0.6-dev.0` | `2.0.6000` |
+
+Development serials occupy offsets 0–899; release candidates use 900–998;
+stable uses 999. This policy supports major/minor 0–255, patch 0–64,
+dev serial 0–899 and rc serial 0–98. Packaging fails for unsupported values or
+noncanonical versions instead of truncating, wrapping or reusing an identity.
+These are MSI packaging bounds, not runtime or indexing limits.
+
+The existing UpgradeCode stays constant. ProductCode is a deterministic UUIDv5
+of `windows-x64:<full Shin version>` in that UpgradeCode namespace: the same
+version has the same product identity; a new version has a different one.
+Compiled-MSI checks verify these values, older-version removal bounds and the
+downgrade refusal. The ZIP and MSI must describe the same full version.
+Never replace a published archive with changed bytes under the same version.
+Packaging retains CPack's installed WiX 4 template and disables its default
+same-version replacement. If the expected template fragment changes, packaging
+fails for review. Normal maintenance of the same ProductCode remains separate
+from replacing one version with another.

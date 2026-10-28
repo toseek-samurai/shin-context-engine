@@ -23,10 +23,18 @@
         "SHIN_OBSERVER_LOCAL_KIT": false,
         "SHIN_OBSERVER_WINDOWS_KIT": false
       }
+    },
+    {
+      "name": "windows-kit",
+      "displayName": "Windows x64 ZIP/MSI packaging (qualification is separate)",
+      "inherits": "windows-desktop",
+      "binaryDir": "$env{SHIN_BUILD_ROOT}/kit",
+      "cacheVariables": { "SHIN_OBSERVER_WINDOWS_KIT": true, "BUILD_TESTING": false }
     }
   ],
   "buildPresets": [
-    { "name": "windows-desktop", "configurePreset": "windows-desktop", "configuration": "Release", "jobs": 4 }
+    { "name": "windows-desktop", "configurePreset": "windows-desktop", "configuration": "Release", "jobs": 4 },
+    { "name": "windows-kit", "configurePreset": "windows-kit", "configuration": "Release", "jobs": 4 }
   ],
   "testPresets": [
     {
@@ -41,7 +49,7 @@
       "inherits": "windows-desktop",
       "filter": {
         "include": {
-          "name": "^(shin-ui-(language|terminal-language|catalog)|shin-platform-boundaries|shin-windows-(build-placement|file|scm-transport)|shin-context-source-discovery|shin-observer-(protocol|windows-(storage|runtime|project|worker))|shin-local-(startup|release|mcp-scope|rpc|session-analysis|mcp-activity|history-files|history-recovery|changes|worker-process|refresh-races)|shin-native-install|shin-tray-(diagnostics|request-timing))$"
+          "name": "^(shin-ui-(language|terminal-language|catalog)|shin-platform-boundaries|shin-windows-(build-placement|package-version|file|scm-transport)|shin-context-source-discovery|shin-observer-(protocol|windows-(storage|runtime|project|worker))|shin-local-(startup|release|mcp-scope|rpc|session-analysis|mcp-activity|history-files|history-recovery|changes|worker-process|refresh-races)|shin-native-install|shin-tray-(diagnostics|request-timing))$"
         }
       }
     }

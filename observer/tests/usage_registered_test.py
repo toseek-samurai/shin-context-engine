@@ -81,11 +81,16 @@ class RegisteredUsage(unittest.TestCase):
 
     def check_default_tui(self):
         master, slave=pty.openpty()
-        child=subprocess.Popen([str(CE),'stats','--home',str(self.home)],
+        child=subprocess.Popen([str(CE),'stats','--home',str(self.home),'--language','en'],
             stdin=slave,stdout=slave,stderr=slave,env={**self.env,'TERM':'xterm-256color'})
         output=b''
         try:
-            os.write(master,b'5')
+            deadline=time.monotonic()+10
+            while b'3 Activity' not in output and time.monotonic()<deadline:
+                if select.select([master],[],[],.1)[0]: output+=os.read(master,65536)
+            self.assertIn(b'3 Activity',output)
+            # Activity / Agents replaces the former fifth top-level page.
+            os.write(master,b'3]')
             deadline=time.monotonic()+10
             while b'fixture-model' not in output and time.monotonic()<deadline:
                 if select.select([master],[],[],.1)[0]: output+=os.read(master,65536)

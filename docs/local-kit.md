@@ -12,7 +12,7 @@ Windows ZIP/MSI packaging route are described in [Windows source status](https:/
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.54).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.57).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -20,7 +20,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.54/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.57/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -94,7 +94,7 @@ In dev.53 source, a project using the default bootstrap profile keeps serving
 verified context when local Markdown links are broken. Projects and its details
 show a documentation warning, which clears after the corrected sources qualify.
 Index integrity, source freshness, secrets and resource checks remain required.
-The dev.57 candidate separates retrieval availability from declared search quality
+Preview dev.57 separates retrieval availability from declared search quality
 for explicit project profiles. Ordinary eval/Pack misses become a bounded search
 warning while a safe, current candidate is published and served. Strict Core
 `eval`, `validate` and `ready` verdicts and exit codes remain unchanged for CI.
@@ -336,7 +336,7 @@ and verifies the registered root and its enrollment error. A known quality or
 temporary refusal records an unready baseline; an unknown root, registry conflict,
 identity change or integrity failure still stops recovery. The target must qualify
 every project's retrieval readiness under the existing publication grants before
-installation succeeds. In the dev.57 candidate, a search-quality warning alone does
+installation succeeds. Since preview dev.57, a search-quality warning alone does
 not reject an update; incompatible, unsafe or stale context still does.
 Qualification errors retain the failing project's opaque hash and bounded gate
 diagnostics, including failures before service startup.
@@ -523,7 +523,7 @@ checks or choose **Check for updates…** in the tray menu. Failed checks do not
 interrupt offline retrieval. Manual checks fetch the current offer even after a
 recent check; concurrent checks are coalesced.
 
-The dev.57 candidate uses the same 1 MiB release-feed limit for downloading and
+Preview dev.57 uses the same 1 MiB release-feed limit for downloading and
 parsing metadata in both the launcher and the independent Updater. Local state
 keeps its separate 256 KiB limit. Duplicate JSON keys, excessive nesting and
 invalid release assets are still rejected.

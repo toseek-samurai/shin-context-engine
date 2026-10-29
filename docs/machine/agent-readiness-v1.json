@@ -117,7 +117,7 @@
     ]
   },
   "retrievalAvailability": {
-    "status": "preview-dev.57-candidate",
+    "status": "preview-dev.57",
     "field": "retrieval_ready",
     "classificationContract": "docs/machine/aggregate-validation-v1.json",
     "requirements": "The aggregate availability verdict, route alignment, adoption alignment and a current worktree must all pass. Existing ok/ready fields and exit codes retain their strict meaning."

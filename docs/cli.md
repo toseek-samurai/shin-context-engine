@@ -112,7 +112,7 @@ Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.
 
-In the dev.57 candidate, a permanent-profile search miss can return `local_ready=true`
+Since preview dev.57, a permanent-profile search miss can return `local_ready=true`
 and `retrieval_ready=true` with `canonical_ready=false`, `project_quality=degraded`
 and a bounded `quality_warning`. These responses contain verified current context;
 they do not claim that strict quality checks passed. The warning survives resident

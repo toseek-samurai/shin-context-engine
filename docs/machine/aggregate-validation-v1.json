@@ -168,7 +168,7 @@
     "the relocated portable binary runs validate successfully against its generated fixture index"
   ],
   "retrievalAvailability": {
-    "status": "preview-dev.57-candidate",
+    "status": "preview-dev.57",
     "field": "retrieval_ready",
     "strictVerdict": "Existing ok/ready fields and exit codes remain strict CI quality decisions.",
     "policy": "Compute availability from complete gate results before bounded projections. Only eval/Pack quality-only failures may be advisory. All authority, freshness, integrity, configuration, runtime, forbidden-path, serial/parallel consistency and mandatory resource/output bounds remain required.",

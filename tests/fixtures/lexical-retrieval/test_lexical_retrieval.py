@@ -44,6 +44,21 @@ class LexicalRetrievalTests(unittest.TestCase):
     def document(self, name, text):
         (self.root / "docs" / name).write_text(text)
 
+    def test_bare_topic_does_not_exclude_other_documents(self):
+        self.document("sql.md", "# SQL tool\n\nSQL queries select database connectors from a catalog.\n")
+        self.document("connector-design.md", "# Database connector selection\n\nSQL queries select database connectors using typed bindings.\n")
+        self.document("query-guide.md", "# Query architecture\n\nSQL queries select database connectors through the query workspace.\n")
+        self.invoke("build")
+        result = self.invoke("brief", "how SQL queries select database connectors", "--require-current", "--limit", "8", "--per-doc", "3")
+        self.assertNotEqual(result["retrieval_mode"], "owner-scoped")
+        self.assertTrue({"docs/connector-design.md", "docs/query-guide.md"}.issubset(
+            {row["path"] for row in result["ranked_paths"]}))
+        for query in ("SQL", "sql.md queries select database connectors", "docs/sql.md queries select database connectors"):
+            with self.subTest(query=query):
+                explicit = self.invoke("brief", query, "--require-current")
+                self.assertEqual(explicit["retrieval_mode"], "owner-scoped")
+                self.assertEqual(explicit["ranked_paths"][0]["path"], "docs/sql.md")
+
     def context(self, query, source_scan=False):
         prefix = ["--source-scan"] if source_scan else []
         return self.invoke(*prefix, "context", query, "--require-current", "--limit", "100", "--per-doc", "8")
@@ -679,6 +694,37 @@ class LexicalRetrievalTests(unittest.TestCase):
                 self.assertNotIn("docs/focused.md", missing_group["returned_evidence_paths"])
                 self.assertNotIn("docs/focused.md", missing_group["selected_document_paths"])
 
+    def test_sparse_heading_words_do_not_hide_near_complete_primary_evidence(self):
+        query = "oak birch cedar maple willow copper quartz"
+        for name in ("one", "two"):
+            self.document(name + ".md", "# Oak reference\n\n" + "ordinary filler " * 50 + query + ".\n")
+        self.document("focused.md", "# Oak birch cedar maple willow copper\n\nPrimary decision.\n")
+        self.document("minority.md", "# Oak birch cedar\n\nUnrelated detail.\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--limit", "5", "--per-doc", "2")
+        self.assertEqual(result["ranked_paths"][0]["path"], "docs/focused.md")
+        self.assertNotIn("docs/minority.md", [row["path"] for row in result["ranked_paths"]])
+        row = next(row for row in result["sections"] if row["path"] == "docs/focused.md")
+        self.assertEqual(row["matched_group_indices"], list(range(6)))
+        self.assertNotIn("docs/focused.md", result["query_coverage"]["groups"][6]["returned_evidence_paths"])
+        request = {
+            "schema_version": "shin.task-request.v1", "request_id": "primary-evidence",
+            "task": {"objective": "Load the primary decision.", "must": [{"id": "decision", "query": query}]},
+            "budget": {"max_evidence_bytes": 12000, "max_records": 5,
+                       "per_query_records": 5, "per_document_records": 2},
+        }
+        input_file = self.base / "request.json"
+        input_file.write_text(json.dumps(request))
+        packed = self.invoke("pack", "--input", str(input_file))
+        self.assertIn("docs/focused.md", [row["path"] for row in packed["verification_paths"]])
+        self.assertLessEqual(packed["budget"]["returned_records"], 5)
+        self.assertLessEqual(packed["budget"]["evidence_bytes"], 12000)
+        counts = {}
+        for row in packed["evidence"]:
+            path = row["record"]["path"]
+            counts[path] = counts.get(path, 0) + 1
+        self.assertTrue(all(count <= 2 for count in counts.values()))
+
     def test_near_complete_body_keeps_same_document_heading_corroboration(self):
         query = "alpha beta gamma delta epsilon"
         for name in ("one", "two"):
@@ -704,7 +750,7 @@ class LexicalRetrievalTests(unittest.TestCase):
         for count in (5, 8, 10):
             with self.subTest(groups=count):
                 query = " ".join(words[:count])
-                self.document("one.md", "# Alpha\n\n" + query + ".\n")
+                self.document("one.md", "# " + " ".join(words[:(count + 1) // 2]) + "\n\n" + query + ".\n")
                 self.document("two.md", "# Overview\n\n" + query + ".\n")
                 self.document("focused.md", "# " + " ".join(words[:count - 1]) + "\n\nBounded evidence.\n")
                 self.invoke("build")

@@ -167,7 +167,9 @@ class BaselineTests(unittest.TestCase):
         result = self.call("read", self.request(path="../oracle.json"))
         self.assertEqual(result["error"]["code"], "pilot-corpus-violation")
         self.flow = Workflow(self.backend, {"src/feed.ts"})
-        self.call("query", "feed cache")
+        # This flow permits one file; request that owner explicitly rather than
+        # relying on a topic word to hide other legitimate query evidence.
+        self.call("query", "src/feed.ts cache")
         self.backend.safe_sources["src/feed.ts"] = "0" * 64
         result = self.call("read", self.request())
         self.assertEqual(result["error"]["code"], "baseline-screened-source-changed")

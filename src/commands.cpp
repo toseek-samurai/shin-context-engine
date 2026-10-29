@@ -578,6 +578,34 @@ static bool brief_has_only_indexed_body_matches(const BriefResult& result,
     return true;
 }
 
+static bool brief_has_only_diffuse_body_matches(const BriefResult& result,
+                                               const QueryRequest& request) {
+    if (result.matched_facts != 0 || result.section_hits_by_doc.empty()) return false;
+    const auto majority = (request.prepared_term_groups.size() + 1) / 2;
+    for (const auto& [path, hits] : result.section_hits_by_doc) {
+        (void)path;
+        for (const auto& hit : hits) {
+            if (std::find(hit.matched_fields.begin(), hit.matched_fields.end(), "indexed_text") ==
+                hit.matched_fields.end()) return false;
+            std::set<std::size_t> primary_groups;
+            for (auto& field : section_match_fields(hit.section)) {
+                if (!field.primary || field.name == "indexed_text" || field.name == "preview" ||
+                    field.name == "document_id" || field.name == "path") continue;
+                for (std::size_t group = 0; group < request.prepared_term_groups.size(); ++group) {
+                    if (std::any_of(request.prepared_term_groups[group].begin(),
+                                    request.prepared_term_groups[group].end(),
+                                    [&](const auto& term) { return field_contains_term(field, term); }))
+                        primary_groups.insert(group);
+                }
+            }
+            // A few shared heading/status words do not make long prose a
+            // focused match. At least half in primary fields still preserves it.
+            if (primary_groups.size() >= majority) return false;
+        }
+    }
+    return true;
+}
+
 #ifdef SHIN_EXPERIMENT_EVAL_BATCH
 #define SHIN_PROBE_ROUTE(route, ...) experiment::probe_route(experiment::ProbeRoute::route, [&] { return __VA_ARGS__; })
 #else
@@ -704,8 +732,8 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
             BriefResult planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
                 options, request, true, groups, true,
                 prepared_groups ? &*prepared_groups : nullptr, manifest,
-                // Shared filename words do not make a multi-owner prose query owner-scoped.
-                brief_has_only_indexed_body_matches(result, request, false)));
+                // Incidental identity or heading words do not make multi-owner prose focused.
+                brief_has_only_diffuse_body_matches(result, request)));
             planned.identifier_probe_rows = identifier_probe_rows;
             auto execution = make_brief_execution(request, std::move(planned));
             if (!execution.selection.ordered.empty() &&

@@ -10,10 +10,16 @@
 @property(nonatomic, copy) void (^pendingReply)(Json, NSString*);
 @property(nonatomic, strong) NSURL* openedURL;
 @property(nonatomic) BOOL markedPending;
+@property(nonatomic, strong) NSUserDefaults* loginPreferences;
+@property(nonatomic) SMAppServiceStatus fakeLoginStatus;
+@property(nonatomic) NSUInteger loginChanges;
+@property(nonatomic) BOOL loginFailure;
 - (void)reply:(const Json&)result failure:(NSString*)failure;
 - (void)replaceBackgroundOffer:(const Json&)offer;
 @end
 @implementation UpdateWindowHarness
+- (void)applicationDidFinishLaunching:(NSNotification*)notification { (void)notification; }
+
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
     if (self.pendingReply) throw std::runtime_error("concurrent native update commands");
     self.pendingCommand = command; self.pendingArguments = arguments; self.pendingReply = completion;
@@ -26,6 +32,17 @@
 - (void)replaceBackgroundOffer:(const Json&)offer { _updateOffer = offer; }
 - (void)openUpdateReleaseURL:(NSURL*)url { self.openedURL = url; }
 - (void)setUpdatePending:(BOOL)pending { self.markedPending = pending; }
+- (SMAppServiceStatus)loginStartupStatus { return self.fakeLoginStatus; }
+- (NSUserDefaults*)loginStartupPreferences { return self.loginPreferences; }
+- (BOOL)setLoginStartupEnabled:(BOOL)enabled error:(NSError**)error {
+    ++self.loginChanges;
+    if (self.loginFailure) {
+        if (error) *error = [NSError errorWithDomain:@"fixture" code:1 userInfo:nil];
+        return NO;
+    }
+    self.fakeLoginStatus = enabled ? SMAppServiceStatusEnabled : SMAppServiceStatusNotRegistered;
+    return YES;
+}
 @end
 
 namespace {
@@ -63,12 +80,12 @@ void save_update_window(UpdateWindowHarness* app, const fs::path& output, const 
 }
 }
 
-int main(int argc, char** argv) {
+int native_update_tests(int argc, char** argv) {
     @autoreleasepool {
         if (argc > 1 && std::string_view(argv[1]) == "--cli-helper") return native_cli_helper(argc, argv);
         [NSApplication sharedApplication];
         if (!NSScreen.screens.count) return 77;
-        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]; [NSApp finishLaunching];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory]; if (!NSApp.running) [NSApp finishLaunching];
         if (argc == 6 && std::string_view(argv[1]) == "--cli-host")
             return native_cli_host(argv[2], argv[3], argv[4], argv[5]);
         if (argc == 2 && std::string_view(argv[1]) == "--focus-peer") {
@@ -89,10 +106,40 @@ int main(int argc, char** argv) {
         NSRunningApplication* prior = NSWorkspace.sharedWorkspace.frontmostApplication;
         NSTask* peer = [NSTask new]; NSPipe* commands = [NSPipe pipe];
         UpdateWindowHarness* app = [UpdateWindowHarness new];
+        NSString* loginSuite = [@"org.shin.test.login." stringByAppendingString:NSUUID.UUID.UUIDString];
+        app.loginPreferences = [[NSUserDefaults alloc] initWithSuiteName:loginSuite];
         try {
             update_require(argc == 3, "expected output directory and EN/RU language");
             shin::ui::set_language(shin::ui::language_for(argv[2]));
             fs::path output = argv[1]; fs::create_directories(output);
+            NSAppleEventDescriptor* loginEvent = [NSAppleEventDescriptor appleEventWithEventClass:kCoreEventClass
+                eventID:kAEOpenApplication targetDescriptor:nil returnID:kAutoGenerateReturnID transactionID:kAnyTransactionID];
+            update_require(!launched_as_login_item(loginEvent) && !launched_as_login_item(nil), "ordinary launch classified as login startup");
+            [loginEvent setParamDescriptor:[NSAppleEventDescriptor descriptorWithEnumCode:keyAELaunchedAsLogInItem] forKeyword:keyAEPropData];
+            update_require(launched_as_login_item(loginEvent), "login launch would open an unsolicited dashboard");
+            [app configureInitialLoginStartup];
+            update_require(app.loginChanges == 0, "development Monitor registered login startup");
+            app.installedApplication = YES;
+            app.loginFailure = YES;
+            [app configureInitialLoginStartup];
+            update_require(![app.loginPreferences boolForKey:@"ShinMonitorLoginConfigured"], "failed login registration became configured");
+            app.loginFailure = NO;
+            [app configureInitialLoginStartup];
+            update_require(app.loginChanges == 2 && app.fakeLoginStatus == SMAppServiceStatusEnabled, "installed Monitor did not register login startup");
+            app.fakeLoginStatus = SMAppServiceStatusNotRegistered; // User disabled it in System Settings.
+            [app configureInitialLoginStartup];
+            update_require(app.loginChanges == 2, "Monitor re-enabled a user's disabled login item");
+            [app toggleLoginStartup:nil]; [app toggleLoginStartup:nil];
+            [app configureInitialLoginStartup];
+            update_require(app.loginChanges == 4 && app.fakeLoginStatus == SMAppServiceStatusNotRegistered, "explicit login opt-out was not preserved");
+            NSMenuItem* login = [NSMenuItem new]; login.action = @selector(toggleLoginStartup:);
+            app.fakeLoginStatus = SMAppServiceStatusRequiresApproval;
+            update_require([app validateMenuItem:login] && login.state == NSControlStateValueMixed &&
+                [login.title isEqualToString:ui_text("Approve Monitor login startup…")], "pending login approval was reported as enabled");
+            app.fakeLoginStatus = SMAppServiceStatusEnabled;
+            update_require([app validateMenuItem:login] && login.state == NSControlStateValueOn, "login toggle did not use live OS status");
+            app.installedApplication = NO;
+            update_require(![app validateMenuItem:login], "development bundle exposed login registration");
             peer.executableURL = [NSURL fileURLWithPath:diagnostic_text_content(current_executable_path().string())];
             peer.arguments = @[@"--focus-peer"]; peer.standardInput = commands;
             NSError* error = nil;
@@ -200,8 +247,8 @@ int main(int argc, char** argv) {
                 [window.title isEqualToString:ui_text("Shin updates")] &&
                 [app.updateTitle.stringValue isEqualToString:ui_text("Could not check for updates")], "language switch reset update review");
             [window close];
-            // Exercise actual AppKit ownership and reopening without a usable
-            // menu-bar anchor. All Monitor reads target this disposable home.
+            // Exercise the native popup lifecycle and automatic Metal frame delivery.
+            // All Monitor reads target this disposable home.
             monitor = std::make_unique<Monitor>(output / "no-service-home");
             app.item = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
             NSImage* logo = [NSImage imageWithSystemSymbolName:@"circle.fill" accessibilityDescription:@"Shin Monitor"];
@@ -215,39 +262,141 @@ int main(int argc, char** argv) {
                     NSEqualSizes(app.item.button.image.size, NSMakeSize(20, 20)), "update badge changed the status slot");
             }
             app.content = [ShinView new]; app.popover = [NSPopover new];
+            app.popover.animates = NO;
+            app.popover.behavior = NSPopoverBehaviorApplicationDefined;
             app.popover.delegate = app; app.popover.contentViewController = app.content;
-            app.item.visible = NO;
-            update_require(!shin_status_can_anchor(app.item), "hidden item treated as popover anchor");
+            NSApp.delegate = app;
+            // Production defers first presentation by one timer tick while
+            // Control Center commits the status-item scene, beyond proxy layout.
+            const auto anchorCreated = std::chrono::steady_clock::now();
+            await_update_ui([&] { return std::chrono::steady_clock::now() - anchorCreated >= std::chrono::milliseconds(500); },
+                "initial status-item presentation did not settle");
             [app toggle:nil];
-            await_update_ui([&] { return app.monitorWindow.visible; }, "hidden status item prevented opening Monitor");
-            update_require(app.monitorWindow.contentViewController == app.content && monitor->visible &&
-                !((MTKView*)app.content.view).paused, "fallback window lost rendering ownership");
-            [app applicationDidResignActive:[NSNotification notificationWithName:NSApplicationDidResignActiveNotification object:NSApp]];
-            update_require(app.monitorWindow.visible, "fallback window disappeared when focus changed");
-            const NSSize originalSize = app.monitorWindow.contentView.bounds.size;
-            [app toggleCompact:nil];
-            update_require(!NSEqualSizes(app.monitorWindow.contentView.bounds.size, originalSize) &&
-                NSEqualSizes(app.monitorWindow.contentView.bounds.size, app.popover.contentSize),
-                "standalone Monitor ignored Compact view");
-            [app toggleCompact:nil];
-            update_require(NSEqualSizes(app.monitorWindow.contentView.bounds.size, originalSize),
-                "standalone Monitor did not restore its size");
-            [app.monitorWindow close];
-            update_require(!monitor->visible && ((MTKView*)app.content.view).paused &&
-                app.popover.contentViewController == app.content, "window close did not restore popover ownership");
+            // The real timer retries a deferred initial presentation after
+            // Control Center attaches the status button to its native window.
+            await_update_ui([&] { return app.item.button.window.visible && !app.item.button.hiddenOrHasHiddenAncestor; }, "status item did not acquire an anchor window");
+            if (app.initialPresentationPending) [app toggle:nil];
+            await_update_ui([&] { return app.popover.shown && app.content.view.window.keyWindow; }, "explicit open did not restore the tray popup");
+            update_require(app.item.visible && NSApp.activationPolicy == NSApplicationActivationPolicyAccessory,
+                "tray open changed application policy or hid its status item");
+            update_require(![app respondsToSelector:NSSelectorFromString(@"showMonitorWindow")] &&
+                ![app popoverShouldDetach:app.popover], "standalone dashboard remains available");
+            update_require(app.popover.contentViewController == app.content && monitor->visible &&
+                !((MTKView*)app.content.view).paused && app.content.view.window.acceptsMouseMovedEvents,
+                "popup lost rendering ownership or pointer delivery");
+            std::string phase = "initial";
+            auto advanceFrames = [&] {
+                const auto before = ImGui::GetFrameCount();
+                const auto failure = "native Metal frame delivery stalled during " + phase;
+                await_update_ui([&] { return ImGui::GetFrameCount() >= before + 4; }, failure.c_str());
+            };
+            advanceFrames();
+            dashboard_view = 1;
+            auto tabClick = [&](int code) {
+                MTKView* metal = (MTKView*)app.content.view;
+                if (app.popover.shown) {
+                    auto frame = metal.window.frame;
+                    auto settled = std::chrono::steady_clock::now();
+                    await_update_ui([&] {
+                        if (!NSEqualRects(frame, metal.window.frame)) {
+                            frame = metal.window.frame; settled = std::chrono::steady_clock::now();
+                        }
+                        return std::chrono::steady_clock::now() - settled > std::chrono::milliseconds(150);
+                    }, "popover anchor did not settle before pointer delivery");
+                }
+                advanceFrames();
+                const auto tab = std::find_if(ui_actions.begin(), ui_actions.end(), [&](const auto& a) { return a.chart == code; });
+                update_require(tab != ui_actions.end(), "navigation tab absent from rendered frame");
+                const auto y = tab->origin.y + tab->size.y / 2;
+                const NSPoint local = NSMakePoint(tab->origin.x + tab->size.x / 2,
+                    metal.isFlipped ? y : metal.bounds.size.height - y);
+                const NSPoint location = [metal convertPoint:local toView:nil];
+                for (auto type : {NSEventTypeMouseMoved, NSEventTypeLeftMouseDown, NSEventTypeLeftMouseUp})
+                    [NSApp postEvent:[NSEvent mouseEventWithType:type location:location modifierFlags:0
+                        timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:metal.window.windowNumber
+                        context:nil eventNumber:1 clickCount:1 pressure:1] atStart:NO];
+                const auto failure = std::string(app.popover.shown ? "popup" : "standalone") +
+                    " ignored pointer navigation to " + std::to_string(code);
+                try { await_update_ui([&] { return dashboard_view == code - 10; }, failure.c_str()); }
+                catch (...) {
+                    const auto& io = ImGui::GetIO();
+                    std::cerr << "Input state: paused=" << metal.paused << " popup=" << app.popover.shown
+                        << " key=" << metal.window.keyWindow << " view=" << dashboard_view
+                        << " mouse=" << io.MousePos.x << ',' << io.MousePos.y
+                        << " size=" << io.DisplaySize.x << ',' << io.DisplaySize.y << " height=" << metal.bounds.size.height
+                        << " flipped=" << metal.isFlipped
+                        << " down=" << io.MouseDown[0] << '\n';
+                    throw;
+                }
+            };
+            tabClick(10); tabClick(13); tabClick(11);
+            const auto owner = app.popover.contentViewController;
+            for (int cycle = 0; cycle < 6; ++cycle) {
+                phase = "reopen-" + std::to_string(cycle);
+                [app closePanel:nil];
+                await_update_ui([&] { return !app.popover.shown; }, "popup did not close");
+                update_require(((MTKView*)app.content.view).paused && !monitor->visible,
+                    "closed popup kept rendering or service visibility");
+                [app applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+                await_update_ui([&] { return app.popover.shown; }, "app reopen did not restore the popup");
+                advanceFrames();
+                tabClick(cycle % 2 ? 10 : 11);
+                update_require(app.popover.contentViewController == owner &&
+                    NSApp.activationPolicy == NSApplicationActivationPolicyAccessory,
+                    "popup reopen moved the renderer or introduced Dock access");
+            }
+            phase = "update-review";
+            [app showUpdateWindow];
+            update_require(!app.popover.shown, "update review did not close the popup");
+            [app.updateWindow close];
             [app applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
-            update_require(app.item.visible && app.monitorWindow.visible, "explicit reopen did not restore access");
+            await_update_ui([&] { return app.popover.shown; }, "update review prevented popup reopening");
+            advanceFrames(); tabClick(13); tabClick(11);
+            // No direct draw calls: detect the stale-frame failure even while
+            // paused=false, with a period of idle native rendering between clicks.
+            phase = "idle";
+            for (int sample = 0; sample < 12; ++sample) advanceFrames();
+            phase = "focus";
+            other_app();
+            await_update_ui([&] { return !app.popover.shown; }, "popup survived focus loss");
+            [app applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+            await_update_ui([&] { return app.popover.shown; }, "focus change prevented popup reopening");
+            advanceFrames(); tabClick(10); tabClick(11);
+            phase = "escape";
+            [NSApp postEvent:[NSEvent keyEventWithType:NSEventTypeKeyDown location:NSZeroPoint modifierFlags:0
+                timestamp:NSProcessInfo.processInfo.systemUptime windowNumber:app.content.view.window.windowNumber
+                context:nil characters:@"\033" charactersIgnoringModifiers:@"\033" isARepeat:NO keyCode:53] atStart:NO];
+            await_update_ui([&] { return !app.popover.shown; }, "Escape did not close the popup");
+            [app applicationShouldHandleReopen:NSApp hasVisibleWindows:NO];
+            await_update_ui([&] { return app.popover.shown; }, "Escape prevented popup reopening");
+            advanceFrames(); tabClick(10); tabClick(11);
+            phase = "compact";
+            const NSSize originalSize = app.popover.contentSize;
+            [app toggleCompact:nil]; advanceFrames();
+            update_require(!NSEqualSizes(app.popover.contentSize, originalSize), "popup ignored Compact view");
+            [app toggleCompact:nil]; advanceFrames();
+            update_require(NSEqualSizes(app.popover.contentSize, originalSize), "popup did not restore its size");
+            [app popoverDidClose:[NSNotification notificationWithName:NSPopoverDidCloseNotification object:app.popover]];
+            update_require(!((MTKView*)app.content.view).paused && monitor->visible,
+                "late close notification paused a reopened popup");
+            advanceFrames();
+            [app closePanel:nil];
             [NSStatusBar.systemStatusBar removeStatusItem:app.item]; app.item = nil;
             [app applicationWillTerminate:[NSNotification notificationWithName:NSApplicationWillTerminateNotification object:NSApp]];
-            update_require(!monitor && !app.monitorWindow.visible && ((MTKView*)app.content.view).paused,
+            update_require(!monitor && !app.popover.shown && ((MTKView*)app.content.view).paused,
                 "termination left a live presentation without its model");
-            [app windowWillClose:[NSNotification notificationWithName:NSWindowWillCloseNotification object:app.monitorWindow]];
             [app popoverDidClose:[NSNotification notificationWithName:NSPopoverDidCloseNotification object:app.popover]];
             std::cout << "Native update review: retained window, foreground handoff, no background focus theft, closed-window suppression, pinned installation and acknowledgement, EN/RU passed\n";
-            std::cout << "Status item: fixed update width, retained template, hidden-anchor fallback and explicit reopen passed\n";
-            std::cout << "Termination: open-window teardown and late window/popover close notifications passed\n";
+            std::cout << "Tray popup: fixed status width, single content owner, native frame delivery, pointer navigation, reopen, focus, update review and compact sizing passed\n";
+            std::cout << "Termination: popup teardown and late close notification passed\n";
+            std::cout << "Login startup: installed-only registration, failure retry, opt-out and live approval status passed\n";
+            [app.loginPreferences removePersistentDomainForName:loginSuite];
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
+            NSLog(@"Anchor frame %@ button=%@ visibleRect=%@ visible=%d hidden=%d popup size=%@", NSStringFromRect(app.item.button.window.frame), NSStringFromRect(app.item.button.bounds), NSStringFromRect(app.item.button.visibleRect), app.item.button.window.visible, app.item.button.hiddenOrHasHiddenAncestor, NSStringFromSize(app.popover.contentSize));
+            std::cerr << "Popup state: shown=" << app.popover.shown << " pending=" << app.initialPresentationPending
+                << " anchor=" << (app.item.button.window != nil) << " key=" << app.content.view.window.keyWindow
+                << " active=" << NSApp.active << " paused=" << ((MTKView*)app.content.view).paused << '\n';
             [app.updateWindow close]; if (peer.running) [peer terminate];
             if (prior) [prior activateWithOptions:0]; return 1;
         }
@@ -255,5 +404,25 @@ int main(int argc, char** argv) {
         if (peer.running) { [commands.fileHandleForWriting writeData:[@"q" dataUsingEncoding:NSUTF8StringEncoding]]; [peer waitUntilExit]; }
         if (prior) [prior activateWithOptions:0];
         return 0;
+    }
+}
+
+int main(int argc, char** argv) {
+    @autoreleasepool {
+        if (argc > 1 && std::string_view(argv[1]).starts_with("--")) return native_update_tests(argc, argv);
+        [NSApplication sharedApplication];
+        [NSApp setActivationPolicy:NSApplicationActivationPolicyAccessory];
+        [NSApp finishLaunching];
+        __block int result = 1;
+        // Run under the real NSApplication loop. A hand-pumped, not-running
+        // application does not exercise the normal status-item/popup lifecycle.
+        [NSTimer scheduledTimerWithTimeInterval:.1 repeats:NO block:^(NSTimer*) {
+            result = native_update_tests(argc, argv);
+            [NSApp stop:nil];
+            [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint
+                modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];
+        }];
+        [NSApp run];
+        return result;
     }
 }

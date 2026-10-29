@@ -1087,6 +1087,10 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         links(receipt, false, false, true);
         state["phase"] = "removing"; store.save(state);
         const auto service_guard = stop_owned_service(receipt);
+        const auto monitor = prefix / "Shin Monitor.app/Contents/MacOS/Shin Monitor";
+        const auto info = prefix / "Shin Monitor.app/Contents/Info.plist";
+        if (present(monitor) && present(info) && read_text(info, 32768, false).find("<key>ShinLoginStartupProtocol</key>") != std::string::npos)
+            (void)previous_cli(monitor, receipt.at("home").get<std::string>(), "--unregister-login-startup");
         links(receipt, false, true);
         if (present(prefix)) remove_payload(prefix, state.at("kit"), receipt.at("prefix_identity"));
         clear_previous(state, store, control / "update-payload");

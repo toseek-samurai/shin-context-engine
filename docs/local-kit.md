@@ -113,13 +113,23 @@ the panel; it applies immediately, including open native windows and menus. Syst
 uses the operating system language, with English as fallback. Translations are
 compiled into the kit and need no downloads.
 
-Click the Shin icon in the menu bar. In unreleased source, the update indicator
+Click the Shin icon in the menu bar. The update indicator
 stays inside the same square icon. macOS can still hide menu-bar extras when
 space is tight; it provides no public always-visible priority for an app's icon.
-Reopening **Shin Monitor.app** opens a standalone Monitor window, and a missing
-menu-bar anchor also falls back to that window. Closing it leaves Monitor
-running; an explicit Quit exits the app. Service startup at login does not start
-Monitor itself.
+In unreleased source, **Shin Monitor.app** is a tray application: opening it
+shows the popup, and closing the popup leaves Monitor running. The dashboard
+stays attached to its popover; it does not detach into a standalone window or
+add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
+icon to a visible position. An explicit Quit exits Monitor.
+
+The installed Monitor registers itself with macOS Login Items on its first
+launch in unreleased source. Use **Launch Monitor at login** in its app or
+status-item menu to disable or re-enable this. The checkmark reads the actual
+macOS setting; external opt-out is preserved. If approval is needed, the menu
+opens Login Items in System Settings. Development and portable builds do not
+register themselves. Login launches stay in the background; an explicit open
+shows the dashboard. Uninstall removes the registration owned by that bundle.
+The background service has a separate login-startup setting.
 
 Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.

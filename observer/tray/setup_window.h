@@ -210,7 +210,7 @@
     [self runCLI:@"service-install" arguments:@[] completion:^(Json result, NSString* failure) {
         if (epoch != self.setupEpoch) return; self.setupLogin.enabled = YES;
         self.setupStatus.stringValue = !failure && result.value("ok", false) ?
-            ui_text("Background service will start at login. Monitor can be opened separately.") :
+            ui_text("Background service will start at login. Monitor login startup is controlled in its app menu.") :
             (failure ? failure : ui_text("Could not enable login startup. Check the service diagnostics."));
     }];
 }

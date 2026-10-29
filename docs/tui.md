@@ -5,8 +5,8 @@ calculations to an interactive terminal. The Sand TUI is included in preview
 dev.39 and later; use the [preview kit](local-kit.md#download-a-preview-release)
 on macOS or [build from source](building.md) on Linux.
 
-The four-section layout shown below is current development source, not yet a
-published preview. Use `1`–`4` or Tab / Shift-Tab for Overview, Projects, Activity
+The four-section layout shown below is included in preview dev.66 and later.
+Use `1`–`4` or Tab / Shift-Tab for Overview, Projects, Activity
 and Settings. Left/Right or `[` / `]` selects a page in Activity or Settings; each
 section remembers its last page. Changing a page cancels pending update
 confirmation, while an installation already in progress continues.

@@ -26,8 +26,8 @@ Metal must be available; a skipped render is not a new screenshot. Inspect the
 outputs visually, then copy only the selected PNGs here without modifying
 their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
-These images show the current development source: Overview, Projects, Activity
-and Settings. This navigation has not yet been published as a preview. The
+These images show Overview, Projects, Activity and Settings, the navigation
+introduced in preview dev.66. The
 journal is inside Activity; its 48-event display ceiling, monospace text,
 outcome colors and vector icons remain bounded. All images use the standard
 448×620 panel size. EN and RU are generated into separate output directories.
@@ -57,9 +57,8 @@ on-demand states. Its counters are fixture values.
 
 The [screen gallery](../tui.md) also includes Projects, partial-coverage details,
 Timing, Storage, Models, Russian, compact and disconnected views. These show
-the current development layout of the Sand TUI, before publication. The four
-main sections and their nested pages are source previews; the underlying Sand
-renderer has shipped since preview dev.39.
+the four-section Sand layout included in preview dev.66 and later. The
+underlying Sand renderer has shipped since preview dev.39.
 All names, paths, tokens and counts are synthetic; example model labels do not
 represent real client attribution.
 

@@ -12,7 +12,7 @@ Windows ZIP/MSI packaging route are described in [Windows source status](https:/
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.62).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -20,7 +20,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.62/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.66/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -122,7 +122,7 @@ stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-In current development source (not yet a published preview), the desktop panel
+In preview dev.66 and later, the desktop panel
 groups tasks under **Overview**, **Projects**, **Activity** and **Settings**.
 Overview summarizes current project readiness and leads to a project needing
 review. Project explanations expose a labeled next action, with search-check
@@ -147,7 +147,7 @@ Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
 For the Sand terminal dashboard with line charts, run `shin-ce stats`.
-Current development source groups the TUI under Overview, Projects, Activity and
+Preview dev.66 groups the TUI under Overview, Projects, Activity and
 Settings (`1`–`4`, Tab / Shift-Tab). Left/Right or `[` / `]` switches pages within
 Activity and Settings. Activity includes request timing, agents and the session
 journal, including explicit host context markers when available.

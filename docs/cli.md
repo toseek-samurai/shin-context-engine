@@ -21,8 +21,8 @@ On macOS and Linux, open the Sand terminal dashboard:
 shin-ce stats
 ```
 
-The four-section navigation described here is current development source and is
-not yet part of a published preview. Sand, graphs and EN/RU remain supported.
+The four-section navigation described here is included in preview dev.66 and
+later. Sand, graphs and EN/RU remain supported.
 
 The Sand dashboard is included in preview dev.39 and later; Sessions arrived in
 dev.45. Updates and the graph improvements below are included in dev.49 and later.

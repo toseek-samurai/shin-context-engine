@@ -37,8 +37,8 @@ its CLI and MCP integrations, and the Monitor interface.
   <img src="docs/images/monitor-settings.png" width="400" alt="Settings groups language, connections, storage and updates under labeled actions">
 </p>
 
-The four-section Sand interface shown here is current development source, not
-yet a published preview. These real Monitor renders use synthetic sample data.
+The four-section Sand interface shown here is included in preview dev.66 and
+later. These real Monitor renders use synthetic sample data.
 Monitor supports
 English and Russian; these examples use English. Names, counts, and timings above are examples, not benchmark results.
 [Screenshot sources and reproduction](docs/images/README.md).
@@ -50,8 +50,8 @@ English and Russian; these examples use English. Names, counts, and timings abov
 - **Keep state outside your repository.** The native kit stores indexes and
   history in a separate private data directory. Adding a project does not add
   configuration files to its source tree.
-- **Use the same local service from UI and CLI.** Desktop and TUI share Overview, Projects, Activity and Settings in development
-  source; timing, agents and the journal live in Activity. Text and JSON status remain available. See the
+- **Use the same local service from UI and CLI.** Desktop and TUI share Overview, Projects, Activity and Settings in preview dev.66
+  and later; timing, agents and the journal live in Activity. Text and JSON status remain available. See the
   [UI-to-CLI map](docs/cli.md#monitor-and-cli).
 
 ## Follow agent sessions
@@ -72,7 +72,7 @@ and the [Russian screenshot](docs/images/monitor-sessions-ru.png).
 `shin-ce stats` uses the same Sand palette as Monitor. This native FTXUI render
 uses synthetic example data; fonts and color support follow your terminal.
 Sand TUI is included in preview dev.39 and later. The four-section layout shown
-here is current development source, not yet a published preview.
+here is included in preview dev.66 and later.
 
 <p>
   <img src="docs/images/tui-project.svg" width="428" alt="Terminal project details explain partial coverage and name the excluded example file">
@@ -87,11 +87,11 @@ here is current development source, not yet a published preview.
 The preview includes a first-run setup window, automatic agent connections
 and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.62)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.62/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.66/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it
@@ -126,11 +126,10 @@ open "$HOME/.local/opt/shin-local/Shin Monitor.app"
 You can add further folders in Monitor or with
 `shin-ce project-add --root /path/to/another/project`. For terminal-only use, run
 `shin-ce stats` (or `shin-ce service-status --text` for a single status report).
-In current development source, use Tab or 1–4 for **Overview**, **Projects**,
+In preview dev.66 and later, use Tab or 1–4 for **Overview**, **Projects**,
 **Activity** and **Settings**. Left/Right or `[` / `]` switches pages inside
 Activity and Settings; Enter opens project details and q exits. The journal lives
-in Activity; updates live in Settings (shortcut `u`). This navigation is not yet
-in a published preview.
+in Activity; updates live in Settings (shortcut `u`).
 To use Shin from a coding agent,
 [configure the included MCP adapter](docs/native-client-setup.md). Service and Monitor
 startup at login are described in the
@@ -145,7 +144,7 @@ project data and restores the previous kit if activation fails.
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS, Linux and native Windows x64 source builds; [build instructions](docs/building.md) |
 | Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | macOS and Linux source builds; [Linux/WSL instructions](docs/building.md#linux-and-wsl2-terminal-tools) |
-| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.62) and [development checks](docs/building.md#native-windows-development-builds) |
+| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66) and [development checks](docs/building.md#native-windows-development-builds) |
 
 Windows support adds platform adapters to the same Core, profiles and protocols.
 Its source checks do not qualify a Windows installer or imply feature parity;

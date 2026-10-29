@@ -12,7 +12,7 @@ Windows ZIP/MSI packaging route are described in [Windows source status](https:/
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.57).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.62).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -20,7 +20,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.57/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.62/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -116,14 +116,14 @@ compiled into the kit and need no downloads.
 Click the Shin icon in the menu bar. The update indicator
 stays inside the same square icon. macOS can still hide menu-bar extras when
 space is tight; it provides no public always-visible priority for an app's icon.
-In unreleased source, **Shin Monitor.app** is a tray application: opening it
+Preview dev.62 runs **Shin Monitor.app** as a tray application: opening it
 shows the popup, and closing the popup leaves Monitor running. The dashboard
 stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-The installed Monitor registers itself with macOS Login Items on its first
-launch in unreleased source. Use **Launch Monitor at login** in its app or
+In preview dev.62, the installed Monitor registers itself with macOS Login Items
+on its first launch. Use **Launch Monitor at login** in its app or
 status-item menu to disable or re-enable this. The checkmark reads the actual
 macOS setting; external opt-out is preserved. If approval is needed, the menu
 opens Login Items in System Settings. Development and portable builds do not
@@ -393,7 +393,7 @@ client, project or model-usage configuration.
 
 Only a CI-qualified published Release is offered to users. Maintainers prepare
 `docs/releases/<tag>.md`, commit the matching Observer version, and push its
-reviewed `vX.Y.Z-dev.N` tag. In unreleased source, the tag workflow waits for all
+reviewed `vX.Y.Z-dev.N` tag. The tag workflow waits for all
 four Linux/macOS Core and Observer jobs and both Windows jobs, including exact
 macOS and Windows package qualification, before publishing either platform.
 `tools/publish_preview.py` independently checks the source commit, workflow,

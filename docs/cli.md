@@ -21,6 +21,9 @@ On macOS and Linux, open the Sand terminal dashboard:
 shin-ce stats
 ```
 
+The four-section navigation described here is current development source and is
+not yet part of a published preview. Sand, graphs and EN/RU remain supported.
+
 The Sand dashboard is included in preview dev.39 and later; Sessions arrived in
 dev.45. Updates and the graph improvements below are included in dev.49 and later.
 See the [native screen gallery](tui.md), including EN/RU and compact layouts.
@@ -49,7 +52,8 @@ project rows. Strict Core audits still report the documentation defect.
 
 | Key | Action |
 | --- | --- |
-| `1`–`7`, Tab, Left/Right | Overview, Projects, Timing, Storage, Models, Sessions, Updates |
+| `1`–`4`, Tab / Shift-Tab | Overview, Projects, Activity, Settings |
+| Left/Right or `[` / `]` | Response time / Agents / Journal in Activity; General / Storage / Updates in Settings |
 | Up/Down or `j`/`k` | Select a project; scroll other views |
 | Enter, Esc | Open project details; return |
 | PageUp/PageDown | Scroll a page |
@@ -58,7 +62,7 @@ project rows. Strict Core audits still report the documentation defect.
 | `t`, `f` | Toggle recent/retained timings; filter query traffic |
 | `p` | Next usage project in Models |
 | `r` | Refresh observations; explicitly rescan storage in Storage |
-| `u` / `7` | Open Updates |
+| `u` | Open Settings / Updates |
 | Updates: `r`, `v` | Check public releases; read the saved update result |
 | Updates: `i`, then `y` / `n` | Review installation; explicitly confirm / cancel (`Esc` also cancels) |
 | Updates: `a` | Acknowledge a verified saved result using its exact revision |

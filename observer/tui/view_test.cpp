@@ -23,6 +23,21 @@ int main() {
         require(shin::ui::diagnostic_overview(warned, true).summary.find("1") != std::string::npos);
         warned["active_issue"] = true;
         require(shin::ui::diagnostic_overview(warned, true).title != "Ready with documentation warnings");
+        tui::State navigation;
+        tui::select_section(navigation, 2); tui::move_subpage(navigation, 1);
+        require(navigation.tab == 4 && tui::main_section(navigation) == 2);
+        tui::select_section(navigation, 3); require(navigation.tab == 7);
+        tui::move_subpage(navigation, 1); require(navigation.tab == 3);
+        tui::select_section(navigation, 2); require(navigation.tab == 4);
+        tui::select_section(navigation, 3); require(navigation.tab == 3);
+        tui::move_subpage(navigation, 1); require(navigation.tab == 6);
+        navigation.update_confirmation = "reviewed-revision";
+        tui::select_section(navigation, 0);
+        require(navigation.update_confirmation.empty());
+        tui::select_section(navigation, 3);
+        require(navigation.tab == 6 && navigation.update_confirmation.empty());
+        tui::move_subpage(navigation, 1); require(navigation.tab == 7);
+        require(render(tui::Snapshot{}, navigation).find("Language") != std::string::npos);
         tui::Snapshot snapshot;
         snapshot.connected = true; snapshot.received = tui::Clock::now(); snapshot.error.clear();
         snapshot.service = {{"command", "service-status"}, {"service_running", true},

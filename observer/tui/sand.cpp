@@ -211,7 +211,7 @@ Element text_page(const Snapshot& snapshot, State& state, const Painter& paint, 
 }
 HitTargets::HitTargets() {
     const ftxui::Box absent{1, 0, 1, 0};
-    tabs.fill(absent); metrics.fill(absent); ranges.fill(absent); projects.fill(absent);
+    tabs.fill(absent); pages.fill(absent); metrics.fill(absent); ranges.fill(absent); projects.fill(absent);
     language = back = absent;
     update_check = update_review = update_install = update_confirm = update_cancel = update_acknowledge = absent;
 }
@@ -230,24 +230,50 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
     if (snapshot.received != Clock::time_point{}) age = number(
         std::chrono::duration<double>(Clock::now() - snapshot.received).count());
     const auto connection = online ? ui::tr("LIVE") : ui::tr("OFFLINE");
-    const auto language = ui::language() == ui::Language::en ? "L RU" : "L EN";
+    const auto language = ui::language() == ui::Language::en ? "EN" : "RU";
     const std::string connection_text = std::string(online ? "● " : "○ ") + connection + " · " +
         ui::tr("Observation age: ") + age + ui::tr(" s") +
-        (snapshot.updates.installing() ? std::string(" · ") + ui::tr("Update in progress · 7 Updates") : "");
+        (snapshot.updates.installing() ? std::string(" · ") + ui::tr("Update in progress · Settings / Updates") : "");
     Elements header{
         hbox({paint.label("SHIN  Context Engine", Tone::heading), filler(),
             paint.label(SHIN_OBSERVER_VERSION, Tone::muted), paint.label("   "),
-            paint.label(language, Tone::heading) | reflect(hits.language)}),
+            paint.label(language, Tone::muted)}),
         hbox({paint.label(connection_text, online ? Tone::good : Tone::warning), filler(),
             paint.label(std::string(ui::tr("Uptime: ")) + (online ? number(field(telemetry, "uptime_ms"), 1000) + ui::tr(" s") : "—"), Tone::muted)})};
-    const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Timing"), ui::tr("Storage"), ui::tr("Models"), ui::tr("Sessions"), ui::tr("Updates")};
-    const bool two_rows = columns < 100;
-    Elements tabs, lower_tabs;
+    const std::array names{ui::tr("Overview"), ui::tr("Projects"), ui::tr("Activity"), ui::tr("Settings")};
+    Elements tabs, secondary;
     for (std::size_t i = 0; i < names.size(); ++i) {
+        const bool active = static_cast<int>(i) == main_section(state);
         auto element = paint.label(std::to_string(i + 1) + " " + names[i],
-            static_cast<int>(i) == state.tab ? Tone::selected : Tone::muted, paint.columns / (two_rows ? 4 : 7)) | reflect(hits.tabs[i]);
-        if (static_cast<int>(i) == state.tab) element = element | underlined;
-        (two_rows && i >= 4 ? lower_tabs : tabs).push_back(element);
+            active ? Tone::selected : Tone::muted, paint.columns / 4) | reflect(hits.tabs[i]);
+        if (active) element = element | underlined;
+        tabs.push_back(element);
+    }
+    const auto pages = subpages(state);
+    if (pages[0] >= 0) {
+        const auto labels = main_section(state) == 2 ?
+            std::array{ui::tr("Response time"), ui::tr("Agents"), ui::tr("Journal")} :
+            std::array{ui::tr("General"), ui::tr("Storage"), ui::tr("Updates")};
+        for (std::size_t i = 0; i < pages.size(); ++i) {
+            auto element = paint.label(labels[i], state.tab == pages[i] ? Tone::selected : Tone::heading,
+                paint.columns / 3) | reflect(hits.pages[i]);
+            if (state.tab == pages[i]) element = element | underlined;
+            secondary.push_back(element);
+        }
+    } else {
+        std::size_t ready = 0, review = 0;
+        const auto& rows = field(telemetry, "project_states");
+        if (rows.is_array()) for (const auto& row : rows) {
+            const auto status = ui::project_state(row, online);
+            if (status == ui::ProjectState::current || status == ui::ProjectState::standby) ++ready;
+            if (ui::active_issue(row) || ui::quality_warning(row) || ui::count(row, "documentation_warnings") ||
+                field(field(row, "source_coverage"), "state") == "partial") ++review;
+        }
+        char summary[128];
+        std::snprintf(summary, sizeof(summary), ui::tr("Ready: %zu · Needs review: %zu"), ready, review);
+        secondary.push_back(paint.label(!online ? ui::tr("Current project readiness is unknown") :
+            !rows.is_array() || rows.empty() ? ui::tr("No connected projects") : summary,
+            !online || review ? Tone::warning : Tone::good));
     }
     Elements body;
     const int available = height - 7;
@@ -267,17 +293,23 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
                 online ? number(field(field(telemetry, "request_metrics"), "query_p50_ms"), 1.0, 1) + " ms" : "—"};
             Elements counters;
             for (std::size_t i = 0; i < labels.size(); ++i) {
-                auto element = vbox({paint.label(labels[i], static_cast<int>(i) == state.metric ? Tone::heading : Tone::muted),
-                    paint.label(values[i], static_cast<int>(i) == state.metric ? Tone::selected : Tone::normal)}) |
-                    size(WIDTH, EQUAL, paint.columns / 3) | reflect(hits.metrics[i]);
+                auto element = vbox({paint.label(labels[i], Tone::muted),
+                    paint.label(values[i], Tone::normal)}) |
+                    size(WIDTH, EQUAL, paint.columns / 3);
                 counters.push_back(element);
             }
-            body.push_back(hbox(std::move(counters))); body.push_back(text(""));
+            body.push_back(hbox(std::move(counters)));
+            Elements metric_controls;
+            const std::array metric_names{ui::tr("Memory"), ui::tr("Active queries"), ui::tr("Search")};
+            for (std::size_t i = 0; i < metric_names.size(); ++i)
+                metric_controls.push_back(paint.label("[" + std::string(metric_names[i]) + "]",
+                    state.metric == static_cast<int>(i) ? Tone::selected : Tone::heading, paint.columns / 3) | reflect(hits.metrics[i]));
+            body.push_back(hbox(std::move(metric_controls)));
             const auto data = chart(snapshot, state.metric, state.range);
             const std::array range_names{online ? ui::tr("Live") : ui::tr("Retained"), ui::tr("1 h"), ui::tr("24 h")};
             Elements ranges;
             for (std::size_t i = 0; i < range_names.size(); ++i)
-                ranges.push_back(paint.label(std::string(" ") + range_names[i] + " ",
+                ranges.push_back(paint.label(std::string("[") + range_names[i] + "]",
                     state.range == static_cast<int>(i) ? Tone::selected : Tone::muted) | reflect(hits.ranges[i]));
             body.push_back(hbox({paint.label(data.title, Tone::heading, std::max(1, paint.columns - 24)),
                 filler(), hbox(std::move(ranges))}));
@@ -306,6 +338,10 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
         body.push_back(paint.label(ui::tr("Search availability and source coverage are separate."), Tone::muted));
     } else {
         int text_height = available;
+        if (state.tab == 7) {
+            body.push_back(paint.label(ui::tr("[L Change language]"), Tone::heading) | reflect(hits.language));
+            --text_height;
+        }
         if (state.tab == 6 && snapshot.updates.phase != UpdatePhase::unsupported) {
             const auto& update = snapshot.updates;
             Elements actions;
@@ -348,17 +384,16 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
     }
     header.push_back(separator() | (monochrome ? nothing : color(paint.colors.rule_ink)));
     header.push_back(hbox(std::move(tabs)));
-    if (two_rows) header.push_back(hbox(std::move(lower_tabs)));
-    if (!two_rows) header.push_back(text(""));
+    header.push_back(hbox(std::move(secondary)));
     header.push_back(vbox(std::move(body)) | yframe | size(HEIGHT, EQUAL, available));
     header.push_back(separator() | (monochrome ? nothing : color(paint.colors.rule_ink)));
     const auto hint = snapshot.updates.installing() ? ui::tr("Update in progress. Keep this terminal open; quitting is available after it finishes.") :
-        columns < 80 ? ui::tr("1-7 tabs  Enter details  ? help  q quit") :
+        columns < 80 ? ui::tr("1-4 Tab  [ ] pages  L EN/RU  ? help  q quit") :
         state.tab == 6 ? ui::tr("r check  i install  y/n confirm/cancel  v result  L EN/RU  q quit") :
         state.tab == 0 ? ui::tr("Enter details  g metric  h period  L EN/RU  ? help  q quit") :
         state.tab == 2 ? ui::tr("t recent/history  f traffic  j/k scroll  L EN/RU  q quit") :
         state.tab == 4 ? ui::tr("p usage project  j/k scroll  L EN/RU  ? help  q quit") :
-        ui::tr("1-7 tabs  j/k scroll  Enter details  r refresh  ? help  q quit");
+        ui::tr("1-4 Tab  [ ] pages  j/k scroll  r refresh  ? help  q quit");
     header.push_back(paint.label(hint, Tone::muted));
     auto result = vbox(std::move(header)) | size(WIDTH, EQUAL, paint.columns) |
         size(HEIGHT, EQUAL, height) | center;

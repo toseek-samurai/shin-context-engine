@@ -26,6 +26,15 @@ the declared source, byte, output and quality bounds. Fixture changes must retai
 the positive and negative behaviors that motivated each test. Historical
 measurements do not qualify a new source tree or binary.
 
+Self-development scopes are declared by the
+[component profile contract](machine/shin-component-profiles-v1.json). UI work
+uses `shin-ui`: terminal, shared presentation helpers, supported Monitor sources
+and colocated fixtures. CI checks the complete eligible UI inventory as well as
+retrieval gates. Native Objective-C++ hosts and include fragments still require
+direct reads; declaring an extension is not parser support. For MCP, verify the
+exact checkout root independently: a passing self-profile does not enroll a
+worktree or change an existing connection.
+
 ## Consumer profile maintenance
 
 When Shin is installed and the project is enrolled, the agent performing an

@@ -2,6 +2,7 @@
 #include "shin/observer/local_project.h"
 #include "updates.h"
 #include <chrono>
+#include <array>
 
 namespace shin::observer::tui {
 using Clock = std::chrono::steady_clock;
@@ -20,7 +21,14 @@ struct State {
     std::string project;
     std::string update_confirmation;
     std::size_t usage_project = 0;
+    int activity_page = 2, settings_page = 7;
 };
+// Leaf pages keep their existing data/render ownership; navigation groups them.
+int main_section(const State& state);
+std::array<int, 3> subpages(const State& state);
+void show_page(State& state, int page);
+void select_section(State& state, int section);
+void move_subpage(State& state, int direction);
 // Presentation only. Never queries, collects usage, enrolls or changes state.
 std::vector<Line> lines(const Snapshot& snapshot, State& state);
 void select_project(const Snapshot& snapshot, State& state, int direction);

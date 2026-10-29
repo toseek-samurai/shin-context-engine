@@ -122,6 +122,18 @@ stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
+In current development source (not yet a published preview), the desktop panel
+groups tasks under **Overview**, **Projects**, **Activity** and **Settings**.
+Overview summarizes current project readiness and leads to a project needing
+review. Project explanations expose a labeled next action, with search-check
+details inside the panel and technical reports available separately. Activity
+groups request timing, agent token history and the session journal; agent token
+totals are distinct from calls to Shin. Timing explicitly selects this service
+run or retained history, independently of the overview chart's period. Settings
+provides language, connection, storage and update entry points. Agent setup keeps
+custom configuration paths under **Advanced agent settings**. The installed TUI
+retains its existing navigation while this desktop workflow is evaluated.
+
 In preview dev.62, the installed Monitor registers itself with macOS Login Items
 on its first launch. Use **Launch Monitor at login** in its app or
 status-item menu to disable or re-enable this. The checkmark reads the actual
@@ -135,9 +147,11 @@ Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
 For the Sand terminal dashboard with line charts, run `shin-ce stats`.
-Use Tab or 1–6 for Overview, Projects, Timing, Storage, Models and Sessions,
-including MCP activity and explicit host context markers when available.
-Unreleased source adds **Updates** as view 7 (`u`): `r` checks releases, `i` reviews
+Current development source groups the TUI under Overview, Projects, Activity and
+Settings (`1`–`4`, Tab / Shift-Tab). Left/Right or `[` / `]` switches pages within
+Activity and Settings. Activity includes request timing, agents and the session
+journal, including explicit host context markers when available.
+Settings includes **Updates** (shortcut `u`): `r` checks releases, `i` reviews
 installation, `y` confirms and `n` or Esc cancels. Its progress and saved results
 use the same native updater as Monitor. Automatic release download is macOS-only.
 Enter opens project details,

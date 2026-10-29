@@ -7,8 +7,10 @@ is read. Displayed metrics are fixture values, not performance measurements.
 
 | README asset | Native fixture output |
 | --- | --- |
+| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-warning-448x620.png` (EN / RU) |
+| `monitor-settings.png` / `monitor-settings-ru.png` | `settings-448x620.png` (EN / RU) |
 | `monitor-projects.png` | `project-states-448x620.png` |
-| `monitor-project.png` | `current-448x620.png` |
+| `monitor-project.png` | `search-warning-opened-448x620.png` |
 | `monitor-timing.png` | `timing-retained-448x620.png` |
 | `monitor-sessions.png` | `sessions-448x620.png` (EN) |
 | `monitor-sessions-ru.png` | `sessions-448x620.png` (RU) |
@@ -24,11 +26,15 @@ Metal must be available; a skipped render is not a new screenshot. Inspect the
 outputs visually, then copy only the selected PNGs here without modifying
 their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
-The project and timing images show the dev.34 Sand appearance. The Sessions
-images come from dev.52 source, including the 48-event display ceiling, readable
-monospace journal, outcome colors and vector icons. All use the standard
-448×620 panel size. Generate EN and RU into separate output directories before
-copying the selected Sessions images.
+These images show the current development source: Overview, Projects, Activity
+and Settings. This navigation has not yet been published as a preview. The
+journal is inside Activity; its 48-event display ceiling, monospace text,
+outcome colors and vector icons remain bounded. All images use the standard
+448×620 panel size. EN and RU are generated into separate output directories.
+The Overview warning is actionable inside the panel; the project-detail image
+shows its search-check explanation and expected document. Settings exposes
+language and labeled connection/storage/update actions. Russian Overview and
+Settings are available as `monitor-overview-ru.png` and `monitor-settings-ru.png`.
 The project list deliberately mixes ready, preparing, partial, blocked, on-demand,
 waiting and recovering states to demonstrate their distinct colors and symbols.
 The blocked project and displayed counters are synthetic examples. The
@@ -51,7 +57,9 @@ on-demand states. Its counters are fixture values.
 
 The [screen gallery](../tui.md) also includes Projects, partial-coverage details,
 Timing, Storage, Models, Russian, compact and disconnected views. These show
-the Sand TUI included in preview dev.39 and later.
+the current development layout of the Sand TUI, before publication. The four
+main sections and their nested pages are source previews; the underlying Sand
+renderer has shipped since preview dev.39.
 All names, paths, tokens and counts are synthetic; example model labels do not
 represent real client attribution.
 

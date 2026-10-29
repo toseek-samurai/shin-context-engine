@@ -1,0 +1,301 @@
+{
+  "schemaVersion": "shin.profile.v1",
+  "document": "shin-profile-ui",
+  "status": "active",
+  "summary": "Bounded development profile for Sand terminal and desktop presentation, shared UI helpers and colocated C++/Python regression fixtures. Native Objective-C++ and include fragments require direct source reads.",
+  "id": "shin-ui",
+  "sourceLabel": "Shin terminal and desktop presentation",
+  "rootFiles": [
+    "AGENTS.md",
+    "observer/CMakeLists.txt",
+    "observer/VERSION",
+    "docs/machine/shin-component-profiles-v1.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "docs/tui.md",
+    "docs/cli.md"
+  ],
+  "sourceExtensions": [
+    ".md",
+    ".json"
+  ],
+  "documentIncludePrefixes": [
+    "AGENTS.md",
+    "docs/tui.md",
+    "docs/cli.md",
+    "docs/images/README.md",
+    "docs/machine/shin-component-profiles-v1.json",
+    "integrations/shin-development/shin-integration-bundle-v1.json",
+    "observer/CMakeLists.txt",
+    "observer/VERSION"
+  ],
+  "sourceFactRoots": [
+    "observer/tui",
+    "observer/tray",
+    "observer/ui"
+  ],
+  "sourceFactExtensions": [
+    ".cpp",
+    ".h",
+    ".py"
+  ],
+  "sourceFactExtractors": [
+    "language"
+  ],
+  "sourceFactMaxFiles": 128,
+  "sourceFactMaxFileBytes": 131072,
+  "agentStartPaths": [
+    "AGENTS.md",
+    "docs/tui.md"
+  ],
+  "jsonKeySections": true,
+  "jsonKeyMaxDepth": 1,
+  "jsonKeyMaxSectionsPerFile": 80,
+  "jsonPathReferences": true,
+  "jsonSchemaTitle": true,
+  "jsonSummaryKeys": true,
+  "defaultTopic": "ui",
+  "evalCases": [
+    {
+      "id": "ui-terminal-renderer",
+      "query": "sand_view",
+      "mustPaths": [
+        "observer/tui/sand.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tui/sand.cpp"
+      ],
+      "mustTopN": 2,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-keyboard-page-routing",
+      "query": "select_section move_subpage",
+      "mustPaths": [
+        "observer/tui/terminal.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tui/terminal.cpp"
+      ],
+      "mustTopN": 2,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-terminal-chart-regressions",
+      "query": "chart_tests",
+      "mustPaths": [
+        "observer/tui/sand_test.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tui/sand_test.cpp"
+      ],
+      "mustTopN": 1,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-update-confirmation",
+      "query": "UpdateController install",
+      "mustPaths": [
+        "observer/tui/updates.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tui/updates.cpp"
+      ],
+      "mustTopN": 3,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-live-language",
+      "query": "resolve_language",
+      "mustPaths": [
+        "observer/ui/language.h"
+      ],
+      "mustTopPaths": [
+        "observer/ui/language.h"
+      ],
+      "mustTopN": 2,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-project-readiness",
+      "query": "render_readiness",
+      "mustPaths": [
+        "observer/tray/monitor_view.h"
+      ],
+      "mustTopPaths": [
+        "observer/tray/monitor_view.h"
+      ],
+      "mustTopN": 2,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-terminal-navigation-guide",
+      "query": "terminal four section navigation Activity Settings",
+      "mustPaths": [
+        "docs/tui.md"
+      ],
+      "mustTopPaths": [
+        "docs/tui.md"
+      ],
+      "mustTopN": 3,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-main-section-owner",
+      "query": "select_section",
+      "mustPaths": [
+        "observer/tui/view.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tui/view.cpp"
+      ],
+      "mustTopN": 2,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-nested-page-owner",
+      "query": "move_subpage",
+      "mustPaths": [
+        "observer/tui/view.cpp"
+      ],
+      "mustTopPaths": [
+        "observer/tui/view.cpp"
+      ],
+      "mustTopN": 2,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "limit": 8,
+      "perDocLimit": 2
+    },
+    {
+      "id": "ui-russian-navigation-guide",
+      "query": "разделы Активность Настройки страницы переключить",
+      "mustPaths": [
+        "docs/tui.md"
+      ],
+      "mustTopPaths": [
+        "docs/tui.md"
+      ],
+      "mustTopN": 3,
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "maxCandidateRows": 1000,
+      "minCoveredGroups": 4,
+      "limit": 8,
+      "perDocLimit": 2
+    }
+  ],
+  "packEvalCases": [
+    {
+      "id": "ui-terminal-task-workflow",
+      "request": {
+        "schema_version": "shin.task-request.v1",
+        "request_id": "ui-terminal-task-workflow",
+        "task": {
+          "objective": "Review main and nested terminal navigation, Sand rendering and explicit update confirmation using implementation owners.",
+          "must": [
+            {
+              "id": "sections",
+              "query": "select_section",
+              "require_full_coverage": true
+            },
+            {
+              "id": "pages",
+              "query": "move_subpage",
+              "require_full_coverage": true
+            },
+            {
+              "id": "render",
+              "query": "sand_view",
+              "require_full_coverage": true
+            },
+            {
+              "id": "updates",
+              "query": "UpdateController install",
+              "require_full_coverage": true
+            }
+          ]
+        },
+        "budget": {
+          "max_evidence_bytes": 24576,
+          "max_records": 16,
+          "per_query_records": 6,
+          "per_document_records": 3
+        }
+      },
+      "mustPaths": [
+        "observer/tui/view.cpp",
+        "observer/tui/sand.cpp",
+        "observer/tui/updates.cpp"
+      ],
+      "mustNotPaths": [
+        "profiles/shin-ui.json"
+      ],
+      "expectedComplete": true,
+      "maxEvidenceBytes": 24576,
+      "maxRecords": 16,
+      "maxCompactBytes": 50000,
+      "requireSerialParallelIdentity": true
+    }
+  ],
+  "topicRules": [
+    {
+      "id": "ui",
+      "description": "Terminal and desktop presentation, navigation, request timing, charts and update confirmation.",
+      "keywords": [
+        "terminal",
+        "FTXUI",
+        "ImGui",
+        "Sand",
+        "tray",
+        "monitor",
+        "navigation",
+        "chart",
+        "language",
+        "update"
+      ]
+    }
+  ]
+}

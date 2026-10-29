@@ -29,13 +29,17 @@ its CLI and MCP integrations, and the Monitor interface.
 ## See your project's state
 
 <p>
-  <img src="docs/images/monitor-projects.png" width="280" alt="Shin Monitor's Sand theme distinguishes ready, preparing, partial, blocked and on-demand projects">
-  <img src="docs/images/monitor-project.png" width="280" alt="Project detail shows current context, the last check, updates and query history">
-  <img src="docs/images/monitor-timing.png" width="280" alt="Request timing separates search time from total service time and preparation">
+  <img src="docs/images/monitor-overview.png" width="400" alt="Overview explains project readiness, offers a review action and keeps the memory line graph">
+  <img src="docs/images/monitor-projects.png" width="400" alt="Projects distinguishes ready, preparing, partial, blocked and on-demand states">
+</p>
+<p>
+  <img src="docs/images/monitor-timing.png" width="400" alt="Activity separates search time from total service time and reader preparation">
+  <img src="docs/images/monitor-settings.png" width="400" alt="Settings groups language, connections, storage and updates under labeled actions">
 </p>
 
-Sand appearance with distinct status colors, shown in real Monitor screens
-rendered with synthetic sample data. Monitor supports
+The four-section Sand interface shown here is current development source, not
+yet a published preview. These real Monitor renders use synthetic sample data.
+Monitor supports
 English and Russian; these examples use English. Names, counts, and timings above are examples, not benchmark results.
 [Screenshot sources and reproduction](docs/images/README.md).
 
@@ -46,15 +50,15 @@ English and Russian; these examples use English. Names, counts, and timings abov
 - **Keep state outside your repository.** The native kit stores indexes and
   history in a separate private data directory. Adding a project does not add
   configuration files to its source tree.
-- **Use the same local service from UI and CLI.** The TUI has overview, projects,
-  timing, storage, and model-usage tabs. Text and JSON status remain available. See the
+- **Use the same local service from UI and CLI.** Desktop and TUI share Overview, Projects, Activity and Settings in development
+  source; timing, agents and the journal live in Activity. Text and JSON status remain available. See the
   [UI-to-CLI map](docs/cli.md#monitor-and-cli).
 
 ## Follow agent sessions
 
-<img src="docs/images/monitor-sessions.png" width="360" alt="Monitor Sessions displays a Sand journal with timestamps, session IDs, vector icons and colored outcomes, with an explicit 48-event display limit">
+<img src="docs/images/monitor-sessions.png" width="360" alt="Activity Journal displays timestamps, session IDs, vector icons and colored outcomes, with an explicit 48-event display limit">
 
-The dev.52 source adds a readable **Sessions** journal: recent MCP calls and
+**Activity → Journal** shows recent MCP calls and
 explicit client events, session counters and expandable details. Up to eight
 sessions and six events per session keep the view bounded; this display limit
 does not reduce stored history or analysis totals. The screenshot uses synthetic
@@ -67,7 +71,8 @@ and the [Russian screenshot](docs/images/monitor-sessions-ru.png).
 
 `shin-ce stats` uses the same Sand palette as Monitor. This native FTXUI render
 uses synthetic example data; fonts and color support follow your terminal.
-Sand TUI is included in preview dev.39 and later.
+Sand TUI is included in preview dev.39 and later. The four-section layout shown
+here is current development source, not yet a published preview.
 
 <p>
   <img src="docs/images/tui-project.svg" width="428" alt="Terminal project details explain partial coverage and name the excluded example file">
@@ -121,8 +126,11 @@ open "$HOME/.local/opt/shin-local/Shin Monitor.app"
 You can add further folders in Monitor or with
 `shin-ce project-add --root /path/to/another/project`. For terminal-only use, run
 `shin-ce stats` (or `shin-ce service-status --text` for a single status report).
-Use Tab or 1–7 to switch views, Enter for project details, and q to exit.
-**Sessions** is view 6; **Updates** is view 7.
+In current development source, use Tab or 1–4 for **Overview**, **Projects**,
+**Activity** and **Settings**. Left/Right or `[` / `]` switches pages inside
+Activity and Settings; Enter opens project details and q exits. The journal lives
+in Activity; updates live in Settings (shortcut `u`). This navigation is not yet
+in a published preview.
 To use Shin from a coding agent,
 [configure the included MCP adapter](docs/native-client-setup.md). Service and Monitor
 startup at login are described in the

@@ -5,7 +5,8 @@
 
 namespace shin::observer::tui {
 struct HitTargets {
-    std::array<ftxui::Box, 7> tabs;
+    std::array<ftxui::Box, 4> tabs;
+    std::array<ftxui::Box, 3> pages;
     std::array<ftxui::Box, 3> metrics, ranges;
     std::array<ftxui::Box, 16> projects;
     std::array<std::string, 16> roots;

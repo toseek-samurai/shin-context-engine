@@ -168,6 +168,10 @@ void platform_action(int code) {
     case 44: [NSApp sendAction:@selector(choosePeriod:) to:NSApp.delegate from:nil]; break;
     case 62: [NSApp sendAction:@selector(chooseTimingTraffic:) to:NSApp.delegate from:nil]; break;
     case 66: [NSApp sendAction:@selector(chooseTimingScope:) to:NSApp.delegate from:nil]; break;
+    case 110: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(checkForUpdates:) to:NSApp.delegate from:nil]; }); break;
+    case 111: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showLastUpdateResult:) to:NSApp.delegate from:nil]; }); break;
+    case 112: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(openLoginSettings:) to:NSApp.delegate from:nil]; }); break;
+    case 116: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showAgentSetup:) to:NSApp.delegate from:nil]; }); break;
     case 86:
         dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showUpdateOffer:) to:NSApp.delegate from:nil]; });
         break;
@@ -446,6 +450,8 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSTextField* setupProject;
 @property(nonatomic, strong) NSTextField* setupStatus;
 @property(nonatomic, strong) NSButton* setupCheck;
+@property(nonatomic, strong) NSButton* setupAdvanced;
+@property(nonatomic, strong) NSMutableArray<NSView*>* setupAdvancedViews;
 @property(nonatomic, strong) NSButton* setupChoose;
 @property(nonatomic, strong) NSButton* setupLogin;
 @property(nonatomic, copy) NSString* setupRoot;
@@ -522,6 +528,7 @@ static std::unique_ptr<Monitor> monitor;
 - (void)beginSetupProject:(id)sender;
 - (void)refreshSetup:(id)sender;
 - (void)selectSetupTarget:(id)sender;
+- (void)toggleSetupAdvanced:(id)sender;
 - (void)chooseSetupConfig:(NSButton*)sender;
 - (void)connectSetupAgents:(id)sender;
 - (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying;
@@ -556,6 +563,10 @@ static std::unique_ptr<Monitor> monitor;
     NSMenu* menu = [[NSMenu alloc] initWithTitle:ui_text("Project actions")];
     NSMenuItem* connect = [menu addItemWithTitle:ui_text("Connect coding agent…") action:@selector(showAgentSetup:) keyEquivalent:@""];
     connect.target = self;
+    NSMenuItem* history = [menu addItemWithTitle:ui_text("Project history") action:@selector(selectView:) keyEquivalent:@""];
+    history.tag = 34; history.target = self;
+    NSMenuItem* folder = [menu addItemWithTitle:ui_text("Show project folder") action:@selector(selectView:) keyEquivalent:@""];
+    folder.tag = 38; folder.target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem* detach = [menu addItemWithTitle:ui_text("Disconnect") action:@selector(beginProjectDisconnect:) keyEquivalent:@""];
     detach.target = self;
@@ -1534,7 +1545,7 @@ int main(int argc, char** argv) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* item = [[NSMenuItem alloc] init];
         NSMenu* application = [[NSMenu alloc] init];
-        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Models"), ui_text("Sessions"),
+        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Activity"), ui_text("Settings"),
             ui_text("Now"), ui_text("24 hours"), ui_text("7 days")];
         for (NSUInteger i = 0; i < titles.count; ++i) {
             NSMenuItem* choice = [application addItemWithTitle:titles[i] action:@selector(selectView:) keyEquivalent:@""];

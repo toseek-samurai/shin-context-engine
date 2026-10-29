@@ -425,6 +425,8 @@ int native_update_tests(int argc, char** argv) {
         } catch (const std::exception& error) {
             std::cerr << error.what() << '\n';
             NSLog(@"Anchor frame %@ button=%@ visibleRect=%@ visible=%d hidden=%d popup size=%@", NSStringFromRect(app.item.button.window.frame), NSStringFromRect(app.item.button.bounds), NSStringFromRect(app.item.button.visibleRect), app.item.button.window.visible, app.item.button.hiddenOrHasHiddenAncestor, NSStringFromSize(app.popover.contentSize));
+            NSRunningApplication* front = NSWorkspace.sharedWorkspace.frontmostApplication;
+            NSLog(@"Focus owner %@ (%d), test peer %d", front.bundleIdentifier, front.processIdentifier, peer.processIdentifier);
             std::cerr << "Popup state: shown=" << app.popover.shown << " pending=" << app.initialPresentationPending
                 << " anchor=" << (app.item.button.window != nil) << " key=" << app.content.view.window.keyWindow
                 << " active=" << NSApp.active << " paused=" << ((MTKView*)app.content.view).paused << '\n';

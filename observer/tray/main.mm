@@ -296,6 +296,8 @@ NSString* update_failure_text(const Json& result, NSString* failure) {
                 return ui_text("Monitor could not hand over to the updater. Your current installation is unchanged. Restart Monitor and check for updates again.");
             if (error->value("code", Json()) == "ui-operation-busy")
                 return ui_text("Finish the current Shin operation before updating.");
+            if (error->value("code", Json()) == "update-outcome-unknown")
+                return ui_text("A previous update needs review. Open its saved result to verify the current installation before retrying.");
             const auto message = error->find("message");
             if (message != error->end() && message->is_string() && !message->get_ref<const std::string&>().empty())
                 return diagnostic_text_content(message->get_ref<const std::string&>());
@@ -476,6 +478,7 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSButton* updateNotesButton;
 @property(nonatomic, strong) NSButton* updateCopyButton;
 @property(nonatomic, strong) NSButton* updateAcknowledgeButton;
+@property(nonatomic, strong) NSButton* updateReviewButton;
 @property(nonatomic, strong) NSDate* lastUpdateCheck;
 @property(nonatomic, strong) NSDate* nextUpdateCheck;
 @property(nonatomic) BOOL installedApplication;

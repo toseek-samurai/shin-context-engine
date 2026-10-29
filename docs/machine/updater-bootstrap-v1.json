@@ -21,7 +21,7 @@
     "updater": "Interpret installed/current kit formats, select and verify the application archive, perform native update and recovery, independently confirm completion, and own the outcome.",
     "observation": "Progress never acknowledges completion or grants installation authority. TUI observes the fresh process through the bounded progress protocol.",
     "desktop": "exec preserves the helper PID and original Monitor parent. The downloaded updater launches its own progress viewer, then reopens Monitor after its viewer exits.",
-    "offlineResult": "Use the verified updater referenced by an unresolved saved outcome, or the bundled updater. No release fetch is needed for status or acknowledgement."
+    "offlineResult": "Use the verified updater referenced by an unresolved saved outcome; if that temporary directory is absent, use the verified bundled updater. A substituted directory or symlink is refused, and read-only status preserves the saved outcome. No release fetch is needed for status or acknowledgement."
   },
   "stableLocators": {
     "installation": ".shin-installation.json retains prefix, prefix_identity, home and home_identity for protocol 1. Unknown fields and the native journal format are outside the bootstrap contract.",

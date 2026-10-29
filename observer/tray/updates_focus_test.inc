@@ -47,6 +47,10 @@
 
 namespace {
 void update_require(bool ok, const char* reason) { if (!ok) throw std::runtime_error(reason); }
+bool update_window_foreground(NSWindow* window) {
+    return NSApp.active && window.keyWindow &&
+        NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == getpid();
+}
 template<class Predicate> void await_update_ui(Predicate predicate, const char* reason) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     while (!predicate()) {
@@ -63,7 +67,7 @@ void save_update_window(UpdateWindowHarness* app, const fs::path& output, const 
     [app.updateWindow.contentView layoutSubtreeIfNeeded]; [app.updateWindow displayIfNeeded];
     NSView* body = app.updateWindow.contentView;
     for (NSView* control in @[app.updateTitle, app.updateVersion, app.updateCheckButton, app.updateInstallButton,
-            app.updateNotesButton, app.updateCopyButton, app.updateAcknowledgeButton]) {
+            app.updateNotesButton, app.updateCopyButton, app.updateAcknowledgeButton, app.updateReviewButton]) {
         if (control.hiddenOrHasHiddenAncestor) continue;
         const auto rect = [control convertRect:control.bounds toView:body];
         update_require(NSContainsRect(body.bounds, rect) && rect.size.height >= 10, "update control clipped outside window");
@@ -146,7 +150,7 @@ int native_update_tests(int argc, char** argv) {
             update_require([peer launchAndReturnError:&error], "could not start focus peer");
             auto other_app = [&] {
                 [commands.fileHandleForWriting writeData:[@"f" dataUsingEncoding:NSUTF8StringEncoding]];
-                await_update_ui([&] { return NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier; },
+                await_update_ui([&] { return !NSApp.active && NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier; },
                                 "peer did not become foreground application");
             };
             const Json offer{{"ok", true}, {"available", true}, {"version", "2.0.5-dev.99"},
@@ -155,7 +159,7 @@ int native_update_tests(int argc, char** argv) {
             [app beginUpdateCheck:NO];
             update_require(!app.updateWindow && app.pendingReply, "automatic check opened a window");
             [app showUpdateOffer:nil];
-            await_update_ui([&] { return NSApp.active && app.updateWindow.keyWindow; }, "manual review did not take focus");
+            await_update_ui([&] { return update_window_foreground(app.updateWindow); }, "manual review did not take focus");
             NSWindow* window = app.updateWindow;
             update_require(app.updateScreen == UpdateScreen::checking, "manual review did not promote background check");
             save_update_window(app, output, "checking");
@@ -167,7 +171,7 @@ int native_update_tests(int argc, char** argv) {
                 NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier,
                 "background reply stole focus or lost the window");
             [app showUpdateWindow];
-            await_update_ui([&] { return NSApp.active && window.keyWindow; }, "existing review did not regain focus");
+            await_update_ui([&] { return update_window_foreground(window); }, "existing review did not regain focus");
             save_update_window(app, output, "available");
             update_require(window.contentView.bounds.size.height <= 360 &&
                 [app.updateVersion.stringValue containsString:@"2.0.5-dev.98"] &&
@@ -179,7 +183,7 @@ int native_update_tests(int argc, char** argv) {
                 app.updateScreen == UpdateScreen::offer && window.visible, "release notes dismissed review");
             other_app(); // Reproduce the browser taking foreground after Release notes.
             [app showUpdateWindow];
-            await_update_ui([&] { return NSApp.active && window.keyWindow; }, "review stayed behind browser");
+            await_update_ui([&] { return update_window_foreground(window); }, "review stayed behind browser");
             [app replaceBackgroundOffer:{{"ok", true}, {"available", true}, {"version", "2.0.5-dev.100"}, {"revision", "new-revision"}}];
             [app.updateInstallButton performClick:nil];
             update_require([app.pendingCommand isEqualToString:@"update-install"] && app.markedPending &&
@@ -190,11 +194,36 @@ int native_update_tests(int argc, char** argv) {
             [app installReviewedUpdate:nil];
             other_app();
             [app reply:{{"ok", false}, {"error", {{"code", "update-offer-changed"}}}} failure:nil];
+            await_update_ui([&] { return update_window_foreground(window); }, "failed installation did not return its result to the foreground");
             update_require(window.visible && !app.markedPending && !project_management_busy.load() &&
-                app.updateScreen == UpdateScreen::startFailed &&
-                NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier,
+                app.updateScreen == UpdateScreen::startFailed,
                 "failed install lost window, pending state or foreground ownership");
             save_update_window(app, output, "start-failed");
+            [app checkForUpdates:nil]; [app reply:offer failure:nil];
+            [app installReviewedUpdate:nil]; [window close]; other_app();
+            [app reply:{{"ok", false}, {"error", {{"code", "update-outcome-unknown"}}}} failure:nil];
+            update_require(!window.visible && NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier,
+                "failed installation reopened an explicitly dismissed review");
+            [app checkForUpdates:nil]; [app reply:offer failure:nil];
+            [app installReviewedUpdate:nil]; [window miniaturize:nil];
+            await_update_ui([&] { return window.miniaturized; }, "review did not minimize");
+            other_app();
+            [app reply:{{"ok", false}, {"error", {{"code", "update-outcome-unknown"}}}} failure:nil];
+            update_require(window.miniaturized && NSWorkspace.sharedWorkspace.frontmostApplication.processIdentifier == peer.processIdentifier,
+                "failed installation restored an explicitly minimized review");
+            [app checkForUpdates:nil]; [app reply:offer failure:nil];
+            [app installReviewedUpdate:nil];
+            [app reply:{{"ok", false}, {"error", {{"code", "update-outcome-unknown"}}}} failure:nil];
+            update_require(!app.updateReviewButton.hidden, "blocked installation hid the previous-result review action");
+            save_update_window(app, output, "previous-result-action");
+            [app.updateReviewButton performClick:nil];
+            update_require([app.pendingCommand isEqualToString:@"update-status"], "previous-result action did not inspect saved outcome");
+            [app reply:{{"ok", false}, {"phase", "review-required"}, {"can_acknowledge", true},
+                {"review_revision", "repaired-installation-review"}, {"current_version", "2.0.5-dev.98"},
+                {"installation_verified", true}, {"native_recovery_pending", false}} failure:nil];
+            update_require(!app.updateAcknowledgeButton.hidden && app.updateReviewButton.hidden &&
+                [app.updateVersion.stringValue containsString:@"2.0.5-dev.98"], "saved result lost the verified installed version or confirmation action");
+            save_update_window(app, output, "repaired-installation-review");
             [app checkForUpdates:nil]; [app reply:offer failure:nil];
             [app installReviewedUpdate:nil];
             [app reply:{{"ok", false}, {"error", {{"code", "update-monitor-open"},
@@ -229,7 +258,9 @@ int native_update_tests(int argc, char** argv) {
             [app.updateAcknowledgeButton performClick:nil];
             update_require([app.pendingCommand isEqualToString:@"update-acknowledge"] &&
                 [app.pendingArguments containsObject:@"result-revision"], "acknowledgement lost revision");
+            other_app();
             [app reply:{{"ok", false}, {"error", {{"message", "Unfinished operation"}}}} failure:nil];
+            await_update_ui([&] { return update_window_foreground(window); }, "failed acknowledgement stayed behind another application");
             update_require(window.visible && app.updateScreen == UpdateScreen::acknowledgeFailed && !app.updateAcknowledgeButton.hidden,
                 "failed acknowledgement dismissed recovery");
             [app.updateAcknowledgeButton performClick:nil];
@@ -386,7 +417,7 @@ int native_update_tests(int argc, char** argv) {
             update_require(!monitor && !app.popover.shown && ((MTKView*)app.content.view).paused,
                 "termination left a live presentation without its model");
             [app popoverDidClose:[NSNotification notificationWithName:NSPopoverDidCloseNotification object:app.popover]];
-            std::cout << "Native update review: retained window, foreground handoff, no background focus theft, closed-window suppression, pinned installation and acknowledgement, EN/RU passed\n";
+            std::cout << "Native update review: foreground failures, quiet background checks, closed/minimized suppression, previous-result action, pinned installation and acknowledgement, EN/RU passed\n";
             std::cout << "Tray popup: fixed status width, single content owner, native frame delivery, pointer navigation, reopen, focus, update review and compact sizing passed\n";
             std::cout << "Termination: popup teardown and late close notification passed\n";
             std::cout << "Login startup: installed-only registration, failure retry, opt-out and live approval status passed\n";

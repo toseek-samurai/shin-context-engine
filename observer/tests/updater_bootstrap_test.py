@@ -100,4 +100,20 @@ esac
         assert call('update-status',ok=False)['phase']=='review-required'
         executable.write_bytes(executable.read_bytes()+b'changed')
         assert call('update-status',ok=False)['code']=='update-bootstrap-invalid'
+    # Reboot/temporary-folder cleanup may remove the pinned engine. Read the
+    # saved result offline through the verified installed engine in that case.
+    state_file=home/'updates/state.json';saved_state=state_file.read_bytes()
+    with zipfile.ZipFile(fixtures/'updater.zip') as archive:
+        for entry in archive.infolist():
+            target=prefix/Path(*Path(entry.filename).parts[1:]);target.parent.mkdir(exist_ok=True)
+            target.write_bytes(archive.read(entry));target.chmod((entry.external_attr>>16)&0o777)
+    assert call('update-status',ok=False)['phase']=='review-required'
+    assert state_file.read_bytes()==saved_state and (prefix/'shin-kit.json').read_bytes()==unknown
+    # A replacement/symlink is not an absent retained updater. Never silently
+    # fall back or remove it, even when the installed engine is valid.
+    stage.symlink_to(prefix,target_is_directory=True)
+    try:
+        assert call('update-status',ok=False)['code']=='update-bootstrap-changed'
+        assert stage.is_symlink() and state_file.read_bytes()==saved_state
+    finally:stage.unlink()
 print('Fresh updater handoff: unknown kit format, exact review, corrupt download, protocol refusal, exec PID, CLI transfer progress and offline result passed')

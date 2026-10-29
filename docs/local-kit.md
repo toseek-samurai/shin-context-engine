@@ -542,8 +542,10 @@ Monitor uses one persistent **Shin updates** window for manual
 checks, the offer, launch failures and saved results. Opening it closes the tray
 popover and brings that window forward. Release notes open the browser while
 preserving the review; copying diagnostics preserves the result and its actions.
-Async replies update the window without stealing focus from another application
-or reopening a window the user closed. A manual request during a background check
+Background replies update the window without stealing focus from another
+application. In unreleased source, a failed explicit installation returns its
+still-open result window to the foreground; a closed or minimized window stays
+dismissed. A manual request during a background check
 shows that check's result instead of discarding the request. After selecting
 **Download and install**, the window shows the helper handoff before Monitor exits.
 
@@ -598,6 +600,15 @@ binaries acquire them only after an explicitly selected new kit is installed.
 native recovery, **Acknowledge verified result** verifies the installed payload
 and completed journal before clearing the review gate and cleaning its identified
 private staging folder. A stale review or unfinished native operation is refused.
+
+In unreleased source, a blocked installation also offers **Review previous update**
+directly in its error window. Offline review uses the verified installed Updater
+if the earlier temporary Updater has disappeared. Confirmation is bound to the
+current verified installation receipt, so a directly repaired kit can settle an
+older failed attempt. Missing temporary candidate folders are accepted during
+that explicit confirmation; substituted folders or symlinks are preserved and
+refused. Installation changes and unfinished native recovery still prevent
+confirmation.
 
 ### Independent Updater (dev.49 and later)
 

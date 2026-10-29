@@ -24,6 +24,17 @@ Json installation(const fs::path& prefix,const fs::path& user) {
     std::vector<std::string> a{"shin-ce","installation","--prefix",prefix.string()};std::vector<char*> p;for(auto& s:a)p.push_back(s.data());
     return local_installation((int)p.size(),p.data(),user);
 }
+bool acknowledgeable_update(const Json& state) {
+    const auto phase=state.value("phase","");
+    return phase=="installed" || phase=="failed" || phase=="review-required" || phase=="downloaded";
+}
+std::string update_review_revision(const Json& state,const Json& installed,const fs::path& prefix) {
+    // A repaired/newer installation may supersede the saved attempt. Its exact
+    // verified receipt is part of the explicit review; a changed kit cannot
+    // inherit an acknowledgement made for a different installation.
+    return digest(Json{{"state",state},{"installation",installed},
+        {"receipt_sha256",digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true))}}.dump());
+}
 Json offer(const std::string& current) {
     return select_local_release(parse_release_feed(fetch("https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",kMaximumReleaseFeedBytes)),current);
 }
@@ -147,22 +158,33 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
         const auto directory=home/"updates";
         if(!fs::exists(directory))return {{"ok",true},{"phase","idle"}};
         if(command=="update-status") {
-            auto state=StateStore(directory,false).load().value_or(Json{{"ok",true},{"phase","idle"}});
-            state["review_revision"]=digest(state.dump());
-            state["can_acknowledge"]=!installed.value("recovery_pending",true) && state.value("phase","")!="waiting-for-monitor" && state.value("phase","")!="downloading" && state.value("phase","")!="installing" && state.value("phase","")!="idle" && state.value("phase","")!="reviewed";
+            StateStore saved(directory,false);
+            auto state=saved.load().value_or(Json{{"ok",true},{"phase","idle"}});
+            state["review_revision"]=update_review_revision(state,installed,prefix);
+            state["current_version"]=current;state["installation_verified"]=true;
+            state["native_recovery_pending"]=installed.value("recovery_pending",true);
+            state["can_acknowledge"]=!installed.value("recovery_pending",true) && !saved.writer_present() && acknowledgeable_update(state);
             return state;
         }
         StateStore review(directory,true);review.recover_pending();auto previous=review.load();
-        require(previous && !revision.empty() && digest(previous->dump())==revision,"update-offer-changed","The saved update outcome changed. Review it again.");
         require(!installed.value("recovery_pending",true),"update-outcome-unknown","Finish the native installation recovery journal before acknowledging the update result.");
+        auto installation_guard=lock_local_installation(prefix/"bin/shin-ce");
+        const auto confirmed=installation(prefix,user);
+        require(!confirmed.value("recovery_pending",true),"update-outcome-unknown","Finish the native installation recovery journal before acknowledging the update result.");
+        require(previous && !revision.empty() && update_review_revision(*previous,confirmed,prefix)==revision,"update-offer-changed","The saved result or current installation changed. Review it again.");
         auto state=*previous;
-        require(current==state.value("from_version","") || current==state.value("version",""),"update-outcome-unknown","The current installation differs from the saved update outcome.");
+        require(acknowledgeable_update(state),"update-outcome-unknown","The previous updater has no terminal result. Review its installation recovery before acknowledging it.");
         if(state.contains("staging")) {
             const fs::path stage=state.at("staging").get<std::string>();
-            require(stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-release.") && directory_identity(stage,true)==state.value("stage_identity",""),"update-staging-changed","The saved candidate location changed; preserve it for review.");
-            fs::remove_all(stage);state.erase("staging");state.erase("stage_identity");state.erase("candidate");
+            require(stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-release."),"update-staging-changed","The saved candidate location is invalid; preserve it for review.");
+            if(fs::exists(fs::symlink_status(stage))) {
+                require(!fs::is_symlink(fs::symlink_status(stage)) && directory_identity(stage,true)==state.value("stage_identity",""),"update-staging-changed","The saved candidate location changed; preserve it for review.");
+                fs::remove_all(stage);
+            }
+            state.erase("staging");state.erase("stage_identity");state.erase("candidate");
         }
-        state.erase("updater");state["phase"]="reviewed";state["ok"]=true;review.save(state);return state;
+        state.erase("updater");state["phase"]="reviewed";state["ok"]=true;
+        state["acknowledged_version"]=confirmed.at("version");review.save(state);return state;
     }
     // The viewer must exit before LaunchServices reopens this bundle.
     RelaunchMonitor relaunch{prefix};

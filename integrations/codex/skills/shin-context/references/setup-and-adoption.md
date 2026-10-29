@@ -1,5 +1,45 @@
 # Setup And Adoption
 
+## Project Profile Maintenance
+
+Applies only when Shin Context Engine is installed and this exact project is
+already enrolled. The agent performing an authorized code/document refactor owns
+the accompanying profile review. Without installed Shin, continue ordinary work;
+do not install or enroll it, or add a build/CI dependency, to satisfy this rule.
+
+At a relevant refactor checkpoint, not on every read, review the project-owned
+profile when documents, rules, source roots, packages or contracts move or change.
+Check enrolled roots/files, exclusions, `agentStartPaths`, expected paths and
+affected `evalCases`/`packEvalCases`. Prepare equivalent updates in the same task;
+do not wait for the owner to notice a search warning.
+
+Diagnose a failed query against current source before editing expectations.
+Distinguish an intentional owner/path/contract change from a retrieval regression.
+Map moved paths to their current owners and retain the original task intent,
+natural-language queries, negative assertions, rank/coverage requirements and
+resource limits. If terminology changes, add the current wording while retaining
+useful broad wording as a regression case. An exact identifier query is additional
+coverage, not a replacement for a failing broad query. Retire a genuinely obsolete
+scenario only with an explained owner-reviewed contract change.
+
+Never remove a failing case, relax rank/coverage requirements, increase limits,
+enroll evaluation answers, or move a required check into an advisory/history suite
+just to make status green. A confirmed engine miss stays visible with its original
+query, expected owner, versions and bounded diagnostic for Shin maintainers.
+Keep private source and diagnostics out of public reports.
+
+Preparing a profile edit is not accepting it. Follow [Profile Change Review](#profile-change-review);
+changes to scope, limits, safety or quality policy require explicit owner authority
+for the exact reviewed change. Existing authorization may cover acceptance; do not
+ask again when it does. MCP reads grant no approval authority.
+
+Use the installed kit and canonical route for affected strict eval/Pack checks,
+then the full applicable profile suite before claiming quality restored. Never
+manually rebuild a managed index: after acceptance let the service refresh, verify
+current status and a representative query/read with its fresh snapshot. If the
+tool is unavailable, report pending validation. Handoff states what changed,
+which checks passed and any remaining warning; profile text alone is not recovery.
+
 ## Profile Change Review
 
 A confirmed blocked refresh requires a prompt user-visible notice: name the

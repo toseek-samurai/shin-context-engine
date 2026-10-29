@@ -202,6 +202,25 @@ int telemetry_scenario() {
             paused_project = paused_telemetry.snapshot().at("project_states").at(0);
             if (paused_project.at("retry_reason") != "") return 59;
         }
+        {
+            LocalTelemetry warned;
+            Json sample{{"phase", "current"}, {"ticks", 1}, {"publications", 1}, {"failures", 0},
+                {"refresh_authority", "local-canonical"}, {"last_result", {{"ok", true},
+                    {"quality_warning", {{"state", "degraded"}, {"diagnostic", detail}, {"raw", "DO-NOT-EXPORT"}}}}}};
+            warned.record("/project/warning", sample);
+            auto project = warned.snapshot().at("project_states").at(0);
+            if (project.at("active_issue") != false || project.at("quality_warning").at("diagnostic") != detail ||
+                project.dump().find("DO-NOT-EXPORT") != std::string::npos) return 60;
+            for (const auto& pending : {Json(), Json{{"ok", true}}}) {
+                sample["phase"] = "checking"; sample["last_result"] = pending;
+                warned.record("/project/warning", sample);
+                if (warned.snapshot().at("project_states").at(0).at("quality_warning") != project.at("quality_warning")) return 61;
+            }
+            sample["phase"] = "current"; sample["ticks"] = 2;
+            sample["last_result"] = {{"ok", true}, {"quality_warning", nullptr}};
+            warned.record("/project/warning", sample);
+            if (!warned.snapshot().at("project_states").at(0).at("quality_warning").is_null()) return 62;
+        }
         LocalTelemetry telemetry;
         Json state{{"phase", "checking"}, {"ticks", 0}, {"publications", 0}, {"failures", 0},
             {"refresh_authority", "private-bootstrap"}, {"last_result", nullptr}};

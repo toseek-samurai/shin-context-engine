@@ -1369,7 +1369,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     const auto overview = diagnostic_overview(project, view.connected);
     const bool partial_coverage = overview.title == shin::ui::tr("Context partially available");
     const bool documentation_warning = (state == ProjectState::current || state == ProjectState::standby) &&
-        count(project, "documentation_warnings") > 0;
+        (count(project, "documentation_warnings") > 0 || quality_warning(project));
     const auto name = text_field(project, "name");
     const auto prior_code = historical_code(project);
     auto current_code = view.connected ? error_code(project, "error_code") : error_code(Json{{"code", view.error}}, "code");
@@ -1611,7 +1611,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             const auto overview = shin::ui::diagnostic_overview(p, view.connected);
             const bool partial = overview.title == shin::ui::tr("Context partially available");
             const bool documentation_warning = (state == shin::ui::ProjectState::current ||
-                state == shin::ui::ProjectState::standby) && shin::ui::count(p, "documentation_warnings") > 0;
+                state == shin::ui::ProjectState::standby) && (shin::ui::count(p, "documentation_warnings") > 0 || shin::ui::quality_warning(p));
             const bool preparing = state == shin::ui::ProjectState::checking || state == shin::ui::ProjectState::recovering ||
                 (state == shin::ui::ProjectState::pending && shin::ui::text_field(p, "query_phase") == "preparing");
             const auto state_label = state == shin::ui::ProjectState::blocked || partial || preparing || documentation_warning

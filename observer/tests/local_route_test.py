@@ -699,7 +699,7 @@ class LocalRouteTests(unittest.TestCase):
                 restored = json.loads(receipt.read_text())
             except json.JSONDecodeError:
                 restored = {}
-            if restored.get('schema_version') == 'shin.local-qualification.v2':
+            if restored.get('schema_version') == 'shin.local-qualification.v3':
                 break
             time.sleep(.05)
         else:
@@ -719,18 +719,30 @@ class LocalRouteTests(unittest.TestCase):
         self.ce('watch', '--samples', '2')
         self.assertIn('return 911;', self.ce('query', 'readLimit')['source_context'])
 
-    def test_derived_quality_recovery_preserves_failed_project_gate(self):
+    def test_derived_quality_recovery_preserves_warning_and_current_context(self):
         self.managed()
         receipt = self.workspace() / 'qualification/state.json'
         receipt.write_text('{')
-        before = {p: p.read_bytes() for p in (self.f.out / 'docs/kb/generated').iterdir() if p.is_file()}
         self.f.write_source('# Route Contract\n\nUnrelated replacement text.\n')
         watched = self.ce('watch', '--samples', '2')['watch']
-        self.assertGreater(watched['failures'], 0)
-        self.assertEqual(watched['recoveries'], 0)
-        self.assertEqual(receipt.read_text(), '{')
-        self.assertEqual(before, {p: p.read_bytes() for p in before})
-        self.assertNotIn('source_context', self.ce('query', 'readLimit', expected=1))
+        self.assertEqual(watched['failures'], 0)
+        self.assertEqual(json.loads(receipt.read_text())['schema_version'], 'shin.local-qualification.v3')
+        current = self.ce('query', 'readLimit')
+        self.assertIn('return 7;', current['source_context'])
+        self.assertEqual(current['quality_warning']['state'], 'degraded')
+        self.assertTrue(current['readiness']['quality_reuse']['reused'])
+
+    def test_derived_receipt_rejects_unbounded_quality_diagnostics(self):
+        self.managed()
+        receipt = self.workspace() / 'qualification/state.json'
+        value = json.loads(receipt.read_text())
+        value['quality_warning'] = {'state': 'degraded', 'diagnostic': {}, 'raw_query': 'private-fixture-text'}
+        write_private_json(receipt, value)
+        current = self.ce('status')
+        self.assertTrue(current['local_ready'])
+        self.assertEqual(current['readiness']['quality_reuse']['cache_status'], 'invalid')
+        self.assertIsNone(current['quality_warning'])
+        self.assertNotIn('private-fixture-text', json.dumps(current))
 
     def test_oversized_and_interrupted_derived_receipts_recover(self):
         self.managed()
@@ -1126,11 +1138,14 @@ class LocalRouteTests(unittest.TestCase):
         self.assertEqual(recovered['pending_profile_hash'], '')
         self.assertEqual(recovered['pending_snapshot'], '')
 
-    def test_failed_membership_candidate_keeps_verified_partial_context(self):
+    def test_negative_path_membership_candidate_keeps_verified_partial_context(self):
+        (self.f.root / 'other.md').write_text('# Other\n\nThe retry ceiling is here.\n')
+        self.profile['evalCases'][0]['mustNotPaths'] = ['other.md']
+        self.build()
         self.managed()
         before = self.grant_path().read_bytes()
         manifest = self.generated_manifest().read_bytes()
-        self.profile['rootFiles'] = []
+        self.profile['rootFiles'] = ['other.md']
         self.f.profile_path.write_text(json.dumps(self.profile))
         report = self.ce('watch', '--samples', '2')
         last = report['watch']['last_result']
@@ -1522,12 +1537,12 @@ class LocalRouteTests(unittest.TestCase):
         self.assertIn(refused['error']['code'], {'binding-identity-changed', 'route-revision-conflict'})
         self.assertEqual(receipt, self.grant_path().read_bytes())
 
-    def test_profile_accept_quality_failure_preserves_active_index(self):
+    def test_profile_accept_negative_path_failure_preserves_active_index(self):
         self.managed()
         manifest = self.generated_manifest()
         old_manifest = manifest.read_bytes()
         old_documents = (manifest.parent / 'documents.jsonl').read_bytes()
-        self.profile['evalCases'][0]['query'] = 'unfindable_approved_revision_requirement'
+        self.profile['evalCases'][0].update(mustPaths=[], mustTopPaths=[], mustNotPaths=['README.md'])
         self.f.profile_path.write_text(json.dumps(self.profile))
         approved_hash = self.profile_hash()
         self.profile_accept(approved_hash)
@@ -1604,22 +1619,29 @@ class LocalRouteTests(unittest.TestCase):
         self.assertEqual(stopped['watch']['publications'], 0)
         self.assertEqual(before, (self.f.out / 'docs/kb/generated/manifest.json').read_bytes())
 
-    def test_managed_quality_failure_preserves_active_generation_then_recovers(self):
+    def test_managed_quality_warning_publishes_current_generation_then_clears(self):
         self.managed()
-        active = (self.f.out / 'docs/kb/generated/manifest.json').read_bytes()
+        active = self.generated_manifest().read_bytes()
         observer = (self.f.state / 'state.json').read_bytes()
         original = (self.f.root / 'README.md').read_text()
         (self.f.root / 'README.md').write_text('# Unrelated\n\nNo relevant evidence here.\n')
-        failed = self.ce('watch', '--samples', '2')
-        self.assertFalse(failed['watch']['last_result']['ok'])
-        self.assertEqual(failed['watch']['last_result']['error']['code'], 'refresh-validation-failed')
-        self.assertEqual(active, (self.f.out / 'docs/kb/generated/manifest.json').read_bytes())
+        (self.f.root / 'src/limits.js').write_text('export function readLimit() { return 17; }\n')
+        tick = self.ce('watch', '--samples', '2')['watch']['last_result']
+        self.assertTrue(tick['ok'])
+        self.assertEqual(tick['quality_warning']['state'], 'degraded')
+        self.assertNotEqual(active, self.generated_manifest().read_bytes())
         self.assertEqual(observer, (self.f.state / 'state.json').read_bytes())
-        self.assertFalse(self.ce('query', 'readLimit', expected=1).get('source_context'))
+        current = self.ce('query', 'readLimit')
+        self.assertIn('return 17;', current['source_context'])
+        self.assertFalse(current['canonical_ready'])
+        self.assertEqual(current['quality_warning'], tick['quality_warning'])
         (self.f.root / 'README.md').write_text(original)
         (self.f.root / 'src/limits.js').write_text('export function readLimit() { return 29; }\n')
         self.ce('watch', '--samples', '2')
-        self.assertIn('return 29;', self.ce('query', 'readLimit')['source_context'])
+        restored = self.ce('query', 'readLimit')
+        self.assertIn('return 29;', restored['source_context'])
+        self.assertIsNone(restored['quality_warning'])
+        self.assertTrue(restored['canonical_ready'])
 
     def test_managed_repairs_corrupt_or_missing_generated_payload_without_init(self):
         self.managed()
@@ -1643,22 +1665,22 @@ class LocalRouteTests(unittest.TestCase):
                 self.assertEqual((generated / 'manifest.json').read_bytes(), manifest)
                 self.assertIn('return 7;', self.ce('query', 'readLimit')['source_context'])
 
-    def test_primary_repair_preserves_bad_quality_candidate_and_damaged_base(self):
+    def test_primary_repair_rebuilds_valid_index_even_when_quality_degrades(self):
         self.managed()
         target = self.f.out / 'docs/kb/generated/documents.jsonl'
         target.write_bytes(b'corrupt payload')
         original = (self.f.root / 'README.md').read_text()
         (self.f.root / 'README.md').write_text('# Unrelated\n\nNo relevant evidence here.\n')
-        receipt = self.grant_path().read_bytes()
+        self.assertNotIn('source_context', self.ce('query', 'readLimit', expected=2))
         watched = self.ce('watch', '--samples', '2')['watch']
-        self.assertEqual(watched['publications'], 0)
-        self.assertGreater(watched['failures'], 0)
-        self.assertEqual(watched['last_result']['error']['code'], 'refresh-validation-failed')
-        self.assertEqual(target.read_bytes(), b'corrupt payload')
-        self.assertEqual(self.grant_path().read_bytes(), receipt)
+        self.assertEqual(watched['publications'], 1)
+        self.assertTrue(watched['last_result']['ok'])
+        self.assertEqual(watched['last_result']['quality_warning']['state'], 'degraded')
+        self.assertNotEqual(target.read_bytes(), b'corrupt payload')
+        self.assertIn('return 7;', self.ce('query', 'readLimit')['source_context'])
         (self.f.root / 'README.md').write_text(original)
         self.ce('watch', '--samples', '2')
-        self.assertIn('return 7;', self.ce('query', 'readLimit')['source_context'])
+        self.assertIsNone(self.ce('query', 'readLimit')['quality_warning'])
 
     def test_primary_repair_refuses_foreign_extra_files_and_manifest_changes(self):
         self.managed()
@@ -1813,7 +1835,7 @@ class LocalRouteTests(unittest.TestCase):
         self.ce('refresh-release')
         self.assertFalse(self.owner_path().exists())
 
-    def test_managed_pack_failure_preserves_generation(self):
+    def test_managed_pack_quality_warning_publishes_generation(self):
         self.profile['packEvalCases'][0]['request']['task']['must'][0]['query'] = 'dedicated pack evidence'
         original = (self.f.root / 'README.md').read_text()
         (self.f.root / 'README.md').write_text(original + '\nDedicated pack evidence.\n')
@@ -1822,10 +1844,10 @@ class LocalRouteTests(unittest.TestCase):
         active = (self.f.out / 'docs/kb/generated/manifest.json').read_bytes()
         (self.f.root / 'README.md').write_text(original)
         failed = self.ce('watch', '--samples', '2')
-        self.assertFalse(failed['watch']['last_result']['ok'])
-        self.assertEqual(failed['watch']['last_result']['error']['code'], 'refresh-validation-failed')
-        self.assertEqual(active, (self.f.out / 'docs/kb/generated/manifest.json').read_bytes())
-        self.assertFalse(self.ce('query', 'readLimit', expected=1).get('source_context'))
+        self.assertTrue(failed['watch']['last_result']['ok'])
+        self.assertEqual(failed['watch']['last_result']['quality_warning']['state'], 'degraded')
+        self.assertNotEqual(active, (self.f.out / 'docs/kb/generated/manifest.json').read_bytes())
+        self.assertIn('return 7;', self.ce('query', 'readLimit')['source_context'])
 
     def test_managed_marker_destination_and_incomplete_source(self):
         self.marker()
@@ -2006,14 +2028,15 @@ class LocalRouteTests(unittest.TestCase):
         result = self.ce('init', '--observer-config', str(other), home=other_home, expected=2)
         self.assertEqual(result['error']['code'], 'route-config-conflict')
 
-    def test_init_does_not_bypass_existing_quality_gate(self):
+    def test_init_admits_quality_warning_without_claiming_strict_readiness(self):
         self.profile['evalCases'][0]['query'] = 'unfindable_quality_requirement'
         self.build()
         before = self.canonical_files()
-        result = self.ce('init', '--observer-config', str(self.f.config), expected=1, one_shot=False)
+        result = self.ce('init', '--observer-config', str(self.f.config), one_shot=False)
         self.assertFalse(result['canonical_ready'])
-        self.assertFalse((self.workspace() / 'state.json').exists())
-        self.assertFalse((self.home / 'service').exists())
+        self.assertTrue(result['local_ready'])
+        self.assertEqual(result['quality_warning']['state'], 'degraded')
+        self.assertTrue((self.workspace() / 'state.json').exists())
         self.assertEqual(before, self.canonical_files())
 
     def await_service_query(self, text):
@@ -2065,7 +2088,7 @@ class LocalRouteTests(unittest.TestCase):
         self.assertEqual(self.ce('service-status')['instance_id'], first['service']['instance_id'])
         self.assertEqual(self.ce('status', '--service')['watch']['state']['publications'], 0)
 
-    def test_service_quality_failure_isolated_from_local_project_and_recovers(self):
+    def test_service_quality_warning_keeps_projects_available_and_recovers(self):
         self.ce('init', '--observer-config', str(self.f.config), one_shot=False)
         other = self.base / 'local-project'
         other.mkdir()
@@ -2078,14 +2101,15 @@ class LocalRouteTests(unittest.TestCase):
         deadline = time.monotonic() + 15
         while time.monotonic() < deadline:
             projects = self.ce('service-status')['telemetry']['project_states']
-            failed = next((p for p in projects if p['root'] == str(self.f.root) and p['active_issue']), None)
+            failed = next((p for p in projects if p['root'] == str(self.f.root) and p.get('quality_warning')), None)
             if failed:
                 break
             time.sleep(.05)
-        self.assertIsNotNone(failed, 'stable quality failure was not reported')
-        refused = self.ce('query', 'readLimit', '--service', expected=2)
-        self.assertEqual(refused['error']['code'], 'project-check-failed')
-        self.assertNotIn('source_context', refused)
+        self.assertIsNotNone(failed, 'quality warning was not reported')
+        available = self.ce('query', 'readLimit', '--service')
+        self.assertEqual(available['quality_warning']['state'], 'degraded')
+        self.assertIn('return 7', available['source_context'])
+        self.assertFalse(failed['active_issue'])
         self.assertIn('return 99', self.ce('query', 'readLimit', '--service', root=other)['source_context'])
         self.assertEqual(bad, self.canonical_files())
         self.f.write_source('# Route Contract\n\nThe retry ceiling is owned by readLimit.\n')
@@ -2233,17 +2257,22 @@ class LocalRouteTests(unittest.TestCase):
         self.assertEqual(before, self.canonical_files())
         self.assertFalse((self.workspace() / "state.json").exists())
 
-    def test_eval_failure_is_not_bootstrapped_away(self):
+    def test_eval_warning_retains_canonical_route(self):
         self.profile["evalCases"][0]["query"] = "unfindable_quality_requirement"
         self.build()
-        result = self.attach(expected=1)
+        result = self.attach()
         self.assertFalse(result["canonical_ready"])
-        self.assertFalse((self.workspace() / "state.json").exists())
+        self.assertTrue(result["local_ready"])
+        self.assertEqual(result["quality_warning"]["state"], "degraded")
+        self.assertTrue((self.workspace() / "state.json").exists())
 
-    def test_pack_failure_is_not_bootstrapped_away(self):
+    def test_pack_warning_retains_canonical_route(self):
         self.profile["packEvalCases"][0]["request"]["task"]["must"][0]["query"] = "unfindable_pack_requirement"
         self.build()
-        self.assertFalse(self.attach(expected=1)["canonical_ready"])
+        result = self.attach()
+        self.assertFalse(result["canonical_ready"])
+        self.assertTrue(result["local_ready"])
+        self.assertEqual(result["quality_warning"]["state"], "degraded")
 
     def test_automatic_marker_and_index_key_alignment(self):
         path, value = self.marker()

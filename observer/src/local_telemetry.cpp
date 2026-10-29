@@ -148,6 +148,13 @@ void LocalTelemetry::record(const fs::path& root, const Json& state) {
         {"authority", state.at("refresh_authority")}, {"last_tick_ms", state.value("last_tick_duration_ms", 0.0)},
         {"error_code", ""}, {"next_action", ""}};
     const auto result = state.value("last_result", Json(nullptr));
+    value["quality_warning"] = nullptr;
+    const auto quality = result.is_object() && result.contains("quality_warning") ? result.at("quality_warning") :
+        project.value.is_object() ? project.value.value("quality_warning", Json()) : Json();
+    if (quality.is_object() && quality.value("state", Json()) == "degraded") {
+        const auto diagnostic = bounded_failure_diagnostic(quality.value("diagnostic", Json()));
+        if (!diagnostic.is_null()) value["quality_warning"] = {{"state", "degraded"}, {"diagnostic", diagnostic}};
+    }
     value["documentation_warnings"] = project.value.is_object() ?
         project.value.value("documentation_warnings", Json(0)) : Json(0);
     if (result.is_object()) {

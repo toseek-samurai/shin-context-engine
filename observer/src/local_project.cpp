@@ -142,7 +142,7 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
         return grant ? core_result([&] { return validate_refresh_candidate(prepared_options, config.profile_dir, validation_args, verify_authority, source_fence); }) :
                        bootstrap_readiness(prepared_options);
     });
-    if (checked.at("ok") != true) {
+    if (!local_retrieval_ready(checked)) {
         // A verdict on moving input is not a stable quality rejection. Authority
         // changes still take precedence over retryable source observation races.
         verify_authority();
@@ -383,9 +383,9 @@ std::optional<Json> load_qualification(const fs::path& workspace) {
         return value.is_string() && value.get_ref<const std::string&>().size() == size &&
             value.get_ref<const std::string&>().find_first_not_of("0123456789abcdef") == std::string::npos;
     };
-    if (!saved->is_object() || saved->size() != 8 ||
-        saved->value("schema_version", Json(nullptr)) != "shin.local-qualification.v2" ||
-        saved->value("policy", Json(nullptr)) != "verified-generation-live-safety-v2" ||
+    if (!saved->is_object() || saved->size() != 9 ||
+        saved->value("schema_version", Json(nullptr)) != "shin.local-qualification.v3" ||
+        saved->value("policy", Json(nullptr)) != "verified-generation-live-safety-v3" ||
         !saved->contains("generation_fingerprint") || !saved->at("generation_fingerprint").is_string() ||
         !saved->at("generation_fingerprint").get_ref<const std::string&>().starts_with("fnv1a64:") ||
         !hex(saved->at("generation_fingerprint").get<std::string>().substr(8), 16) ||
@@ -397,10 +397,17 @@ std::optional<Json> load_qualification(const fs::path& workspace) {
         !saved->contains("manifest_sha256") || !hex(saved->at("manifest_sha256"), 64) ||
         !saved->contains("qualified_at_ms") || !saved->at("qualified_at_ms").is_number_integer() ||
         saved->at("qualified_at_ms") <= 0 ||
+        !saved->contains("quality_warning") ||
+        !(saved->at("quality_warning").is_null() || (saved->at("quality_warning").is_object() &&
+          saved->at("quality_warning").value("state", Json()) == "degraded" && saved->at("quality_warning").dump().size() <= 8192)) ||
         !saved->contains("resource") || !saved->at("resource").is_object() ||
         saved->at("resource").size() != 3 || saved->at("resource").dump().size() > 8192)
         throw Error("qualification-invalid", "Stored quality qualification must be recomputed.");
     const auto& resource = saved->at("resource");
+    const auto& quality = saved->at("quality_warning");
+    if (!quality.is_null() && (quality.size() != 2 || !quality.contains("diagnostic") ||
+        !quality.at("diagnostic").is_object() || bounded_validation_diagnostic(quality.at("diagnostic")) != quality.at("diagnostic")))
+        throw Error("qualification-invalid", "Stored quality diagnostics are invalid.");
     if (!resource.contains("resource_check") || !resource.at("resource_check").is_object() ||
         !resource.contains("warnings") || !resource.at("warnings").is_array() || resource.at("warnings").size() > 8 ||
         !resource.contains("warning_budget") || !resource.at("warning_budget").is_object())
@@ -428,7 +435,8 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
         saved = Json{{"key", key}, {"snapshot_id", snapshot.snapshot_id},
             {"manifest_sha256", digest(snapshot.manifest_content)},
             {"generation_fingerprint", candidate->admission->fingerprint()},
-            {"qualified_at_ms", now_ms()}, {"resource", std::move(resource)}};
+            {"qualified_at_ms", now_ms()}, {"resource", std::move(resource)},
+            {"quality_warning", local_quality_warning(candidate->validation)}};
     }
     try { if (!candidate) saved = load_qualification(workspace); }
     catch (const Error& error) {
@@ -465,7 +473,8 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                 checks.push_back({{"id", "adoption-check"}, {"ok", aligned}});
                 ok = aligned && ok;
             }
-            if (ok) return {{"schema_version", "shin.local-qualified-readiness.v1"}, {"ok", true}, {"ready", true},
+            if (ok) return {{"schema_version", "shin.local-qualified-readiness.v1"}, {"ok", saved->at("quality_warning").is_null()}, {"ready", saved->at("quality_warning").is_null()},
+                {"retrieval_ready", true}, {"quality_warning", saved->at("quality_warning")},
                 {"freshness", core::index_freshness_json(options.generation_admission->assess(options))},
                 {"snapshot_id", snapshot.snapshot_id}, {"diagnostic_ids", Json::array()}, {"live_checks", checks},
                 {"quality_reuse", {{"reused", !candidate.has_value()}, {"cache_status", candidate ? "published-candidate" : "hit"}, {"scope", "exact-qualified-generation"},
@@ -473,7 +482,7 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                 {"qualified_resources", saved->at("resource")},
                 {"documentation_warnings", documentation_warnings},
                 {"summary", {{"attempted", checks.size()}, {"passed", checks.size()}, {"failed", 0},
-                    {"validation_passed", true}, {"worktree_current", true}}}};
+                    {"validation_passed", saved->at("quality_warning").is_null()}, {"worktree_current", true}}}};
           }
         }
     }
@@ -486,7 +495,8 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
     auto result = options.profile.bootstrap_only ? bootstrap_readiness(options) :
         core_result([&] { return core::run_ready(options, config.profile_dir, args); });
     if (options.profile.bootstrap_only) result["ready"] = result.at("ok");
-    if (result.at("ready") == true) {
+    result["quality_warning"] = local_quality_warning(result);
+    if (local_retrieval_ready(result)) {
         if (capture_error) std::rethrow_exception(capture_error);
         options.generation_admission = core::GenerationAdmission::reuse(options, before);
         if (!options.generation_admission)
@@ -520,10 +530,11 @@ void save_qualification(const fs::path& workspace, const Json& binding, const Co
     }
     if (qualification_key(binding, options.profile.config_hash, marker_hash) != key)
         throw Error("qualification-engine-changed", "The executable changed while qualifying this snapshot; restart with one matched kit.");
-    cache.save({{"schema_version", "shin.local-qualification.v2"}, {"key", key},
+    cache.save({{"schema_version", "shin.local-qualification.v3"}, {"key", key},
         {"generation_fingerprint", options.generation_admission->fingerprint()},
         {"snapshot_id", snapshot}, {"manifest_sha256", digest(verified.manifest_content)}, {"qualified_at_ms", now_ms()},
-        {"policy", "verified-generation-live-safety-v2"}, {"resource", std::move(resource)}});
+        {"policy", "verified-generation-live-safety-v3"}, {"resource", std::move(resource)},
+        {"quality_warning", readiness.value("quality_warning", Json())}});
 }
 
 Json attached_project(const LocalProjectRequest& request, const fs::path& root, const fs::path& home,
@@ -933,16 +944,17 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     const auto& state = observer.at("state");
     const bool sampled = !state.is_null() && state.at("root_identity") == binding.at("root_identity");
     const bool canonical_ready = readiness.at("ready") == true;
-    if (!canonical_ready && !refresh && !partial_allowed && approved_text && grant.active() &&
+    const bool runtime_ready = local_retrieval_ready(readiness);
+    if (!runtime_ready && !refresh && !partial_allowed && approved_text && grant.active() &&
         options.profile.config_hash == grant.approved_profile_hash() &&
         sample_retained_source_limit(config, binding.at("root_identity"), options.profile.config_hash, managed_observation)) {
         partial_allowed = source_limit_partial = true;
         publication.reset();
         return partial_response();
     }
-    if (!canonical_ready) verify_refresh_source();
+    if (!runtime_ready) verify_refresh_source();
     std::string snapshot;
-    if (canonical_ready) {
+    if (runtime_ready) {
         const auto freshness = core::assess_index_freshness(options, true);
         core::require_current_index_or_throw(freshness);
         snapshot = freshness.snapshot_id;
@@ -950,7 +962,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
                                                    config.max_file_bytes).snapshot_id != snapshot)
             throw Error("query-snapshot-changed", "Publication changed during attachment preflight.");
     }
-    if ((attach || (refresh && binding.at("prepared_snapshot") != snapshot)) && canonical_ready && sampled) {
+    if ((attach || (refresh && binding.at("prepared_snapshot") != snapshot)) && runtime_ready && sampled) {
         const bool source_cache_transferred = refresh && published_qualification &&
             published_qualification->source_cache_transferred;
         if (!source_cache_transferred) refresh_stage(request, "source-cache");
@@ -978,24 +990,25 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         }
         binding["prepared_snapshot"] = snapshot;
     }
-    const bool local_ready = canonical_ready && sampled && binding.at("prepared_snapshot") == snapshot &&
+    const bool local_ready = runtime_ready && sampled && binding.at("prepared_snapshot") == snapshot &&
         (grant.active() || (binding.at("core_version") == SHIN_VERSION &&
                             binding.at("generator_version") == core::kGeneratorVersion));
     auto result = envelope(request.command, local_ready);
-    const auto manifest = canonical_ready ? Json::parse(core::load_verified_snapshot(config.out_dir,
+    const auto manifest = runtime_ready ? Json::parse(core::load_verified_snapshot(config.out_dir,
         config.max_snapshot_bytes, config.max_file_bytes).manifest_content) : Json::object();
     const auto coverage = source_coverage_summary(manifest);
     if (!coverage.is_null()) result["source_coverage"] = coverage;
-    result.update({{"binding_kind", "existing-route"}, {"local_ready", local_ready}, {"canonical_ready", canonical_ready},
-        {"readiness_scope", "selected-canonical-route"}, {"project_quality", canonical_ready ? "declared-checks-passed" : "blocked"},
-        {"state", local_ready ? "local-ready" : !canonical_ready ? "blocked-route" : !sampled ? "needs-observer-sample" : "needs-init"},
+    result.update({{"binding_kind", "existing-route"}, {"local_ready", local_ready}, {"retrieval_ready", local_ready}, {"canonical_ready", canonical_ready},
+        {"readiness_scope", "selected-canonical-route"}, {"project_quality", runtime_ready ? (canonical_ready ? "declared-checks-passed" : "degraded") : "blocked"},
+        {"quality_warning", readiness.value("quality_warning", Json())},
+        {"state", local_ready ? "local-ready" : !runtime_ready ? "blocked-route" : !sampled ? "needs-observer-sample" : "needs-init"},
         {"root", root.string()}, {"index", config.out_dir.string()}, {"profile", config.profile},
         {"project_id", config.binding.at("project_id")}, {"workspace_id", config.binding.at("workspace_id")},
         {"profile_config_hash", options.profile.config_hash}, {"marker", marker.empty() ? Json(nullptr) : Json(marker)},
         {"observer_config", file.string()},
         {"readiness", std::move(readiness)}, {"rebuilt", false}, {"index_mutated", false}, {"observer_state_mutated", false},
         {"synchronization", "not-assessed"}, {"observer_sample_available", sampled},
-        {"next_action", local_ready ? "shin-ce query" : !canonical_ready ? "repair-canonical-route" :
+        {"next_action", local_ready ? "shin-ce query" : !runtime_ready ? "repair-canonical-route" :
                         !sampled ? "sample-canonical-observer" : "shin-ce init"},
         {"refresh_management", grant.active() ? "local-service" : "external"},
         {"publication", grant.active() ? "managed" : grant.phase()}});
@@ -1106,6 +1119,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             {"diagnostic_ids", result.at("readiness").at("diagnostic_ids")},
             {"prepared_new_snapshot", local_ready && loaded->at("prepared_snapshot") != binding.at("prepared_snapshot")},
             {"next_action", result.at("next_action")}});
+        tick["quality_warning"] = result.at("quality_warning");
         tick["refresh_work"] = qualification_metrics.values;
         if (published_qualification && published_qualification->work.is_object())
             tick["refresh_work"].update(published_qualification->work);

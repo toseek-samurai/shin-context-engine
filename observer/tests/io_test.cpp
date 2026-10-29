@@ -146,6 +146,9 @@ void pending_recovery_and_state_bounds() {
 
 void json_and_file_safety() {
     check(parse_json("{\"nested\":[1,2,3]}").at("nested").size() == 3, "valid JSON rejected");
+    const auto bounded=std::string("{}")+std::string(kMaximumStateBytes-2,' ');
+    check(parse_json(bounded)==Json::object(), "exact state JSON limit refused");
+    rejects("json-too-large", [&] { (void)parse_json(bounded+" "); });
     rejects("invalid-json", [] { (void)parse_json("{\"x\":1,\"x\":2}"); });
     rejects("invalid-json", [] { (void)parse_json("{\"a\":{\"x\":1,\"x\":2}}"); });
     rejects("invalid-json", [] { (void)parse_json(std::string(33, '[') + "0" + std::string(33, ']')); });

@@ -952,6 +952,17 @@ int run_eval(const RuntimeOptions& options, const std::vector<std::string>& args
     const bool freshness_ok = !(eval_options.strict || eval_options.require_current) ||
                               (freshness.current && freshness.fully_verified);
     const bool ok = total > 0 && failed == 0 && freshness_ok;
+    // Compute admission evidence from the complete suite, before diagnostic
+    // truncation. Negative-path, resource and execution failures are not waived.
+    const auto quality_only = [](const EvalCaseResult& row) {
+        return row.unexpected_paths.empty() && (row.resource_policy == "advisory" ||
+            std::all_of(row.ceiling_violations.begin(), row.ceiling_violations.end(),
+                [](const std::string& reason) { return reason == "covered_groups"; }));
+    };
+    const bool quality_failure_only = !ok && total > 0 && freshness.current && freshness.fully_verified &&
+        std::all_of(results.begin(), results.end(), [&](const EvalCaseResult& row) {
+            return quality_only(row) && std::all_of(row.variant_results.begin(), row.variant_results.end(), quality_only);
+        });
     const bool quality_ok = total > 0 && suite.evaluation.quality_failed_queries == 0;
     const Json resource_check = eval_resource_check_json(options.profile, suite.evaluation);
     Json warnings = Json::array();
@@ -1015,6 +1026,7 @@ int run_eval(const RuntimeOptions& options, const std::vector<std::string>& args
         Json output = make_result_document("shin.eval-failures.v1", "eval", ok);
         output["projection"] = "failed-only";
         output["quality_ok"] = quality_ok;
+        output["quality_failure_only"] = quality_failure_only;
         output["resource_check"] = resource_check;
         output["warnings"] = warnings;
         output["warning_budget"] = warning_budget;
@@ -1062,6 +1074,7 @@ int run_eval(const RuntimeOptions& options, const std::vector<std::string>& args
               << "  \"schema_version\": \"shin.eval.v1\",\n"
               << "  \"tool\": \"shin-context\",\n"
               << "  \"command\": \"eval\",\n"
+              << "  \"quality_failure_only\": " << (quality_failure_only ? "true" : "false") << ",\n"
               << "  \"profile\": " << json_string(options.profile.id) << ",\n"
               << "  \"root\": " << json_string(options.root.generic_string()) << ",\n"
               << "  \"out_root\": " << json_string(options.out_root.generic_string()) << ",\n"

@@ -4,6 +4,10 @@
 using namespace shin::observer;
 namespace {
 void check(bool ok,const char* reason){if(!ok)throw std::runtime_error(reason);}
+template<class Operation> void rejects(const char* code,Operation operation) {
+    try { operation(); } catch(const Error& error) { check(error.code==code,"unexpected refusal");return; }
+    throw std::runtime_error("unsafe JSON accepted");
+}
 Json release(const std::string& version,bool preview=true) {
     const auto tag="v"+version,name="shin-local-"+version+"-macos-arm64.zip";
     const std::string base="https://github.com/toseek-samurai/shin-context-engine/releases/";
@@ -40,6 +44,25 @@ int main()try {
     updater["assets"][1]["name"]=std::string(updater_archive_name)+".sha256";updater["assets"][1]["browser_download_url"]=updater_url+updater_archive_name+".sha256";
     check(select_updater_release(Json::array({updater}),"2.0.5-dev.16").at("available"),"updater selection depends on a kit archive");
     check(!select_local_release(Json::array({updater}),"2.0.5-dev.16").at("available"),"updater mistaken for a kit");
+    // GitHub's full release metadata exceeds the local-state budget. Both
+    // consumers must accept it without changing the offer or parser safeguards.
+    auto feed=Json::array({a,updater});
+    feed[0]["body"]=std::string(300U*1024U,'x');
+    auto text=feed.dump();
+    check(text.size()>kMaximumStateBytes && text.size()<kMaximumReleaseFeedBytes,"fixture misses feed-only byte range");
+    rejects("json-too-large",[&]{(void)parse_json(text);});
+    const auto parsed=parse_release_feed(text);
+    check(select_local_release(parsed,"2.0.5-dev.16")==select_local_release(Json::array({a}),"2.0.5-dev.16"),"metadata changed kit offer");
+    check(select_updater_release(parsed,"2.0.5-dev.16")==select_updater_release(Json::array({updater}),"2.0.5-dev.16"),"metadata changed updater offer");
+    text.resize(kMaximumReleaseFeedBytes,' ');
+    check(parse_release_feed(text)==feed,"exact feed byte limit refused");
+    rejects("json-too-large",[&]{(void)parse_release_feed(text+" ");});
+    const auto padding=std::string(kMaximumStateBytes,' ');
+    for(const auto& invalid:std::vector<std::string>{"[{\"draft\":true,\"draft\":false}]", "[{\"asset\":{\"size\":1,\"size\":2}}]",
+            std::string(33,'[')+"0"+std::string(33,']'), "[", "[] true"})
+        rejects("invalid-json",[&]{(void)parse_release_feed(padding+invalid);});
+    rejects("update-release-invalid",[&]{(void)select_local_release(parse_release_feed("{}"),"2.0.5-dev.16");});
+    rejects("update-release-invalid",[&]{(void)select_updater_release(Json(std::vector<Json>(31,a)),"2.0.5-dev.16");});
     const auto root=std::string("shin-local-2.0.5-dev.17-macos-arm64");
     const auto listing=root+"/\n"+root+"/shin-kit.json\n"+root+"/bin/shin-ce\n";
     verify_release_listing(listing,"2.0.5-dev.17");

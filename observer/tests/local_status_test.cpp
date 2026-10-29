@@ -41,6 +41,9 @@ int main() {
         require(local_status_text({{"command", "service-status"}, {"service_running", true}}).find("Projects: 0") != std::string::npos);
         require(local_status_text({{"command", "status"}, {"local_ready", false}}).find("Search: not ready") != std::string::npos);
         require(local_status_text({{"command", "status"}, {"local_ready", true}}).find("Search: ready") != std::string::npos);
+        const auto warned = local_status_text({{"command", "status"}, {"local_ready", true},
+            {"project_quality", "degraded"}, {"quality_warning", {{"state", "degraded"}}}});
+        require(warned.find("Search: ready") != std::string::npos && warned.find("Search warning:") != std::string::npos);
         const auto unsafe = local_status_text({{"command", "status"}, {"root", "/root\n\033[2J"}});
         require(unsafe.find('\033') == std::string::npos && unsafe.find("\\n\\u001b[2J") != std::string::npos);
         const auto error = local_status_text({{"error", {{"code", "service-unavailable"}, {"message", "not running\n\033"}}}});

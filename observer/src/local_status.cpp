@@ -51,6 +51,8 @@ std::string local_status_text(const Json& status) {
             << " | State: " << label(field(status, "state")) << '\n';
         const auto& quality = field(status, "project_quality");
         if (quality.is_string()) out << "Project checks: " << label(quality) << '\n';
+        if (field(field(status, "quality_warning"), "state") == "degraded")
+            out << "Search warning: some checks missed expected evidence; verified current context remains available.\n";
         const auto& coverage = field(status, "source_coverage");
         if (field(coverage, "state") == "partial")
             out << "Coverage: partial | Quarantined files: " << number(field(coverage, "quarantined_files")) << '\n';
@@ -110,6 +112,8 @@ std::string local_status_text(const Json& status) {
         out << std::left << std::setw(11) << search << std::setw(15) << observed
             << std::setw(13) << (number(field(row, "last_check_age_ms"), 1000) + " s") << label(root) << '\n';
         if (issue) out << "  Issue: " << label(field(row, "error_code")) << '\n';
+        if (field(field(row, "quality_warning"), "state") == "degraded")
+            out << "  Search warning: some checks missed expected evidence; verified current context remains available.\n";
     }
     if (field(field(telemetry, "projection"), "truncated") == true)
         out << "Historical detail is truncated; current project status is retained.\n";

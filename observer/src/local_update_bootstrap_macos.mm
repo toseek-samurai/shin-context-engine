@@ -82,7 +82,7 @@ Json local_updates(int argc,char** argv,const fs::path& user,const ReleaseUpdate
         executable=saved_updater(home,prefix);protocol(executable);
         if(!revision.empty()) {arguments.push_back("--revision");arguments.push_back(revision);}
     } else {
-        auto selected=select_updater_release(parse_json(fetch("https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",1024U*1024)),SHIN_OBSERVER_VERSION);
+        auto selected=select_updater_release(parse_release_feed(fetch("https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",kMaximumReleaseFeedBytes)),SHIN_OBSERVER_VERSION);
         const bool available=selected.value("available",false) && selected.value("version","")!=SHIN_OBSERVER_VERSION;
         if(command=="update-check") {
             if(!available)return {{"ok",true},{"available",false},{"current_version",SHIN_OBSERVER_VERSION},{"channel",selected.at("channel")},{"updater_protocol",1}};

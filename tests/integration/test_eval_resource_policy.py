@@ -14,6 +14,47 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 class ResourcePolicyTests(unittest.TestCase):
+    def test_quality_verdict_is_separate_from_current_retrieval_readiness(self):
+        (self.root / 'docs/quality-target.md').write_text('# Other\nUnrelated material.\n')
+        self.profile['evalCases'][0]['mustPaths'] = ['docs/quality-target.md']
+        self.save(rebuild=True)
+        for args in (('eval', '--strict'), ('eval', '--failed-only', '--strict')):
+            result = self.call(*args, code=1)
+            self.assertFalse(result['ok'])
+            self.assertTrue(result['quality_failure_only'])
+        self.assertTrue(self.call('validate', '--summary', '--strict', code=1)['retrieval_ready'])
+        ready = self.call('ready', '--strict', code=1)
+        self.assertFalse(ready['ready'])
+        self.assertTrue(ready['retrieval_ready'])
+        with (self.root / 'README.md').open('a') as stream:
+            stream.write('\nchanged source\n')
+        self.assertFalse(self.call('ready', '--strict', code=1)['retrieval_ready'])
+
+    def test_truncated_quality_diagnostics_cannot_hide_negative_path_failure(self):
+        case = copy.deepcopy(self.profile['evalCases'][0])
+        (self.root / 'docs/quality-target.md').write_text('# Other\nUnrelated material.\n')
+        case.update(mustPaths=['docs/quality-target.md'], queryVariants=[])
+        self.profile['evalCases'] = [{**case, 'id': f'missing-{i}'} for i in range(40)]
+        self.save(rebuild=True)
+        result = self.call('eval', '--strict', '--failed-only', code=1)
+        self.assertTrue(result['failure_budget']['truncated'])
+        self.assertTrue(result['quality_failure_only'])
+        self.profile['evalCases'][-1].update(mustPaths=[], mustTopPaths=[], mustNotPaths=['docs/architecture.md'])
+        self.save(rebuild=True)
+        self.assertFalse(self.call('eval', '--strict', '--failed-only', code=1)['quality_failure_only'])
+        self.assertFalse(self.call('validate', '--strict', '--summary', code=1)['retrieval_ready'])
+
+    def test_pack_quality_miss_is_advisory_but_payload_bounds_are_not(self):
+        (self.root / 'docs/quality-target.md').write_text('# Other\nUnrelated material.\n')
+        self.profile['packEvalCases'][0]['mustPaths'] = ['docs/quality-target.md']
+        self.save(rebuild=True)
+        self.assertTrue(self.call('pack-eval', '--strict', '--failed-only', code=1)['quality_failure_only'])
+        self.assertTrue(self.call('ready', '--strict', code=1)['retrieval_ready'])
+        self.profile['packEvalCases'][0]['maxEvidenceBytes'] = 1
+        self.save(rebuild=True)
+        self.assertFalse(self.call('pack-eval', '--strict', '--failed-only', code=1)['quality_failure_only'])
+        self.assertFalse(self.call('ready', '--strict', code=1)['retrieval_ready'])
+
     def setUp(self):
         temp = tempfile.TemporaryDirectory(prefix="shin-resource-policy-")
         self.addCleanup(temp.cleanup)
@@ -53,6 +94,8 @@ class ResourcePolicyTests(unittest.TestCase):
         self.exceed()
         result = self.call("eval", "--strict", code=1)
         self.assertTrue(result["quality_ok"])
+        self.assertFalse(result['quality_failure_only'])
+        self.assertFalse(self.call('ready', '--strict', code=1)['retrieval_ready'])
         self.assertEqual(result["resource_check"], {
             "policy": "strict", "ok": False, "failed_queries": 4, "warning_queries": 0})
         self.assertEqual(result["warnings"], [])
@@ -98,6 +141,7 @@ class ResourcePolicyTests(unittest.TestCase):
                 self.save(rebuild=True)
                 result = self.call("eval", "--strict", code=1)
                 self.assertFalse(result["quality_ok"])
+                self.assertEqual(result['quality_failure_only'], 'mustNotPaths' not in patch)
                 self.assertFalse(result["cases"][0]["query_passed"])
                 self.assertTrue(result["warnings"])
 

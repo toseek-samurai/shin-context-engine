@@ -443,10 +443,16 @@ int run_validate(const RuntimeOptions& input_options,
     }
 
     const bool ok = failed == 0;
+    const bool retrieval_ready = std::all_of(gates.begin(), gates.end(), [](const ValidationGate& gate) {
+        return !gate.attempted || gate.ok ||
+            ((gate.id == "eval" || gate.id == "pack-eval") && gate.error.is_null() &&
+             gate.result.is_object() && gate.result.value("quality_failure_only", Json(false)) == true);
+    });
     Json output = make_result_document(validate_options.summary
                                            ? "shin.validation-summary.v2"
                                            : "shin.validation.v1",
                                        "validate", ok);
+    output["retrieval_ready"] = retrieval_ready;
     if (validate_options.summary) {
         output["projection"] = "summary";
     }

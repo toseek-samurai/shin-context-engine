@@ -340,9 +340,16 @@ int run_pack_eval(const RuntimeOptions& options, const std::vector<std::string>&
     const bool freshness_ok = !(eval_options.strict || eval_options.require_current) ||
                               (freshness.current && freshness.fully_verified);
     const bool ok = total > 0 && failed == 0 && freshness_ok;
+    const bool quality_failure_only = !ok && total > 0 && freshness.current && freshness.fully_verified &&
+        std::all_of(results.begin(), results.end(), [](const PackEvalCaseResult& row) {
+            return std::all_of(row.failure_reasons.begin(), row.failure_reasons.end(), [](const std::string& reason) {
+                return reason == "missing-required-path" || reason == "completion-mismatch";
+            });
+        });
     Json output = make_result_document(
         eval_options.failed_only ? "shin.pack-eval-failures.v1" : "shin.pack-eval.v1",
         "pack-eval", ok);
+    output["quality_failure_only"] = quality_failure_only;
     if (eval_options.failed_only) {
         output["projection"] = "failed-only";
     }

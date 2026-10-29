@@ -60,6 +60,7 @@ Json select_release(const Json& releases, const std::string& current, bool updat
     return result;
 }
 } // namespace
+Json parse_release_feed(const std::string& text) { return parse_json(text, kMaximumReleaseFeedBytes); }
 Json select_local_release(const Json& releases, const std::string& current) { return select_release(releases, current, false); }
 Json select_updater_release(const Json& releases, const std::string& current) { return select_release(releases, current, true); }
 void verify_release_listing(const std::string& listing,const std::string& release) {

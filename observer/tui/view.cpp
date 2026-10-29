@@ -204,10 +204,12 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                     << terminal_text(shin::ui::tr(text(field(row, "phase")).c_str()), 15, true) << text(field(row, "name"));
                 const auto partial = field(field(row, "source_coverage"), "state") == "partial";
                 if (partial) line << shin::ui::tr(" [partial]");
+                const bool search_warning = ui::quality_warning(row);
+                if (search_warning) line << shin::ui::tr(" [search warning]");
                 const bool documentation_warning = ui::count(row, "documentation_warnings") > 0;
                 if (documentation_warning) line << shin::ui::tr(" [docs warning]");
                 out.push_back({line.str(), key(row) == state.project ? Tone::selected :
-                    ui::active_issue(row) || partial || documentation_warning ? Tone::warning : Tone::normal});
+                    ui::active_issue(row) || partial || documentation_warning || search_warning ? Tone::warning : Tone::normal});
             }
             out.push_back({}); out.push_back({shin::ui::tr("Up/Down select  |  Enter details")});
         } else {
@@ -221,7 +223,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 const auto explanation = ui::diagnostic_overview(row, connected);
                 const auto project_state = ui::project_state(row, connected);
                 out.push_back({explanation.title, (project_state == ui::ProjectState::current ||
-                    project_state == ui::ProjectState::standby) && ui::count(row, "documentation_warnings") > 0 ?
+                    project_state == ui::ProjectState::standby) && (ui::count(row, "documentation_warnings") > 0 || ui::quality_warning(row)) ?
                     Tone::warning : status.tone});
                 out.push_back({explanation.summary});
                 out.push_back({explanation.next, Tone::muted});

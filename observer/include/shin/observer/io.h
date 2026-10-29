@@ -30,7 +30,7 @@ inline Json error_json(const Error& error) {
 std::string read_text(const fs::path& path, std::size_t maximum_bytes, bool private_only);
 fs::path current_executable_path();
 std::string executing_image_identity();
-Json parse_json(const std::string& text);
+Json parse_json(const std::string& text, std::size_t maximum_bytes = kMaximumStateBytes);
 // macOS: persistent volume UUID + inode + birth time; no boot-local fallback.
 // Windows: local NTFS volume GUID + file ID + creation time; no drive-letter ID.
 std::string directory_identity(const fs::path& path, bool private_only = false);

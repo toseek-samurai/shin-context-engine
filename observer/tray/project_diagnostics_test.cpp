@@ -33,9 +33,24 @@ void documentation_warning_overview() {
     }
 }
 
+void search_warning_overview() {
+    using namespace shin::ui;
+    Json project{{"phase", "current"}, {"query_ready", true}, {"active_issue", false},
+        {"quality_warning", {{"state", "degraded"}, {"diagnostic", {{"schema_version", "shin.validation-diagnostic.v1"},
+            {"gates", Json::array()}, {"truncated", false}}}}}};
+    assert(diagnostic_overview(project, true).title == tr("Ready with search warnings"));
+    assert(project_state(project, true) == ProjectState::current);
+    assert(!active_issue(project));
+    assert(Json::parse(diagnostic_summary(project, Json::object(), true, "", "test")).contains("quality_warning"));
+    project["active_issue"] = true;
+    assert(project_state(project, true) == ProjectState::blocked);
+    assert(diagnostic_overview(project, true).title != tr("Ready with search warnings"));
+}
+
 int check_language() try {
     using namespace shin::ui;
     documentation_warning_overview();
+    search_warning_overview();
     MonitorTween tween;
     tween.snap(0);
     const float first = tween.step(1, .04f, false);

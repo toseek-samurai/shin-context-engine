@@ -112,6 +112,20 @@ Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.
 
+In the dev.57 candidate, a permanent-profile search miss can return `local_ready=true`
+and `retrieval_ready=true` with `canonical_ready=false`, `project_quality=degraded`
+and a bounded `quality_warning`. These responses contain verified current context;
+they do not claim that strict quality checks passed. The warning survives resident
+reader restarts and clears after a new qualified generation passes its checks.
+MCP preserves it in query/status responses and their `readiness` or
+`background_readiness`; Monitor and TUI show an amber search warning. Source reads
+and inspection still require matching snapshots and live file verification.
+
+Strict Core `validate` and `ready` keep their original failure exit codes. Their
+additional `retrieval_ready` field distinguishes a quality-only failure from a
+retrieval blocker. Admission is computed before diagnostics are truncated; a
+missing diagnostic entry never grants access.
+
 Since preview dev.39, Shin keeps verified partial context available when a previously
 qualified canonical route exceeds its approved source-file count or per-file byte limit. The
 response has `retrieval_ready=true`, `canonical_ready=false` and

@@ -508,6 +508,7 @@ int run_ready(const RuntimeOptions& options,
     int skipped = 0;
     bool worktree_current = false;
     bool validation_passed = false;
+    bool retrieval_validation_passed = false;
     Json step_results = Json::array();
     Json diagnostic_ids = Json::array();
     for (const ReadyStep& step : steps) {
@@ -526,6 +527,8 @@ int run_ready(const RuntimeOptions& options,
         }
         if (step.id == "validate") {
             validation_passed = step.ok;
+            retrieval_validation_passed = step.error.is_null() && step.result.is_object() &&
+                step.result.value("retrieval_ready", Json(false)) == true;
         }
         if (step.attempted && !step.ok) {
             diagnostic_ids.push_back(ready_step_diagnostic_id(step));
@@ -559,6 +562,7 @@ int run_ready(const RuntimeOptions& options,
 
     Json output = make_result_document("shin.agent-readiness.v1", "ready", ready);
     output["ready"] = ready;
+    output["retrieval_ready"] = route_aligned && adoption_aligned && worktree_current && retrieval_validation_passed;
     output["profile"] = options.profile.id;
     output["root"] = options.root.generic_string();
     output["out_root"] = options.out_root.generic_string();

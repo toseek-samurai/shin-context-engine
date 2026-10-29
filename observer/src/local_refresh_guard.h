@@ -4,6 +4,19 @@
 #include <functional>
 
 namespace shin::observer {
+// Core's strict quality verdict remains intact. Only its independently
+// computed retrieval verdict can admit a safe, current generation.
+inline bool local_retrieval_ready(const Json& result) {
+    return result.value("retrieval_ready", result.value("ready", result.value("ok", Json(false)))) == true;
+}
+
+inline Json local_quality_warning(const Json& result) {
+    if (!local_retrieval_ready(result) || result.value("ready", result.value("ok", Json(false))) == true)
+        return nullptr;
+    return Json{{"state", "degraded"}, {"diagnostic", result.contains("steps") ?
+        readiness_diagnostic(result) : validation_diagnostic(result)}};
+}
+
 // Local bootstrap promises verified context, not perfect documentation.
 // Keep strict Core verdicts intact and accept only their known link-only
 // diagnostic. Permanent routes and every other failure retain strict behavior.
@@ -78,7 +91,7 @@ inline std::string qualification_key(Json binding, const std::string& profile_ha
     binding["executing_generator"] = shin::context::kGeneratorVersion;
     binding["executable_sha256"] = binary;
     binding["executing_image"] = executing_image_identity();
-    binding["qualification_policy"] = "verified-generation-live-safety-v2";
+    binding["qualification_policy"] = "verified-generation-live-safety-v3";
     return digest(binding.dump());
 }
 

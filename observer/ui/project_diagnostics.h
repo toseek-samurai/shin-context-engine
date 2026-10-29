@@ -205,6 +205,11 @@ inline std::uint64_t count(const Json& row, const char* key) {
 
 struct DiagnosticOverview { std::string title, summary, next; };
 
+inline bool quality_warning(const Json& project) {
+    const auto warning = project.find("quality_warning");
+    return warning != project.end() && warning->is_object() && text_field(*warning, "state") == "degraded";
+}
+
 inline DiagnosticOverview diagnostic_overview(const Json& project, bool connected) {
     const auto state = project_state(project, connected);
     if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
@@ -222,6 +227,10 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
         project.at("source_coverage").is_object() && count(project.at("source_coverage"), "quarantined_files") > 0)
         return {shin::ui::tr("Context partially available"), shin::ui::tr("Files with possible secrets were excluded. Search over the rest of the project works."),
             shin::ui::tr("Review the excluded files. Shin will restore them automatically after correction.")};
+    if ((state == ProjectState::current || state == ProjectState::standby) && quality_warning(project))
+        return {shin::ui::tr("Ready with search warnings"),
+            shin::ui::tr("Some search checks missed expected evidence. Verified current context remains available."),
+            shin::ui::tr("Review the search diagnostics. The warning clears when the checks pass.")};
     if ((state == ProjectState::current || state == ProjectState::standby) && count(project, "documentation_warnings") > 0)
         return {shin::ui::tr("Ready with documentation warnings"),
             std::string(shin::ui::tr("Broken documentation links: ")) + std::to_string(count(project, "documentation_warnings")) +
@@ -306,6 +315,8 @@ inline std::string diagnostic_summary(const Json& project, const Json& service, 
         {"last_error_code", historical_code(project)}, {"connection_code", error_code(Json{{"code", connection_code}}, "code")},
         {"authority", text_field(project, "authority", 96)}};
     summary["documentation_warnings"] = count(project, "documentation_warnings");
+    if (quality_warning(project)) summary["quality_warning"] = {{"state", "degraded"},
+        {"diagnostic", shin::observer::bounded_validation_diagnostic(project.at("quality_warning").value("diagnostic", Json()))}};
     const auto validation = shin::observer::bounded_validation_diagnostic(project.value("validation_diagnostic", Json()));
     if (!validation.is_null()) summary["validation_diagnostic"] = validation;
     if (project.contains("source_coverage") && project.at("source_coverage").is_object()) {

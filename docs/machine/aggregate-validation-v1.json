@@ -166,5 +166,13 @@
     "summary output is smaller for a healthy validation and keeps failed-gate diagnostics below 64 KiB with explicit omission accounting",
     "absolute and dot-segment marker inputs below --root normalize to the canonical relative marker while outside-root and symlink paths fail closed",
     "the relocated portable binary runs validate successfully against its generated fixture index"
-  ]
+  ],
+  "retrievalAvailability": {
+    "status": "preview-dev.57-candidate",
+    "field": "retrieval_ready",
+    "strictVerdict": "Existing ok/ready fields and exit codes remain strict CI quality decisions.",
+    "policy": "Compute availability from complete gate results before bounded projections. Only eval/Pack quality-only failures may be advisory. All authority, freshness, integrity, configuration, runtime, forbidden-path, serial/parallel consistency and mandatory resource/output bounds remain required.",
+    "qualityEvidence": "eval and pack-eval add quality_failure_only, derived from all cases and variants before diagnostic truncation. Ordinary missing evidence, rank/type/coverage assertions and Pack completion expectations may fail without blocking a safe current generation.",
+    "observer": "Local admission uses retrieval_ready and emits a bounded quality_warning without turning it into an error. Qualification caching binds the warning to the exact engine, route and source generation."
+  }
 }

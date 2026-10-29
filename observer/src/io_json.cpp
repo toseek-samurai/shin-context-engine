@@ -3,8 +3,8 @@
 #include <vector>
 
 namespace shin::observer {
-Json parse_json(const std::string& text) {
-    if (text.size() > kMaximumStateBytes) throw Error("json-too-large", "JSON input exceeds the bounded limit.");
+Json parse_json(const std::string& text, std::size_t maximum_bytes) {
+    if (text.size() > maximum_bytes) throw Error("json-too-large", "JSON input exceeds the bounded limit.");
     const auto invalid = [] { throw Error("invalid-json", "JSON input is malformed or exceeds the nesting limit."); };
     std::vector<std::unordered_set<std::string>> object_keys;
     const Json::parser_callback_t callback = [&](int depth, Json::parse_event_t event, Json& value) {

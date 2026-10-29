@@ -3,6 +3,9 @@
 #include "update_progress.h"
 namespace shin::observer {
 // Public release metadata is untrusted. Selection never changes local state.
+// Match the existing HTTP feed budget without expanding local state limits.
+inline constexpr std::size_t kMaximumReleaseFeedBytes = 1024U * 1024U;
+Json parse_release_feed(const std::string& text);
 Json select_local_release(const Json& releases, const std::string& current);
 void verify_release_listing(const std::string& listing, const std::string& version);
 #ifdef __APPLE__

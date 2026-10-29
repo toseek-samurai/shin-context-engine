@@ -936,7 +936,7 @@ class McpTests(unittest.TestCase):
                               '--profile-dir', str(fixture.profiles), '--root', str(fixture.root),
                               '--out-dir', str(fixture.out), 'build')
 
-    def permanent_route(self, managed=False):
+    def permanent_route(self, managed=False, negative_path=False):
         fixture = Fixture(self.base, 'external')
         fixture.write_source('# Limits\n\nreadLimit owns the retry ceiling.\n')
         (fixture.root / 'limits.js').write_text('export function readLimit() { return 23; }\n')
@@ -948,6 +948,9 @@ class McpTests(unittest.TestCase):
                                'task': {'objective': 'Find retry ceiling', 'must': [{'id': 'limit', 'query': 'retry ceiling'}]},
                                'budget': {'max_evidence_bytes': 8192, 'max_records': 4,
                                           'per_query_records': 4, 'per_document_records': 2}}}])
+        if negative_path:
+            (fixture.root / 'other.md').write_text('# Other\n\nThe retry ceiling is here.\n')
+            profile['evalCases'][0]['mustNotPaths'] = ['other.md']
         fixture.profile_path.write_text(json.dumps(profile))
         self.publish_route(fixture)
         self.native_companion('shin-observer', 'sample', '--config', str(fixture.config))
@@ -987,11 +990,11 @@ class McpTests(unittest.TestCase):
         self.assertEqual(published, canonical_files())
 
     def test_membership_candidate_partial_context_and_automatic_recovery(self):
-        fixture = self.permanent_route(managed=True)
+        fixture = self.permanent_route(managed=True, negative_path=True)
         self.start()
         client = self.adapter(fixture.root)
         original = json.loads(fixture.profile_path.read_text())
-        changed = {**original, 'rootFiles': []}
+        changed = {**original, 'rootFiles': ['other.md']}
         fixture.profile_path.write_text(json.dumps(changed))
         retry = threading.Event()
         deadline = time.monotonic() + 25
@@ -1265,7 +1268,7 @@ class McpTests(unittest.TestCase):
         self.assertNotIn('source_context', unavailable)
         self.assertIsNone(client.poll())
         self.assertEqual(self.rpc(client, 'ping', {})['result'], {})
-        self.start()
+        second_daemon = self.start()
         self.assertNotEqual(self.raw('service-status')['result']['instance_id'], initial_service)
         refreshed = current(31)
         self.assertNotEqual(refreshed['snapshot_id'], initial['snapshot_id'])
@@ -1280,32 +1283,19 @@ class McpTests(unittest.TestCase):
         accepted = manifest.read_bytes()
         original = (fixture.root / 'README.md').read_text()
         (fixture.root / 'README.md').write_text('# Unrelated\n\nNo required contract evidence.\n')
-        watch = self.home / 'projects' / hashlib.sha256(str(fixture.root).encode()).hexdigest() / 'watch/state.json'
-        deadline = time.monotonic() + 20
-        while time.monotonic() < deadline:
-            state = json.loads(watch.read_text())
-            if state.get('last_result', {}).get('error', {}).get('code') == 'refresh-validation-failed':
-                break
-            time.sleep(.05)
-        else:
-            self.fail('permanent profile quality refusal was not observed: ' + str(state))
-        self.assertEqual(manifest.read_bytes(), accepted)
-        blocked = self.tool(client, 'shin_query', {'query': 'readLimit'})
-        self.assertFalse(blocked['ok'])
-        self.assertNotIn('source_context', blocked)
-        self.assertEqual(blocked['error']['code'], 'refresh-validation-failed')
-        diagnostic = blocked['error']['diagnostic']
+        (fixture.root / 'limits.js').write_text('export function readLimit() { return 37; }\n')
+        warning = current(37)
+        self.assertNotEqual(manifest.read_bytes(), accepted)
+        self.assertFalse(warning['canonical_ready'])
+        self.assertTrue(warning['local_ready'])
+        self.assertEqual(warning['project_quality'], 'degraded')
+        diagnostic = warning['quality_warning']['diagnostic']
         self.assertEqual(diagnostic['schema_version'], 'shin.validation-diagnostic.v1')
         eval_gate = next(g for g in diagnostic['gates'] if g['id'] == 'eval')
-        self.assertTrue(eval_gate['cases'])
-        missing_path_case = next(c for c in eval_gate['cases'] if 'missing-required-path' in c['reasons'])
-        self.assertIn('README.md', missing_path_case['expected_paths'])
-        self.assertTrue((fixture.root / 'README.md').is_file())
-        self.assertIn('not found in search results', blocked['error']['message'])
-        self.assertIn('does not show that the document is missing from disk', blocked['error']['message'])
-        self.assertIn('Expected document: README.md', blocked['error']['message'])
-        self.assertIn('validation settings do not need changes', blocked['error']['message'])
-        self.assertFalse(any('broken-local-link' in g.get('reasons', []) for g in diagnostic['gates']))
+        missing = next(c for c in eval_gate['cases'] if 'missing-required-path' in c['reasons'])
+        self.assertIn('README.md', missing['expected_paths'])
+        self.assertNotIn('readLimit', json.dumps(diagnostic))
+        self.assertNotIn(str(fixture.root), json.dumps(diagnostic))
         self.assertEqual(set(diagnostic), {'schema_version', 'gates', 'truncated'})
         for gate in diagnostic['gates']:
             self.assertLessEqual(set(gate), {'id', 'cases', 'error_code', 'reasons'})
@@ -1323,36 +1313,33 @@ class McpTests(unittest.TestCase):
                 identifiers.extend([case['id'], *case['reasons']])
             for identifier in identifiers:
                 self.assertRegex(identifier, r'\A[A-Za-z0-9_.-]{1,96}\Z')
-        self.assertNotIn('readLimit', json.dumps(diagnostic))
-        native = self.run_ce('query', 'readLimit', '--service', root=fixture.root, expected=2)
-        self.assertEqual(native['error']['code'], 'refresh-validation-failed')
-        self.assertEqual(native['error']['diagnostic'], diagnostic)
+        native = self.run_ce('query', 'readLimit', '--service', root=fixture.root)
+        self.assertEqual(native['quality_warning'], warning['quality_warning'])
+        self.assertIn('return 37;', native['source_context'])
+        for name in ('shin_read', 'shin_inspect'):
+            result = self.tool(client, name, {'path': 'limits.js', 'snapshot': warning['snapshot_id']})
+            self.assertTrue(result['ok'], result)
+        stale = self.tool(client, 'shin_read', {'path': 'limits.js', 'snapshot': refreshed['snapshot_id']})
+        self.assertFalse(stale['ok'])
+        self.assertNotIn('source_context', stale)
         project = next(p for p in self.raw('service-status')['result']['telemetry']['project_states']
                        if p['root'] == str(fixture.root))
-        self.assertTrue(project['active_issue'])
-        self.assertEqual(project['query_phase'], 'blocked')
-        self.assertEqual(project['validation_diagnostic'], diagnostic)
-        for name, args in [('shin_status', {}), ('shin_read', {'path': 'limits.js', 'snapshot': refreshed['snapshot_id']}),
-                           ('shin_inspect', {'path': 'limits.js', 'snapshot': refreshed['snapshot_id']})]:
-            refusal = self.tool(client, name, args)
-            self.assertEqual(refusal['error']['code'], 'refresh-validation-failed')
-            self.assertEqual(refusal['error']['diagnostic'], diagnostic)
-            self.assertNotIn('source_context', refusal)
-        deadline = time.monotonic() + 10
-        while time.monotonic() < deadline:
-            state = json.loads(watch.read_text())
-            if state['phase'] == 'coalescing':
-                break
-            time.sleep(.05)
-        else:
-            self.fail('retry observation was not seen')
-        self.assertEqual(self.tool(client, 'shin_query', {'query': 'readLimit'})['error']['code'],
-                         'refresh-validation-failed')
+        self.assertFalse(project['active_issue'])
+        self.assertEqual(project['quality_warning']['diagnostic'], diagnostic)
+        self.assertNotEqual(project['query_phase'], 'blocked')
         self.assertIn('return 7;', self.tool(other, 'shin_query', {'query': 'readLimit'})['source_context'])
+        # A new resident reader must retain the warning from the qualified cache.
+        self.raw('service-stop')
+        second_daemon.communicate(timeout=15)
+        self.assertEqual(second_daemon.returncode, 0)
+        self.start()
+        self.assertEqual(current(37)['quality_warning'], warning['quality_warning'])
 
         (fixture.root / 'README.md').write_text(original)
         (fixture.root / 'limits.js').write_text('export function readLimit() { return 47; }\n')
         recovered = current(47)
+        self.assertIsNone(recovered['quality_warning'])
+        self.assertTrue(recovered['canonical_ready'])
         project = next(p for p in self.raw('service-status')['result']['telemetry']['project_states']
                        if p['root'] == str(fixture.root))
         self.assertFalse(project['active_issue'])

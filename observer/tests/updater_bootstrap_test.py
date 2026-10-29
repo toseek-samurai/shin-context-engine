@@ -58,7 +58,10 @@ esac
         release={'draft':False,'prerelease':False,'tag_name':'v9.0.0','html_url':url+'tag/v9.0.0','assets':[
             {'name':name,'state':'uploaded','digest':'sha256:'+digest,'size':(fixtures/'updater.zip').stat().st_size,'browser_download_url':url+'download/v9.0.0/'+name},
             {'name':name+'.sha256','state':'uploaded','size':110,'browser_download_url':url+'download/v9.0.0/'+name+'.sha256'}]}
-        (fixtures/'feed.json').write_text(json.dumps([release]))
+        release['body']='Release notes\n' * (24 * 1024)
+        feed=json.dumps([release])
+        assert 256*1024 < len(feed.encode()) < 1024*1024
+        (fixtures/'feed.json').write_text(feed)
     package()
     current=json.loads((fixtures/'feed.json').read_text())
     current[0]['tag_name']='v'+version;current[0]['html_url']=current[0]['html_url'].replace('v9.0.0','v'+version)

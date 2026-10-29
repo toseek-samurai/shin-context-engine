@@ -29,7 +29,8 @@ int main() {
             {"telemetry", {{"project_states", Json::array({
                 {{"root", "/example/a"}, {"id", "a"}, {"name", "Project A"}, {"phase", "current"}, {"query_ready", true},
                  {"source_coverage", {{"state", "partial"}, {"quarantined_files", 1}}}},
-                {{"root", "/example/b"}, {"id", "b"}, {"name", "Project B"}, {"phase", "current"}, {"query_phase", "standby"}},
+                {{"root", "/example/b"}, {"id", "b"}, {"name", "Project B"}, {"phase", "current"}, {"query_phase", "standby"},
+                 {"quality_warning", {{"state", "degraded"}}}},
                 {{"root", "/example/c"}, {"id", "c"}, {"name", "Project C"}, {"phase", "checking"}, {"query_ready", true}, {"active_issue", true}}
             })}, {"request_metrics", {{"recent", Json::array({
                 {{"method", "query"}, {"purpose", "diagnostic"}, {"reader_state", "cold"}, {"duration_ms", 20}, {"service_duration_ms", 200}},
@@ -39,10 +40,12 @@ int main() {
         tui::State state; state.tab = 1;
         auto value = render(snapshot, state);
         require(value.find("[partial]") != std::string::npos && value.find("standby") != std::string::npos && value.find("blocked") != std::string::npos);
+        require(value.find("[search warning]") != std::string::npos);
         tui::select_project(snapshot, state, 1); require(state.project == "/example/b");
         std::swap(snapshot.service["telemetry"]["project_states"][0], snapshot.service["telemetry"]["project_states"][1]);
         state.detail = true;
         value = render(snapshot, state); require(value.find("/example/b") != std::string::npos && value.find("Project B") != std::string::npos);
+        require(value.find("Ready with search warnings") != std::string::npos);
         snapshot.connected = false; snapshot.error = "service-unavailable";
         value = render(snapshot, state);
         require(value.find("offline") != std::string::npos && value.find("last successful observation") != std::string::npos);

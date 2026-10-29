@@ -14,8 +14,12 @@ import shutil
 import signal
 import sqlite3
 import subprocess
+import sys
 import tempfile
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
+from integration_test import Fixture
 
 parser = argparse.ArgumentParser()
 parser.add_argument('cmake')
@@ -111,7 +115,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
                 if '--adopt-existing' in words:
                     for step in (5, 9, 10, 11, 12, 7):
                         assert step in stages, (step, stages)
-                    assert any(row['step'] == 9 and row['received'] == row['total'] == 1 for row in frames), frames
+                    assert any(row['step'] == 9 and row['received'] == row['total'] == 2 for row in frames), frames
                     assert any(row['step'] == 10 and row['received'] == row['total'] > 0 for row in frames), frames
             elif progress:
                 assert ('Обновление завершено' if language else 'Update completed') in result.stderr, result.stderr
@@ -136,6 +140,23 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
     try:
         call('init', '--home', home, executable=prefix / 'bin/shin-ce')
         call('query', 'updateQuota', '--home', home, executable=prefix / 'bin/shin-ce')
+        quality = Fixture(work, 'quality-canonical')
+        quality.write_source('# Contract\n\nThe retry ceiling belongs to readLimit.\n')
+        (quality.root / 'limits.js').write_text('export function readLimit() { return 17; }\n')
+        profile = json.loads(quality.profile_path.read_text())
+        profile.update(bootstrapOnly=False, sourceFactRoots=['.'], sourceFactExtensions=['.js'],
+            evalCases=[{'id': 'contract', 'query': 'retry ceiling', 'mustPaths': ['README.md']}],
+            packEvalCases=[{'id': 'contract-pack', 'mustPaths': ['README.md'], 'expectedComplete': True,
+                'request': {'schema_version': 'shin.task-request.v1', 'request_id': 'contract-pack',
+                    'task': {'objective': 'Find the retry ceiling', 'must': [{'id': 'rule', 'query': 'retry ceiling'}]},
+                    'budget': {'max_evidence_bytes': 8192, 'max_records': 4,
+                               'per_query_records': 4, 'per_document_records': 2}}}])
+        quality.profile_path.write_text(json.dumps(profile))
+        call('--root', quality.root, '--profile', 'observer-fixture', '--profile-dir', quality.profiles,
+             '--out-dir', quality.out, 'build', executable=prefix / 'bin/shin-context')
+        call('sample', '--config', quality.config, executable=prefix / 'bin/shin-observer')
+        call('init', '--root', quality.root, '--home', home, '--observer-config', quality.config,
+             '--manage-index', executable=prefix / 'bin/shin-ce')
         if managed:
             call('service-install', '--home', home, executable=prefix / 'bin/shin-ce')
         registry = (home / 'registry/state.json').read_bytes()
@@ -156,6 +177,10 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         call(*adoption, error='installation-extra-file')
         assert extra.read_text() == 'preserve'
         extra.unlink()
+        # A current, safe project with a search warning must not block adoption.
+        # Stale publications during a Core transition are exercised below.
+        quality.write_source('# Other\n\nNo relevant evidence here.\n')
+        call('watch', '--root', quality.root, '--home', home, '--samples', '2', executable=prefix / 'bin/shin-ce')
         migrated = call(*adoption, progress="json")
         assert migrated['changed'] and migrated['data_preserved'] and migrated['service_restored']
         receipt = json.loads((prefix / '.shin-installation.json').read_text())
@@ -164,6 +189,10 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         assert call('installation', '--prefix', prefix)['integrity_verified']
         assert not (home / 'service/rpc.sock').exists()
         call('service-start', executable=prefix / 'bin/shin-ce')
+        available = call('query', 'readLimit', '--root', quality.root, '--home', home, executable=prefix / 'bin/shin-ce')
+        assert available['local_ready'] and not available['canonical_ready']
+        assert available['quality_warning']['state'] == 'degraded'
+        assert 'return 17;' in available['source_context']
         assert not call(*update, progress='text')['changed']
         assert not call(*update, progress='text', language='ru_RU.UTF-8')['changed']
         assert (prefix / asset_name).read_bytes() == asset.read_bytes()
@@ -213,6 +242,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         # New engine recovery must refresh the stale publication using its grant;
         # pre-admission must not demand that the old engine repair itself first.
         (root / 'quota.cpp').write_text('int updateQuota() { return 42; }\n')
+        quality.write_source('# Changed again\n\nStill no relevant evidence.\n')
         binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
         old_binding = json.loads(binding_path.read_text())
         old_binding['core_version'] = '2.0.5-dev.1'

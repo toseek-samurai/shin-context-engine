@@ -25,7 +25,7 @@ Json installation(const fs::path& prefix,const fs::path& user) {
     return local_installation((int)p.size(),p.data(),user);
 }
 Json offer(const std::string& current) {
-    return select_local_release(parse_json(fetch("https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",1024U*1024)),current);
+    return select_local_release(parse_release_feed(fetch("https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",kMaximumReleaseFeedBytes)),current);
 }
 fs::path download_release_kit(const Json& selected,const fs::path& stage,const ReleaseUpdateProgressSink& sink) {
     const auto archive=stage/selected.at("archive_name").get<std::string>();

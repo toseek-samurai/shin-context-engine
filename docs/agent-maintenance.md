@@ -40,3 +40,40 @@ dependency notices, relative documentation links, runtime dependencies, source
 path disclosure and preserved data in a disposable installation. Keep private
 raw diagnostics outside the public repository. Scope any performance statement
 to its workload, hardware and measured cold/warm state.
+
+<!-- shin-profile-maintenance-start -->
+
+## Project profile maintenance
+
+Applies only when Shin Context Engine is installed and this exact project is
+already enrolled. During an authorized refactor, the project agent also reviews
+the project-owned Shin profile; do not wait for a user-reported search warning.
+Without installed Shin, continue ordinary work without installing/enrolling it
+or adding a build/CI dependency.
+
+When documents, rules, packages, source roots or contracts change, check affected
+inclusions/exclusions, agentStartPaths, expected paths and eval/Pack cases.
+Prepare equivalent profile updates with the refactor. Diagnose failures against
+current source first: distinguish a moved/obsolete owner or changed contract
+from a retrieval regression. Preserve natural-language task intent, useful broad
+queries, negative assertions, rank/coverage requirements and resource limits.
+Add current terminology as coverage; an exact identifier query does not replace
+a failing broad query. Explain any owner-reviewed retirement of obsolete cases.
+
+Never delete failures, relax checks, raise limits, index evaluation answers or
+move required cases into advisory/history suites just to make status green.
+Keep confirmed engine misses visible with original queries, expected owners,
+versions and bounded diagnostics; exclude private source/secrets from reports.
+
+A profile edit is not runtime approval. Review its exact native
+shin-ce profile-review diff; scope, limits, safety and quality policy need
+explicit owner authority for that change. Existing explicit authorization may
+cover acceptance; do not ask again when it does. Do not approve through MCP or
+re-enroll, switch indexes or manually rebuild a managed index.
+
+After approval, let the service refresh on the canonical route. Run affected
+strict eval/Pack checks and the full applicable profile suite before claiming
+quality restored; verify current status and a representative query/read with
+its fresh snapshot. If Shin is unavailable, report pending validation. Handoff
+records profile changes, checks and unresolved warnings; edits alone prove no recovery.
+<!-- shin-profile-maintenance-end -->

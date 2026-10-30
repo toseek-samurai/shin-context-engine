@@ -57,3 +57,5 @@ are caller-reported statistics, not verified model identity or task success. For
 read/inspect following a query, also pass its `request_trace.request_id` as
 `parent_request_id` when supported. Never persist a chat ID into shared MCP config.
 <!-- shin-discovery-policy-end -->
+
+With installed Shin, refactors include [project profile maintenance](docs/agent-maintenance.md#project-profile-maintenance).

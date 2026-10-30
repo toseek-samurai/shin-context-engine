@@ -4,12 +4,15 @@
 #include <d3d11.h>
 #include <wincodec.h>
 #include <wrl/client.h>
+#include <winhttp.h>
+#include "shin/observer/local_updates.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx11.h"
 #include "monitor_view.h"
 #include <fstream>
 #include <iostream>
 #include <utility>
+#include <future>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 namespace {
@@ -31,6 +34,8 @@ ImFont* symbols = nullptr;
 NOTIFYICONDATAW tray{};
 UINT taskbar_created = 0;
 bool compact = false, modal = false, test_mode = false;
+bool updates_page = false;
+void open_updates();
 
 void checked(HRESULT result, const char* message) {
     if (FAILED(result)) throw std::runtime_error(message);
@@ -112,6 +117,7 @@ void show_report() {
     ShowWindow(report, SW_SHOW); SetForegroundWindow(report);
 }
 void platform_action(int code) {
+    if (code == 110 || code == 86) { open_updates(); return; }
     if (code == 39) { show_report(); return; }
     if (code == 43) {
         ComPtr<IFileOpenDialog> dialog;
@@ -233,14 +239,19 @@ void show_panel() {
     POINT point{}; GetCursorPos(&point); MONITORINFO info{sizeof(info)};
     GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&info);
     const int width=std::min(compact?360:448,static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
-    const int height=std::min(compact?440:620,static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
+    const int height=std::min(updates_page || compact?440:620,static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
     const int x=std::clamp(static_cast<int>(point.x)-width/2,static_cast<int>(info.rcWork.left)+12,static_cast<int>(info.rcWork.right)-width-12);
     const int y=std::clamp(static_cast<int>(point.y)-height,static_cast<int>(info.rcWork.top)+12,static_cast<int>(info.rcWork.bottom)-height-12);
     SetWindowPos(panel,HWND_TOPMOST,x,y,width,height,SWP_SHOWWINDOW); SetForegroundWindow(panel);
     if(monitor) monitor->visible=true;
 }
+#include "windows_updates.h"
+
 void render_frame(const ViewState& state) {
-    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame(); render(state); ImGui::Render();
+    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+    if (updates_page && release_check) render_windows_updates(release_check->snapshot());
+    else render(state);
+    ImGui::Render();
     constexpr float clear[]{background.x,background.y,background.z,1};
     context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr); context->ClearRenderTargetView(target.Get(),clear);
     ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
@@ -296,10 +307,11 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             if(LOWORD(lparam)==NIN_SELECT || LOWORD(lparam)==NIN_KEYSELECT) {
                 if(IsWindowVisible(window)) close_panel();else show_panel();
             } else if(LOWORD(lparam)==WM_CONTEXTMENU) {
-                const auto choice=menu_choice({{1,wide(shin::ui::tr("Open panel")).c_str()},{2,wide(shin::ui::tr("Compact view")).c_str()},{3,wide(shin::ui::tr("Quit Monitor")).c_str()}},compact?2:0);
+                const auto choice=menu_choice({{1,wide(shin::ui::tr("Open panel")).c_str()},{4,wide(shin::ui::tr("Check for updates…")).c_str()},{2,wide(shin::ui::tr("Compact view")).c_str()},{3,wide(shin::ui::tr("Quit Monitor")).c_str()}},compact?2:0);
                 if(choice==1) show_panel();
                 else if(choice==2) {compact=!compact;settings["compact"]=compact;save_settings();if(IsWindowVisible(window))show_panel();}
                 else if(choice==3) DestroyWindow(window);
+                else if(choice==4) open_updates();
             } return 0;
         default: break;
         }
@@ -348,6 +360,15 @@ void check_action_bounds(ImVec2 size) {
                 "," + std::to_string(action.size.x) + "," + std::to_string(action.size.y));
 }
 
+void check_action_ids() {
+    std::set<ImGuiID> seen;
+    for (const auto& action : ui_actions) {
+        if (action.item_id && !seen.insert(action.item_id).second)
+            throw std::runtime_error("Monitor has conflicting ImGui IDs: " + action.label);
+    }
+    if (seen.empty()) throw std::runtime_error("Monitor actions did not expose their actual ImGui IDs.");
+}
+
 unsigned documentation_warning_render(ViewState state, const fs::path& output, ImVec2 size) {
     state.connected=true;
     state.data["telemetry"]["project_states"][0]["documentation_warnings"]=2;
@@ -358,6 +379,7 @@ unsigned documentation_warning_render(ViewState state, const fs::path& output, I
         dashboard_view=1;selected=details?"shin":"";
         for(int frame=0;frame<3;++frame) render_frame(state);
         check_action_bounds(size);
+        check_action_ids();
         const std::string title=shin::ui::tr("Ready with documentation warnings");
         const auto visible=std::find_if(ui_actions.begin(),ui_actions.end(),[&](const auto& action) {
             return details ? action.chart==54 && action.label==title :
@@ -375,8 +397,70 @@ unsigned documentation_warning_render(ViewState state, const fs::path& output, I
     return frames;
 }
 
+unsigned updates_render(const fs::path& output, ImVec2 size) {
+    const auto previous_language = shin::ui::language();
+    unsigned frames = 0;
+    for (const auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
+        shin::ui::set_language(language);
+        for (const auto phase : {WindowsUpdateState::idle, WindowsUpdateState::checking, WindowsUpdateState::current,
+                WindowsUpdateState::offer, WindowsUpdateState::failed}) {
+            const WindowsUpdateSnapshot state{phase, {{"version", "2.0.5-dev.999"}}};
+            for (int frame = 0; frame < 3; ++frame) {
+                ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
+                render_windows_updates(state); ImGui::Render();
+                constexpr float clear[]{background.x,background.y,background.z,1};
+                context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr); context->ClearRenderTargetView(target.Get(),clear);
+                ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+            }
+            check_action_bounds(size); check_action_ids();
+            const auto find = [](int id) { return std::find_if(ui_actions.begin(), ui_actions.end(), [=](const auto& action) { return action.chart == id; }); };
+            if (find(201) == ui_actions.end()) throw std::runtime_error("Updates has no visible return action.");
+            if (size.y >= 440) {
+                if (find(205) == ui_actions.end() || find(205)->enabled == (phase == WindowsUpdateState::checking))
+                    throw std::runtime_error("Update check is hidden or incorrectly enabled.");
+                if (phase == WindowsUpdateState::offer && (find(202) == ui_actions.end() || find(203) == ui_actions.end() || find(204) == ui_actions.end()))
+                    throw std::runtime_error("Reviewed Windows download actions are hidden.");
+                if (phase != WindowsUpdateState::offer && find(202) != ui_actions.end())
+                    throw std::runtime_error("Unreviewed MSI download is visible.");
+            }
+            save_frame(output/(std::string("updates-")+(language==shin::ui::Language::ru?"ru-":"en-")+
+                std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+"-"+std::to_string(static_cast<int>(phase))+".png"));
+            ++frames;
+        }
+    }
+    shin::ui::set_language(previous_language);
+    return frames;
+}
+
+void check_update_worker() {
+    std::promise<void> release;
+    const auto gate = release.get_future().share();
+    std::atomic<int> calls{0};
+    WindowsReleaseCheck check([&] { ++calls; gate.wait(); return Json{{"ok", true}, {"available", true}, {"version", "2.0.5-dev.999"}}; });
+    const auto await_result = [](WindowsReleaseCheck& checker) {
+        const auto deadline = Clock::now() + std::chrono::seconds(2);
+        while (checker.snapshot().state == WindowsUpdateState::checking && Clock::now() < deadline)
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        return checker.snapshot();
+    };
+    check.check();
+    const bool pending = check.snapshot().state == WindowsUpdateState::checking;
+    check.check(); // A second click must not queue another network operation.
+    release.set_value();
+    const auto offer = await_result(check);
+    if (!pending || calls != 1 || offer.state != WindowsUpdateState::offer || offer.offer.value("version", "") != "2.0.5-dev.999")
+        throw std::runtime_error("Windows update worker lost its pending or reviewed state.");
+    WindowsReleaseCheck current([] { return Json{{"ok", true}, {"available", false}}; });
+    current.check();
+    if (await_result(current).state != WindowsUpdateState::current) throw std::runtime_error("Windows update worker lost current state.");
+    WindowsReleaseCheck failed([]() -> Json { throw Error("update-check-failed", "Synthetic offline response."); });
+    failed.check();
+    if (await_result(failed).state != WindowsUpdateState::failed) throw std::runtime_error("Windows update worker lost failure state.");
+}
+
 int render_test(const fs::path& output, bool shell) {
     fs::create_directories(output);
+    check_update_worker();
     ViewState state; state.connected=true;
     const Json project{{"id","shin"},{"name","Shin Context Engine"},{"root","C:\\Projects\\Shin"},
         {"phase","current"},{"active_issue",false},{"error_code",""},{"publications",12},{"preparations",12},{"last_tick_ms",42},{"authority","local"},{"query_ready",true}};
@@ -385,6 +469,7 @@ int render_test(const fs::path& output, bool shell) {
     unsigned frames=0;
     unsigned cold_frames=0;
     unsigned documentation_frames=0;
+    unsigned update_frames=0;
     const std::pair<int,int> views[]{{0,0},{1,0},{2,0},{2,1},{2,2},{3,0}};
     for(const auto size: {ImVec2{448,620},ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
         SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
@@ -399,9 +484,16 @@ int render_test(const fs::path& output, bool shell) {
             dashboard_view=view; activity_view=activity; timing_open=view==2 && activity==0;state.connected=online;
             for(int frame=0;frame<3;++frame) render_frame(state);
             check_action_bounds(size);
+            check_action_ids();
+            if (view == 3 && std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) { return action.chart == 110; }) && size.y >= 440)
+                throw std::runtime_error("Settings has no visible update check.");
             save_frame(output/(std::to_string(++frames)+".png"));
         }
         documentation_frames+=documentation_warning_render(state,output,size);
+        dashboard_view=1; selected="shin";
+        for(int frame=0;frame<3;++frame) render_frame(state);
+        check_action_ids(); check_action_bounds(size); selected.clear();
+        update_frames+=updates_render(output,size);
     }
     const auto icon=logo();DestroyIcon(icon);
     {
@@ -421,7 +513,8 @@ int render_test(const fs::path& output, bool shell) {
         ShowWindow(panel,SW_SHOWNOACTIVATE);SendMessageW(panel,WM_KEYDOWN,VK_ESCAPE,0);
         if(IsWindowVisible(panel)) throw std::runtime_error("Popover did not dismiss on Escape.");
     }
-    std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},
+    std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},{"update_frames",update_frames},
+        {"unique_action_ids",true},{"update_controls",true},{"update_worker",true},
         {"nonblank",true},{"action_bounds",true},{"logo",true},
         {"shell_integration",shell},{"taskbar_recreated_event",shell ? Json(true) : Json(nullptr)},
         {"focus_dismissal",true},{"escape",true}}.dump(2);
@@ -437,6 +530,11 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);
         if(!argv) throw std::runtime_error(shin::ui::tr("Cannot read Monitor arguments."));
         std::vector<std::wstring> args(argv,argv+argc);LocalFree(argv);
+        if(args.size()==3 && args[1]==L"--update-check-test") {
+            test_mode=true;
+            std::ofstream(fs::path(args[2])) << fetch_windows_release().dump(2);
+            CoUninitialize(); return 0;
+        }
         fs::path home=known_folder(FOLDERID_Profile)/".shin-ce", output;
         std::wstring caption=L"Shin Monitor test";
         bool test_shell=true;
@@ -500,6 +598,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                     TranslateMessage(&message);DispatchMessageW(&message);
                 }
                 if(!running) break;
+                if(release_check) {
+                    const auto update=release_check->snapshot();
+                    release_update_version=update.state==WindowsUpdateState::offer ? update.offer.value("version","") : "";
+                }
                 if(IsWindowVisible(panel)) {render_frame(monitor->snapshot());checked(swap_chain->Present(1,0),shin::ui::tr("Monitor graphics device was lost."));}
                 MsgWaitForMultipleObjectsEx(0,nullptr,IsWindowVisible(panel)?(monitor_motion.active?16:50):INFINITE,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
             }
@@ -511,7 +613,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         else MessageBoxW(nullptr,wide(error.what()).c_str(),L"Shin Monitor",MB_OK|MB_ICONERROR);
     }
     if(tray.hIcon) {Shell_NotifyIconW(NIM_DELETE,&tray);DestroyIcon(tray.hIcon);}
-    monitor.reset();preferences.reset();
+    release_check.reset();monitor.reset();preferences.reset();
     if(report) DestroyWindow(report);
     target.Reset();swap_chain.Reset();context.Reset();device.Reset();
     if(panel && IsWindow(panel)) DestroyWindow(panel);

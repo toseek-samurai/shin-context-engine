@@ -17,8 +17,43 @@ Json release(const std::string& version,bool preview=true) {
     })}};
 }
 void refused(Json r){check(!select_local_release(Json::array({r}),"2.0.5-dev.16").at("available"),"unsafe release offered");}
+Json windows_release(const std::string& version) {
+    auto r=release(version);
+    r["assets"]=Json::array();
+    for (const auto* suffix:{".msi",".zip"}) {
+        const auto name="shin-desktop-"+version+"-windows-AMD64"+suffix;
+        const auto base="https://github.com/toseek-samurai/shin-context-engine/releases/download/v"+version+"/";
+        r["assets"].push_back({{"name",name},{"state","uploaded"},{"size",1000},{"digest","sha256:"+std::string(64,'a')},{"browser_download_url",base+name}});
+        r["assets"].push_back({{"name",name+".sha256"},{"state","uploaded"},{"size",110},{"browser_download_url",base+name+".sha256"}});
+    }
+    return r;
+}
+void windows_release_selection() {
+    const auto a=windows_release("2.0.5-dev.17"),b=windows_release("2.0.5-dev.100");
+    const auto selected=select_windows_release(Json::array({b,release("2.0.5-dev.200"),a}),"2.0.5-dev.16");
+    check(selected.at("version")=="2.0.5-dev.100" && selected.at("archive_name")=="shin-desktop-2.0.5-dev.100-windows-AMD64.msi","Windows MSI/version selection failed");
+    check(selected.at("checksum_url")==selected.at("archive_url").get<std::string>()+".sha256","Windows checksum is not paired");
+    check(!select_windows_release(Json::array({a}),"2.0.5-dev.17").at("available"),"same Windows version offered");
+    check(!select_windows_release(Json::array({a}),"2.0.4").at("available"),"Windows stable receives preview");
+    check(!select_local_release(Json::array({a}),"2.0.5-dev.16").at("available"),"Windows MSI offered to macOS");
+    for (std::size_t asset=0;asset<4;++asset) {
+        auto r=a;r["assets"].erase(asset);
+        check(!select_windows_release(Json::array({r}),"2.0.5-dev.16").at("available"),"incomplete Windows release offered");
+        r=a;r["assets"].push_back(r["assets"][asset]);
+        check(!select_windows_release(Json::array({r}),"2.0.5-dev.16").at("available"),"ambiguous Windows release offered");
+        r=a;r["assets"][asset]["browser_download_url"]="https://example.invalid/file";
+        check(!select_windows_release(Json::array({r}),"2.0.5-dev.16").at("available"),"foreign Windows asset offered");
+        r=a;r["assets"][asset]["size"]=0;
+        check(!select_windows_release(Json::array({r}),"2.0.5-dev.16").at("available"),"empty Windows asset offered");
+    }
+    for (std::size_t asset:{0U,2U}) {
+        auto r=a;r["assets"][asset]["digest"]="sha256:"+std::string(64,'z');
+        check(!select_windows_release(Json::array({r}),"2.0.5-dev.16").at("available"),"invalid Windows digest offered");
+    }
+}
 }
 int main()try {
+    windows_release_selection();
     auto a=release("2.0.5-dev.17"),b=release("2.0.5-dev.100");
     const auto selected=select_local_release(Json::array({a,b,release("2.0.5-dev.9")}),"2.0.5-dev.16");
     check(selected.at("version")=="2.0.5-dev.100","lexical version sorting");

@@ -21,7 +21,7 @@ Download the Windows files from [preview dev.66](https://github.com/toseek-samur
 Installation and project connection are separate steps. See the platform scope
 below and [MCP client setup](native-client-setup.md) before connecting an agent.
 Automatic agent configuration, client-history collection, the terminal dashboard
-and in-app updates are not available on Windows yet.
+and automatic installation of updates are not available on Windows yet.
 
 ## Current scope
 
@@ -30,14 +30,36 @@ and in-app updates are not available on Windows yet.
 | Core and retrieval | Indexing, source discovery and snapshot-bound reads use the shared engine. Windows smoke checks cover a selected native subset of the Core suite. |
 | Local Observer, CLI and MCP | Native processes and authenticated named pipes; user runtimes require unelevated tokens. Explicit project/root authority and output bounds remain enforced. |
 | Storage and workers | Windows file identities, owner-private ACLs, atomic replacement and bounded Job Objects. UNC paths and reparse-point traversal are refused. |
-| Monitor | Win32/DX11 host with the shared EN/RU presentation and diagnostics. Source render checks include documentation warnings in project lists and details. |
+| Monitor | Win32/DX11 host with the shared EN/RU presentation and diagnostics. Source render checks include documentation warnings, unique action IDs and Windows update screens. |
 | Client configuration | `mcp-config` exports configuration for manual review. Automatic `client-connect` editing and graphical project onboarding are not enabled. |
-| Terminal UI, usage and updating | `shin-ce stats`, automatic client-history collection and in-app updating remain pending on Windows. Use the native Monitor or text/JSON status where applicable. |
+| Terminal UI, usage and updating | `shin-ce stats`, automatic client-history collection and automatic update installation remain pending on Windows. Monitor source supports a manual release check and reviewed MSI/checksum links; see below. |
 | Distribution | Published ZIP/MSI previews pass the guarded source matrix and exact-package checks. Development presets leave packaging disabled; interactive installed lifecycle checks remain separate. |
 
 Runtime binaries do not require WSL, Bash, Python, Node or a model service.
 Python and the native compiler are development/test dependencies. WSL builds
 exercise the Linux implementation and do not substitute for native Windows tests.
+
+### Windows Monitor update screen (unreleased source)
+
+Open **Settings → Check for updates…**, or right-click the notification-area
+icon and choose **Check for updates…**. The check runs in the background and
+shows the running version, checking/current/available/error state and, for a
+newer complete Windows release, **Download MSI**, **Download checksum** and
+**Release notes**. A visible update offer also appears in the Monitor footer.
+The panel supports English/Russian, keyboard navigation and scrolling on small
+screens. These source changes are not yet part of the pinned published preview.
+
+Checks are manual: Monitor reads the public GitHub release feed over HTTPS,
+without account credentials or project data. The existing version/channel rules
+apply; stable installations do not receive development previews. Offers require
+the exact repository URLs, uploaded Windows ZIP/MSI and paired checksum assets,
+bounded sizes and valid SHA-256 metadata. A failed check does not stop Shin.
+
+Download links open in the user's browser. Verify the MSI against its checksum,
+close Monitor, then run the MSI and confirm native Windows UAC. Windows Installer
+owns progress, completion and any restart request; this screen does not perform
+installation or expose the macOS updater's last-result/automatic-update controls.
+Projects, settings and history remain outside the installed binaries.
 
 ## Build and verification
 
@@ -169,7 +191,8 @@ packaging policy. That is separate installed evidence, not a claim that every
 hosted package check repeats the lifecycle rehearsal. Changes to installer or
 SCM behavior still need a new installed rehearsal, including multi-user and
 rollback scenarios where affected. TUI, automatic client setup/usage collection
-and in-app Windows updating remain pending.
+and automatic Windows update installation remain pending. The unreleased Monitor
+source adds the manual release-check/download screen described above.
 
 Linux/macOS gates, Windows source checks, exact-archive checks and installed
 service checks retain separate proof boundaries. Local binaries never substitute

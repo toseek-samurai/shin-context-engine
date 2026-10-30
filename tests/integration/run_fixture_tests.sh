@@ -633,7 +633,7 @@ shin brief "docs/space owner.md exact owner policy current verification evidence
 assert_contains "$work_root/brief-owner-space.json" '"retrieval_mode": "owner-scoped"'
 assert_contains "$work_root/brief-owner-space.json" '"path":"docs/space owner.md"'
 
-shin brief "show distributedowner alpha beta coverage" \
+shin brief "show distributedowner.md alpha beta coverage" \
   --limit 4 --per-doc 1 >"$work_root/brief-owner-distributed.json"
 assert_contains "$work_root/brief-owner-distributed.json" '"retrieval_mode": "owner-scoped"'
 assert_contains "$work_root/brief-owner-distributed.json" '"path":"docs/distributedowner.md"'

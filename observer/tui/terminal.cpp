@@ -271,7 +271,7 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
         else if (event == Event::q || event == Event::Q || event == Event::CtrlD) {
             if (!snapshot.updates.installing()) screen.Exit();
         }
-        else if (event == Event::u || event == Event::U) { state.tab = 6; state.help = false; }
+        else if (event == Event::u || event == Event::U) { show_page(state, 6); state.help = false; }
         else if (state.tab == 6 && !state.help && (event == Event::y || event == Event::Y)) confirm_update();
         else if (state.tab == 6 && !state.help && (event == Event::n || event == Event::N)) state.update_confirmation.clear();
         else if (state.tab == 6 && !state.help && event == Event::i) prepare_update();
@@ -280,15 +280,17 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
             updates.acknowledge(snapshot.updates.result.value("review_revision", ""));
         else if (event == Event::l || event == Event::L) toggle_language();
         else if (event == Event::CtrlL) screen.Clear();
-        else if (event.is_character() && event.character().size() == 1 && event.character()[0] >= '1' && event.character()[0] <= '7') {
-            state.tab = event.character()[0] - '1'; state.detail = false; state.help = false; state.scroll = 0;
+        else if (event.is_character() && event.character().size() == 1 && event.character()[0] >= '1' && event.character()[0] <= '4') {
+            select_section(state, event.character()[0] - '1'); state.help = false;
         }
-        else if (event == Event::Tab || event == Event::ArrowRight) state.tab = (state.tab + 1) % 7;
-        else if (event == Event::TabReverse || event == Event::ArrowLeft) state.tab = (state.tab + 6) % 7;
+        else if (event == Event::Tab) select_section(state, (main_section(state) + 1) % 4);
+        else if (event == Event::TabReverse) select_section(state, (main_section(state) + 3) % 4);
+        else if (event == Event::ArrowRight || event == Event::Character(']')) move_subpage(state, 1);
+        else if (event == Event::ArrowLeft || event == Event::Character('[')) move_subpage(state, -1);
         else if (event == Event::Character('?')) { state.help = !state.help; state.scroll = 0; }
         else if (event == Event::Escape || event == Event::Backspace) { state.detail = false; state.help = false; state.update_confirmation.clear(); state.scroll = 0; }
         else if (event == Event::Return && (state.tab == 0 || state.tab == 1)) {
-            state.tab = 1; state.detail = true; state.scroll = 0;
+            show_page(state, 1); state.detail = true; state.scroll = 0;
         } else if (event == Event::ArrowDown || event == Event::j || event == Event::ArrowUp || event == Event::k) {
             const int direction = event == Event::ArrowUp || event == Event::k ? -1 : 1;
             if ((state.tab == 0 || state.tab == 1) && !state.detail && !state.help) select_project(snapshot, state, direction);
@@ -320,12 +322,15 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
                 }
                 if (contains(hits.back)) { state.detail = false; state.scroll = 0; }
                 for (std::size_t i = 0; i < hits.tabs.size(); ++i) if (contains(hits.tabs[i])) {
-                    state.tab = static_cast<int>(i); state.detail = false; state.help = false; state.scroll = 0;
+                    select_section(state, static_cast<int>(i)); state.help = false;
                 }
+                const auto pages = subpages(state);
+                for (std::size_t i = 0; i < hits.pages.size(); ++i) if (contains(hits.pages[i]) && pages[i] >= 0)
+                    show_page(state, pages[i]);
                 for (std::size_t i = 0; i < hits.metrics.size(); ++i) if (contains(hits.metrics[i])) state.metric = static_cast<int>(i);
                 for (std::size_t i = 0; i < hits.ranges.size(); ++i) if (contains(hits.ranges[i])) state.range = static_cast<int>(i);
                 for (std::size_t i = 0; i < hits.project_count; ++i) if (contains(hits.projects[i])) {
-                    state.project = hits.roots[i]; state.tab = 1; state.detail = true; state.scroll = 0;
+                    state.project = hits.roots[i]; show_page(state, 1); state.detail = true; state.scroll = 0;
                 }
             } else handled = false;
         } else if (event != Event::r) handled = false;

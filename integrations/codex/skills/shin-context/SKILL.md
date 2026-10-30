@@ -1,6 +1,6 @@
 ---
 name: shin-context
-description: Retrieve verified code and docs through Shin 2.0 before broad repository scans or after context loss. Use direct reads, rg and jq for known files or symbols.
+description: Retrieve verified Shin code/docs before broad repository scans or after context loss, and maintain enrolled project profiles after refactors.
 ---
 
 # Shin Context
@@ -45,10 +45,10 @@ For `source_coverage.state=partial`, report omissions and use verified context
 when `retrieval_ready=true`, even if `canonical_ready=false`. Do not claim full
 coverage. Changed/deleted/quarantined files stay withheld until qualified refresh.
 
-Report retrieval blockers by project/reason; use direct sources and retain
-blockers in handoff. `route-revision-conflict` needs owner review,
-not retries. Editing a profile is not approval. Follow [review](references/setup-and-adoption.md#profile-change-review);
-verify readiness after acceptance.
+Report blockers by project/reason; use direct sources and retain them in handoff.
+`route-revision-conflict` requires owner review. Editing a profile is not approval.
+Follow [profile maintenance and review](references/setup-and-adoption.md#project-profile-maintenance)
+after refactors; verify readiness.
 
 A preparing status is pending: submit the useful `shin_query`. It waits up to
 20 seconds inside one call. No manual sleeps or status polling. After that wait

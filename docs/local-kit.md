@@ -12,7 +12,7 @@ Windows ZIP/MSI packaging route are described in [Windows source status](https:/
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.57).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -20,7 +20,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.57/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.66/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -113,21 +113,45 @@ the panel; it applies immediately, including open native windows and menus. Syst
 uses the operating system language, with English as fallback. Translations are
 compiled into the kit and need no downloads.
 
-Click the Shin icon in the menu bar. In unreleased source, the update indicator
+Click the Shin icon in the menu bar. The update indicator
 stays inside the same square icon. macOS can still hide menu-bar extras when
 space is tight; it provides no public always-visible priority for an app's icon.
-Reopening **Shin Monitor.app** opens a standalone Monitor window, and a missing
-menu-bar anchor also falls back to that window. Closing it leaves Monitor
-running; an explicit Quit exits the app. Service startup at login does not start
-Monitor itself.
+Preview dev.62 runs **Shin Monitor.app** as a tray application: opening it
+shows the popup, and closing the popup leaves Monitor running. The dashboard
+stays attached to its popover; it does not detach into a standalone window or
+add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
+icon to a visible position. An explicit Quit exits Monitor.
+
+In preview dev.66 and later, the desktop panel
+groups tasks under **Overview**, **Projects**, **Activity** and **Settings**.
+Overview summarizes current project readiness and leads to a project needing
+review. Project explanations expose a labeled next action, with search-check
+details inside the panel and technical reports available separately. Activity
+groups request timing, agent token history and the session journal; agent token
+totals are distinct from calls to Shin. Timing explicitly selects this service
+run or retained history, independently of the overview chart's period. Settings
+provides language, connection, storage and update entry points. Agent setup keeps
+custom configuration paths under **Advanced agent settings**. The installed TUI
+retains its existing navigation while this desktop workflow is evaluated.
+
+In preview dev.62, the installed Monitor registers itself with macOS Login Items
+on its first launch. Use **Launch Monitor at login** in its app or
+status-item menu to disable or re-enable this. The checkmark reads the actual
+macOS setting; external opt-out is preserved. If approval is needed, the menu
+opens Login Items in System Settings. Development and portable builds do not
+register themselves. Login launches stay in the background; an explicit open
+shows the dashboard. Uninstall removes the registration owned by that bundle.
+The background service has a separate login-startup setting.
 
 Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
 For the Sand terminal dashboard with line charts, run `shin-ce stats`.
-Use Tab or 1–6 for Overview, Projects, Timing, Storage, Models and Sessions,
-including MCP activity and explicit host context markers when available.
-Unreleased source adds **Updates** as view 7 (`u`): `r` checks releases, `i` reviews
+Preview dev.66 groups the TUI under Overview, Projects, Activity and
+Settings (`1`–`4`, Tab / Shift-Tab). Left/Right or `[` / `]` switches pages within
+Activity and Settings. Activity includes request timing, agents and the session
+journal, including explicit host context markers when available.
+Settings includes **Updates** (shortcut `u`): `r` checks releases, `i` reviews
 installation, `y` confirms and `n` or Esc cancels. Its progress and saved results
 use the same native updater as Monitor. Automatic release download is macOS-only.
 Enter opens project details,
@@ -383,7 +407,7 @@ client, project or model-usage configuration.
 
 Only a CI-qualified published Release is offered to users. Maintainers prepare
 `docs/releases/<tag>.md`, commit the matching Observer version, and push its
-reviewed `vX.Y.Z-dev.N` tag. In unreleased source, the tag workflow waits for all
+reviewed `vX.Y.Z-dev.N` tag. The tag workflow waits for all
 four Linux/macOS Core and Observer jobs and both Windows jobs, including exact
 macOS and Windows package qualification, before publishing either platform.
 `tools/publish_preview.py` independently checks the source commit, workflow,
@@ -532,8 +556,10 @@ Monitor uses one persistent **Shin updates** window for manual
 checks, the offer, launch failures and saved results. Opening it closes the tray
 popover and brings that window forward. Release notes open the browser while
 preserving the review; copying diagnostics preserves the result and its actions.
-Async replies update the window without stealing focus from another application
-or reopening a window the user closed. A manual request during a background check
+Background replies update the window without stealing focus from another
+application. In unreleased source, a failed explicit installation returns its
+still-open result window to the foreground; a closed or minimized window stays
+dismissed. A manual request during a background check
 shows that check's result instead of discarding the request. After selecting
 **Download and install**, the window shows the helper handoff before Monitor exits.
 
@@ -588,6 +614,15 @@ binaries acquire them only after an explicitly selected new kit is installed.
 native recovery, **Acknowledge verified result** verifies the installed payload
 and completed journal before clearing the review gate and cleaning its identified
 private staging folder. A stale review or unfinished native operation is refused.
+
+In unreleased source, a blocked installation also offers **Review previous update**
+directly in its error window. Offline review uses the verified installed Updater
+if the earlier temporary Updater has disappeared. Confirmation is bound to the
+current verified installation receipt, so a directly repaired kit can settle an
+older failed attempt. Missing temporary candidate folders are accepted during
+that explicit confirmation; substituted folders or symlinks are preserved and
+refused. Installation changes and unfinished native recovery still prevent
+confirmation.
 
 ### Independent Updater (dev.49 and later)
 

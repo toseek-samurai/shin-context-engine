@@ -209,11 +209,23 @@ int main(int argc, char** argv) {
         auto snapshot = fixture();
         chart_tests(snapshot);
         const auto original = snapshot.service;
+        auto historical = snapshot;
+        historical.service["telemetry"]["project_states"] = Json::array({{
+            {"root", "/workspace/steady"}, {"name", "steady"}, {"phase", "current"}, {"query_ready", true},
+            {"active_issue", false}, {"error_code", ""}, {"failures", 11}, {"last_error_code", "route-revision-conflict"}}});
+        tui::State historical_state;
+        require(render(historical, historical_state).plain.find("Ready: 1 · Needs review: 0") != std::string::npos,
+            "historical failures reported as a current readiness warning");
         tui::State state;
         auto result = render(snapshot, state);
         require(result.plain.find(SHIN_OBSERVER_VERSION) != std::string::npos, "kit version absent");
         require(result.plain.find("Memory") != std::string::npos && result.plain.find("MiB") != std::string::npos, "memory graph absent");
         require(result.hits.project_count == 5, "overview did not fit five projects");
+        require(result.hits.tabs.size() == 4 && result.plain.find("3 Activity") != std::string::npos &&
+            result.plain.find("4 Settings") != std::string::npos && result.plain.find("7 Updates") == std::string::npos,
+            "primary navigation is not task-based");
+        require(result.hits.metrics[0].y_min > 6 && result.plain.find("[Memory]") != std::string::npos,
+            "metric counters still expose an implicit chart action");
         require(result.plain.find("! Partial") != std::string::npos, "partial context hidden");
         require(result.plain.find("1382 / 2 / 3") != std::string::npos && result.plain.find("Uptime: ") != std::string::npos,
             "existing response counters or uptime lost");
@@ -240,10 +252,12 @@ int main(int argc, char** argv) {
         for (const auto& [tab, name, expected] : std::array{
                 std::tuple{2, "timing-en", "Queries: 246"},
                 std::tuple{3, "storage-en", "684.0 MiB"},
-                std::tuple{4, "models-en", "example-model-a"}}) {
+                std::tuple{4, "models-en", "example-model-a"},
+                std::tuple{7, "settings-en", "[L Change language]"},
+                std::tuple{5, "journal-en", "Context calls: 21"}}) {
             state = {}; state.tab = tab;
             result = render(snapshot, state);
-            require(result.plain.find(expected) != std::string::npos, "gallery view omitted available measurements");
+            if (result.plain.find(expected) == std::string::npos) throw std::runtime_error(std::string("gallery view omitted available measurements: ") + name + "\n" + result.plain);
             if (argc == 2) capture(result, argv[1], name);
         }
         state = {}; state.tab = 6;
@@ -292,7 +306,7 @@ int main(int argc, char** argv) {
         for (auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
             shin::ui::set_language(language);
             for (const auto& [width, height] : {std::pair{60, 12}, {80, 24}, {120, 36}}) {
-                for (int tab = 0; tab < 7; ++tab) {
+                for (int tab = 0; tab < 8; ++tab) {
                     state = {}; state.tab = tab;
                     result = render(snapshot, state, width, height);
                     require(result.plain.find("SHIN") != std::string::npos, "header clipped");
@@ -302,6 +316,8 @@ int main(int argc, char** argv) {
                 }
             }
         }
+        state = {}; state.tab = 7;
+        if (argc == 2) capture(render(snapshot, state), argv[1], "settings-ru");
         state = {}; result = render(snapshot, state);
         if (argc == 2) capture(result, argv[1], "overview-ru");
         shin::ui::set_language(shin::ui::Language::en);

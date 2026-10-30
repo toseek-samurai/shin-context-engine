@@ -20,7 +20,7 @@
 
 int native_cli_helper(int argc, char** argv) {
     std::string_view mode = argv[argc - 2];
-    if (mode.starts_with("window-")) mode.remove_prefix(7);
+    if (mode.starts_with("popup-")) mode.remove_prefix(6);
     const fs::path receipt = argv[argc - 1];
     const auto parent = getppid();
     if (mode == "oversized") {
@@ -71,24 +71,34 @@ int native_cli_helper(int argc, char** argv) {
 
 int native_cli_host(const char* cli, const char* home, const char* modeText, const char* output) {
     const std::string_view mode = modeText;
-    const auto scenario = mode.starts_with("window-") ? mode.substr(7) : mode;
+    const auto scenario = mode.starts_with("popup-") ? mode.substr(6) : mode;
     // NSApplication and NSWindow keep weak delegate references.
     __attribute__((objc_precise_lifetime)) NativeCLIHost* app = [NativeCLIHost new];
     app.fixtureCLI = diagnostic_text_content(cli);
     app.shinHome = diagnostic_text_content(home);
     if (scenario == "refused-exit") app.refusalMarker = diagnostic_text_content(std::string(output) + ".handoff.refused");
     NSApp.delegate = app;
-    if (mode.starts_with("window-")) {
+    if (mode.starts_with("popup-")) {
         monitor = std::make_unique<Monitor>(home);
         app.content = [ShinView new]; app.popover = [NSPopover new];
         app.popover.delegate = app; app.popover.contentViewController = app.content;
-        [app showMonitorWindow];
+        app.popover.animates = NO;
+        app.popover.behavior = NSPopoverBehaviorApplicationDefined;
+        app.item = [NSStatusBar.systemStatusBar statusItemWithLength:NSSquareStatusItemLength];
+        shin_status_presentation(app.item, [NSImage imageWithSystemSymbolName:@"circle.fill" accessibilityDescription:@"Shin Monitor test"]);
+        const auto anchorDeadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(500);
+        while (std::chrono::steady_clock::now() < anchorDeadline) {
+            NSEvent* event = [NSApp nextEventMatchingMask:NSEventMaskAny untilDate:[NSDate dateWithTimeIntervalSinceNow:.02]
+                inMode:NSDefaultRunLoopMode dequeue:YES];
+            if (event) [NSApp sendEvent:event];
+        }
+        [app toggle:nil];
     }
     [app runCLI:scenario == "receipt" ? @"update-check" : @"update-install"
         arguments:@[diagnostic_text_content(modeText), diagnostic_text_content(std::string(output) + ".handoff")]
         completion:^(Json result, NSString* failure) {
             std::ofstream(output) << Json{{"result", result}, {"failure", failure ? failure.UTF8String : ""},
-                {"window_visible", (bool)app.monitorWindow.visible}}.dump();
+                {"popup_visible", (bool)app.popover.shown}}.dump();
             [NSApp stop:nil];
             [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint
                 modifierFlags:0 timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];

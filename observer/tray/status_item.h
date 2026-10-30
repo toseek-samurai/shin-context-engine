@@ -1,4 +1,4 @@
-// Public AppKit only. isVisible remains true when macOS clips a crowded extra.
+// Public AppKit presentation; status-window occlusion is not popup readiness.
 #import <Cocoa/Cocoa.h>
 
 inline NSImage* shin_status_image(NSImage* base, bool update) {
@@ -21,17 +21,4 @@ inline void shin_status_presentation(NSStatusItem* item, NSImage* image) {
     if (item.button.title.length) item.button.title = @"";
     if (item.button.image != image) item.button.image = image;
     if (item.button.imagePosition != NSImageOnly) item.button.imagePosition = NSImageOnly;
-}
-
-inline bool shin_status_can_anchor(NSStatusItem* item) {
-    NSStatusBarButton* button = item.button;
-    NSWindow* window = button.window;
-    NSScreen* screen = window.screen;
-    if (!item.visible || !window.visible || !screen || button.hiddenOrHasHiddenAncestor ||
-        !(window.occlusionState & NSWindowOcclusionStateVisible)) return false;
-    const NSRect frame = window.frame;
-    // Notched screens expose the usable trailing menu-bar area. The status
-    // window may extend a point below it, so compare horizontal bounds only.
-    const NSRect area = NSIsEmptyRect(screen.auxiliaryTopRightArea) ? screen.frame : screen.auxiliaryTopRightArea;
-    return NSWidth(frame) > 0 && NSMinX(frame) >= NSMinX(area) && NSMaxX(frame) <= NSMaxX(area);
 }

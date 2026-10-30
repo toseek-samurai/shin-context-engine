@@ -26,6 +26,25 @@ the declared source, byte, output and quality bounds. Fixture changes must retai
 the positive and negative behaviors that motivated each test. Historical
 measurements do not qualify a new source tree or binary.
 
+Self-development scopes are declared by the
+[component profile contract](machine/shin-component-profiles-v1.json). UI work
+uses `shin-ui`: terminal, shared presentation helpers, supported Monitor sources
+and colocated fixtures. CI checks the complete eligible UI inventory as well as
+retrieval gates. Native Objective-C++ hosts and include fragments still require
+direct reads; declaring an extension is not parser support. For MCP, verify the
+exact checkout root independently: a passing self-profile does not enroll a
+worktree or change an existing connection.
+
+## Consumer profile maintenance
+
+When Shin is installed and the project is enrolled, the agent performing an
+authorized refactor maintains its project-owned retrieval profile alongside the
+change. Follow the [profile maintenance procedure](../integrations/codex/skills/shin-context/references/setup-and-adoption.md#project-profile-maintenance):
+review coverage and affected checks, preserve broad queries and quality bounds,
+distinguish obsolete contracts from engine misses, and complete native approval
+and current-route verification. Without installed Shin this creates no setup,
+build or CI requirement. The same procedure ships in the Hermes and MCP guidance.
+
 ## Verification
 
 Build with CMake and run the relevant CTest suite. For shared changes, include

@@ -143,6 +143,49 @@ with tempfile.TemporaryDirectory(prefix='shin-ins-', dir='/tmp') as temporary:
     assert not status()['recovery_pending']
     acknowledged = call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'])
     assert acknowledged['phase'] == 'reviewed' and acknowledged['ok']
+
+    # A direct repair can supersede a failed older release. Explicit review is
+    # bound to the verified current installation, not only the old attempt.
+    with tempfile.TemporaryDirectory(prefix='shin-release.', dir='/tmp') as vanished:
+        missing_stage = Path(vanished).resolve()
+    superseded = {**review, 'from_version': '0.0.0', 'version': '0.0.1',
+                  'staging': str(missing_stage), 'stage_identity': 'retired-temporary-directory'}
+    update_state.write_text(json.dumps(superseded))
+    result = update_status()
+    assert result['can_acknowledge'] and result['current_version'] == status()['version']
+    assert result['installation_verified'] and not result['native_recovery_pending']
+    saved_review = update_state.read_bytes()
+    # Even a valid receipt changing after review invalidates that review.
+    receipt_file = prefix / '.shin-installation.json'
+    original_receipt = receipt_file.read_bytes()
+    receipt_file.write_bytes(original_receipt + b'\n')
+    try:
+        call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'], error='update-offer-changed')
+        assert update_state.read_bytes() == saved_review
+    finally:
+        receipt_file.write_bytes(original_receipt)
+    with (Path(receipt['control']) / 'observer.lock').open('r+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'], error='writer-busy')
+        assert update_state.read_bytes() == saved_review
+    acknowledged = call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'])
+    assert acknowledged['phase'] == 'reviewed' and acknowledged['ok'] and 'staging' not in acknowledged
+    assert acknowledged['acknowledged_version'] == status()['version']
+    # A substituted stage is retained rather than treated as a disappeared one.
+    update_state.write_text(json.dumps(superseded))
+    missing_stage.symlink_to(data, target_is_directory=True)
+    try:
+        result = update_status()
+        call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'], error='update-staging-changed')
+        assert missing_stage.is_symlink() and update_state.read_bytes() == saved_review
+    finally:
+        missing_stage.unlink()
+    # A receiptless native installation is still not an acknowledgeable result.
+    update_state.write_text(json.dumps({**review, 'phase': 'installing'}))
+    result = update_status()
+    assert not result['can_acknowledge']
+    call('update-acknowledge', '--prefix', prefix, '--revision', result['review_revision'], error='update-outcome-unknown')
+    update_state.write_text(json.dumps(acknowledged))
     again = call(*command)
     assert not again['changed']
     assert (bin_dir / 'shin-ce').is_symlink()

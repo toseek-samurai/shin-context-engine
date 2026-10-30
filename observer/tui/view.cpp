@@ -45,6 +45,42 @@ std::string state_name(const Json& row, bool connected) {
 
 bool fresh(const Snapshot& s) { return s.connected && Clock::now() - s.received < std::chrono::seconds(6); }
 
+int main_section(const State& state) {
+    if (state.tab == 1) return 1;
+    if (state.tab == 2 || state.tab == 4 || state.tab == 5) return 2;
+    if (state.tab == 3 || state.tab == 6 || state.tab == 7) return 3;
+    return 0;
+}
+std::array<int, 3> subpages(const State& state) {
+    if (main_section(state) == 2) return {2, 4, 5};
+    if (main_section(state) == 3) return {7, 3, 6};
+    return {-1, -1, -1};
+}
+void show_page(State& state, int page) {
+    if (main_section(state) == 2) state.activity_page = state.tab;
+    if (main_section(state) == 3) state.settings_page = state.tab;
+    page = std::clamp(page, 0, 7);
+    if (page != state.tab) {
+        state.scroll = 0; state.help = false; state.detail = false;
+        state.update_confirmation.clear();
+    }
+    state.tab = page;
+    if (main_section(state) == 2) state.activity_page = page;
+    if (main_section(state) == 3) state.settings_page = page;
+}
+void select_section(State& state, int section) {
+    if (section == 0 || section == 1) show_page(state, section);
+    else if (section == 2) show_page(state, state.activity_page);
+    else if (section == 3) show_page(state, state.settings_page);
+}
+void move_subpage(State& state, int direction) {
+    const auto pages = subpages(state);
+    if (pages[0] < 0) return;
+    const auto found = std::find(pages.begin(), pages.end(), state.tab);
+    const auto index = found == pages.end() ? 0 : static_cast<int>(found - pages.begin());
+    show_page(state, pages[static_cast<std::size_t>((index + (direction < 0 ? 2 : 1)) % 3)]);
+}
+
 Line project_status(const Json& row, bool connected) {
     using ui::ProjectState;
     const auto state = ui::project_state(row, connected);
@@ -96,14 +132,15 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
     std::vector<Line> out;
     const bool connected = fresh(snapshot);
     if (state.help) return {
-        {shin::ui::tr("Keyboard"), Tone::heading}, {shin::ui::tr("1-7 / Tab / Left / Right  Switch view")},
+        {shin::ui::tr("Keyboard"), Tone::heading}, {shin::ui::tr("1-4 / Tab / Shift-Tab     Main sections")},
+        {shin::ui::tr("Left / Right or [ / ]     Activity / Settings pages")},
         {shin::ui::tr("Up / Down or j / k         Select a project, otherwise scroll")},
         {shin::ui::tr("Enter                     Project details")}, {shin::ui::tr("Esc / Backspace           Back")},
         {shin::ui::tr("PageUp / PageDown          Scroll a page")},
         {shin::ui::tr("t                         Recent / retained request timings")},
         {shin::ui::tr("f                         All / unclassified / diagnostic queries")},
         {shin::ui::tr("p                         Next model-usage project")},
-        {shin::ui::tr("u / 7                     Updates")},
+        {shin::ui::tr("u                         Settings / Updates")},
         {shin::ui::tr("Updates: r check, i install, y confirm, n cancel, v result, a acknowledge")},
         {shin::ui::tr("r                         Refresh (storage is refreshed on demand)")},
         {shin::ui::tr("g / h                     Chart metric / Live, 1 h, 24 h")},
@@ -111,6 +148,14 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         {shin::ui::tr("? / Ctrl-L                Help / redraw screen")}, {shin::ui::tr("q / Ctrl-C                Quit")}, {shin::ui::tr("l                         Switch English / Russian")}, {},
         {shin::ui::tr("Monitoring does not start services, enroll projects or collect usage. Updates require explicit confirmation.")},
         {shin::ui::tr("Service observations are not new source audits or answer-quality scores.")}};
+    if (state.tab == 7) return {
+        {shin::ui::tr("General"), Tone::heading},
+        {std::string(shin::ui::tr("Language")) + ": " + (ui::language() == ui::Language::ru ? "Русский" : "English")},
+        {shin::ui::tr("l                         Switch English / Russian")}, {},
+        {shin::ui::tr("Project connections"), Tone::heading},
+        {shin::ui::tr("Use the installed CLI to connect projects and manage the background service.")},
+        {"shin-ce project-add --root PATH"}, {},
+        {shin::ui::tr("Viewing this panel does not change project files or agent connections."), Tone::muted}};
     if (state.tab == 6) {
         const auto& update = snapshot.updates;
         out.push_back({shin::ui::tr("Updates"), Tone::heading});
@@ -291,6 +336,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         out.push_back({}); out.push_back({shin::ui::tr("Inventory is a point-in-time read. r refreshes it; no automatic rescans.")});
         out.push_back({shin::ui::tr("For cleanup, review shin-ce storage-status and its revision in a separate command.")});
     } else {
+        out.push_back({shin::ui::tr("Agent token history is separate from calls to Shin. Totals may be incomplete."), Tone::muted});
         out.push_back({shin::ui::tr("Model usage"), Tone::heading});
         const auto& usage = snapshot.usage;
         if (field(usage, "status") != "available") {

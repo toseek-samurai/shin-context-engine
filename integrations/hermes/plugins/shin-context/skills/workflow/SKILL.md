@@ -1,6 +1,6 @@
 ---
 name: shin-context
-description: Retrieve verified Shin 2.0 project context after context loss or before broad investigation; direct reads and exact rg searches remain valid.
+description: Retrieve verified Shin project context after context loss or before broad investigation; maintain enrolled project profiles after refactors. Read known files directly.
 version: 2.0.0
 platforms: [macos, linux]
 metadata:
@@ -47,10 +47,10 @@ For `source_coverage.state=partial`, report omissions and use verified context
 when `retrieval_ready=true`, even if `canonical_ready=false`. Do not claim full
 coverage. Changed/deleted/quarantined files stay withheld until qualified refresh.
 
-Report retrieval blockers by project/reason; use direct sources and retain
-blockers in handoff. `route-revision-conflict` needs owner review,
-not retries. Editing a profile is not approval. Follow [review](references/route-and-publication.md#profile-change-review);
-verify readiness after acceptance.
+Report blockers by project/reason; use direct sources and retain them in handoff.
+`route-revision-conflict` requires owner review. Editing a profile is not approval.
+Follow [profile maintenance and review](references/route-and-publication.md#project-profile-maintenance)
+after refactors; verify readiness after acceptance.
 
 A preparing status is pending: submit the useful `shin_query`. It waits up to
 20 seconds inside one call. No manual sleeps or status polling. After that wait

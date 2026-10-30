@@ -111,17 +111,20 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
     offline = Terminal(missing)
     try:
         offline.expect('Service offline')
-        offline.key(b'7')
+        offline.key(b'u')
         if sys.platform == 'darwin':
             offline.expect('Check for a newer complete release')
             offline.key(b'r')
             offline.expect('No owned installation exists at this prefix.')
         else:
             offline.expect('Automatic release updates are currently available on macOS only.')
-        offline.key(b'5')
+        offline.key(b'3')
+        offline.key(b']')
         offline.expect('Model usage')
         offline.expect('--usage-file')
         offline.key(b'4')
+        offline.expect('General')
+        offline.key(b']')
         offline.expect('Storage')
         offline.resize(8, 40)
         offline.expect('resize to at least')
@@ -186,7 +189,7 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
         try:
             terminal.expect('LIVE')
             # Left-click Projects in the fixed top navigation row (SGR mouse).
-            terminal.key(b'\x1b[<0;25;4M')
+            terminal.key(b'\x1b[<0;38;4M')
             terminal.expect('Example Project')
             terminal.expect('Пример')
             terminal.key(b'\n')
@@ -196,12 +199,24 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
             terminal.key(b't')
             terminal.expect('Recent requests')
             terminal.key(b'4')
+            terminal.expect('General')
+            terminal.key(b'\x1b[<0;10;6M')
+            terminal.expect('Общие')
+            terminal.key(b'l')
+            terminal.expect('General')
+            terminal.key(b'\x1b[C')
             terminal.expect('Logical files:')
-            terminal.key(b'5')
+            terminal.key(b'3')
+            terminal.expect('Request timing')
+            terminal.key(b']')
             terminal.expect('Model usage')
             terminal.expect('fixture-model')
             terminal.key(b'p')
             terminal.expect('Demo usage')
+            terminal.key(b']')
+            terminal.expect('Sessions · retained MCP observations')
+            terminal.key(b'4')
+            terminal.expect('Logical files:')
             terminal.key(b'1')
             terminal.expect('Memory (service + workers)')
             terminal.key(b'l')
@@ -238,7 +253,7 @@ with tempfile.TemporaryDirectory(prefix='shin-tui-', dir='/tmp') as temporary:
         while (home / 'service/rpc.sock').exists() and time.monotonic() < deadline:
             time.sleep(0.02)
         assert not (home / 'service/rpc.sock').exists(), 'service did not stop before fixture cleanup'
-print(json.dumps({'ok': True, 'pty': True, 'tabs': 5, 'signals': ['INT', 'TERM', 'HUP', 'QUIT'],
+print(json.dumps({'ok': True, 'pty': True, 'sections': 4, 'pages': 8, 'signals': ['INT', 'TERM', 'HUP', 'QUIT'],
                   'resize': True, 'unicode': True, 'pending_rpc_cancelled': True,
                   'terminal_restored': True, 'service_and_source_preserved': True}))
 
@@ -265,9 +280,14 @@ if len(sys.argv) > 3:
             screen = Terminal(home)
             try:
                 screen.expect('SHIN')
-                screen.key(b'7'); screen.expect('Check for a newer complete release')
+                screen.key(b'u'); screen.expect('Check for a newer complete release')
                 screen.key(b'r'); screen.expect('2.0.5-dev.99')
                 screen.key(b'\n'); screen.expect('A Shin update is available')
+                screen.key(b'i'); screen.expect('Install the reviewed release?')
+                screen.key(b'3'); screen.expect('Request timing')
+                screen.key(b'4'); screen.expect('[i Install]')
+                assert b'Install the reviewed release?' not in screen.data, 'section change retained confirmation'
+                screen.key(b'y'); screen.expect('A Shin update is available')
                 screen.key(b'i'); screen.expect('Install the reviewed release?')
                 # Exercise a delayed input reader. A fixed pump interval cannot
                 # prove that FTXUI consumed standalone ESC: queuing Ctrl-L next

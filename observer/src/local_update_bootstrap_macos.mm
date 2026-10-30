@@ -33,13 +33,20 @@ fs::path saved_updater(const fs::path& home, const fs::path& prefix) {
         const auto state=StateStore(home/"updates",false).load();
         if(state && state->contains("updater")) {
             const auto& locator=state->at("updater"); const fs::path stage=locator.at("directory").get<std::string>();
-            require(stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-updater.") &&
-                directory_identity(stage,true)==locator.at("identity").get<std::string>(),"update-bootstrap-changed","The retained updater changed; preserve it for review.");
-            const auto bundle=stage/"payload"/updater_bundle_name;
-            (void)verify_updater_bundle(bundle);
-            require(digest(read_text(bundle/"shin-updater.json",64U*1024,false))==locator.at("manifest_sha256").get<std::string>(),
-                "update-bootstrap-changed","The retained updater inventory changed.");
-            return bundle/"bin/shin-updater";
+            require(stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-updater."),
+                "update-bootstrap-changed","The retained updater location is invalid; preserve it for review.");
+            // Temporary folders may disappear across reboot/cleanup. Only an
+            // absent entry permits the verified installed engine to read the
+            // durable result. A substituted folder or symlink remains a refusal.
+            if(fs::exists(fs::symlink_status(stage))) {
+                require(!fs::is_symlink(fs::symlink_status(stage)) && directory_identity(stage,true)==locator.at("identity").get<std::string>(),
+                    "update-bootstrap-changed","The retained updater changed; preserve it for review.");
+                const auto bundle=stage/"payload"/updater_bundle_name;
+                (void)verify_updater_bundle(bundle);
+                require(digest(read_text(bundle/"shin-updater.json",64U*1024,false))==locator.at("manifest_sha256").get<std::string>(),
+                    "update-bootstrap-changed","The retained updater inventory changed.");
+                return bundle/"bin/shin-updater";
+            }
         }
     }
     (void)verify_updater_bundle(prefix,true);

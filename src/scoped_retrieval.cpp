@@ -699,16 +699,25 @@ BriefResult collect_brief_from_index_document_owner_scope(const RuntimeOptions& 
     if (paths.size() != 1) {
         return result;
     }
-    std::set<int> owner_groups;
-    for (const auto& [path_name, path] : paths) {
-        (void)path_name;
-        owner_groups.insert(path.matched_groups.begin(), path.matched_groups.end());
-    }
     const int total_groups = strict_required_group_matches(request);
+    // A topic word matching a unique stem (e.g. SQL -> sql.md) is not a
+    // request to exclude the rest of the project. Even full lexical coverage
+    // in that document cannot establish owner intent for a broader question.
+    // Literal paths/filenames and complete humanized identities remain scoped.
     if (total_groups > 1 && !resolution->explicit_identity &&
-        !explicit_document_anchor(resolution->anchor) &&
-        static_cast<int>(owner_groups.size()) < total_groups) {
-        return BriefResult{};
+        !explicit_document_anchor(resolution->anchor)) {
+        std::set<int> owner_groups;
+        for (const auto& [path_name, path] : paths) {
+            (void)path_name;
+            owner_groups.insert(path.matched_groups.begin(), path.matched_groups.end());
+        }
+        // Query groups are case-folded; use manifest spelling to retain a
+        // compound identifier such as RelayBoardPage as a real owner identity.
+        const auto owner_stem = fs::path(resolution->path).stem().string();
+        const bool compound_identifier = identifier_segments(owner_stem).size() >= 2 &&
+            normalized_owner_path(owner_stem) == normalized_owner_path(resolution->anchor);
+        if (!compound_identifier ||
+            static_cast<int>(owner_groups.size()) < total_groups) return BriefResult{};
     }
     result.document_owner_scope_used = true;
     result.scope_group_index = static_cast<int>(resolution->group_index);

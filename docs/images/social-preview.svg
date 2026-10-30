@@ -1,0 +1,24 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="640" viewBox="0 0 1280 640" role="img" aria-labelledby="title description">
+  <title id="title">Shin Context Engine — project context, kept current</title>
+  <desc id="description">Sand artwork with the Shin mark. Local code and documentation context for coding agents, through MCP and CLI. Apache-2.0 development preview.</desc>
+  <metadata>Shin Context Engine. Copyright 2026 Anton Petropavlovskiy. Apache-2.0. https://github.com/toseek-samurai/shin-context-engine</metadata>
+  <rect width="1280" height="640" fill="#242827"/>
+  <path d="M0 0H1280V640H0Z" fill="none" stroke="#48504a" stroke-width="2"/>
+  <g font-family="Avenir Next, Segoe UI, sans-serif">
+    <text x="72" y="101" font-size="32" font-weight="600" letter-spacing="7" fill="#dec9a1">SHIN</text>
+    <text x="73" y="133" font-size="15" font-weight="500" letter-spacing="3" fill="#aeb5a8">CONTEXT ENGINE</text>
+    <text x="1208" y="94" text-anchor="end" font-size="13" font-weight="500" letter-spacing="2" fill="#aeb5a8">DEVELOPMENT PREVIEW</text>
+    <text x="68" y="253" font-size="70" font-weight="600" letter-spacing="-2" fill="#f0eee6">Project context.</text>
+    <text x="68" y="334" font-size="70" font-weight="600" letter-spacing="-2" fill="#dec9a1">Kept current.</text>
+    <text x="72" y="399" font-size="24" fill="#c0c6b7">Code and documentation for coding agents.</text>
+    <text x="72" y="436" font-size="24" fill="#c0c6b7">Indexed locally. Updated as you work.</text>
+    <text x="73" y="499" font-size="16" font-weight="500" letter-spacing="2" fill="#dec9a1">NATIVE C++  /  MCP  /  CLI</text>
+  </g>
+  <path d="M835 190V447" fill="none" stroke="#48504a"/>
+  <image href="shin-logo.png" x="866" y="151" width="348" height="348"/>
+  <path d="M72 551H1208" fill="none" stroke="#48504a"/>
+  <g font-family="Avenir Next, Segoe UI, sans-serif" font-size="16" fill="#aeb5a8">
+    <text x="73" y="594">github.com/toseek-samurai/shin-context-engine</text>
+    <text x="1208" y="594" text-anchor="end">Open source · Apache-2.0</text>
+  </g>
+</svg>

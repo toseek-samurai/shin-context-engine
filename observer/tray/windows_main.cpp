@@ -9,6 +9,7 @@
 #include "monitor_view.h"
 #include <fstream>
 #include <iostream>
+#include <utility>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
 namespace {
@@ -384,17 +385,18 @@ int render_test(const fs::path& output, bool shell) {
     unsigned frames=0;
     unsigned cold_frames=0;
     unsigned documentation_frames=0;
+    const std::pair<int,int> views[]{{0,0},{1,0},{2,0},{2,1},{2,2},{3,0}};
     for(const auto size: {ImVec2{448,620},ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
         SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
         // No successful reply has ever arrived: different from a disconnected
         // monitor that still holds its last good snapshot.
-        for(int view=0;view<3;++view) {
-            dashboard_view=view; ViewState cold; cold.error="service-unavailable";
+        for(const auto [view,activity]:views) {
+            dashboard_view=view; activity_view=activity; timing_open=view==2 && activity==0; ViewState cold; cold.error="service-unavailable";
             for(int frame=0;frame<3;++frame) render_frame(cold);
             save_frame(output/("cold-"+std::to_string(++cold_frames)+".png"));
         }
-        for(int view=0;view<3;++view) for(bool online:{false,true}) {
-            dashboard_view=view;state.connected=online;
+        for(const auto [view,activity]:views) for(bool online:{false,true}) {
+            dashboard_view=view; activity_view=activity; timing_open=view==2 && activity==0;state.connected=online;
             for(int frame=0;frame<3;++frame) render_frame(state);
             check_action_bounds(size);
             save_frame(output/(std::to_string(++frames)+".png"));
@@ -464,7 +466,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             preferences->recover_pending();
             settings=preferences->load().value_or(Json::object());
             apply_language_preference(settings.value("language",0));
-            dashboard_view=std::clamp(settings.value("view",0),0,2);compact=settings.value("compact",false);
+            dashboard_view=std::clamp(settings.value("view",0),0,3);compact=settings.value("compact",false);
             model_project=settings.value("model_project","");
             monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")));
         }

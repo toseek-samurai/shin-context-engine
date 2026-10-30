@@ -5,6 +5,12 @@ calculations to an interactive terminal. The Sand TUI is included in preview
 dev.39 and later; use the [preview kit](local-kit.md#download-a-preview-release)
 on macOS or [build from source](building.md) on Linux.
 
+The four-section layout shown below is included in preview dev.66 and later.
+Use `1`–`4` or Tab / Shift-Tab for Overview, Projects, Activity
+and Settings. Left/Right or `[` / `]` selects a page in Activity or Settings; each
+section remembers its last page. Changing a page cancels pending update
+confirmation, while an installation already in progress continues.
+
 Every image below comes from the actual FTXUI renderer with synthetic data.
 Project names, paths, token counts, model labels and timings are examples,
 not measurements of a real project or a performance claim. Your terminal
@@ -13,10 +19,26 @@ controls the font and available colors.
 [Keyboard controls and usage](cli.md#interactive-terminal-monitor) ·
 [Capture sources and reproduction](images/README.md#terminal-views)
 
+## Navigation / Навигация
+
+The terminal uses four-section navigation: Overview, Projects, Activity and Settings.
+
+| Section | Русский | Pages / Страницы |
+| --- | --- | --- |
+| Overview | Обзор | Project readiness and graphs / готовность проектов и графики |
+| Projects | Проекты | List and details / список и подробности |
+| Activity | Активность | Response time, Agents, Journal / Время ответов, Агенты, Журнал |
+| Settings | Настройки | General, Storage, Updates / Общие, Хранилище, Обновления |
+
+Чтобы переключить разделы, используйте `1`–`4` или Tab / Shift-Tab.
+Страницы внутри разделов Активность и Настройки переключаются стрелками
+влево/вправо или `[` / `]`. Язык EN/RU меняется клавишей `l` без перезапуска.
+
 ## Overview
 
 Memory, active queries and search p50 stay visible above a line graph and the
-project table. Click a metric or press `g`; `h` cycles Live, one hour and 24 hours.
+project table. The readiness summary separates usable projects from those needing
+review. Counters are passive; choose a labeled chart control or press `g`; `h` cycles Live, one hour and 24 hours.
 Missing observations remain gaps rather than becoming zero.
 
 The graph improvements shown here are included in dev.49 and later. The chart footer
@@ -48,7 +70,7 @@ of the project searchable.
 
 ![Partial-coverage detail with a cause, next step and excluded example file](images/tui-project.svg)
 
-## Timing
+## Activity: response time
 
 Search time, total service time and cold-reader preparation are shown separately.
 `t` selects recent or retained measurements; `f` filters traffic. Diagnostic
@@ -59,7 +81,7 @@ window says that no query timings are available for that minute.
 
 ![Timing with query counts, cold and warm reader measurements and phase means](images/tui-timing.svg)
 
-## Storage
+## Settings: storage
 
 Storage shows usage, the configured budget and project caches. It is inspected
 when this tab opens or when `r` is pressed. Cleanup remains an explicit CLI
@@ -67,24 +89,35 @@ operation with a reviewed revision.
 
 ![Storage inventory with project sizes and external-cache policy](images/tui-storage.svg)
 
-## Models
+## Activity: agents
 
-The Models view reads the collector's normalized usage snapshot. Token counters
+The Agents page reads the collector's normalized usage snapshot. Token counters
 and model labels from client history are separate from attribution on individual
 Shin requests. The example labels below are synthetic.
 
 ![Model usage with token totals, example models and unassigned sessions](images/tui-models.svg)
 
-## English and Russian
+## Activity: journal
 
-Press `l` to change the current terminal session immediately, or launch with
+![Session activity grouped inside Activity](images/tui-journal.svg)
+
+The Journal page groups MCP calls by session and shows explicit host context
+markers when supplied. Its bounded recent-event window is separate from agent
+token history. Missing session or model labels remain unknown; see the
+[recording boundaries](cli.md#sessions-and-optional-recovery-notes-dev45).
+
+## Settings: general and language
+
+![General settings with a labeled language action](images/tui-settings.svg)
+
+General contains the language action and connection guidance. Press `l` to change the current terminal session immediately, or launch with
 `--language en` / `--language ru`. Automatic selection follows the terminal locale.
 
 ![The same overview rendered in Russian](images/tui-overview-ru.svg)
 
-## Updates (dev.49 and later)
+## Settings: updates
 
-Open view 7 or press `u`. On macOS, `r` checks for a complete release and shows
+Open Settings / Updates or press `u`. On macOS, `r` checks for a complete release and shows
 the version and release-notes URL. `i` opens confirmation; `y` installs and
 `n` or Esc cancels. Opening the view and pressing Enter never install anything.
 

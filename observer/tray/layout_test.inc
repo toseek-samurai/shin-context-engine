@@ -131,7 +131,7 @@ int main(int argc, char** argv) {
                 NSView* body = setupApp.setupWindow.contentView;
                 [body layoutSubtreeIfNeeded];
                 [setupApp.setupWindow displayIfNeeded];
-                for (NSView* control : @[setupApp.setupChoose, setupApp.setupConnect, setupApp.setupCheck, setupApp.setupLogin, setupApp.setupStatus]) {
+                for (NSView* control : @[setupApp.setupChoose, setupApp.setupConnect, setupApp.setupCheck, setupApp.setupLogin, setupApp.setupStatus, setupApp.setupAdvanced]) {
                     const auto rect = [control convertRect:control.bounds toView:body];
                     if (!NSContainsRect(body.bounds, rect) || rect.size.height < 10)
                         throw std::runtime_error("setup control clipped outside its window");
@@ -195,7 +195,7 @@ int main(int argc, char** argv) {
             for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 for (const auto* scenario : {"first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "overview-warning", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     Json project = base;
                     const std::string kind = scenario;
@@ -206,7 +206,15 @@ int main(int argc, char** argv) {
                     profile_review_open = kind.starts_with("profile-review-") || kind == "profile-review";
                     profile_review_root = "/fixture/workspace";
                     timing_open = kind.starts_with("timing-");
-                    dashboard_view = timing_open || kind == "overview" ? 0 : kind.starts_with("models") ? 2 : kind.starts_with("sessions") ? 3 : 1;
+                    dashboard_view = kind.starts_with("overview") ? 0 : timing_open || kind.starts_with("models") || kind.starts_with("sessions") ? 2 : kind == "settings" ? 3 : 1;
+                    activity_view = kind.starts_with("models") ? 1 : kind.starts_with("sessions") ? 2 : 0;
+                    diagnostic_details_open = kind == "search-warning-details" || kind == "search-warning-invalid"; diagnostic_focus = 0;
+                    if (kind.starts_with("search-warning") || kind == "overview-warning") project["quality_warning"] = {
+                        {"state", "degraded"}, {"diagnostic", {{"schema_version", "shin.validation-diagnostic.v1"}, {"gates", Json::array({
+                            {{"id", "eval"}, {"cases", Json::array({{{"id", "fixture-discovery"},
+                                {"expected_paths", Json::array({"docs/access.md"})}, {"reasons", Json::array({"missing-required-path"})}}})}}
+                        })}}}};
+                    if (kind == "search-warning-invalid") project["quality_warning"]["diagnostic"] = nullptr;
                     timing_retained = kind != "timing-live" && kind != "timing-live-partial";
                     timing_filter = 0;
                     if (kind == "blocked") project.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
@@ -280,7 +288,7 @@ int main(int argc, char** argv) {
                         {"resident_projects", Json::array()}, {"telemetry", {{"project_states", projects},
                         {"history", {{"status", kind == "unknown-history" ? "unavailable" : "ready"}, {"rows", 14000},
                         {"projects", Json::array({{{"id", "fixture"}, {"requests", 1543}, {"errors", 5}, {"unobserved", 0}}})}}}}}};
-                    if (kind == "overview") {
+                    if (kind.starts_with("overview")) {
                         // A real retained-memory curve, including an unknown interval and a service restart.
                         graph_mode = 0; history_hours = 1;
                         auto& telemetry = view.data["telemetry"];
@@ -400,6 +408,7 @@ int main(int argc, char** argv) {
                     auto* retained_context = ImGui::GetCurrentContext();
                     const int live_preference = kind == "language-live-en" ? 1 : kind == "language-live-ru" ? 2 : 0;
                     for (int frame = 0; frame < 3; ++frame) {
+                        if (kind == "search-warning-opened" && frame == 1) activate(120);
                         if (kind.starts_with("language-live-")) {
                             if (frame == 0) shin::ui::set_language(live_preference == 2 ? shin::ui::Language::en : shin::ui::Language::ru);
                             if (frame == 1) select_language_preference(live_preference);
@@ -418,7 +427,9 @@ int main(int argc, char** argv) {
                             if (frame > 0) io.AddMouseWheelEvent(0,-1000);
                         } else io.AddMousePosEvent(-100, -100);
                         ImGui_ImplMetal_NewFrame(pass);
-                        ImGui::NewFrame(); render(view); ImGui::Render();
+                        ImGui::NewFrame();
+                        try { render(view); } catch (const std::exception& e) { throw std::runtime_error(kind + " " + std::to_string(static_cast<int>(size.x)) + ": " + e.what()); }
+                        ImGui::Render();
                         auto command = [queue commandBuffer];
                         auto encoder = [command renderCommandEncoderWithDescriptor:pass];
                         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), command, encoder);
@@ -488,7 +499,7 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("session empty state is missing: " + context);
                         if (kind == "sessions-unavailable" && (has("No linked sessions yet") || !has("Session activity is unavailable.")))
                             throw std::runtime_error("unavailable sessions look empty: " + context);
-                        if (kind == "sessions-omitted" && (has("No linked sessions yet") || !has("Session details were omitted to keep the service response bounded.")))
+                        if (kind == "sessions-omitted" && (has("No linked sessions yet") || !has("Only part of the session history is available.")))
                             throw std::runtime_error("omitted sessions look empty: " + context);
                         if (kind == "sessions" && (!has("Recorded activity · UTC") || has("Caller-reported recovery and explicit host compaction are different events.")))
                             throw std::runtime_error("session details are not disclosed separately: " + context);
@@ -511,7 +522,7 @@ int main(int argc, char** argv) {
                         if (action.origin.x < 0 || action.origin.y < 0 || action.origin.x + action.size.x > size.x + 1 ||
                             action.origin.y + action.size.y > size.y + 1)
                             throw std::runtime_error("out-of-bounds control: " + context + " " + action.label);
-                        if (action.chart >= 54 && action.chart <= 59 && action.origin.y + action.size.y > size.y - 75)
+                        if (action.chart >= 54 && action.chart <= 59 && action.origin.y + action.size.y > size.y - 39)
                             throw std::runtime_error("diagnostic text overlaps footer: " + context + " " + action.label);
                         if (timing_open && action.chart >= 60 && action.chart <= 69 && action.origin.y + action.size.y > size.y - 34)
                             throw std::runtime_error("timing content overlaps footer: " + context + " " + action.label);
@@ -522,8 +533,7 @@ int main(int argc, char** argv) {
                         const auto add = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 80; });
                         const auto request = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 53; });
                         const auto errors = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 37; });
-                        if (add == ui_actions.end() || !add->enabled || request == ui_actions.end() || errors == ui_actions.end() || std::abs(request->origin.y - errors->origin.y) > .5f ||
-                            request->size.y != errors->size.y) throw std::runtime_error("counter baseline mismatch: " + context);
+                        if (add == ui_actions.end() || !add->enabled || request == ui_actions.end() || !request->informational || errors != ui_actions.end()) throw std::runtime_error("passive counters exposed an implicit action: " + context);
                         for (const auto& action : ui_actions)
                             if ((action.chart == 80 || action.chart == 53 || action.chart == 37 || action.chart == 30 || action.chart == 31) &&
                                 action.origin.y + action.size.y > size.y - 39)
@@ -537,6 +547,29 @@ int main(int argc, char** argv) {
                             last == ui_actions.end() || first != ui_actions.end())
                             throw std::runtime_error("last project page hides its total or rows: " + context);
                     }
+                    if (kind == "settings" && size.y >= 440) {
+                        for (const int id : {83, 85, 110, 111, 112, 113, 114, 115})
+                            if (std::none_of(ui_actions.begin(), ui_actions.end(), [id](const auto& a) { return a.chart == id && !a.informational; }))
+                                throw std::runtime_error("settings action unreachable: " + context + " " + std::to_string(id));
+                    }
+                    if (kind == "overview-warning" && size.y >= 440) {
+                        activate(121);
+                        if (dashboard_view != 1 || selected != "fixture" || diagnostic_history_first)
+                            throw std::runtime_error("overview attention action lost the affected project");
+                    }
+                    if (kind == "search-warning" && size.y >= 440) {
+                        const auto action = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 120; });
+                        if (action == ui_actions.end() || action->informational || !action->enabled)
+                            throw std::runtime_error("search warning has no explicit next action");
+                        activate(120);
+                        if (!diagnostic_details_open || selected != "fixture") throw std::runtime_error("warning details lost their project");
+                    }
+                    if (kind == "search-warning-opened" &&
+                        std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 124; }))
+                        throw std::runtime_error("opening search checks did not reveal them: " + context);
+                    if (kind == "search-warning-details" && size.y >= 620 &&
+                        std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 126 && a.label.find("docs/access.md") != std::string::npos; }))
+                        throw std::runtime_error("warning details omit their expected owner");
                     if (kind == "current") {
                         const auto actions = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 84; });
                         if (actions == ui_actions.end() || !actions->enabled)

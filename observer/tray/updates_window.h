@@ -1,6 +1,6 @@
 // Included in ShinApp: network and install run in the native CLI, never AppKit.
-// One retained window owns the complete review. Async replies change its content,
-// never its visibility, ordering or activation: only an explicit user action does.
+// One retained window owns the complete review. Background replies stay quiet;
+// a failed explicit installation returns the still-open review to the foreground.
 - (void)ensureUpdateWindow {
     if (self.updateWindow) return;
     NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 560, 300)
@@ -65,6 +65,7 @@
     self.updateNotesButton = live_button("Release notes", self, @selector(openUpdateReleaseNotes:));
     self.updateCopyButton = live_button("Copy diagnostic report", self, @selector(copyUpdateResult:));
     self.updateAcknowledgeButton = live_button("Acknowledge verified result", self, @selector(acknowledgeUpdateResult:));
+    self.updateReviewButton = live_button("Review previous update", self, @selector(showLastUpdateResult:));
     for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton]) {
         button.bezelColor = sand; button.contentTintColor = [NSColor colorWithCalibratedRed:.16 green:.17 blue:.14 alpha:1];
         button.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
@@ -78,7 +79,7 @@
     NSStackView* actions = [NSStackView stackViewWithViews:@[self.updateNotesButton, self.updateCopyButton, spacer, self.updateCheckButton, self.updateInstallButton]];
     actions.spacing = 10; actions.distribution = NSStackViewDistributionFill; actions.detachesHiddenViews = YES;
     NSBox* separator = [NSBox new]; separator.boxType = NSBoxSeparator;
-    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, separator, actions])
+    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, self.updateReviewButton, separator, actions])
         [stack addArrangedSubview:view];
     for (NSView* view in @[self.updateTitle, self.updateVersion, details, self.updateSpinner, separator, actions])
         [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
@@ -104,6 +105,8 @@
     const bool offer = self.updateScreen == UpdateScreen::offer;
     const bool result = self.updateScreen == UpdateScreen::resultReady || self.updateScreen == UpdateScreen::acknowledgeFailed;
     const bool installed = _updateResult.is_object() && _updateResult.value("phase", "") == "installed" && _updateResult.value("ok", false);
+    self.updateReviewButton.hidden = self.updateScreen != UpdateScreen::startFailed ||
+        cli_error_code(_updateResult) != "update-outcome-unknown";
     self.updateCheckButton.enabled = !checking && !loading && !self.updateActionBusy;
     self.updateInstallButton.hidden = !offer && !starting;
     self.updateInstallButton.enabled = offer && !self.updateActionBusy;
@@ -149,6 +152,8 @@
         } else {
             title = installed ? ui_text("Shin was updated") : ui_text("Update needs review");
             detail = installed ? ui_text("The installed kit was verified. Reconnect persistent MCP clients to use the new version.") :
+                _updateResult.value("can_acknowledge", false) && _updateResult.value("installation_verified", false) ?
+                ui_text("The current installation is verified and has no pending recovery. Confirm this saved result to clear the previous attempt and allow another update. Project data stays in place.") :
                 ui_text("The update did not confirm completion. The saved result includes the candidate location and native recovery outcome. Do not repeat installation before reviewing it.");
         }
         break;
@@ -157,7 +162,12 @@
     self.updateTitle.stringValue = title;
     const bool reviewed = offer || starting || self.updateScreen == UpdateScreen::startFailed;
     self.updateVersion.hidden = !reviewed || !_reviewedUpdateOffer.contains("version");
-    if (!self.updateVersion.hidden) self.updateVersion.stringValue = [NSString stringWithFormat:@"%@  →  %@",
+    if (result && _updateResult.contains("current_version")) {
+        self.updateVersion.hidden = NO;
+        self.updateVersion.stringValue = [NSString stringWithFormat:ui_text("Installed version: %@"),
+            diagnostic_text_content(_updateResult.value("current_version", ""))];
+    }
+    else if (!self.updateVersion.hidden) self.updateVersion.stringValue = [NSString stringWithFormat:@"%@  →  %@",
         diagnostic_text_content(_reviewedUpdateOffer.value("current_version", std::string(SHIN_OBSERVER_VERSION))),
         diagnostic_text_content(_reviewedUpdateOffer.value("version", ""))];
     self.updateDetails.hidden = !detail.length;
@@ -220,6 +230,9 @@
         if (failure.length && _updateResult.empty()) _updateResult = {{"ok", false}, {"error", {{"message", failure.UTF8String}}}};
         self.updateFailure = failure;
         [self renderUpdateWindow];
+        // The short-lived progress viewer can have owned focus before exiting.
+        // Return the explicit operation's failure, but respect dismissal/minimize.
+        if (self.updateWindow.visible && !self.updateWindow.miniaturized) [self showUpdateWindow];
     }];
 }
 - (void)checkForUpdates:(id)sender { (void)sender; [self beginUpdateCheck:YES]; }
@@ -291,6 +304,8 @@
             self.updateFailure = update_failure_text(acknowledged, problem);
         } else { _updateResult = acknowledged; self.updateScreen = UpdateScreen::resultReady; }
         [self renderUpdateWindow];
+        if (self.updateScreen == UpdateScreen::acknowledgeFailed && self.updateWindow.visible && !self.updateWindow.miniaturized)
+            [self showUpdateWindow];
     }];
 }
 - (void)setUpdatePending:(BOOL)pending {

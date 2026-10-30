@@ -39,7 +39,8 @@
     "Each profile uses only paths present in the package.",
     "Each profile has a neutral self-eval with required paths scoped to its component.",
     "Removing one optional component does not silently change another profile owner.",
-    "Observer runtime and regression-test profiles are both required; their union retains the original source coverage without increasing either file or byte ceilings."
+    "Observer runtime and regression-test profiles are both required; their union retains the original source coverage without increasing either file or byte ceilings.",
+    "The UI profile observes every eligible source under its declared roots without raising the existing Core, Observer or test-profile limits."
   ],
   "companionBundle": "integrations/shin-development/shin-integration-bundle-v1.json",
   "observerTests": {
@@ -50,5 +51,25 @@
     ],
     "runtimeOwner": "observer",
     "releaseGateRequired": true
+  },
+  "ui": {
+    "profile": "profiles/shin-ui.json",
+    "sourceRoots": [
+      "observer/tui",
+      "observer/tray",
+      "observer/ui"
+    ],
+    "sourceExtensions": [
+      ".cpp",
+      ".h",
+      ".py"
+    ],
+    "unsupportedSourceExtensions": [
+      ".mm",
+      ".inc"
+    ],
+    "runtimeOwner": "observer",
+    "releaseGateRequired": true,
+    "coverageBoundary": "Includes colocated C++ and Python UI fixtures. Objective-C++ hosts and include fragments require direct reads; this profile does not claim syntax facts for them."
   }
 }

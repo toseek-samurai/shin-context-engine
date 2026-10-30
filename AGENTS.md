@@ -58,4 +58,7 @@ read/inspect following a query, also pass its `request_trace.request_id` as
 `parent_request_id` when supported. Never persist a chat ID into shared MCP config.
 <!-- shin-discovery-policy-end -->
 
-With installed Shin, refactors include [project profile maintenance](docs/agent-maintenance.md#project-profile-maintenance).
+With installed Shin, follow [project profile maintenance](docs/agent-maintenance.md#project-profile-maintenance)
+after refactors. The [shared integration procedure](integrations/codex/skills/shin-context/references/setup-and-adoption.md#project-profile-maintenance)
+provides client workflow details. Preserve test intent, diagnostic failures and
+approval boundaries.

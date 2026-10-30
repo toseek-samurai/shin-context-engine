@@ -232,7 +232,7 @@ def main():
         assert (kit / 'share/shin-observer/licenses/imgui/LICENSE.txt').is_file()
         run([kit / 'bin/shin-tray.exe', '--render-headless-test' if args.headless_render else '--render-test', base / 'renders'])
         rendered = json.loads((base / 'renders/result.json').read_text())
-        assert rendered['frames'] == 30 and rendered['cold_frames'] == 15
+        assert rendered['frames'] == 60 and rendered['cold_frames'] == 30
         assert rendered['documentation_frames'] == 20
         assert rendered['shell_integration'] is (not args.headless_render)
         assert rendered['taskbar_recreated_event'] is (None if args.headless_render else True)

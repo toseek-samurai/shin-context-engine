@@ -27,6 +27,8 @@
         self.setupChoose = live_button("Choose project folder…", self, @selector(beginSetupProject:));
         [stack addArrangedSubview:self.setupChoose];
         [stack addArrangedSubview:live_label("2. Select coding agents and profiles", false)];
+        self.setupAdvanced = live_button("Advanced agent settings", self, @selector(toggleSetupAdvanced:), true);
+        [stack addArrangedSubview:self.setupAdvanced];
         NSScrollView* scroll = [[NSScrollView alloc] init];
         scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
         self.setupAgents = [[NSStackView alloc] init];
@@ -80,6 +82,7 @@
     self.setupProject.stringValue = self.setupRoot.length ? self.setupRoot : ui_text("1. Add your first project folder");
     self.setupProject.toolTip = self.setupRoot;
     for (NSView* view in self.setupAgents.arrangedSubviews.copy) { [self.setupAgents removeArrangedSubview:view]; [view removeFromSuperview]; }
+    self.setupAdvancedViews = [NSMutableArray array];
     self.setupTargets = [NSMutableArray array]; self.setupTargetButtons = [NSMutableArray array]; self.setupFileButtons = [NSMutableArray array];
     if (!self.setupRoot.length) {
         [self.setupAgents addArrangedSubview:live_label("Available agents and profiles will appear after you choose a project.")];
@@ -111,10 +114,17 @@
             [group.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
             [location.widthAnchor constraintEqualToAnchor:group.widthAnchor].active = YES;
             target[@"pathLabel"] = location;
+            file.hidden = self.setupAdvanced.state != NSControlStateValueOn;
+            location.hidden = file.hidden;
+            [self.setupAdvancedViews addObject:file]; [self.setupAdvancedViews addObject:location];
             [self.setupTargetButtons addObject:check]; [self.setupFileButtons addObject:file];
         }
-        live_text(self.setupStatus, @"stringValue", "Select the agents and profiles to connect. Undetected agents can also be configured for later use.");
+        live_text(self.setupStatus, @"stringValue", "Choose connections to add or update. Unchecked agents keep their existing configuration.");
     }];
+}
+- (void)toggleSetupAdvanced:(id)sender {
+    (void)sender;
+    for (NSView* view in self.setupAdvancedViews) view.hidden = self.setupAdvanced.state != NSControlStateValueOn;
 }
 - (void)selectSetupTarget:(id)sender {
     (void)sender;
@@ -210,7 +220,7 @@
     [self runCLI:@"service-install" arguments:@[] completion:^(Json result, NSString* failure) {
         if (epoch != self.setupEpoch) return; self.setupLogin.enabled = YES;
         self.setupStatus.stringValue = !failure && result.value("ok", false) ?
-            ui_text("Background service will start at login. Monitor can be opened separately.") :
+            ui_text("Background service will start at login. Monitor login startup is controlled in its app menu.") :
             (failure ? failure : ui_text("Could not enable login startup. Check the service diagnostics."));
     }];
 }

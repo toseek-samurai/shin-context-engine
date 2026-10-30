@@ -1,13 +1,27 @@
-# Native Windows source status
+# Windows desktop preview
 
 Windows support is an additional platform implementation of Shin. It uses the
 same Core, profiles, generated-index contracts, Observer and MCP protocol as
 macOS and Linux. It does not replace their implementations or qualification.
 
-This is a development source route targeting **Windows x64 on local NTFS**.
-The published dev.54 release has no Windows download. Unreleased source adds
-guarded ZIP/MSI publication alongside macOS; only a published Release containing
-the MSI/ZIP and their checksums is a downloadable Windows preview.
+The development preview targets **Windows x64 on local NTFS**. Published
+previews provide a portable ZIP and an MSI alongside the macOS kit. Hosted CI
+qualifies the exact packages with its Windows smoke suite and headless rendering;
+interactive desktop and installation lifecycle checks remain separate proof.
+
+## Download a preview
+
+Download the Windows files from [preview dev.66](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66):
+
+- `shin-desktop-2.0.5-dev.66-windows-AMD64.msi` for the installed desktop route.
+- `shin-desktop-2.0.5-dev.66-windows-AMD64.zip` for a portable extraction.
+- The matching `.sha256` file for each package. In PowerShell, compare it with
+  `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
+
+Installation and project connection are separate steps. See the platform scope
+below and [MCP client setup](native-client-setup.md) before connecting an agent.
+Automatic agent configuration, client-history collection, the terminal dashboard
+and in-app updates are not available on Windows yet.
 
 ## Current scope
 
@@ -19,7 +33,7 @@ the MSI/ZIP and their checksums is a downloadable Windows preview.
 | Monitor | Win32/DX11 host with the shared EN/RU presentation and diagnostics. Source render checks include documentation warnings in project lists and details. |
 | Client configuration | `mcp-config` exports configuration for manual review. Automatic `client-connect` editing and graphical project onboarding are not enabled. |
 | Terminal UI, usage and updating | `shin-ce stats`, automatic client-history collection and in-app updating remain pending on Windows. Use the native Monitor or text/JSON status where applicable. |
-| Distribution | ZIP/WiX MSI recipes and qualification tests exist; development presets leave packaging disabled. Installed lifecycle and exact-archive checks remain separate gates. |
+| Distribution | Published ZIP/MSI previews pass the guarded source matrix and exact-package checks. Development presets leave packaging disabled; interactive installed lifecycle checks remain separate. |
 
 Runtime binaries do not require WSL, Bash, Python, Node or a model service.
 Python and the native compiler are development/test dependencies. WSL builds
@@ -44,7 +58,8 @@ Keep the checkout and an absolute external `SHIN_BUILD_ROOT` outside AppData
 and TEMP. Full local tests need an unelevated interactive desktop, symlink
 creation rights for refusal fixtures, and a protected CMake installation. Do not substitute an
 elevated shell for the user-runtime checks. The source workflow uploads test
-reports. Unreleased source also qualifies Windows packages before publication.
+reports. The guarded publisher requires Windows package qualification before
+making a preview release public.
 
 The shared refresh regressions cover initial bootstrap, refresh and cached
 queries when documentation has a broken local link, warning retention and
@@ -75,8 +90,9 @@ and must be preserved during maintenance and removal.
 The source MSI wizard uses Shin branding, Segoe UI and separate welcome,
 preview-notes, confirmation, progress and completion pages. The confirmation
 shows the fixed protected Program Files destination. Repair and removal use
-the standard WiX maintenance dialogs. These are development-source changes,
-not evidence of a published or qualified Windows installer.
+the standard WiX maintenance dialogs. Hosted package inspection checks the
+MSI's metadata and payload; it does not execute the interactive installation,
+repair, upgrade or uninstall workflow.
 
 Use CPack 4.3+ and WiX 4 with matching UI/Util extensions. With the external
 `SHIN_BUILD_ROOT` from the build guide still set, run from the checkout root:

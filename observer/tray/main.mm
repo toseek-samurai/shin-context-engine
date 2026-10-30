@@ -3,12 +3,14 @@
 #import <MetalKit/MetalKit.h>
 #import <ImageIO/ImageIO.h>
 #import <os/log.h>
+#import <ServiceManagement/ServiceManagement.h>
 #include <climits>
 #include <cerrno>
 #include <poll.h>
 #include <signal.h>
 #include <unistd.h>
 #include <ctime>
+#include <iostream>
 #include "imgui.h"
 #include "imgui_impl_metal.h"
 #include "imgui_impl_osx.h"
@@ -166,6 +168,10 @@ void platform_action(int code) {
     case 44: [NSApp sendAction:@selector(choosePeriod:) to:NSApp.delegate from:nil]; break;
     case 62: [NSApp sendAction:@selector(chooseTimingTraffic:) to:NSApp.delegate from:nil]; break;
     case 66: [NSApp sendAction:@selector(chooseTimingScope:) to:NSApp.delegate from:nil]; break;
+    case 110: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(checkForUpdates:) to:NSApp.delegate from:nil]; }); break;
+    case 111: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showLastUpdateResult:) to:NSApp.delegate from:nil]; }); break;
+    case 112: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(openLoginSettings:) to:NSApp.delegate from:nil]; }); break;
+    case 116: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showAgentSetup:) to:NSApp.delegate from:nil]; }); break;
     case 86:
         dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showUpdateOffer:) to:NSApp.delegate from:nil]; });
         break;
@@ -294,12 +300,18 @@ NSString* update_failure_text(const Json& result, NSString* failure) {
                 return ui_text("Monitor could not hand over to the updater. Your current installation is unchanged. Restart Monitor and check for updates again.");
             if (error->value("code", Json()) == "ui-operation-busy")
                 return ui_text("Finish the current Shin operation before updating.");
+            if (error->value("code", Json()) == "update-outcome-unknown")
+                return ui_text("A previous update needs review. Open its saved result to verify the current installation before retrying.");
             const auto message = error->find("message");
             if (message != error->end() && message->is_string() && !message->get_ref<const std::string&>().empty())
                 return diagnostic_text_content(message->get_ref<const std::string&>());
         }
     }
     return ui_text("The release or installation could not be confirmed. Check again before retrying; the current kit is preserved.");
+}
+bool launched_as_login_item(NSAppleEventDescriptor* event) {
+    return event.eventID == kAEOpenApplication &&
+        [event paramDescriptorForKeyword:keyAEPropData].enumCodeValue == keyAELaunchedAsLogInItem;
 }
 } // namespace
 
@@ -407,7 +419,7 @@ static std::unique_ptr<Monitor> monitor;
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size { (void)view; (void)size; }
 @end
 
-@interface ShinApp : NSObject<NSApplicationDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate> {
+@interface ShinApp : NSObject<NSApplicationDelegate, NSPopoverDelegate, NSTableViewDataSource, NSTableViewDelegate, NSWindowDelegate, NSMenuItemValidation> {
     Json _storageStatus;
     Json _updateOffer;
     Json _reviewedUpdateOffer;
@@ -416,7 +428,6 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSStatusItem* item;
 @property(nonatomic, strong) NSImage* statusLogo;
 @property(nonatomic, strong) NSImage* statusUpdateLogo;
-@property(nonatomic, strong) NSWindow* monitorWindow;
 @property(nonatomic, strong) NSPopover* popover;
 @property(nonatomic, strong) ShinView* content;
 @property(nonatomic, strong) NSWindow* diagnosticWindow;
@@ -439,6 +450,8 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSTextField* setupProject;
 @property(nonatomic, strong) NSTextField* setupStatus;
 @property(nonatomic, strong) NSButton* setupCheck;
+@property(nonatomic, strong) NSButton* setupAdvanced;
+@property(nonatomic, strong) NSMutableArray<NSView*>* setupAdvancedViews;
 @property(nonatomic, strong) NSButton* setupChoose;
 @property(nonatomic, strong) NSButton* setupLogin;
 @property(nonatomic, copy) NSString* setupRoot;
@@ -471,8 +484,17 @@ static std::unique_ptr<Monitor> monitor;
 @property(nonatomic, strong) NSButton* updateNotesButton;
 @property(nonatomic, strong) NSButton* updateCopyButton;
 @property(nonatomic, strong) NSButton* updateAcknowledgeButton;
+@property(nonatomic, strong) NSButton* updateReviewButton;
 @property(nonatomic, strong) NSDate* lastUpdateCheck;
 @property(nonatomic, strong) NSDate* nextUpdateCheck;
+@property(nonatomic) BOOL installedApplication;
+@property(nonatomic) BOOL initialPresentationPending;
+- (SMAppServiceStatus)loginStartupStatus;
+- (BOOL)setLoginStartupEnabled:(BOOL)enabled error:(NSError**)error;
+- (NSUserDefaults*)loginStartupPreferences;
+- (void)configureInitialLoginStartup;
+- (void)toggleLoginStartup:(id)sender;
+- (void)openLoginSettings:(id)sender;
 - (void)checkForUpdates:(id)sender;
 - (void)showUpdateOffer:(id)sender;
 - (void)presentUpdateOffer;
@@ -506,6 +528,7 @@ static std::unique_ptr<Monitor> monitor;
 - (void)beginSetupProject:(id)sender;
 - (void)refreshSetup:(id)sender;
 - (void)selectSetupTarget:(id)sender;
+- (void)toggleSetupAdvanced:(id)sender;
 - (void)chooseSetupConfig:(NSButton*)sender;
 - (void)connectSetupAgents:(id)sender;
 - (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying;
@@ -540,6 +563,10 @@ static std::unique_ptr<Monitor> monitor;
     NSMenu* menu = [[NSMenu alloc] initWithTitle:ui_text("Project actions")];
     NSMenuItem* connect = [menu addItemWithTitle:ui_text("Connect coding agent…") action:@selector(showAgentSetup:) keyEquivalent:@""];
     connect.target = self;
+    NSMenuItem* history = [menu addItemWithTitle:ui_text("Project history") action:@selector(selectView:) keyEquivalent:@""];
+    history.tag = 34; history.target = self;
+    NSMenuItem* folder = [menu addItemWithTitle:ui_text("Show project folder") action:@selector(selectView:) keyEquivalent:@""];
+    folder.tag = 38; folder.target = self;
     [menu addItem:[NSMenuItem separatorItem]];
     NSMenuItem* detach = [menu addItemWithTitle:ui_text("Disconnect") action:@selector(beginProjectDisconnect:) keyEquivalent:@""];
     detach.target = self;
@@ -1107,10 +1134,13 @@ static std::unique_ptr<Monitor> monitor;
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
     os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: launched");
+    const bool loginLaunch = launched_as_login_item(NSAppleEventManager.sharedAppleEventManager.currentAppleEvent);
     NSString* home = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinHome"];
     try {
-        if (const auto installed = installed_local_home(current_executable_path()))
+        if (const auto installed = installed_local_home(current_executable_path())) {
             home = [NSString stringWithUTF8String:installed->c_str()];
+            self.installedApplication = YES;
+        }
     } catch (const std::exception& error) {
         NSAlert* alert = [[NSAlert alloc] init];
         alert.messageText = ui_text("Shin installation is incomplete");
@@ -1122,6 +1152,9 @@ static std::unique_ptr<Monitor> monitor;
     }
     if (!home) home = [NSHomeDirectory() stringByAppendingPathComponent:@".shin-ce"];
     self.shinHome = home;
+    NSURL* appLogo = [NSBundle.mainBundle URLForResource:@"shin-logo" withExtension:@"png"];
+    if (appLogo) NSApp.applicationIconImage = [[NSImage alloc] initWithContentsOfURL:appLogo];
+    [self configureInitialLoginStartup];
     // A fresh installation has no registry or running service. Make its first
     // action visible without relying on a successful service connection.
     if (![NSFileManager.defaultManager fileExistsAtPath:[home stringByAppendingPathComponent:@"registry"]])
@@ -1153,7 +1186,9 @@ static std::unique_ptr<Monitor> monitor;
     self.popover = [[NSPopover alloc] init];
     self.popover.contentViewController = self.content;
     [self updatePanelSize];
-    self.popover.behavior = NSPopoverBehaviorTransient;
+    // Own dismissal explicitly: transient popovers can close during the
+    // asynchronous activation handoff from another app.
+    self.popover.behavior = NSPopoverBehaviorApplicationDefined;
     self.popover.animates = NO;
     self.popover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     self.popover.delegate = self;
@@ -1195,23 +1230,71 @@ static std::unique_ptr<Monitor> monitor;
             attention ? ui_text("Shin: projects: %lu, attention required") :
                         ui_text("Shin: observed projects: %lu"), static_cast<unsigned long>(count)];
         if(!release_update_version.empty())self.item.button.toolTip=[NSString stringWithFormat:ui_text("Shin update available: %@"),diagnostic_text_content(release_update_version)];
-        monitor->visible = self.popover.shown || self.monitorWindow.visible;
+        monitor->visible = self.popover.shown;
+        if (self.initialPresentationPending) {
+            self.initialPresentationPending = NO;
+            if (!self.updateWindow.visible && !self.setupWindow.visible) [self toggle:nil];
+        }
     }];
-    if (!self.updateWindow.visible) [self toggle:nil];
+    // Control Center lays out the status item asynchronously. Defer the first
+    // popup until the status button has a window; never change app policy.
+    self.initialPresentationPending = !self.updateWindow.visible && !loginLaunch;
+}
+- (SMAppServiceStatus)loginStartupStatus { return SMAppService.mainAppService.status; }
+- (BOOL)setLoginStartupEnabled:(BOOL)enabled error:(NSError**)error {
+    return enabled ? [SMAppService.mainAppService registerAndReturnError:error] :
+        [SMAppService.mainAppService unregisterAndReturnError:error];
+}
+- (NSUserDefaults*)loginStartupPreferences { return NSUserDefaults.standardUserDefaults; }
+- (void)configureInitialLoginStartup {
+    NSUserDefaults* preferences = [self loginStartupPreferences];
+    if (!self.installedApplication || [preferences boolForKey:@"ShinMonitorLoginConfigured"]) return;
+    NSError* error = nil;
+    const auto status = [self loginStartupStatus];
+    if (status == SMAppServiceStatusEnabled || status == SMAppServiceStatusRequiresApproval ||
+        [self setLoginStartupEnabled:YES error:&error]) {
+        [preferences setBool:YES forKey:@"ShinMonitorLoginConfigured"];
+        [preferences setObject:NSBundle.mainBundle.bundlePath forKey:@"ShinMonitorLoginApplication"];
+    } else os_log_error(OS_LOG_DEFAULT, "ShinMonitor login startup: registration failed (%ld)", static_cast<long>(error.code));
+}
+- (void)openLoginSettings:(id)sender { (void)sender; [SMAppService openSystemSettingsLoginItems]; }
+- (void)toggleLoginStartup:(id)sender {
+    (void)sender;
+    if (!self.installedApplication) return;
+    if ([self loginStartupStatus] == SMAppServiceStatusRequiresApproval) { [self openLoginSettings:nil]; return; }
+    NSError* error = nil;
+    if ([self setLoginStartupEnabled:[self loginStartupStatus] != SMAppServiceStatusEnabled error:&error]) {
+        NSUserDefaults* preferences = [self loginStartupPreferences];
+        [preferences setBool:YES forKey:@"ShinMonitorLoginConfigured"];
+        [preferences setObject:NSBundle.mainBundle.bundlePath forKey:@"ShinMonitorLoginApplication"];
+    } else {
+        NSAlert* alert = [NSAlert new];
+        alert.messageText = ui_text("Could not change Monitor login startup");
+        alert.informativeText = ui_text("Check Login Items in System Settings and try again.");
+        [alert runModal];
+    }
+}
+- (BOOL)validateMenuItem:(NSMenuItem*)item {
+    if (item.action == @selector(toggleLoginStartup:)) {
+        const auto status = [self loginStartupStatus];
+        item.state = status == SMAppServiceStatusEnabled ? NSControlStateValueOn :
+            status == SMAppServiceStatusRequiresApproval ? NSControlStateValueMixed : NSControlStateValueOff;
+        item.title = status == SMAppServiceStatusRequiresApproval ? ui_text("Approve Monitor login startup…") : ui_text("Launch Monitor at login");
+        return self.installedApplication;
+    }
+    return YES;
 }
 - (void)updatePanelSize {
-    NSScreen* screen = self.monitorWindow.visible ? self.monitorWindow.screen : self.item.button.window.screen;
+    NSScreen* screen = self.item.button.window.screen;
     if (!screen) screen = NSScreen.mainScreen;
     const NSSize available = screen ? screen.visibleFrame.size : NSMakeSize(800, 600);
     const bool compact = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"];
     self.popover.contentSize = NSMakeSize(std::min(compact ? 360.0 : 448.0, std::max(280.0, available.width - 24)),
         std::min(compact ? 440.0 : 620.0, std::max(240.0, available.height - 40)));
-    if (self.monitorWindow) [self.monitorWindow setContentSize:self.popover.contentSize];
 }
 - (void)closePanel:(id)sender {
     (void)sender;
     if (self.popover.shown) [self.popover close];
-    if (self.monitorWindow.visible) [self.monitorWindow close];
 }
 - (void)applicationDidResignActive:(NSNotification*)notification {
     (void)notification;
@@ -1222,38 +1305,9 @@ static std::unique_ptr<Monitor> monitor;
     if (app && app.processIdentifier != NSRunningApplication.currentApplication.processIdentifier && self.popover.shown)
         [self.popover close];
 }
-- (void)showMonitorWindow {
-    if (self.popover.shown) [self.popover close];
-    if (!self.monitorWindow) {
-        self.monitorWindow = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 448, 620)
-            styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable
-            backing:NSBackingStoreBuffered defer:NO];
-        self.monitorWindow.title = @"Shin Monitor";
-        self.monitorWindow.releasedWhenClosed = NO;
-        self.monitorWindow.delegate = self;
-        self.monitorWindow.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        [self.monitorWindow center];
-    }
-    self.popover.contentViewController = nil;
-    self.monitorWindow.contentViewController = self.content;
-    [self updatePanelSize];
-    ((MTKView*)self.content.view).paused = NO;
-    monitor->visible = true;
-    [NSApp activateIgnoringOtherApps:YES];
-    [self.monitorWindow makeKeyAndOrderFront:nil];
-}
-- (void)windowWillClose:(NSNotification*)notification {
-    if (notification.object != self.monitorWindow) return;
-    self.monitorWindow.contentViewController = nil;
-    self.popover.contentViewController = self.content;
-    ((MTKView*)self.content.view).paused = YES;
-    monitor_motion.initialized = false;
-    if (monitor) monitor->visible = false;
-}
 - (void)toggle:(id)sender {
-    (void)sender;
-    const bool anchored = shin_status_can_anchor(self.item);
-    if (anchored && NSApp.currentEvent.type == NSEventTypeRightMouseUp) {
+    self.initialPresentationPending = NO;
+    if (sender == self.item.button && NSApp.currentEvent.type == NSEventTypeRightMouseUp) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* open = [menu addItemWithTitle:ui_text("Open panel") action:@selector(toggle:) keyEquivalent:@""];
         open.target = self;
@@ -1263,6 +1317,8 @@ static std::unique_ptr<Monitor> monitor;
         storage.target = self;
         NSMenuItem* update=[menu addItemWithTitle:ui_text("Check for updates…") action:@selector(checkForUpdates:) keyEquivalent:@""];update.target=self;
         NSMenuItem* automatic=[menu addItemWithTitle:ui_text("Automatically check for updates") action:@selector(toggleAutomaticUpdates:) keyEquivalent:@""];automatic.target=self;
+        NSMenuItem* login = [menu addItemWithTitle:ui_text("Launch Monitor at login") action:@selector(toggleLoginStartup:) keyEquivalent:@""];
+        login.target = self;
         NSMenuItem* result=[menu addItemWithTitle:ui_text("Last update result…") action:@selector(showLastUpdateResult:) keyEquivalent:@""];result.target=self;
         automatic.state=[[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] ? NSControlStateValueOff : NSControlStateValueOn;
         compact.state = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"] ? NSControlStateValueOn : NSControlStateValueOff;
@@ -1272,25 +1328,23 @@ static std::unique_ptr<Monitor> monitor;
         [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(0, self.item.button.bounds.size.height) inView:self.item.button];
         return;
     }
-    if (self.monitorWindow.visible || !anchored) {
-        [self showMonitorWindow];
-        return;
+    if (self.popover.shown) { [self closePanel:nil]; return; }
+    if (!self.item.visible) { self.item.visible = YES; self.initialPresentationPending = YES; return; }
+    if (!self.item.button.window.visible || self.item.button.hiddenOrHasHiddenAncestor) {
+        self.initialPresentationPending = YES; return;
     }
-    if (self.popover.shown) [self.popover close];
-    else {
-        [self updatePanelSize];
-        [NSApp activateIgnoringOtherApps:YES];
-        [self.popover showRelativeToRect:self.item.button.bounds ofView:self.item.button preferredEdge:NSRectEdgeMinY];
-        ((MTKView*)self.content.view).paused = NO;
-        [self.popover.contentViewController.view.window makeKeyWindow];
-        __weak ShinApp* weakSelf = self;
-        self.outsideMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
-            handler:^(NSEvent* event) { (void)event; [weakSelf closePanel:nil]; }];
-        self.escapeMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
-            if (event.keyCode == 53 && weakSelf.popover.shown) { [weakSelf closePanel:nil]; return nil; }
-            return event;
-        }];
-    }
+    [self updatePanelSize];
+    [self.popover showRelativeToRect:self.item.button.bounds ofView:self.item.button preferredEdge:NSRectEdgeMinY];
+    if (!self.popover.shown) return;
+    [NSApp activateIgnoringOtherApps:YES];
+    [self.content.view.window makeKeyWindow];
+    __weak ShinApp* weakSelf = self;
+    self.outsideMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
+        handler:^(NSEvent* event) { (void)event; [weakSelf closePanel:nil]; }];
+    self.escapeMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
+        if (event.keyCode == 53 && weakSelf.popover.shown) { [weakSelf closePanel:nil]; return nil; }
+        return event;
+    }];
 }
 - (void)toggleCompact:(id)sender {
     (void)sender;
@@ -1393,12 +1447,19 @@ static std::unique_ptr<Monitor> monitor;
     [[NSUserDefaults standardUserDefaults] setObject:identifier forKey:@"ShinUsageSelection"];
     if (!self.popover.shown) [self toggle:nil];
 }
+- (BOOL)popoverShouldDetach:(NSPopover*)popover { (void)popover; return NO; }
+- (void)popoverDidShow:(NSNotification*)notification {
+    if (notification.object != self.popover || !monitor) return;
+    // The popover remains the sole owner of the renderer for its lifetime.
+    self.content.view.window.acceptsMouseMovedEvents = YES;
+    ((MTKView*)self.content.view).paused = NO;
+    monitor->visible = true;
+}
 - (void)popoverDidClose:(NSNotification*)notification {
-    (void)notification;
+    if (notification.object != self.popover || self.popover.shown) return;
     ((MTKView*)self.content.view).paused = YES;
     monitor_motion.initialized = false;
     if (monitor) monitor->visible = false;
-    NSLog(@"ShinMonitor panel-close: rendering paused");
     if (self.outsideMonitor) { [NSEvent removeMonitor:self.outsideMonitor]; self.outsideMonitor = nil; }
     if (self.escapeMonitor) { [NSEvent removeMonitor:self.escapeMonitor]; self.escapeMonitor = nil; }
 }
@@ -1412,8 +1473,8 @@ static std::unique_ptr<Monitor> monitor;
     (void)app; (void)visible;
     // An explicit app-open request is distinct from ordinary focus/activation.
     if (!self.popover.shown) {
-        self.item.visible = YES;
-        [self showMonitorWindow];
+        self.initialPresentationPending = NO;
+        [self toggle:nil];
     }
     return YES;
 }
@@ -1444,6 +1505,30 @@ static std::unique_ptr<Monitor> monitor;
 #else
 int main(int argc, char** argv) {
     @autoreleasepool {
+        if (argc == 2 && std::string_view(argv[1]) == "--login-startup-status") {
+            const auto status = SMAppService.mainAppService.status;
+            std::cout << Json{{"ok", true}, {"registered", status == SMAppServiceStatusEnabled},
+                {"requires_approval", status == SMAppServiceStatusRequiresApproval}}.dump() << '\n';
+            return 0;
+        }
+        // The verified installer's uninstall operation invokes the bundle that
+        // owns the login item. Disposable/other installations never unregister it.
+        if (argc == 4 && std::string_view(argv[1]) == "--unregister-login-startup" && std::string_view(argv[2]) == "--home") {
+            NSUserDefaults* preferences = NSUserDefaults.standardUserDefaults;
+            const bool owns = [[preferences stringForKey:@"ShinMonitorLoginApplication"] isEqualToString:NSBundle.mainBundle.bundlePath];
+            NSError* error = nil;
+            const bool ok = !owns || (SMAppService.mainAppService.status == SMAppServiceStatusNotRegistered ||
+                SMAppService.mainAppService.status == SMAppServiceStatusNotFound) ||
+                [SMAppService.mainAppService unregisterAndReturnError:&error];
+            if (ok && owns) {
+                [preferences removeObjectForKey:@"ShinMonitorLoginApplication"];
+                [preferences removeObjectForKey:@"ShinMonitorLoginConfigured"];
+            }
+            Json result{{"ok", ok}, {"changed", owns && ok}};
+            if (!ok) result["error"] = {{"code", "monitor-login-unregister-failed"}};
+            std::cout << result.dump() << '\n';
+            return ok ? 0 : 1;
+        }
         if (argc > 1 && std::string_view(argv[1]) == "--update-progress") {
             if (argc != 4) return 2;
             const std::string language = argv[3];
@@ -1460,7 +1545,7 @@ int main(int argc, char** argv) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* item = [[NSMenuItem alloc] init];
         NSMenu* application = [[NSMenu alloc] init];
-        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Models"), ui_text("Sessions"),
+        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Activity"), ui_text("Settings"),
             ui_text("Now"), ui_text("24 hours"), ui_text("7 days")];
         for (NSUInteger i = 0; i < titles.count; ++i) {
             NSMenuItem* choice = [application addItemWithTitle:titles[i] action:@selector(selectView:) keyEquivalent:@""];
@@ -1476,6 +1561,12 @@ int main(int argc, char** argv) {
         setup.target = delegate;
         NSMenuItem* storage = [application addItemWithTitle:ui_text("Storage…") action:@selector(openStorageWindow:) keyEquivalent:@""];
         storage.target = delegate;
+        NSMenuItem* updates = [application addItemWithTitle:ui_text("Check for updates…") action:@selector(checkForUpdates:) keyEquivalent:@""];
+        updates.target = delegate;
+        NSMenuItem* updateResult = [application addItemWithTitle:ui_text("Last update result…") action:@selector(showLastUpdateResult:) keyEquivalent:@""];
+        updateResult.target = delegate;
+        NSMenuItem* login = [application addItemWithTitle:ui_text("Launch Monitor at login") action:@selector(toggleLoginStartup:) keyEquivalent:@""];
+        login.target = delegate;
         NSMenuItem* quit = [application addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(quitMonitor:) keyEquivalent:@"q"];
         quit.target = delegate;
         item.submenu = application;

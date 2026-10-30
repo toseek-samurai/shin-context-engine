@@ -11,4 +11,5 @@
 <key>CFBundlePackageType</key><string>APPL</string>
 <key>LSUIElement</key><true/>
 <key>NSHighResolutionCapable</key><true/>
+<key>ShinLoginStartupProtocol</key><integer>1</integer>
 </dict></plist>

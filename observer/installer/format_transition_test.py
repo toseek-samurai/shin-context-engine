@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import select
 import signal
+import shutil
 import sqlite3
 import subprocess
 import sys
@@ -22,7 +23,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--previous-kit', required=True, type=Path)
 parser.add_argument('--candidate-kit', required=True, type=Path)
 parser.add_argument('--report', required=True, type=Path)
-parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted'], default='forward')
+parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted', 'profile-policy-rejected'], default='forward')
 parser.add_argument('--fresh-updater', action='store_true', help='exercise the independent updater entry for the forward transition')
 args = parser.parse_args()
 if args.fresh_updater and args.scenario != 'forward':
@@ -99,7 +100,22 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             if sum(row[0] == 'request' and row[3] == 'query' for row in retained) >= 2: break
             assert time.monotonic() < history_deadline, 'both service queries must reach retained history'
             time.sleep(.02)
-        if args.scenario == 'forward':
+        if args.scenario == 'profile-policy-rejected':
+            altered = work / 'unqualified-candidate'
+            shutil.copytree(candidate, altered)
+            candidate = altered
+            profile_path = candidate / 'share/shin-context/profiles/generic-source.json'
+            unqualified = json.loads(profile_path.read_text())
+            unqualified['sourceFactMaxFiles'] += 1
+            profile_path.write_text(json.dumps(unqualified) + '\n')
+            inventory_path = candidate / 'shin-kit.json'
+            inventory = json.loads(inventory_path.read_text())
+            entry = next(row for row in inventory['files'] if row['path'] == 'share/shin-context/profiles/generic-source.json')
+            entry.update(size=profile_path.stat().st_size, sha256=hashlib.sha256(profile_path.read_bytes()).hexdigest())
+            inventory_path.write_text(json.dumps(inventory) + '\n')
+            evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix,
+                                      error='installation-profile-transition-unsupported')
+        elif args.scenario == 'forward':
             evidence['update'] = call(candidate / 'bin/shin-updater', 'install-local', '--kit', candidate, '--prefix', prefix) if args.fresh_updater else \
                 call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
             evidence['fresh_updater'] = args.fresh_updater
@@ -150,18 +166,37 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 else:
                     evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
                 child = None
-        expected = old_manifest if args.scenario in ['rollback','rollback-resume'] else new_manifest
+        old_preserved = args.scenario in ['rollback','rollback-resume','profile-policy-rejected']
+        expected = old_manifest if old_preserved else new_manifest
         installed = call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)
         assert installed['version'] == expected['version'] and installed['integrity_verified'] and not installed['recovery_pending'], installed
         for root in roots:
             result = ce('query', 'readLimit', '--service', '--root', root)
             assert result['local_ready'] and 'readLimit' in result['source_context'] and result['transport'] == 'local-socket-v1', result
         after_generators = generators()
-        assert after_generators == ([before_generators[0]] * 2 if args.scenario in ['rollback','rollback-resume'] else [new_identity['generator_version']] * 2), after_generators
+        assert after_generators == ([before_generators[0]] * 2 if old_preserved else [new_identity['generator_version']] * 2), after_generators
+        profile_revisions = []
         for workspace, before in zip(workspaces, bindings):
             after = json.loads((workspace / 'state.json').read_text())
-            assert {k:v for k,v in before.items() if k not in {'core_version','generator_version','prepared_snapshot'}} == {
-                k:v for k,v in after.items() if k not in {'core_version','generator_version','prepared_snapshot'}}
+            rebuilt_fields = {'core_version','generator_version','prepared_snapshot'}
+            if before.get('profile_config_hash') != after.get('profile_config_hash'):
+                assert expected == new_manifest and before['schema_version'] == 'shin.local-project-binding.v1'
+                assert before['profile_dir'] == str(prefix / 'share/shin-context/profiles')
+                previous_profile = old / 'share/shin-context/profiles/generic-source.json'
+                target_profile = candidate / 'share/shin-context/profiles/generic-source.json'
+                old_policy, new_policy = json.loads(previous_profile.read_text()), json.loads(target_profile.read_text())
+                old_extensions, new_extensions = set(old_policy.pop('sourceFactExtensions')), set(new_policy.pop('sourceFactExtensions'))
+                assert old_policy == new_policy and old_extensions <= new_extensions
+                added = sorted(new_extensions - old_extensions)
+                assert set(added) <= {'.m', '.mm'}
+                revision = 1469598103934665603
+                for byte in target_profile.read_bytes():
+                    revision = ((revision ^ byte) * 1099511628211) & ((1 << 64) - 1)
+                assert after['profile_config_hash'] == f'fnv1a64:{revision:016x}'
+                profile_revisions.append({'from': before['profile_config_hash'], 'to': after['profile_config_hash'], 'added_extensions': added})
+                rebuilt_fields.add('profile_config_hash')
+            assert {k:v for k,v in before.items() if k not in rebuilt_fields} == {
+                k:v for k,v in after.items() if k not in rebuilt_fields}
         after_grant = json.loads(grant_path.read_text()); after_grant.pop('last_snapshot')
         assert after_grant == grant
         assert all(p.read_bytes() == content for p, content in protected.items())
@@ -171,7 +206,7 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             assert all(row in current for row in retained)
             assert db.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
         evidence.update(ok=True, generators=after_generators, retained_events=len(retained),
-                        bindings_preserved=True, authority_preserved=True, history_preserved=True)
+                        bindings_preserved=True, profile_revisions=profile_revisions, authority_preserved=True, history_preserved=True)
     finally:
         if child and child.poll() is None: child.kill(); child.communicate(timeout=20)
         if (home / 'service/rpc.sock').exists():

@@ -641,13 +641,19 @@ class LocalRouteTests(unittest.TestCase):
         self.assertEqual(json.loads(binding_path.read_text())['core_version'], '2.0.0-dev.1')
         self.assertEqual(json.loads(grant_path.read_text())['route'], grant['route'])
         self.assertEqual(json.loads(grant_path.read_text())['token'], grant['token'])
-        changed = json.loads(binding_path.read_text())
-        changed['generator_version'] = 'different-format'
-        changed_grant = json.loads(grant_path.read_text())
-        changed_grant['route']['generator_version'] = 'different-format'
-        write_private_json(binding_path, changed)
-        write_private_json(grant_path, changed_grant)
-        self.assertEqual(self.ce('status', expected=2)['error']['code'], 'refresh-engine-changed')
+        before_index = {p.relative_to(self.f.out): p.read_bytes() for p in self.f.out.rglob('*') if p.is_file()}
+        for generator in ('different-format', 'shin-generator-v999-future', 'shin-generator-v23-unknown'):
+            with self.subTest(generator=generator):
+                changed = json.loads(binding_path.read_text())
+                changed['generator_version'] = generator
+                changed_grant = json.loads(grant_path.read_text())
+                changed_grant['route']['generator_version'] = generator
+                write_private_json(binding_path, changed)
+                write_private_json(grant_path, changed_grant)
+                self.assertEqual(self.ce('status', expected=2)['error']['code'], 'refresh-engine-changed')
+                self.assertEqual({p.relative_to(self.f.out): p.read_bytes() for p in self.f.out.rglob('*') if p.is_file()}, before_index)
+                self.assertEqual(json.loads(binding_path.read_text()), changed)
+                self.assertEqual(json.loads(grant_path.read_text()), changed_grant)
 
     def test_failed_writer_does_not_commit_new_quality_qualification(self):
         self.managed()

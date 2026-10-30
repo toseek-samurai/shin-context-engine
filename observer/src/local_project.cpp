@@ -15,6 +15,7 @@
 #include "local_profile_revision.h"
 #include "local_partial_context.h"
 #include "local_route_guard.h"
+#include "local_index_rebuild.h"
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -632,9 +633,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         binding = *loaded;
     }
     // Old known indexes are rebuild inputs only, never retrieval candidates.
-    const bool rebuildable_binding = binding.at("generator_version") == core::kGeneratorVersion ||
-        binding.at("generator_version") == "shin-generator-v22-compact-lexical" ||
-        binding.at("generator_version") == "shin-generator-v21-cpp-syntax";
+    const bool rebuildable_binding = rebuildable_source_generator(binding.at("generator_version").get<std::string>());
     if (refresh && (!loaded || !rebuildable_binding))
         throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
     LocalPublication grant(workspace, binding, config, request.manage_index);
@@ -1373,8 +1372,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             save_qualification(workspace, binding, config, binding.at("prepared_snapshot"), readiness, quality_key, options);
     };
     if (refresh) {
-        const bool rebuildable_index = binding.at("generator_version") == "shin-generator-v22-compact-lexical" ||
-                                       binding.at("generator_version") == "shin-generator-v21-cpp-syntax";
+        const bool rebuildable_index = retired_source_generator(binding.at("generator_version").get<std::string>());
         if (engine_changed && !rebuildable_index)
             throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
         recover_refresh_candidate(workspace);
@@ -2018,7 +2016,7 @@ Json watch_local_project(const LocalProjectRequest& input, std::uint64_t samples
 }
 
 bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected,
-                                 const std::string& restored_generator) {
+                                 const std::string& restored_generator, const std::string& published_profile_hash) {
     const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
     const auto workspace = home / "projects" / digest(root.string());
     if (expected.value("schema_version", "") != "shin.local-project-binding.v1" ||
@@ -2047,7 +2045,7 @@ bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Jso
     const auto snapshot = core::load_verified_snapshot(config.out_dir, config.max_snapshot_bytes, config.max_file_bytes);
     if (snapshot.generator_version == restored_generator) return false;
     if (snapshot.generator_version != core::kGeneratorVersion || snapshot.profile != "generic-source" ||
-        snapshot.profile_config_hash != expected.at("profile_config_hash").get<std::string>())
+        snapshot.profile_config_hash != (published_profile_hash.empty() ? expected.at("profile_config_hash").get<std::string>() : published_profile_hash))
         throw Error("refresh-base-changed", "Rollback cannot retire an unrelated publication.");
     // Installation already records pending rollback. The existing candidate
     // ownership receipt makes cleanup resumable if interrupted after this rename.

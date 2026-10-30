@@ -56,7 +56,7 @@ Json local_project(const LocalProjectRequest& request);
 // Installer rollback only: atomically retire an owned candidate publication so
 // the restored CLI can rebuild. Never rewrites bindings or accepts old retrieval.
 bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected_binding,
-                                 const std::string& restored_generator);
+                                 const std::string& restored_generator, const std::string& published_profile_hash = {});
 // Observational watch state, never project/publication authority.
 Json local_watch_status(const fs::path& directory);
 Json watch_local_project(const LocalProjectRequest& request, std::uint64_t samples,

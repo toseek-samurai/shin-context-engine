@@ -17,7 +17,7 @@ parser.add_argument('--test-results', type=Path, required=True)
 args = parser.parse_args()
 source = Path(__file__).resolve().parents[1]
 completed = 0
-stage_count = 7
+stage_count = 8
 
 
 @contextmanager
@@ -59,6 +59,10 @@ with stage('Native update and recovery'):
     run('installer/update_test.py', args.cmake, args.build, '--archive', args.archive)
 with stage('Bootstrap installer'):
     run('installer/bootstrap_test.py', args.build / 'packages/install.sh', args.archive)
+with stage('Previous generator update and rollback'):
+    subprocess.run([sys.executable, '-B', str(source / 'installer/previous_generator_test.py'),
+                    '--cmake', args.cmake, '--candidate-archive', str(args.archive.resolve()),
+                    '--proof', str(args.build / 'proof')], check=True, timeout=600)
 with stage('Independent updater envelope'):
     updater = args.archive.parent / 'shin-updater-v1-macos-arm64.zip'
     subprocess.run([str(args.build / 'shin-updater-bundle-tests'), 'archive', str(updater)], check=True, timeout=15)

@@ -5,6 +5,8 @@
 #include "shin/observer/local_update_diagnostics.h"
 #include "../ui/update_progress.h"
 #include "context_types.h"
+#include "context_internal.h"
+#include "local_index_rebuild.h"
 #include <regex>
 #include <csignal>
 #include <spawn.h>
@@ -462,11 +464,37 @@ Json bootstrap_identity(Json binding) {
     return binding;
 }
 bool rebuildable_bootstrap_format(const Json& binding) {
-    const auto generator = binding.value("generator_version", "");
-    return generator == shin::context::kGeneratorVersion || generator == "shin-generator-v22-compact-lexical" ||
-           generator == "shin-generator-v21-cpp-syntax";
+    return rebuildable_source_generator(binding.value("generator_version", ""));
 }
-Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate) {
+Json bundled_bootstrap_profile_revision(const Json& binding, const fs::path& prefix, const fs::path& candidate) {
+    const auto registry = prefix / "share/shin-context/profiles";
+    if (binding.at("profile_dir") != registry.string()) return Json();
+    const auto next_registry = candidate.parent_path().parent_path() / "share/shin-context/profiles";
+    const auto before_profile = shin::context::make_profile("generic-source", registry);
+    const auto after_profile = shin::context::make_profile("generic-source", next_registry);
+    require(before_profile.config_hash == binding.at("profile_config_hash").get<std::string>(), "binding-profile-conflict",
+        "The installed bootstrap profile no longer matches its approved revision.");
+    if (before_profile.config_hash == after_profile.config_hash) return Json();
+    auto before = parse_json(read_text(registry / "generic-source.json", kMaximumStateBytes, false));
+    auto after = parse_json(read_text(next_registry / "generic-source.json", kMaximumStateBytes, false));
+    const auto before_extensions = before.at("sourceFactExtensions"), after_extensions = after.at("sourceFactExtensions");
+    before.erase("sourceFactExtensions"); after.erase("sourceFactExtensions");
+    require(before == after && before_profile.bootstrap_only && after_profile.bootstrap_only &&
+        before_extensions.is_array() && after_extensions.is_array(), "installation-profile-transition-unsupported",
+        "The bundled bootstrap policy changed beyond the qualified language-extension update; review it before installation.");
+    const auto old_extensions = before_extensions.get<std::set<std::string>>();
+    const auto new_extensions = after_extensions.get<std::set<std::string>>();
+    require(std::includes(new_extensions.begin(), new_extensions.end(), old_extensions.begin(), old_extensions.end()),
+        "installation-profile-transition-unsupported", "The bundled bootstrap profile removed approved file types.");
+    Json added = Json::array();
+    for (const auto& extension : new_extensions) if (!old_extensions.contains(extension)) {
+        require(extension == ".m" || extension == ".mm", "installation-profile-transition-unsupported",
+            "The bundled bootstrap profile added file types outside the qualified Objective-C update.");
+        added.push_back(extension);
+    }
+    return {{"from", before_profile.config_hash}, {"to", after_profile.config_hash}, {"added_extensions", added}};
+}
+Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate, const fs::path& prefix) {
     Json records = Json::array();
     for (const auto& project : registered_local_projects(home)) {
         StateStore store(home / "projects" / digest(project.root.string()), false);
@@ -483,7 +511,10 @@ Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate)
             // The current reader deliberately cannot consume the old format.
             // Only the ordinary owned init path below may replace it.
         }
-        records.push_back({{"root", project.root.string()}, {"binding", *binding}});
+        Json record{{"root", project.root.string()}, {"binding", *binding}};
+        const auto profile_revision = bundled_bootstrap_profile_revision(*binding, prefix, candidate);
+        if (!profile_revision.is_null()) record["profile_revision"] = profile_revision;
+        records.push_back(std::move(record));
     }
     return records;
 }
@@ -500,11 +531,27 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         const auto project = std::find_if(projects.begin(), projects.end(), [&](const auto& value) { return value.root == root; });
         require(project != projects.end(), "registry-binding-changed", "Migration project is no longer enrolled.");
         const auto workspace = home / "projects" / digest(root.string());
+        const auto profile_revision = record.value("profile_revision", Json());
+        if (!profile_revision.is_null())
+            require(profile_revision.is_object() && profile_revision.size() == 3 &&
+                profile_revision.at("from") == record.at("binding").at("profile_config_hash") &&
+                profile_revision.at("to").is_string() && profile_revision.at("added_extensions").is_array() &&
+                profile_revision.at("added_extensions").size() <= 2 &&
+                std::all_of(profile_revision.at("added_extensions").begin(), profile_revision.at("added_extensions").end(),
+                    [](const Json& value) { return value == ".m" || value == ".mm"; }),
+                "installation-state-invalid", "Invalid bundled bootstrap profile revision.");
         const auto load = [&] {
             StateStore store(workspace, false);
             const auto current = store.load();
             if (!current) throw Error("binding-unavailable", "Bootstrap binding disappeared during kit migration.");
-            require(bootstrap_identity(*current) == bootstrap_identity(record.at("binding")),
+            auto identity = bootstrap_identity(*current);
+            if (!profile_revision.is_null()) {
+                require(current->at("profile_config_hash") == profile_revision.at("from") ||
+                    current->at("profile_config_hash") == profile_revision.at("to"),
+                    "binding-profile-conflict", "Bootstrap profile revision changed during kit migration.");
+                identity["profile_config_hash"] = profile_revision.at("from");
+            }
+            require(identity == bootstrap_identity(record.at("binding")),
                 "binding-identity-changed", "Bootstrap authority changed during kit migration.");
             return *current;
         };
@@ -515,13 +562,28 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
             record.at("binding").at("generator_version").get<std::string>();
         const std::string other_generator = previous.empty() ? record.at("binding").at("generator_version").get<std::string>() :
             shin::context::kGeneratorVersion;
-        const auto current = load();
+        auto current = load();
         const bool target_binding = current.at("core_version") == target && current.at("generator_version") == target_generator;
         require(target_binding || (current.at("core_version") == other && current.at("generator_version") == other_generator),
             "refresh-engine-changed", "Unexpected bootstrap engine or format.");
+        bool profile_changed = false;
+        const auto target_profile = (profile_revision.is_null() ? current.at("profile_config_hash") :
+            profile_revision.at(previous.empty() ? "to" : "from")).get<std::string>();
+        if (!profile_revision.is_null()) {
+            require(shin::context::make_profile("generic-source", current.at("profile_dir").get<std::string>()).config_hash == target_profile,
+                "binding-profile-conflict", "The verified kit does not contain the expected bootstrap profile revision.");
+            profile_changed = current.at("profile_config_hash") != target_profile;
+            if (profile_changed) {
+                StateStore store(workspace, true);
+                require(store.load() == current, "binding-identity-changed", "Bootstrap binding changed before its profile revision.");
+                current["profile_config_hash"] = target_profile;
+                store.save(current);
+            }
+        }
         const bool retired = !previous.empty() && target_generator != shin::context::kGeneratorVersion &&
-            retire_bootstrap_update_index(*project, current, target_generator);
-        if (target_binding && !retired) continue;
+            retire_bootstrap_update_index(*project, current, target_generator,
+                profile_revision.is_null() ? "" : profile_revision.at("to").get<std::string>());
+        if (target_binding && !retired && !profile_changed) continue;
         if (previous.empty()) {
             auto request = *project; request.command = "init";
             const auto result = local_project(request);
@@ -531,7 +593,8 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
             (void)previous_cli(previous, home, "init", root);
         }
         const auto confirmed = load();
-        require(confirmed.at("core_version") == target && confirmed.at("generator_version") == target_generator,
+        require(confirmed.at("core_version") == target && confirmed.at("generator_version") == target_generator &&
+            confirmed.at("profile_config_hash") == target_profile,
             "refresh-engine-changed", "Bootstrap rebuild did not confirm the target engine and format.");
     }
 }
@@ -787,7 +850,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             if (!core_patch || error.code != "installation-project-not-ready") throw;
             recover_publications = true;
         }
-        const auto bootstrap_migrations = recover_publications ? bootstrap_patch_migrations(home, source / "bin/shin-ce") : Json::array();
+        const auto bootstrap_migrations = recover_publications ? bootstrap_patch_migrations(home, source / "bin/shin-ce", prefix) : Json::array();
         auto runtime = runtime_before_update(home, prefix / "bin/shin-ce");
         if (runtime.at("running")) {
             runtime["unready_roots"] = Json::array();
@@ -910,7 +973,9 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             {"data_preserved", true}, {"service_restored", true}, {"readiness_assessed", true}, {"previous_kit_retained", true}, {"restart_monitor", true}};
     } catch (const std::exception& error) {
         const auto* typed = dynamic_cast<const Error*>(&error);
-        const auto failure = typed ? validation_identifier(typed->code) : std::string("installation-update-failed");
+        const auto* core_error = dynamic_cast<const shin::context::CliError*>(&error);
+        const auto failure = typed ? validation_identifier(typed->code) : core_error ? validation_identifier(core_error->code()) :
+            std::string("installation-update-failed");
         failure_diagnostic = merge_update_diagnostic(typed ? typed->diagnostic : Json(),
             update_service_diagnostic({{"registry_error", failure}}, "activation-result"));
         try { rollback(); }

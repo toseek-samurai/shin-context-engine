@@ -2,6 +2,7 @@
 """Focused metadata-gate regressions; no native build, Git or consumer access."""
 
 import json
+import re
 from pathlib import Path
 import shutil
 import subprocess
@@ -492,6 +493,24 @@ class ReleaseContractGateTests(unittest.TestCase):
             with self.subTest(version=version):
                 (self.root / "VERSION").write_text(version + "\n", encoding="utf-8")
                 self.run_gate(setup_error="VERSION must be a canonical")
+
+
+class SourceRebuildCutoverTests(unittest.TestCase):
+    def test_previous_generator_is_retired_when_the_current_identity_changes(self):
+        types = (ROOT / 'src/context_types.h').read_text()
+        current = re.search(r'\bkGeneratorVersion\s*=\s*"([^"]+)"', types).group(1)
+        policy = (ROOT / 'observer/src/local_index_rebuild.h').read_text()
+        retired = re.findall(r'"(shin-generator-v[1-9][0-9]*-[a-z0-9-]+)"', policy)
+        ordinal = lambda value: int(re.fullmatch(r'shin-generator-v([1-9][0-9]*)-[a-z0-9-]+', value).group(1))
+        self.assertTrue(retired, 'Source rebuild policy must identify the retired predecessor')
+        self.assertNotIn(current, retired, 'A current format is not a retired snapshot')
+        self.assertTrue(all(ordinal(value) < ordinal(current) for value in retired))
+        self.assertEqual(max(map(ordinal, retired)) + 1, ordinal(current),
+                         'Retire the previous generator and qualify its source rebuild before this cutover')
+        previous_kit = json.loads((ROOT / '.github/fixtures/macos-previous-generator.json').read_text())
+        self.assertIn(previous_kit['generator'], retired)
+        self.assertEqual(ordinal(previous_kit['generator']) + 1, ordinal(current),
+                         'Exact package qualification must exercise the previous generator, not only a same-format update')
 
 
 if __name__ == "__main__":

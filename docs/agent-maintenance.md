@@ -61,6 +61,12 @@ path disclosure and preserved data in a disposable installation. Keep private
 raw diagnostics outside the public repository. Scope any performance statement
 to its workload, hardware and measured cold/warm state.
 
+On a generator cutover, retire its predecessor in the shared source-rebuild
+policy and update the pinned previous-generator kit fixture. Exact macOS archive
+qualification exercises that published format through forward update and resumed
+rollback. Bundled bootstrap profile changes have a separate journaled contract;
+changing generator identity does not approve arbitrary scope or budget changes.
+
 <!-- shin-profile-maintenance-start -->
 
 ## Project profile maintenance

@@ -81,18 +81,24 @@ class LocalServiceTests(unittest.TestCase):
                 'snapshot': '', **extra}
 
     def test_previous_generator_is_rebuilt_before_the_first_read(self):
+        self.previous_generator_rebuild('shin-generator-v22-compact-lexical')
+
+    def test_previous_unicode_generator_is_rebuilt_before_the_first_read(self):
+        self.previous_generator_rebuild('shin-generator-v23-unicode-lexical')
+
+    def previous_generator_rebuild(self, previous_generator):
         workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
         manifest = workspace / 'index/docs/kb/generated/manifest.json'
         original = manifest.read_text()
         self.assertIn('shin-generator-v24-objective-cpp', original)
-        prior = original.replace('shin-generator-v24-objective-cpp', 'shin-generator-v22-compact-lexical')
+        prior = original.replace('shin-generator-v24-objective-cpp', previous_generator)
         manifest.write_text(prior)
         value = 1469598103934665603
         for byte in prior.encode():
             value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
         binding_path = workspace / 'state.json'
         binding = json.loads(binding_path.read_text())
-        binding['generator_version'] = 'shin-generator-v22-compact-lexical'
+        binding['generator_version'] = previous_generator
         binding['prepared_snapshot'] = f'fnv1a64:{value:016x}'
         binding_path.write_text(json.dumps(binding))
         sentinel = self.home / 'retained-user-state'

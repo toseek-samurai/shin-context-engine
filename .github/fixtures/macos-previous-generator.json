@@ -1,0 +1,9 @@
+{
+  "tag": "v2.0.5-dev.66",
+  "core_version": "2.0.5-dev.11",
+  "generator": "shin-generator-v23-unicode-lexical",
+  "archive": "shin-local-2.0.5-dev.66-macos-arm64.zip",
+  "url": "https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.66/shin-local-2.0.5-dev.66-macos-arm64.zip",
+  "bytes": 31796957,
+  "sha256": "312fecc6d9ff034eaf826a2cd22b4ef5343bd29998ef084ec3bcffd9cab9a42f"
+}

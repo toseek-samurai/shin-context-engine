@@ -37,10 +37,10 @@ def main():
         previous_kit, candidate_kit = old_kits[0].parent, new_kits[0].parent
         identity = json.loads(subprocess.check_output([str(previous_kit / 'bin/shin-context'), '--version'], text=True))
         assert identity['version'] == previous['core_version'] and identity['generator_version'] == previous['generator']
-        for scenario in ('forward', 'rollback-resume', 'profile-policy-rejected'):
+        for scenario in ('forward', 'rollback-resume', 'profile-policy-rejected', 'marker-edit-rejected'):
             command = [sys.executable, '-B', str(Path(__file__).with_name('format_transition_test.py')),
                        '--previous-kit', str(previous_kit), '--candidate-kit', str(candidate_kit),
-                       '--scenario', scenario, '--report', str(args.proof / f'previous-generator-{scenario}.json')]
+                       '--scenario', scenario, '--with-marker', '--report', str(args.proof / f'previous-generator-{scenario}.json')]
             if scenario == 'forward': command.append('--fresh-updater')
             subprocess.run(command, check=True, timeout=300)
     return 0

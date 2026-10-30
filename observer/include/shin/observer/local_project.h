@@ -53,6 +53,10 @@ struct LocalProjectRequest {
 
 // Single-threaded CLI adapter over native Core/Observer commands.
 Json local_project(const LocalProjectRequest& request);
+// Installer-only, journaled generator pin transition. Preparation is read-only;
+// staging changes only the marker bytes. Approval still uses native marker-accept.
+Json prepare_marker_generator_transition(const LocalProjectRequest& request);
+std::string stage_marker_generator_transition(const LocalProjectRequest& request, const Json& transition, bool restore);
 // Installer rollback only: atomically retire an owned candidate publication so
 // the restored CLI can rebuild. Never rewrites bindings or accepts old retrieval.
 bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected_binding,

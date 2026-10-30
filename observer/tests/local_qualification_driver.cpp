@@ -12,9 +12,16 @@ int main(int argc, char** argv) {
         const bool cancel = std::string(argv[3]) == "--cancel";
         const bool wrong_identity = std::string(argv[3]) == "--wrong-identity";
         const bool first_check = std::string(argv[3]) == "--first-watch-check";
-        for (int i = cancel || wrong_identity || first_check ? 4 : 3; i < argc; ++i) {
+        const bool marker_plan = std::string(argv[3]) == "--marker-plan";
+        for (int i = cancel || wrong_identity || first_check || marker_plan ? 4 : 3; i < argc; ++i) {
             LocalProjectRequest request;
             request.command = "status"; request.home = argv[2]; request.root = argv[i];
+            if (marker_plan) {
+                const auto plan = prepare_marker_generator_transition(request);
+                results.push_back({{"root_hash", digest(fs::canonical(request.root).string())},
+                    {"transition_required", !plan.is_null()}});
+                continue;
+            }
             if (wrong_identity) request.maintenance_root_identity = "retired-registry-identity";
             int checks = 0;
             if (first_check) {

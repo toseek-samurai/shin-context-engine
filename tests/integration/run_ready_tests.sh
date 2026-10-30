@@ -157,6 +157,16 @@ assert_json "$work_root/wrong-index-key.json" '
   .steps[2].status == "skipped" and .steps[3].status == "skipped" and
   .summary.readiness_requirements_failed == 1'
 
+cp "$project_root/$marker" "$work_root/approved-marker.json"
+"$jq_bin" '.engine.generatorIdentity = "shin-generator-v999-future"' \
+  "$work_root/approved-marker.json" >"$project_root/$marker"
+expect_failure "$work_root/generator-marker-mismatch.json" ready --marker "$marker" --strict
+assert_json "$work_root/generator-marker-mismatch.json" '
+  (.ok | not) and .steps[1].status == "failed" and
+  [.steps[1].result.issues[].code] == ["generator-identity-mismatch"] and
+  .steps[2].status == "skipped" and .steps[3].status == "skipped"'
+cp "$work_root/approved-marker.json" "$project_root/$marker"
+
 missing_index="$cache/route-mismatch-must-not-open"
 expect_failure "$work_root/route-mismatch.json" \
   "$tool" --profile fixture --profile-dir "$profile_dir" \

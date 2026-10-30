@@ -67,6 +67,15 @@ qualification exercises that published format through forward update and resumed
 rollback. Bundled bootstrap profile changes have a separate journaled contract;
 changing generator identity does not approve arbitrary scope or budget changes.
 
+Applying a qualified kit update also authorizes its bounded generator-pin
+transition for already approved managed project routes. The installer journals
+both marker revisions, preserves every byte except the generator value, and
+uses native `marker-accept`. Rollback restores the original bytes and approval
+through the previous CLI. Pending owner edits are never included in this
+approval. Ordinary agent work and Core reads still cannot modify or approve
+markers. Qualify updates with a real pinned adoption marker, not only markerless
+routes; preserve native review failures and interrupted rollback coverage.
+
 <!-- shin-profile-maintenance-start -->
 
 ## Project profile maintenance

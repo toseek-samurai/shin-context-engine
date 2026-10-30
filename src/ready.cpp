@@ -202,7 +202,12 @@ Json compact_failure_result(const ReadyStep& step) {
     if (!step.result.is_object()) {
         return nullptr;
     }
-    if (step.id == "adoption-check" || step.id == "worktree-diff") {
+    if (step.id == "adoption-check") {
+        auto result = compact_success_result(step);
+        result["issues"] = step.result.value("issues", Json::array());
+        return result;
+    }
+    if (step.id == "worktree-diff") {
         return compact_success_result(step);
     }
     if (step.id == "validate") {

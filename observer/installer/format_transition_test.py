@@ -10,6 +10,7 @@ from pathlib import Path
 import select
 import signal
 import shutil
+import stat
 import sqlite3
 import subprocess
 import sys
@@ -23,7 +24,8 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--previous-kit', required=True, type=Path)
 parser.add_argument('--candidate-kit', required=True, type=Path)
 parser.add_argument('--report', required=True, type=Path)
-parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted', 'profile-policy-rejected'], default='forward')
+parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted', 'profile-policy-rejected', 'marker-edit-rejected'], default='forward')
+parser.add_argument('--with-marker', action='store_true')
 parser.add_argument('--fresh-updater', action='store_true', help='exercise the independent updater entry for the forward transition')
 args = parser.parse_args()
 if args.fresh_updater and args.scenario != 'forward':
@@ -50,6 +52,19 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             'schema_version':'shin.task-request.v1','request_id':'limit-pack',
             'task':{'objective':'Locate the declared limit.','must':[{'id':'limit','query':'readLimit'}]},
             'budget':{'max_evidence_bytes':12000,'max_records':8,'per_query_records':8,'per_document_records':2}}}])
+    marker = None
+    if args.with_marker:
+        marker = f.root / 'docs/machine/shin-project-adoption-v1.json'
+        marker.parent.mkdir(parents=True)
+        template = Path(__file__).resolve().parents[2] / 'tests/fixtures/adoption/root/docs/machine/shin-project-adoption-v1.json'
+        adoption = json.loads(template.read_text())
+        adoption['engine']['generatorIdentity'] = old_identity['generator_version']
+        adoption['profile']['id'] = 'observer-fixture'
+        adoption['index']['key'] = 'index'
+        marker.write_text(json.dumps(adoption, indent=2) + '\n')
+        (f.root / 'AGENTS.md').write_text('Context epoch: fixture-shin-v1.12-2026-07-19.\n'
+            'Use docs/machine/shin-project-adoption-v1.json and profile observer-fixture.\n')
+        profile['agentStartPaths'] += ['AGENTS.md', 'docs/machine/shin-project-adoption-v1.json']
     f.profile_path.write_text(json.dumps(profile))
     (f.root / 'src').mkdir(); (f.root / 'src/limit.cpp').write_text('int readLimit() { return 7; }\n')
     bootstrap = user / 'project'; bootstrap.mkdir()
@@ -90,6 +105,10 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
         bindings = [json.loads((workspace / 'state.json').read_text()) for workspace in workspaces]
         protected = {p: p.read_bytes() for p in [home / 'registry/state.json', home / 'identity/state.json', f.config, f.profile_path,
                                                 bootstrap / 'limit.cpp', f.root / 'src/limit.cpp', f.root / 'README.md']}
+        if marker:
+            protected[marker] = marker.read_bytes()
+            marker_permissions = stat.S_IMODE(marker.stat().st_mode)
+            protected[f.root / 'AGENTS.md'] = (f.root / 'AGENTS.md').read_bytes()
         grant_path = workspaces[0] / 'publication/state.json'
         grant = json.loads(grant_path.read_text()); grant.pop('last_snapshot')
         history = home / 'service/history/telemetry.sqlite'; inode = history.stat().st_ino
@@ -100,7 +119,14 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             if sum(row[0] == 'request' and row[3] == 'query' for row in retained) >= 2: break
             assert time.monotonic() < history_deadline, 'both service queries must reach retained history'
             time.sleep(.02)
-        if args.scenario == 'profile-policy-rejected':
+        if args.scenario == 'marker-edit-rejected':
+            assert marker
+            edited = json.loads(marker.read_text()); edited['summary'] += ' Owner edit awaiting review.'
+            marker.write_text(json.dumps(edited, indent=2) + '\n')
+            protected[marker] = marker.read_bytes()
+            evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix,
+                                      error='installation-marker-transition-conflict')
+        elif args.scenario == 'profile-policy-rejected':
             altered = work / 'unqualified-candidate'
             shutil.copytree(candidate, altered)
             candidate = altered
@@ -166,11 +192,12 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 else:
                     evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
                 child = None
-        old_preserved = args.scenario in ['rollback','rollback-resume','profile-policy-rejected']
+        old_preserved = args.scenario in ['rollback','rollback-resume','profile-policy-rejected','marker-edit-rejected']
         expected = old_manifest if old_preserved else new_manifest
         installed = call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)
         assert installed['version'] == expected['version'] and installed['integrity_verified'] and not installed['recovery_pending'], installed
         for root in roots:
+            if args.scenario == 'marker-edit-rejected' and root == f.root: continue
             result = ce('query', 'readLimit', '--service', '--root', root)
             assert result['local_ready'] and 'readLimit' in result['source_context'] and result['transport'] == 'local-socket-v1', result
         after_generators = generators()
@@ -197,8 +224,23 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 rebuilt_fields.add('profile_config_hash')
             assert {k:v for k,v in before.items() if k not in rebuilt_fields} == {
                 k:v for k,v in after.items() if k not in rebuilt_fields}
+        if marker:
+            expected_marker = protected[marker]
+            if not old_preserved:
+                expected_marker = expected_marker.replace(old_identity['generator_version'].encode(), new_identity['generator_version'].encode())
+            if args.scenario not in ('profile-policy-rejected', 'marker-edit-rejected'):
+                # Native approval records an explicit marker hash (v3), including
+                # when rollback restores the implicit original v2 approval.
+                grant['approved_marker_hash'] = hashlib.sha256(expected_marker).hexdigest()
+                grant['schema_version'] = 'shin.local-publication.v3'
+            assert marker.read_bytes() == expected_marker
+            assert stat.S_IMODE(marker.stat().st_mode) == marker_permissions
+            protected[marker] = expected_marker
+            evidence['marker_transition'] = {'only_generator_pin_changed': True, 'restored': old_preserved,
+                'approved_hash': hashlib.sha256(expected_marker).hexdigest() if args.scenario != 'marker-edit-rejected' else
+                    grant.get('approved_marker_hash', grant['route']['marker_hash'])}
         after_grant = json.loads(grant_path.read_text()); after_grant.pop('last_snapshot')
-        assert after_grant == grant
+        assert after_grant == grant, (after_grant, grant)
         assert all(p.read_bytes() == content for p, content in protected.items())
         assert history.stat().st_ino == inode
         with closing(sqlite3.connect(f'file:{history}?mode=ro', uri=True)) as db:

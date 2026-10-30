@@ -362,7 +362,8 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
 // Rollback must use the verified previous CLI's protocol and qualification rules.
 // No shell, inherited user environment, or arbitrary subcommand is involved.
 Json previous_cli(const fs::path& executable, const fs::path& home,
-                  const char* command, const fs::path& root = {}, bool allow_unready = false) {
+                  const char* command, const fs::path& root = {}, bool allow_unready = false,
+                  const std::string& marker_revision = {}) {
     const auto previous = std::signal(SIGCHLD, SIG_DFL);
     require(previous != SIG_ERR, "installation-recovery-process", "Cannot establish recovery child ownership.");
     struct Restore { decltype(previous) handler; ~Restore() { std::signal(SIGCHLD, handler); } } restore{previous};
@@ -373,6 +374,10 @@ Json previous_cli(const fs::path& executable, const fs::path& home,
         ::fcntl(channel[0], F_SETFL, O_NONBLOCK) == 0,
         "installation-recovery-process", "Cannot protect recovery output channel.");
     std::vector<std::string> words{executable.string(), command, "--home", home.string()};
+    if (!marker_revision.empty()) {
+        require(std::string_view(command) == "marker-accept", "installation-state-invalid", "Unexpected recovery revision.");
+        words.push_back(marker_revision);
+    }
     if (!root.empty()) { words.emplace_back("--root"); words.push_back(root.string()); }
     if (std::string_view(command) == "init") words.emplace_back("--no-service");
     std::vector<char*> argv; argv.reserve(words.size() + 1);
@@ -456,6 +461,34 @@ bool compatible_core_patch(const std::string& from, const std::string& to) {
         const auto previous = release_order(from), next = release_order(to);
         return previous[0] == next[0] && previous < next;
     } catch (const Error&) { return false; }
+}
+Json marker_generator_migrations(const fs::path& home) {
+    Json records = Json::array();
+    for (const auto& project : registered_local_projects(home)) {
+        const auto record = prepare_marker_generator_transition(project);
+        if (!record.is_null()) records.push_back(record);
+        require(records.dump().size() <= 96 * 1024, "installation-marker-transition-budget",
+            "Generator marker transitions exceed the bounded installation journal.");
+    }
+    return records;
+}
+void migrate_marker_generators(const fs::path& home, const Json& records, const fs::path& previous = {}) {
+    require(records.is_array() && records.size() <= 16 && records.dump().size() <= 96 * 1024,
+        "installation-state-invalid", "Invalid marker transition journal.");
+    const auto projects = registered_local_projects(home);
+    for (const auto& record : records) {
+        const auto root = record.at("root").get<std::string>();
+        const auto project = std::find_if(projects.begin(), projects.end(), [&](const auto& item) { return item.root == root; });
+        require(project != projects.end(), "registry-binding-changed", "Marker transition project is no longer enrolled.");
+        const auto revision = stage_marker_generator_transition(*project, record, !previous.empty());
+        Json accepted;
+        if (previous.empty()) {
+            auto request = *project; request.command = "marker-accept"; request.marker_revision = revision;
+            accepted = local_project(request);
+        } else accepted = previous_cli(previous, home, "marker-accept", project->root, false, revision);
+        require(accepted.value("ok", false) && accepted.value("approved_marker_hash", "") == revision,
+            "installation-marker-transition-conflict", "Native marker approval did not confirm the journaled revision.");
+    }
 }
 Json bootstrap_identity(Json binding) {
     binding.erase("core_version");
@@ -800,6 +833,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         require(saved && saved->at("phase") == "installed" && saved->contains("resume_runtime") &&
             !saved->contains("update") && !saved->at("resume_runtime").contains("unready_roots") &&
             saved->value("resume_bootstrap_migrations", Json::array()).empty() &&
+            saved->value("resume_marker_migrations", Json::array()).empty() &&
             saved->at("kit").at("core_version") == kit.at("core_version"),
             "installation-recovery-review-not-applicable", "Degraded rollback review applies only to a legacy same-Core runtime journal with no recorded readiness baseline.");
     const auto hash = digest(read_text(source / manifest_name, kMaximumStateBytes, false));
@@ -817,18 +851,20 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         report_update(progress, {ReleaseUpdateStep::rolling_back});
         verify_update_payload(prefix, state.at("kit"), state.at("receipt"));
         const auto migrations = state.value("resume_bootstrap_migrations", Json::array());
-        if (!migrations.empty())
+        const auto marker_migrations = state.value("resume_marker_migrations", Json::array());
+        if (!migrations.empty() || !marker_migrations.empty())
             require(compatible_core_patch(state.at("kit").at("core_version"),
                 state.at("previous").at("kit").at("core_version")),
                 "installation-state-invalid", "Interrupted bootstrap rollback has an incompatible kit pair.");
         owner.reset();
+        migrate_marker_generators(home, marker_migrations, prefix / "bin/shin-ce");
         migrate_bootstrap_patch(home, migrations, prefix / "bin/shin-ce");
         const auto restored = resume_previous_runtime(home, prefix / "bin/shin-ce", state.at("resume_runtime"), accept_degraded_rollback);
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Recovery state changed during restart.");
         state["last_rollback"] = restored;
         state["last_update_diagnostic"] = merge_update_diagnostic(state.value("last_update_diagnostic", Json()), restored.value("diagnostic", Json()));
-        state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); owner->save(state);
+        state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); state.erase("resume_marker_migrations"); owner->save(state);
         throw Error("installation-update-rolled-back", "Interrupted rollback completed; inspect installation and service-status for project readiness.",
             state["last_update_diagnostic"]);
     }
@@ -844,6 +880,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         require(release_order(kit.at("version")) > release_order(state.at("kit").at("version")),
             "installation-version-not-newer", "Update requires a newer kit version; altered same-version kits and downgrades are refused.");
         const auto registry = registry_digest(home);
+        const auto marker_migrations = core_patch ? marker_generator_migrations(home) : Json::array();
         bool recover_publications = false;
         try { qualify_update(home, source / "bin/shin-ce", progress); }
         catch (const Error& error) {
@@ -864,7 +901,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         auto next = state.at("receipt"); next["prefix_identity"] = ""; next["manifest_sha256"] = hash;
         state["update"] = {{"receipt", next}, {"kit", kit}, {"old_receipt", state.at("receipt")},
             {"old_kit", state.at("kit")}, {"runtime", runtime}, {"registry_sha256", registry},
-            {"recover_publications", recover_publications}, {"bootstrap_migrations", bootstrap_migrations}, {"step", "copying"}};
+            {"recover_publications", recover_publications}, {"bootstrap_migrations", bootstrap_migrations},
+            {"marker_migrations", marker_migrations}, {"step", "copying"}};
         state["phase"] = "updating"; owner->save(state);
     }
     require(state.contains("update") && state.at("update").at("receipt").at("manifest_sha256").get<std::string>() == hash,
@@ -872,7 +910,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     auto update = state.at("update");
     require(validate_manifest(update.at("kit")) == kit, "installation-state-invalid", "Pending target inventory changed.");
     (void)validate_manifest(update.at("old_kit"));
-    if (!update.value("bootstrap_migrations", Json::array()).empty())
+    if (!update.value("bootstrap_migrations", Json::array()).empty() || !update.value("marker_migrations", Json::array()).empty())
         require(update.value("recover_publications", false) &&
             compatible_core_patch(update.at("old_kit").at("core_version"), kit.at("core_version")),
             "installation-state-invalid", "Bootstrap migration requires the qualified Core patch transition.");
@@ -904,15 +942,17 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         state["phase"] = "installed"; state.erase("update");
         state["resume_runtime"] = update.at("runtime");
         state["resume_bootstrap_migrations"] = update.value("bootstrap_migrations", Json::array());
+        state["resume_marker_migrations"] = update.value("marker_migrations", Json::array());
         state["previous"] = {{"receipt", update.at("receipt")}, {"kit", update.at("kit")}};
         owner->save(state); service_guard.reset(); owner.reset();
+        migrate_marker_generators(home, update.value("marker_migrations", Json::array()), prefix / "bin/shin-ce");
         migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()), prefix / "bin/shin-ce");
         const auto restored = resume_previous_runtime(home, prefix / "bin/shin-ce", update.at("runtime"));
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state, "installation-ownership-changed", "Rollback state changed during restart.");
         state["last_rollback"] = restored;
         state["last_update_diagnostic"] = merge_update_diagnostic(failure_diagnostic, restored.value("diagnostic", Json()));
-        state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); owner->save(state);
+        state.erase("resume_runtime"); state.erase("resume_bootstrap_migrations"); state.erase("resume_marker_migrations"); owner->save(state);
     };
     if (state.at("phase") == "rolling-back") {
         rollback();
@@ -949,6 +989,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             // service. Reacquire its startup fence and stop it before replaying
             // publication work; never race a second publisher against that service.
             const auto service_guard = stop_owned_service(update.at("receipt"), kit.at("version"), kit.at("core_version"));
+            migrate_marker_generators(home, update.value("marker_migrations", Json::array()));
             migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()));
             LocalProjectRequest request; request.home = home; request.command = "watch";
             std::vector<fs::path> roots;

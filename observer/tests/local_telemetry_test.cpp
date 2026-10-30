@@ -77,6 +77,14 @@ int telemetry_scenario() {
             ready_detail["gates"][1]["reasons"] != Json::array({"worktree-not-current"}) ||
             ready_detail["gates"][2]["error_code"] != "route-revision-conflict" ||
             ready_detail.dump().find("DO-NOT-EXPORT") != std::string::npos) return 32;
+        const auto adoption_detail = readiness_diagnostic({{"steps", Json::array({
+            {{"id", "adoption-check"}, {"status", "failed"}, {"result", {{"issues", Json::array({
+                {{"code", "generator-identity-mismatch"}, {"severity", "error"},
+                 {"message", "DO-NOT-EXPORT"}, {"path", "/private/DO-NOT-EXPORT"}}
+            })}}}}
+        })}});
+        if (adoption_detail["gates"][0]["reasons"] != Json::array({"generator-identity-mismatch"}) ||
+            adoption_detail.dump().find("DO-NOT-EXPORT") != std::string::npos) return 46;
         const auto compact_ready = readiness_diagnostic({{"steps", Json::array({
             {{"id", "validate"}, {"status", "failed"}, {"result", {{"failed_gates", Json::array({
                 {{"id", "pack-eval"}, {"diagnostic", {{"cases", Json::array({

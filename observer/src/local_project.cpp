@@ -19,6 +19,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <thread>
+#include <regex>
 
 namespace shin::observer {
 namespace {
@@ -2013,6 +2014,95 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
 Json watch_local_project(const LocalProjectRequest& input, std::uint64_t samples,
                          const std::function<bool()>& stopped) {
     return watch_local_projects(input, {input.root}, samples, stopped);
+}
+
+Json prepare_marker_generator_transition(const LocalProjectRequest& request) {
+    const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
+    const auto workspace = home / "projects" / digest(root.string());
+    StateStore store(workspace, false);
+    const auto binding = store.load();
+    if (!binding || binding->value("schema_version", "") != "shin.local-route-binding.v1" ||
+        binding->value("marker", "").empty()) return nullptr;
+    const auto marker = binding->at("marker").get<std::string>();
+    if (core::normalize_repository_file_argument(root, marker, "--marker") != marker ||
+        directory_identity(root) != binding->at("root_identity").get<std::string>() ||
+        directory_identity(workspace, true) != binding->at("workspace_identity").get<std::string>())
+        throw Error("installation-marker-transition-conflict", "Canonical marker or project identity changed.");
+    const auto text = read_text(root / marker, 16384, false);
+    const auto document = parse_json(text);
+    const auto previous = document.at("engine").at("generatorIdentity").get<std::string>();
+    if (previous == core::kGeneratorVersion) return nullptr;
+    if (!retired_source_generator(previous))
+        throw Error("installation-marker-transition-unsupported", "The marker does not name a qualified retired generator.");
+    const auto file = fs::path(binding->at("observer_config").get<std::string>());
+    const auto config_text = read_text(file, 65536, true);
+    const auto config = config_from_json(parse_json(config_text), file);
+    LocalPublication grant(workspace, *binding, config);
+    if (!grant.active() || !configuration_approved(workspace, *binding, digest(config_text)) ||
+        grant.approved_profile_hash() != core::make_profile(config.profile, config.profile_dir).config_hash ||
+        grant.approved_marker_hash() != digest(text))
+        throw Error("installation-marker-transition-conflict", "Marker transition requires the current approved canonical publisher.");
+    grant.verify();
+    verify_marker_identity(workspace, *binding, text, false);
+    // Preserve formatting and every other byte. Ambiguous/escaped spellings
+    // require review instead of rewriting the whole project-owned document.
+    const std::regex pin("\"generatorIdentity\"\\s*:\\s*\"" + previous + "\"");
+    const std::sregex_iterator first(text.begin(), text.end(), pin), end;
+    if (first == end || std::distance(first, end) != 1)
+        throw Error("installation-marker-transition-unsupported", "The generator pin cannot be replaced unambiguously.");
+    auto revised = text;
+    revised.replace(static_cast<std::size_t>(first->position()) + first->str().find(previous), previous.size(), core::kGeneratorVersion);
+    auto expected = document; expected["engine"]["generatorIdentity"] = core::kGeneratorVersion;
+    if (parse_json(revised) != expected)
+        throw Error("installation-marker-transition-conflict", "Marker transition changed fields beyond the generator pin.");
+    if (store.load() != binding || read_text(file, 65536, true) != config_text ||
+        read_text(root / marker, 16384, false) != text)
+        throw Error("installation-marker-transition-conflict", "Project changed while preparing its generator transition.");
+    return {{"root", root.string()}, {"binding", *binding}, {"grant_token", grant.token()},
+        {"parent_identity", directory_identity((root / marker).parent_path())}, {"before", text}, {"after", revised}};
+}
+
+std::string stage_marker_generator_transition(const LocalProjectRequest& request, const Json& transition, bool restore) {
+    const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
+    const auto workspace = home / "projects" / digest(root.string());
+    StateStore store(workspace, true); store.recover_pending();
+    const auto binding = store.load();
+    auto expected = transition.at("binding");
+    auto current = binding.value_or(Json::object());
+    expected.erase("prepared_snapshot"); current.erase("prepared_snapshot");
+    if (transition.at("root") != root.string() || current != expected ||
+        directory_identity(root) != expected.at("root_identity").get<std::string>() ||
+        directory_identity(workspace, true) != expected.at("workspace_identity").get<std::string>())
+        throw Error("installation-marker-transition-conflict", "Journaled marker route changed; project bytes were preserved.");
+    const auto marker = expected.at("marker").get<std::string>();
+    if (core::normalize_repository_file_argument(root, marker, "--marker") != marker)
+        throw Error("installation-marker-transition-conflict", "Canonical marker path changed.");
+    const auto before = transition.at("before").get<std::string>(), after = transition.at("after").get<std::string>();
+    auto previous_document = parse_json(before), next_document = parse_json(after);
+    const auto previous = previous_document.at("engine").at("generatorIdentity").get<std::string>();
+    previous_document["engine"]["generatorIdentity"] = core::kGeneratorVersion;
+    if (!retired_source_generator(previous) || next_document.at("engine").at("generatorIdentity") != core::kGeneratorVersion ||
+        previous_document != next_document)
+        throw Error("installation-marker-transition-conflict", "Journal exceeds the generator-only transition contract.");
+    const auto file = fs::path(expected.at("observer_config").get<std::string>());
+    const auto config_text = read_text(file, 65536, true);
+    const auto config = config_from_json(parse_json(config_text), file);
+    LocalPublication grant(workspace, *binding, config);
+    if (!grant.active() || grant.token() != transition.at("grant_token").get<std::string>() ||
+        !configuration_approved(workspace, *binding, digest(config_text)) ||
+        grant.approved_profile_hash() != core::make_profile(config.profile, config.profile_dir).config_hash ||
+        (grant.approved_marker_hash() != digest(before) && grant.approved_marker_hash() != digest(after)))
+        throw Error("installation-marker-transition-conflict", "Canonical approval changed during the generator transition.");
+    grant.verify();
+    verify_marker_identity(workspace, *binding, before, false);
+    const auto text = read_text(root / marker, 16384, false);
+    if (text != before && text != after)
+        throw Error("installation-marker-transition-conflict", "Marker was edited during update; preserve it for review.");
+    const auto& target = restore ? before : after;
+    if (text != target) replace_user_config(root / marker, text, target, transition.at("parent_identity"));
+    else if (directory_identity((root / marker).parent_path()) != transition.at("parent_identity").get<std::string>())
+        throw Error("installation-marker-transition-conflict", "Marker parent changed during update.");
+    return digest(target);
 }
 
 bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected,

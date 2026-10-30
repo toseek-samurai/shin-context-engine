@@ -40,7 +40,8 @@
   "sourceFactExtensions": [
     ".cpp",
     ".h",
-    ".py"
+    ".py",
+    ".mm"
   ],
   "sourceFactExtractors": [
     "language"

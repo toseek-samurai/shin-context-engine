@@ -267,7 +267,7 @@ support Unicode. This preserves words; it does not translate a Russian question
 into an English document. Native source hints and document matching remain
 separate retrieval paths.
 
-The dev.45 source uses one index format, `shin-generator-v23-unicode-lexical`.
+The current Core source uses one index format, `shin-generator-v24-objective-cpp`.
 The service rebuilds older managed indexes from approved project sources before
 serving them. Project settings, permissions, histories and recovery notes remain
 intact. Standalone Core users run `build` explicitly; old indexes are not queried

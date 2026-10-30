@@ -1,12 +1,12 @@
 {
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v23-unicode-lexical",
+    "generator": "shin-generator-v24-objective-cpp",
     "format": "shin.lexical.v1",
     "contract": "docs/machine/lexical-retrieval-v1.json",
     "evidenceRowsChanged": false,
     "installed": false,
-    "compatibility": "current Unicode generator only; older indexes require rebuilding"
+    "compatibility": "current generator only; older indexes require rebuilding"
   },
   "schemaVersion": "shin.retrieval-evidence-contract.v1",
   "document": "retrieval-evidence-v1",

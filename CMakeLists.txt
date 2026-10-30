@@ -42,6 +42,8 @@ add_library(shin-syntax-vendor STATIC
     third_party/tree-sitter-java/src/parser.c
     third_party/tree-sitter-cpp/src/parser.c
     third_party/tree-sitter-cpp/src/scanner.c
+    third_party/tree-sitter-objcpp/src/parser.c
+    third_party/tree-sitter-objcpp/src/scanner.c
     third_party/tree-sitter-typescript/typescript/src/parser.c
     third_party/tree-sitter-typescript/typescript/src/scanner.c
     third_party/tree-sitter-typescript/tsx/src/parser.c
@@ -59,6 +61,8 @@ target_include_directories(shin-syntax-vendor SYSTEM
     PRIVATE third_party/tree-sitter/src)
 set_source_files_properties(third_party/tree-sitter-cpp/src/scanner.c
     PROPERTIES COMPILE_OPTIONS "-I${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter-cpp/src")
+set_source_files_properties(third_party/tree-sitter-objcpp/src/scanner.c
+    PROPERTIES COMPILE_OPTIONS "-I${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter-objcpp/src")
 foreach(SYNTAX_GRAMMAR typescript tsx)
     set_source_files_properties(third_party/tree-sitter-typescript/${SYNTAX_GRAMMAR}/src/scanner.c
         PROPERTIES COMPILE_OPTIONS "-I${CMAKE_CURRENT_SOURCE_DIR}/third_party/tree-sitter-typescript/${SYNTAX_GRAMMAR}/src")
@@ -66,6 +70,7 @@ endforeach()
 
 set_property(SOURCE
     third_party/tree-sitter-cpp/src/scanner.c
+    third_party/tree-sitter-objcpp/src/scanner.c
     third_party/tree-sitter-typescript/typescript/src/scanner.c
     third_party/tree-sitter-typescript/tsx/src/scanner.c
     APPEND PROPERTY COMPILE_OPTIONS "$<$<NOT:$<C_COMPILER_ID:MSVC>>:-Werror=strict-prototypes>")
@@ -93,6 +98,7 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/scoped_retrieval.cpp
     src/source_relations.cpp
     src/source_syntax.cpp
+    src/objc_syntax.cpp
     src/syntax_source_facts.cpp
     src/impact.cpp
     src/execution_commands.cpp
@@ -261,7 +267,7 @@ if(SHIN_CONTEXT_BUILD_CLI)
             DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/licenses/nlohmann")
     install(FILES third_party/simdjson/LICENSE-APACHE-2.0 third_party/simdjson/LICENSE-MIT
             DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/licenses/simdjson")
-    foreach(SYNTAX_DEP tree-sitter tree-sitter-java tree-sitter-typescript tree-sitter-cpp)
+    foreach(SYNTAX_DEP tree-sitter tree-sitter-java tree-sitter-typescript tree-sitter-cpp tree-sitter-objcpp)
         install(FILES third_party/${SYNTAX_DEP}/LICENSE third_party/${SYNTAX_DEP}/UPSTREAM.json
                 DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context/licenses/${SYNTAX_DEP}")
     endforeach()
@@ -571,6 +577,11 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
     target_compile_options(shin-cpp-syntax-tests PRIVATE ${SHIN_CXX_WARNINGS})
     add_test(NAME shin-context-cpp-syntax COMMAND shin-cpp-syntax-tests)
     set_tests_properties(shin-context-cpp-syntax PROPERTIES TIMEOUT 30)
+    add_executable(shin-objc-syntax-tests tests/core/objc_syntax_test.cpp)
+    target_link_libraries(shin-objc-syntax-tests PRIVATE shin-context-core)
+    target_compile_options(shin-objc-syntax-tests PRIVATE ${SHIN_CXX_WARNINGS})
+    add_test(NAME shin-context-objc-syntax COMMAND shin-objc-syntax-tests)
+    set_tests_properties(shin-context-objc-syntax PROPERTIES TIMEOUT 30)
     target_link_libraries(shin-inspect-tests PRIVATE shin-context-core)
     target_compile_options(shin-inspect-tests PRIVATE ${SHIN_CXX_WARNINGS})
     add_test(NAME shin-context-inspect

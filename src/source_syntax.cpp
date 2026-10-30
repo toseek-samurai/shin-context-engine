@@ -1,4 +1,5 @@
 #include "source_syntax.h"
+#include "objc_syntax.h"
 
 #include <tree_sitter/api.h>
 
@@ -11,6 +12,7 @@ extern "C" const TSLanguage *tree_sitter_java(void);
 extern "C" const TSLanguage *tree_sitter_typescript(void);
 extern "C" const TSLanguage *tree_sitter_tsx(void);
 extern "C" const TSLanguage *tree_sitter_cpp(void);
+extern "C" const TSLanguage *tree_sitter_objcpp(void);
 
 namespace shin::context {
 namespace {
@@ -26,12 +28,15 @@ enum class SyntaxLanguage {
     TypeScript,
     Tsx,
     Cpp,
+    ObjC,
+    ObjCpp,
 };
 
 struct ParseInput {
     std::string_view content;
     std::size_t progress_callbacks = 0;
     bool cancelled = false;
+    std::size_t syntax_nodes = 0;
 };
 
 using ParserPtr = std::unique_ptr<TSParser, decltype(&ts_parser_delete)>;
@@ -52,6 +57,8 @@ private:
 };
 
 SyntaxLanguage syntax_language(std::string_view extension) noexcept {
+    if (extension == ".m") return SyntaxLanguage::ObjC;
+    if (extension == ".mm") return SyntaxLanguage::ObjCpp;
     if (extension == ".java") return SyntaxLanguage::Java;
     if (extension == ".ts" || extension == ".cts" || extension == ".mts" ||
         extension == ".js" || extension == ".cjs" || extension == ".mjs") {
@@ -70,6 +77,8 @@ const TSLanguage *tree_sitter_language(SyntaxLanguage language) noexcept {
         case SyntaxLanguage::TypeScript: return tree_sitter_typescript();
         case SyntaxLanguage::Tsx: return tree_sitter_tsx();
         case SyntaxLanguage::Cpp: return tree_sitter_cpp();
+        case SyntaxLanguage::ObjC:
+        case SyntaxLanguage::ObjCpp: return tree_sitter_objcpp();
         case SyntaxLanguage::Unsupported: return nullptr;
     }
     return nullptr;
@@ -107,6 +116,80 @@ TreePtr parse_syntax_tree(ParseInput& input, SyntaxLanguage language) {
     TSInput source{&input, read_parse_input, TSInputEncodingUTF8, nullptr};
     TSParseOptions options{&input, stop_at_progress_budget};
     return TreePtr(ts_parser_parse_with_options(parser.get(), nullptr, source, options), ts_tree_delete);
+}
+
+bool has_objective_c_nodes(ParseInput& input, TSTree* tree, bool fragment) {
+    TreeCursor cursor(ts_tree_root_node(tree));
+    for (;;) {
+        if (++input.syntax_nodes > kMaxSyntaxNodes) { input.cancelled = true; return false; }
+        const auto node = ts_tree_cursor_current_node(cursor.get());
+        const std::string_view type = ts_node_type(node);
+        if (fragment ? (type == "objc_method_definition" || type == "objc_method_declaration" ||
+                        type == "objc_property_declaration") : is_objective_c_node(node)) return true;
+        if (ts_tree_cursor_goto_first_child(cursor.get())) continue;
+        while (!ts_tree_cursor_goto_next_sibling(cursor.get())) {
+            if (!ts_tree_cursor_goto_parent(cursor.get())) return false;
+        }
+    }
+}
+
+TreePtr parse_implementation_fragment(ParseInput& input) {
+    // Some headers are included inside @implementation. Parse in that context,
+    // then delete the artificial envelope from tree coordinates. Its empty name
+    // cannot produce a declaration or an invented owner in source facts.
+    constexpr std::string_view prefix = "@implementation ShinFragment\n", suffix = "\n@end\n";
+    const auto source = input.content;
+    const std::string wrapped = std::string(prefix) + std::string(source) + std::string(suffix);
+    input.content = wrapped;
+    auto tree = parse_syntax_tree(input, SyntaxLanguage::ObjCpp);
+    input.content = source;
+    if (!tree || input.cancelled || ts_node_has_error(ts_tree_root_node(tree.get())))
+        return TreePtr(nullptr, ts_tree_delete);
+    TSInputEdit head{0, static_cast<uint32_t>(prefix.size()), 0, {0, 0}, {1, 0}, {0, 0}};
+    ts_tree_edit(tree.get(), &head);
+    TSPoint end{0, 0};
+    for (const char c : source) { if (c == '\n') { ++end.row; end.column = 0; } else ++end.column; }
+    const auto size = static_cast<uint32_t>(source.size());
+    TSInputEdit tail{size, size + static_cast<uint32_t>(suffix.size()), size,
+                     end, {end.row + 2, 0}, end};
+    ts_tree_edit(tree.get(), &tail);
+    return tree;
+}
+
+TreePtr select_syntax_tree(ParseInput& input, SyntaxLanguage& language, std::string_view extension) {
+    TreePtr tree = parse_syntax_tree(input, language);
+    const bool header = extension == ".h" || extension == ".hh" || extension == ".hpp" || extension == ".hxx";
+    // Preserve the established C++ route for valid C++ headers. A suffix alone
+    // cannot identify Cocoa; require real Objective-C syntax in the tree.
+    if (language != SyntaxLanguage::Cpp || !header || !tree || input.cancelled ||
+        !ts_node_has_error(ts_tree_root_node(tree.get()))) return tree;
+    auto candidate = parse_syntax_tree(input, SyntaxLanguage::ObjCpp);
+    if (!candidate || input.cancelled) return tree;
+    if (ts_node_has_error(ts_tree_root_node(candidate.get()))) {
+        auto fragment = parse_implementation_fragment(input);
+        if (fragment && has_objective_c_nodes(input, fragment.get(), true)) {
+            language = SyntaxLanguage::ObjCpp;
+            return fragment;
+        }
+    }
+    if (!input.cancelled && has_objective_c_nodes(input, candidate.get(), false)) {
+        language = SyntaxLanguage::ObjCpp;
+        return candidate;
+    }
+    return tree;
+}
+
+std::string syntax_tag(SyntaxLanguage language) {
+    switch (language) {
+        case SyntaxLanguage::Java: return "java";
+        case SyntaxLanguage::TypeScript:
+        case SyntaxLanguage::Tsx: return "ts";
+        case SyntaxLanguage::Cpp: return "cpp";
+        case SyntaxLanguage::ObjC: return "objc";
+        case SyntaxLanguage::ObjCpp: return "objcpp";
+        case SyntaxLanguage::Unsupported: return {};
+    }
+    return {};
 }
 
 int source_line(TSPoint point) noexcept {
@@ -381,9 +464,9 @@ void inspect_cpp_declaration(SyntaxFacts& facts, TSNode node, std::string_view c
     }
 }
 
-void visit_tree(SyntaxFacts &facts, TSTree *tree, SyntaxLanguage language, std::string_view content) {
+void visit_tree(SyntaxFacts &facts, TSTree *tree, SyntaxLanguage language, std::string_view content,
+                std::size_t& visited) {
     TreeCursor cursor(ts_tree_root_node(tree));
-    std::size_t visited = 0;
     for (;;) {
         if (++visited > kMaxSyntaxNodes) {
             facts.complete = false;
@@ -397,8 +480,10 @@ void visit_tree(SyntaxFacts &facts, TSTree *tree, SyntaxLanguage language, std::
             append_declaration(facts, node, java_declaration_kind(type), content, language);
             if (type == "package_declaration") inspect_java_package(facts, node, content);
             if (type == "import_declaration") inspect_java_import(facts, node, content);
-        } else if (language == SyntaxLanguage::Cpp) {
+        } else if (language == SyntaxLanguage::Cpp || language == SyntaxLanguage::ObjC ||
+                   language == SyntaxLanguage::ObjCpp) {
             inspect_cpp_declaration(facts, node, content);
+            if (language != SyntaxLanguage::Cpp) inspect_objective_c_declaration(facts, node, content);
         } else {
             append_declaration(facts, node, typescript_declaration_kind(node), content, language);
             if (type == "import_statement" || type == "export_statement") {
@@ -417,17 +502,19 @@ void visit_tree(SyntaxFacts &facts, TSTree *tree, SyntaxLanguage language, std::
 
 SyntaxFacts inspect_source_syntax(std::string_view content, std::string_view extension) {
     SyntaxFacts facts;
-    const SyntaxLanguage language = syntax_language(extension);
+    SyntaxLanguage language = syntax_language(extension);
     if (language == SyntaxLanguage::Unsupported) return facts;
     facts.supported = true;
+    facts.language = syntax_tag(language);
     if (content.size() > kMaxSourceBytes || content.size() > UINT32_MAX) return facts;
 
     ParseInput input{content};
-    TreePtr tree = parse_syntax_tree(input, language);
+    TreePtr tree = select_syntax_tree(input, language, extension);
     if (!tree || input.cancelled) return facts;
 
     facts.complete = true;
-    visit_tree(facts, tree.get(), language, content);
+    facts.language = syntax_tag(language);
+    visit_tree(facts, tree.get(), language, content, input.syntax_nodes);
     if (facts.error_nodes != 0) facts.complete = false;
     return facts;
 }
@@ -437,11 +524,12 @@ SyntaxChunking chunk_source_syntax(std::string_view content, std::string_view ex
     if (max_bytes < 4 || max_bytes > 65536 || max_chunks == 0 || max_chunks > 16384)
         throw std::invalid_argument("Invalid syntax chunk budget.");
     SyntaxChunking result;
-    const auto language = syntax_language(extension);
+    auto language = syntax_language(extension);
     result.supported = language != SyntaxLanguage::Unsupported;
     if (content.size() > kMaxSourceBytes) return result;
     ParseInput input{content};
-    TreePtr tree = result.supported ? parse_syntax_tree(input, language) : TreePtr(nullptr, ts_tree_delete);
+    TreePtr tree = result.supported ? select_syntax_tree(input, language, extension) : TreePtr(nullptr, ts_tree_delete);
+    result.visited_nodes = input.syntax_nodes;
     result.syntax_complete = tree && !input.cancelled && !ts_node_has_error(ts_tree_root_node(tree.get()));
     const auto emit = [&](std::size_t begin, std::size_t end, bool fallback) {
         if (begin == end) return true;

@@ -53,7 +53,7 @@
     },
     {
       "id": "generic-cpp",
-      "evidence": "C and C++ source plus optional CMake and Make metadata"
+      "evidence": "C, C++, Objective-C and Objective-C++ source plus optional CMake and Make metadata"
     },
     {
       "id": "generic-dotnet",
@@ -65,7 +65,7 @@
     },
     {
       "id": "generic-source",
-      "evidence": "Mixed Java, Kotlin, C#, TypeScript, JavaScript, C, and C++ source trees"
+      "evidence": "Mixed Java, Kotlin, C#, TypeScript, JavaScript and C-family source trees, including Objective-C/Objective-C++"
     },
     {
       "id": "generic-docs",

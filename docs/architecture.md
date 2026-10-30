@@ -59,6 +59,10 @@ terminal. Language preferences never change protocol fields or project data.
 The macOS/Linux Sand TUI uses statically linked FTXUI for layout, input and line charts.
 It reads the existing local service, usage snapshot and storage inventory; opening
 it does not enroll projects, start another service or publish an index.
+
+The UI source profile also covers the macOS Objective-C++ host and Cocoa method
+implementations in its headers. Core observes their selectors and source ranges
+without loading Cocoa; include files with a `.inc` suffix still require direct reads.
 The former optional web query panel and its HTTP adapter have been removed;
 its numeric history, metrics and portfolio producers remain independent tools.
 

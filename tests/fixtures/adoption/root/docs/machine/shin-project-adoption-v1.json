@@ -10,7 +10,7 @@
   },
   "engine": {
     "minimumVersion": "1.14.0",
-    "generatorIdentity": "shin-generator-v23-unicode-lexical"
+    "generatorIdentity": "shin-generator-v24-objective-cpp"
   },
   "profile": {
     "id": "fixture",

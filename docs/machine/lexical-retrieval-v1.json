@@ -78,12 +78,12 @@
   },
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v23-unicode-lexical",
+    "generator": "shin-generator-v24-objective-cpp",
     "format": "shin.lexical.v1",
     "evidenceRowsChanged": false,
     "installed": false,
     "formatImplementation": "src/generation.cpp",
-    "compatibility": "current Unicode generator only; rebuild previous indexes"
+    "compatibility": "current generator only; rebuild previous indexes"
   },
   "prefixCompletion": {
     "activation": "Disabled for ordinary public query construction. Query length never changes exact lexical terms into prefix matches.",
@@ -115,9 +115,9 @@
   },
   "unicodePublication": {
     "status": "unreleased",
-    "generator": "shin-generator-v23-unicode-lexical",
+    "generator": "shin-generator-v24-objective-cpp",
     "format": "shin.lexical.v1",
-    "compatibility": "One current reader/writer. v21/v22 retrieval is rejected; there is no legacy JSONL/TSV term reader or writer. Raw prior manifest integrity/ownership may be inspected only to authorize rebuilding from current approved sources.",
+    "compatibility": "One current reader/writer. Older generator retrieval is rejected; there is no legacy JSONL/TSV term reader or writer. Raw prior manifest integrity/ownership may be inspected only to authorize rebuilding from current approved sources.",
     "rebuild": "The normal granted or bootstrap publisher detects generator drift, qualifies a fresh candidate and atomically publishes it. No old lexical data conversion, manual index repair, grant takeover or history deletion. Failed preparation preserves the current publication and reports the failure. Standalone Core requires an explicit build.",
     "coverage": "Request terms, profile aliases, generated keys, full-text matching and disk/resident readers share normalization. Original paths, source bytes, hashes, line ranges and provenance remain unchanged. Unicode support does not translate queries, strip accents, equate visually confusable scripts or segment arbitrary natural-language sentences.",
     "limits": "Existing 128-byte lexical keys, candidate ceilings, output limits and source boundaries remain in force. Non-ASCII single-letter terms can be meaningful; prefix completion still requires four letters/numbers.",

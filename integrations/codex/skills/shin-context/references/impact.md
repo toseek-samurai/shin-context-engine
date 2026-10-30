@@ -1,6 +1,6 @@
 # Change-Aware Impact
 
-Use a current `shin-generator-v23-unicode-lexical` publication.
+Use a current `shin-generator-v24-objective-cpp` publication.
 Older indexes are not readable and require an authorized rebuild of the same
 canonical output. A read does not migrate or manually rebuild a managed index.
 

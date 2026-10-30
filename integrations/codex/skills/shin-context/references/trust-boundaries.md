@@ -78,7 +78,7 @@ resulting output and run the required strict checks; retrieval, `ready`,
 
 ## Generator Compatibility
 
-The current generator is `shin-generator-v23-unicode-lexical`. Older indexes
+The current generator is `shin-generator-v24-objective-cpp`. Older indexes
 are not readable. A read never rebuilds a publication. Unsupported formats
 require an authorized rebuild
 with the current binary at the same canonical external index, preserving the

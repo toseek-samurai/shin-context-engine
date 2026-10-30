@@ -26,7 +26,7 @@ resolved Core contract directory. In this workflow:
   never repairs or publishes it. Observer refreshes managed publications; an
   explicitly unmanaged output requires authorized Core publication and the
   consumer's strict validation route.
-- The current generator is `shin-generator-v23-unicode-lexical`. Older indexes
+- The current generator is `shin-generator-v24-objective-cpp`. Older indexes
   are not readable. A reader never rebuilds a publication. Unsupported formats
   require an authorized rebuild with the
   current binary at the same canonical external index, preserving publisher

@@ -91,6 +91,33 @@ public:
     std::vector<Json> rows;
 };
 
+void objective_c_bodies(const fs::path& parent) {
+    Fixture fixture(parent);
+    fixture.options.profile.source_fact_extensions = {".mm", ".h"};
+    const std::string body = "- (int)render:(int)value {\r\n return value + 1;\r\n}\r\n";
+    const std::string native = "@implementation Panel\r\n" + body + "@end\r\n";
+    const std::string fragment_body = "- (void)connect:(id)sender {\r\n (void)sender;\r\n}\r\n";
+    fixture.write("src/native.mm", native);
+    fixture.write("src/implementation.h", "// included inside an implementation\r\n" + fragment_body);
+    fixture.publish();
+    const auto snapshot = GeneratedSnapshot::load(fixture.options);
+    RetrievalSession disk(fixture.options, RetrievalSessionOpenMode::verified_snapshot), resident(snapshot, false);
+    for (const auto* path : {"src/native.mm", "src/implementation.h"})
+        expect(disk.inspect(path) == resident.inspect(path), "Objective-C++ outline cold/warm parity");
+    const auto request = fixture.request(disk, {fixture.id("render:"), fixture.id("connect:")});
+    const auto response = disk.read(request.dump());
+    expect(response == resident.read(request.dump()) && response.at("complete") == true,
+           "Objective-C++ read cold/warm parity");
+    const auto& evidence = response.at("evidence");
+    expect(evidence.at("bodies")[0].at("text") == body &&
+           evidence.at("bodies")[1].at("text") == fragment_body, "original Objective-C++ method bytes and ranges");
+    for (const auto& row : evidence.at("records"))
+        expect(row.at("range_origin") == "syntax" && row.at("verification_level") == "source-observed",
+               "Objective-C++ source provenance");
+    expect(fixture.id("render:").ends_with("-b" + std::to_string(native.find("render:"))),
+           "Objective-C++ fact identity uses the original name offset");
+}
+
 void exact_bodies(const fs::path& parent) {
     Fixture fixture(parent);
     const std::string first = "int alpha() {\r\n return 3; // quote: \" and \\ and \t\r\n}\r\n";
@@ -431,6 +458,7 @@ int main(int argc, char** argv) {
     try {
         if (argc != 2) throw std::runtime_error("expected fixture parent");
         shin::context::exact_bodies(argv[1]);
+        shin::context::objective_c_bodies(argv[1]);
         shin::context::request_checks(argv[1]);
         shin::context::selected_snapshot(argv[1]);
         shin::context::range_and_path_safety(argv[1]);

@@ -62,14 +62,14 @@
     "sourceExtensions": [
       ".cpp",
       ".h",
-      ".py"
+      ".py",
+      ".mm"
     ],
     "unsupportedSourceExtensions": [
-      ".mm",
       ".inc"
     ],
     "runtimeOwner": "observer",
     "releaseGateRequired": true,
-    "coverageBoundary": "Includes colocated C++ and Python UI fixtures. Objective-C++ hosts and include fragments require direct reads; this profile does not claim syntax facts for them."
+    "coverageBoundary": "Includes C++, Python and Objective-C++ UI sources, including Cocoa method implementations in .h fragments. Arbitrary .inc fragments still require direct reads. Syntax facts are source observations, not compiler or runtime proof."
   }
 }

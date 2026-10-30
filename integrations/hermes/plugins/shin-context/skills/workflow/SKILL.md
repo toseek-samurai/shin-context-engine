@@ -14,7 +14,7 @@ metadata:
 Use Shin first for unfamiliar code; read known files directly.
 Read [reader selection](references/source-verification.md#choosing-the-right-reader) for context/read recovery.
 
-Require Shin v2.0.0 or newer with `shin-generator-v23-unicode-lexical`.
+Require Shin v2.0.0 or newer with `shin-generator-v24-objective-cpp`.
 Older indexes require rebuilding. Local use needs no login. Configure native MCP separately;
 a Python plugin does not replace it.
 

@@ -1,0 +1,40 @@
+{
+  "schemaVersion": 1,
+  "name": "tree-sitter-objcpp",
+  "repository": "https://tangled.org/dunkirk.sh/dots",
+  "version": "0.1.0",
+  "commit": "f744aa49e05971a2177f9b993f81a494744df7f5",
+  "subdirectory": "packages/tree-sitter-objcpp",
+  "license": "MIT",
+  "vendoredPaths": [
+    "src/parser.c",
+    "src/scanner.c",
+    "src/grammar.json",
+    "src/node-types.json",
+    "src/tree_sitter/parser.h",
+    "src/tree_sitter/array.h",
+    "src/tree_sitter/alloc.h",
+    "tree-sitter.json"
+  ],
+  "generation": {
+    "tool": "tree-sitter CLI",
+    "version": "0.25.10",
+    "abi": 15,
+    "input": "src/grammar.json",
+    "command": "tree-sitter generate src/grammar.json --abi 15",
+    "note": "Parser regenerated from pinned upstream grammar JSON; no local grammar changes."
+  },
+  "localPatches": [
+    "Explicit void parameter in the C11 scanner factory prototype"
+  ],
+  "sourceSha256BeforeLocalPatches": {
+    "src/parser.c": "49515c693b19a28e91800579e7e4bdab1c52c8dc45911da45abec8d28cf28e69",
+    "src/scanner.c": "e1a4a57e8d2239d8399393d14fc9c3a4826bf0a38145a082726b8b0d61ad62ff",
+    "src/grammar.json": "7285cbfd13bdfb35016b21c61e6c84b150b5f0df4b36d8d216e7823d189a6007",
+    "src/node-types.json": "05daf648c8d9542fff240bef8c3615484a4bea381ab84a4f9db32667d7c0ce99",
+    "src/tree_sitter/parser.h": "180b893c8734778fd32f372dfbc27bd6ad1cd2221f26150b31256ff6716320d2",
+    "src/tree_sitter/array.h": "5bdf6ed1a78e3409fd443e085ca967a64c188a5d082aaf7f819bccd53a471c94",
+    "src/tree_sitter/alloc.h": "b29c1c9fb7cc82f58c84b376df1297d6e2737a1d655fd356db0859e3c29c2fea",
+    "tree-sitter.json": "ee7c934e2832f9add14b086169397d04d459dfcecff7284daeb88e89da6c676c"
+  }
+}

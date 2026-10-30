@@ -26,6 +26,13 @@ No Python or JavaScript runtime is required to run the TUI.
 
 ## Core
 
+Core observes Objective-C (`.m`), Objective-C++ (`.mm`) and Cocoa headers through
+a vendored C11 Tree-sitter grammar. Indexing these files needs no Cocoa SDK or
+Objective-C compiler, and works independently of building the macOS application.
+The `generic-cpp` and `generic-source` profiles include them automatically;
+custom profiles must allow the relevant extensions. Ordinary C++ retains its
+existing parser. See the [syntax scope and limits](machine/source-member-ranges-v1.json).
+
 Run from the source checkout with an explicit external build directory:
 
 ```sh

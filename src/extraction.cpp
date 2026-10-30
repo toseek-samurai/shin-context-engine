@@ -1440,7 +1440,7 @@ static bool is_typescript_javascript_extension(std::string_view extension) {
 
 static bool is_cpp_extension(std::string_view extension) {
     static const std::set<std::string_view> extensions = {
-        ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp"
+        ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".inl", ".ipp", ".m", ".mm"
     };
     return extensions.contains(extension);
 }
@@ -1615,6 +1615,8 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
             } else if (is_typescript_javascript_extension(ext)) {
                 language = "ts";
                 scan_typescript_source_facts(profile, path, lines, rows);
+            } else if (ext == ".m" || ext == ".mm") {
+                language = ext == ".m" ? "objc" : "objcpp";
             } else if (is_cpp_extension(ext)) {
                 language = "cpp";
                 scan_cpp_source_facts(profile, path, lines, rows);
@@ -1624,7 +1626,7 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
         }
     }
     if (!language.empty()) {
-        if (language == "java" || language == "ts" || language == "cpp") {
+        if (language == "java" || language == "ts" || language == "cpp" || language == "objc" || language == "objcpp") {
             apply_syntax_source_facts(profile, path, content, lines, language, rows, relations);
         }
         enrich_language_source_facts(profile, path, language, lines, rows);

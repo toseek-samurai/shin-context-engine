@@ -30,8 +30,9 @@ Self-development scopes are declared by the
 [component profile contract](machine/shin-component-profiles-v1.json). UI work
 uses `shin-ui`: terminal, shared presentation helpers, supported Monitor sources
 and colocated fixtures. CI checks the complete eligible UI inventory as well as
-retrieval gates. Native Objective-C++ hosts and include fragments still require
-direct reads; declaring an extension is not parser support. For MCP, verify the
+retrieval gates. Current Core source supports native Objective-C++ hosts and
+Cocoa method implementations in `.h` fragments. Arbitrary `.inc` fragments still
+require direct reads; declaring an extension is not parser support. For MCP, verify the
 exact checkout root independently: a passing self-profile does not enroll a
 worktree or change an existing connection.
 

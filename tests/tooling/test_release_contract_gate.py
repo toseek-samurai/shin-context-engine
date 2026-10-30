@@ -247,7 +247,7 @@ class ReleaseContractGateTests(unittest.TestCase):
         for relative in (codex, hermes):
             text = (self.root / relative).read_text(encoding="utf-8")
             (self.root / relative).write_text(
-                text.replace("shin-generator-v23-unicode-lexical", "shin-generator-v22-compact-lexical"),
+                text.replace("shin-generator-v24-objective-cpp", "shin-generator-v22-compact-lexical"),
                 encoding="utf-8",
             )
             self.run_gate(setup_error="integration skills must retain approved per-client minimums")

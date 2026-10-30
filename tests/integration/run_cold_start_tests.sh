@@ -106,6 +106,11 @@ validate_source_profile node generic-node "loadAccount arrow function" \
   "src/account.ts" "ts-arrow-function" "DependencyNoise"
 validate_source_profile cpp generic-cpp "load_account cpp function" \
   "src/account.cxx" "cpp-function" "dependency_noise"
+validate_source_profile objc generic-cpp "showAccount" \
+  "src/Controller.mm" "objcpp-method" ""
+assert_contains "$work_root/out-objc/docs/kb/generated/facts.jsonl" 'objc-property'
+assert_contains "$work_root/out-objc/docs/kb/generated/facts.jsonl" 'objcpp-function'
+assert_not_contains "$work_root/out-objc/docs/kb/generated/facts.jsonl" 'syntax-incomplete'
 validate_source_profile dotnet generic-dotnet "LoadAccount csharp method" \
   "src/AccountService.cs" "csharp-method" "GeneratedNoise"
 validate_source_profile retool generic-retool "ColdStartQuery JavascriptQuery query" \

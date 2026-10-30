@@ -76,6 +76,8 @@ for required in \
   "$share_root/licenses/simdjson/LICENSE-MIT" \
   "$share_root/licenses/tree-sitter-cpp/LICENSE" \
   "$share_root/licenses/tree-sitter-cpp/UPSTREAM.json" \
+  "$share_root/licenses/tree-sitter-objcpp/LICENSE" \
+  "$share_root/licenses/tree-sitter-objcpp/UPSTREAM.json" \
   "$share_root/codex/skills/shin-context/SKILL.md" \
   "$share_root/codex/skills/shin-context/references/trust-boundaries.md" \
   "$share_root/codex/skills/shin-context/agents/openai.yaml" \
@@ -152,7 +154,7 @@ if [[ "$expected_version" == *-dev.* || "$expected_version" == *-rc.* ]]; then
 fi
 "$tool" --version >"$work_root/version.json"
 "$jq_bin" -e --arg version "$expected_version" \
-  '.ok == true and .version == $version and .generator_version == "shin-generator-v23-unicode-lexical"' \
+  '.ok == true and .version == $version and .generator_version == "shin-generator-v24-objective-cpp"' \
   "$work_root/version.json" >/dev/null
 
 project_root="$work_root/project"
@@ -238,7 +240,7 @@ context_epoch="portable-shin-v1.19-2026-08-18"
     status: "active",
     summary: "Portable fixture adopts Shin after the staged prefix is relocated.",
     project: {id: "portable-node", contextEpoch: $epoch, rootPolicy: "cli-root"},
-    engine: {minimumVersion: $version, generatorIdentity: "shin-generator-v23-unicode-lexical"},
+    engine: {minimumVersion: $version, generatorIdentity: "shin-generator-v24-objective-cpp"},
     profile: {
       id: "portable-node",
       registry: "explicit-profile-dir",

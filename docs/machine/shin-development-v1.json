@@ -16,8 +16,8 @@
     "maintenance": "The compatibility baseline identifies contract provenance only. It does not qualify current public source or delivery."
   },
   "developmentLane": {
-    "coreVersion": "2.0.5-dev.11",
-    "observerSourceVersion": "2.0.5-dev.66",
+    "coreVersion": "2.0.5-dev.12",
+    "observerSourceVersion": "2.0.5-dev.67",
     "artifactRetention": {
       "policy": "Generated build outputs and measurements are disposable unless explicitly retained by a separate reviewed process.",
       "releaseClaim": false
@@ -32,7 +32,7 @@
       "releaseApproved": false,
       "qualification": "A candidate requires the complete closure defined by shin-release-closure-v1."
     },
-    "coreGenerator": "shin-generator-v23-unicode-lexical",
+    "coreGenerator": "shin-generator-v24-objective-cpp",
     "contractBaselineVersion": "2.0.4",
     "contractBaselineGenerator": "shin-generator-v21-cpp-syntax",
     "contractBaselinePolicy": "Historical compatibility baseline identity only; it is not current release evidence.",

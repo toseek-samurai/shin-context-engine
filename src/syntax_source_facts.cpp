@@ -50,21 +50,24 @@ void set_syntax_range(FactRow& row, const SyntaxDeclaration& declaration) {
 
 void apply_syntax_source_facts(const Profile& profile, const std::string& path,
                                const std::string& content, const std::vector<std::string>& lines,
-                               const std::string& language, std::vector<FactRow>& rows,
+                               std::string& language, std::vector<FactRow>& rows,
                                SourceRelationInputs& relations) {
     const SyntaxFacts syntax = inspect_source_syntax(content, extension_of(path));
     if (!syntax.supported) return;
+    const bool cpp_family = language == "cpp" || language == "objc" || language == "objcpp";
     const bool lexical_only = !syntax.complete && syntax.error_nodes == 0 && syntax.declarations.empty();
     if (!lexical_only) {
         std::erase_if(rows, [&](const FactRow& row) { return row.path == path &&
-            (primary_ts_declaration(row) || (language == "cpp" && primary_cpp_declaration(row))); });
+            (primary_ts_declaration(row) || (cpp_family && primary_cpp_declaration(row))); });
     }
+    if (!syntax.language.empty()) language = syntax.language;
     // Retain export/test retrieval metadata, but never infer its body by looking for the next brace.
     for (FactRow& row : rows) {
-        if (row.path != path || row.source != "source-fact:" + language) continue;
+        if (row.path != path || (row.source != "source-fact:" + language &&
+            !(cpp_family && row.source == "source-fact:cpp"))) continue;
         row.range_origin = "lexical";
         for (const SyntaxDeclaration& declaration : syntax.declarations) {
-            if (language == "cpp") break;
+            if (cpp_family) break;
             if (row.symbol_name == declaration.name && row.line >= declaration.start_line &&
                 row.line <= declaration.line) {
                 set_syntax_range(row, declaration);
@@ -80,19 +83,20 @@ void apply_syntax_source_facts(const Profile& profile, const std::string& path,
                 (row.record_type == "ts-hook" || row.record_type == "ts-component");
         });
         if (declaration.kind != "arrow-function" || existing == rows.end()) {
-            const std::string header = language == "cpp" ? declaration.header : preview_from_line_range(lines,
+            const std::string header = cpp_family ? declaration.header : preview_from_line_range(lines,
                 static_cast<std::size_t>(declaration.start_line - 1),
                 static_cast<std::size_t>(declaration.line), 420);
             add_source_fact_row(rows, profile, path, declaration.line, language, declaration.kind,
                                 declaration.name, header);
             set_syntax_range(rows.back(), declaration);
-            if (language == "cpp") {
+            if (cpp_family) {
                 rows.back().id += "-b" + std::to_string(declaration.byte_offset);
                 const auto& qualified = declaration.qualified_name;
                 if (!qualified.empty() && qualified.size() <= 128 &&
-                    std::all_of(qualified.begin(), qualified.end(), [](unsigned char c) {
+                    std::all_of(qualified.begin(), qualified.end(), [objc = language != "cpp"](unsigned char c) {
                         return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z') ||
-                            (c >= '0' && c <= '9') || c == '_' || c == ':';
+                            (c >= '0' && c <= '9') || c == '_' || c == ':' ||
+                            (objc && (c == '+' || c == '-' || c == '(' || c == ')'));
                     }))
                     rows.back().identifier_terms.push_back(declaration.qualified_name);
             }

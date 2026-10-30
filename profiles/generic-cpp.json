@@ -2,9 +2,9 @@
   "schemaVersion": "shin.profile.v1",
   "document": "shin-profile-generic-cpp",
   "status": "active",
-  "summary": "Bootstrap-only C and C++ source profile for projects without established machine documentation.",
+  "summary": "Bootstrap-only C, C++, Objective-C and Objective-C++ source profile for projects without established machine documentation.",
   "id": "generic-cpp",
-  "sourceLabel": "C and C++ bootstrap source evidence",
+  "sourceLabel": "C-family bootstrap source evidence",
   "rootFiles": [],
   "optionalRootFiles": [
     "README.md",
@@ -16,7 +16,7 @@
   ],
   "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
   "sourceFactRoots": ["."],
-  "sourceFactExtensions": [".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl"],
+  "sourceFactExtensions": [".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl", ".m", ".mm"],
   "sourceFactExtractors": ["language"],
   "sourceFactMaxFiles": 10000,
   "sourceFactMaxFileBytes": 1048576,
@@ -31,8 +31,8 @@
   "topicRules": [
     {
       "id": "cpp-source",
-      "description": "C and C++ namespaces, types, functions, headers, and implementation units.",
-      "keywords": ["cpp", "namespace", "class", "struct", "enum", "function", "header"]
+      "description": "C-family types, functions, headers, Objective-C owners, selectors and implementation units.",
+      "keywords": ["cpp", "objective-c", "namespace", "class", "struct", "enum", "function", "header", "selector", "property"]
     },
     {
       "id": "build",

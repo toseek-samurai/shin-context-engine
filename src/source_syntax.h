@@ -27,6 +27,8 @@ struct SyntaxImport {
 
 struct SyntaxFacts {
     bool supported = false;
+    // Actual syntax route; Objective-C-family headers can differ from their suffix.
+    std::string language;
     // False means parsing or bounded traversal did not observe a complete tree.
     bool complete = false;
     // Count observed during cursor traversal; it can be a lower bound when complete is false.

@@ -234,7 +234,7 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
                                  std::vector<FactRow>& rows, SourceRelationInputs& relations);
 void apply_syntax_source_facts(const Profile& profile, const std::string& path,
                                const std::string& content, const std::vector<std::string>& lines,
-                               const std::string& language, std::vector<FactRow>& rows,
+                               std::string& language, std::vector<FactRow>& rows,
                                SourceRelationInputs& relations);
 void scan_retool_source_facts(const Profile& profile,
                               const fs::path& root,

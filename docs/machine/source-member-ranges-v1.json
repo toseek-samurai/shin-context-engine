@@ -41,7 +41,13 @@
         "license": "MIT"
       },
       "vendorBoundary": "The grammars and runtime are vendored under third_party and built into the syntax library. Tree-sitter Unicode data carries the ICU/Unicode data license and notices in third_party/tree-sitter/src/unicode/LICENSE.",
-      "noNetwork": true
+      "noNetwork": true,
+      "objectiveCpp": {
+        "name": "tree-sitter-objcpp",
+        "version": "0.1.0",
+        "commit": "f744aa49e05971a2177f9b993f81a494744df7f5",
+        "license": "MIT"
+      }
     },
     "extensions": {
       "java": [
@@ -70,7 +76,13 @@
         ".ipp",
         ".inl"
       ],
-      "unsupportedBySyntaxParser": "All other extensions, including .c, use the existing source-fact path or are outside this syntax contract. Native C++ scope is qualified separately above."
+      "unsupportedBySyntaxParser": "Other extensions, including .c, use their existing source-fact path or remain outside this syntax contract. Objective-C-family header selection is specified above.",
+      "objectiveC": [
+        ".m"
+      ],
+      "objectiveCpp": [
+        ".mm"
+      ]
     },
     "validDeclarations": {
       "java": [
@@ -101,7 +113,16 @@
       "javaTopLevel": "top_level is true only when a Java declaration node is directly under program. It controls qualified-type relation bindings; it does not mean that all emitted Java methods or constructors are top-level.",
       "malformedOrCapped": "complete=false means parsing or bounded cursor traversal did not observe a complete tree. Valid observed declarations may still be emitted, plus a syntax-incomplete fact; completeness is not inferred from an absence of error nodes alone.",
       "overcapOrCancelledWithoutErrors": "When traversal is over cap or cancelled without error nodes and no declarations were observed, existing TypeScript/JavaScript legacy header facts retain range_origin=lexical and syntax-incomplete is emitted; no fake precise syntax range is created.",
-      "actualSyntaxErrors": "When malformed syntax produces error nodes, valid declarations from the observed error-free CST portions are preserved only, while invalid nodes are not emitted as precise declarations."
+      "actualSyntaxErrors": "When malformed syntax produces error nodes, valid declarations from the observed error-free CST portions are preserved only, while invalid nodes are not emitted as precise declarations.",
+      "objectiveC": [
+        "interface",
+        "implementation",
+        "protocol",
+        "category",
+        "extension",
+        "property",
+        "method"
+      ]
     },
     "headersAndImports": {
       "javaPackage": "The first valid package declaration yields a package fact and package_line.",
@@ -118,6 +139,16 @@
       ],
       "mode": "existing lexical source-fact extraction",
       "guarantee": "These languages do not receive Tree-sitter exact declaration ranges from this contract. Their lexical ranges remain source observations and can be incomplete or broader than a compiler declaration. The development-only C++ extension is owned by nativeCppDevelopment; older release baselines remain historical."
+    },
+    "nativeObjectiveCDevelopment": {
+      "introducedIn": "Core 2.0.5-dev.12; shin-generator-v24-objective-cpp",
+      "grammar": "tree-sitter-objcpp 0.1.0, pinned f744aa49e05971a2177f9b993f81a494744df7f5; MIT; vendored C11, ABI15. No Cocoa SDK or Objective-C compiler dependency.",
+      "scope": "Objective-C .m and mixed Objective-C++ .mm. Observes interfaces, implementations, protocols, categories, extensions, properties, complete method selectors, and ordinary C++ declarations. Message sends are not definitions. Quoted literal local #import/#include targets remain candidates subject to existing project-owned relation validation; system and macro imports are not resolved.",
+      "headers": "Valid C++ .h/.hh/.hpp/.hxx retain the C++ parser. On syntax errors only, the Objective-C++ grammar may be selected when actual Objective-C constructs are observed. Implementation fragments may use an internal implementation envelope only when that parse is complete and real methods/properties exist. Envelope coordinates are deleted before traversal; its empty name emits no declaration or owner. The original source alone determines names, byte offsets, physical lines and chunk coverage.",
+      "identity": "objc-/objcpp- source facts use the existing row schema and name byte-offset suffix. Class and instance selector scopes are retained in syntactic qualified terms. Declaration and implementation, including same-line names, retain distinct identities. Selectors preserve every keyword and colon; headers exclude method bodies.",
+      "bounds": "Existing 1 MiB source, 200000 syntax-node, parser-progress and 64-level owner/declarator limits remain. Header retries share the same progress and traversal budgets. Source fragments are bounded by the same caps with only a constant parser envelope.",
+      "limits": "Syntactic source observation only: no preprocessing, SDK lookup, type checking or call resolution. Upstream grammar does not cover structured bindings or lambda init-captures in Objective-C++; malformed or unsupported syntax remains explicit as syntax-incomplete. Ordinary C++ retains its established grammar.",
+      "compatibility": "One current reader/writer. Rebuild older indexes explicitly; no compatibility reader or implicit conversion. This source change does not update an installed kit or enrolled project."
     }
   },
   "parserLimits": {

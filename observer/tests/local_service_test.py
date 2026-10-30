@@ -84,8 +84,8 @@ class LocalServiceTests(unittest.TestCase):
         workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
         manifest = workspace / 'index/docs/kb/generated/manifest.json'
         original = manifest.read_text()
-        self.assertIn('shin-generator-v23-unicode-lexical', original)
-        prior = original.replace('shin-generator-v23-unicode-lexical', 'shin-generator-v22-compact-lexical')
+        self.assertIn('shin-generator-v24-objective-cpp', original)
+        prior = original.replace('shin-generator-v24-objective-cpp', 'shin-generator-v22-compact-lexical')
         manifest.write_text(prior)
         value = 1469598103934665603
         for byte in prior.encode():
@@ -103,7 +103,7 @@ class LocalServiceTests(unittest.TestCase):
         self.assertTrue(response['ok'], response)
         self.assertIn('return 7;', response['result']['source_context'])
         current = json.loads(manifest.read_text())
-        self.assertEqual(current['generator_version'], 'shin-generator-v23-unicode-lexical')
+        self.assertEqual(current['generator_version'], 'shin-generator-v24-objective-cpp')
         self.assertEqual(json.loads(binding_path.read_text())['generator_version'], current['generator_version'])
         self.assertEqual(sentinel.read_text(), 'not derived from project sources')
         self.assertEqual(before_sources, self.file_map(self.root))

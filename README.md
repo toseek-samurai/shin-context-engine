@@ -2,31 +2,48 @@
 
 [![Source qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml)
 
-**Keep project context current. Give coding agents evidence they can inspect.**
+**Fresh code and documentation context for coding agents.**
 
-Shin indexes your project's source and documentation, watches for changes, and
-returns focused context through a native CLI or MCP. Results carry a snapshot
-that the client can use to inspect and read the matching source.
+Shin indexes your project locally, watches for changes, and returns focused
+context through **MCP or a native CLI**. Its C++ engine needs no account, model
+download, or cloud inference API for local retrieval.
 
-The local macOS kit includes the background service and **Shin Monitor**, a menu
-bar app for project health, request history, timings, storage, and optional model
-usage. Prefer a terminal? `shin-ce stats` opens an interactive monitor with the same
-project states and timing calculations. Local retrieval needs no account, model
-download, or cloud inference API.
+Use it to find unfamiliar code, retrieve related documentation, and pick up a
+task with evidence your agent can inspect. Query results carry a snapshot that
+binds subsequent inspection and reads to the matching source.
 
-**Development preview:** the source is available for review and testing.
-There is no stable release yet. Development focuses on the portable local engine,
-its CLI and MCP integrations, and the Monitor interface.
+[Download preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66) ·
+[macOS setup](#get-started-on-macos) · [Windows setup](docs/windows-desktop.md#download-a-preview) ·
+[Linux / WSL2](docs/building.md#linux-and-wsl2-terminal-tools) ·
+[Connect your coding agent](docs/native-client-setup.md)
 
-[Get started](#get-started-on-macos) · [CLI guide](docs/cli.md) ·
-[Connect an MCP client](docs/native-client-setup.md) ·
-[Build from source](docs/building.md) · [Windows source status](docs/windows-desktop.md) ·
-[Architecture](docs/architecture.md)
+**Development preview:** macOS Apple Silicon and Windows x64 packages are
+available; Linux and WSL2 build from source. There is no stable release yet.
+Platform capabilities differ; see the [component table](#choose-the-component-you-need)
+and [Windows scope](docs/windows-desktop.md).
 
 [Report a bug or suggest a feature](https://github.com/toseek-samurai/shin-context-engine/issues/new/choose) ·
-[Contribute](CONTRIBUTING.md)
+[CLI guide](docs/cli.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
+
+## From a question to source
+
+After adding a project through the setup guide above, ask your connected agent
+to use Shin, or run a query from the project's directory:
+
+```sh
+shin-ce query "Where are requests validated?"
+```
+
+Follow the returned paths and snapshot with `inspect` and `read` to examine the
+matching source. The same evidence flow is available through MCP; your agent
+can fetch context when it needs it. See the [inspection commands](docs/cli.md#inspect-evidence).
 
 ## See your project's state
+
+**Shin Monitor** shows project readiness, request history, timings, storage and
+optional model usage. The macOS kit includes a menu bar app; the Windows preview
+includes its native desktop host. On macOS and Linux, `shin-ce stats` opens the
+Sand terminal monitor with the same project states and timing calculations.
 
 <p>
   <img src="docs/images/monitor-overview.png" width="400" alt="Overview explains project readiness, offers a review action and keeps the memory line graph">
@@ -147,8 +164,9 @@ project data and restores the previous kit if activation fails.
 | Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66) and [development checks](docs/building.md#native-windows-development-builds) |
 
 Windows support adds platform adapters to the same Core, profiles and protocols.
-Its source checks do not qualify a Windows installer or imply feature parity;
-see the [Windows scope and remaining gates](docs/windows-desktop.md).
+Published ZIP/MSI previews pass the matching CI matrix and exact-package checks;
+see the [Windows scope and remaining gates](docs/windows-desktop.md) for the
+distinction between hosted checks, interactive tests and installation lifecycle.
 Linux desktop packaging and macOS Intel package
 qualification remain pending. Configuring an AI client may send the context it retrieves to that
 client's chosen model provider.
@@ -165,5 +183,5 @@ and [private security reporting](SECURITY.md).
 <p align="center">
   <a href="docs/local-kit.md"><img src="docs/images/platform-macos.svg" width="230" height="56" alt="macOS 15+ Apple Silicon — preview binary kit"></a>
   <a href="docs/building.md#linux-and-wsl2-terminal-tools"><img src="docs/images/platform-linux.svg" width="230" height="56" alt="Linux and WSL2 — build from source"></a>
-  <a href="docs/windows-desktop.md"><img src="docs/images/platform-windows.svg" width="230" height="56" alt="Windows x64 — development source build; installer qualification pending"></a>
+  <a href="docs/windows-desktop.md"><img src="docs/images/platform-windows.svg" width="230" height="56" alt="Windows x64 — ZIP/MSI desktop preview; see platform scope"></a>
 </p>

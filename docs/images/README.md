@@ -101,3 +101,21 @@ file paths or inherited EXIF/XMP metadata. The original pixel stream is preserve
 project-authored vector badges for the README footer. Each links to the relevant
 installation or build guide and distinguishes binary previews from source builds.
 They contain no remote resources, scripts, screenshots or embedded fonts.
+
+## Repository social preview
+
+`social-preview.png` is the 1280×640 Sand card used by GitHub when a repository
+link is shared. It is project artwork, not an application screenshot or a
+performance measurement. Its PNG metadata identifies Shin Context Engine,
+Anton Petropavlovskiy and Apache-2.0; it contains no inherited EXIF or XMP.
+
+The editable source is `social-preview.svg`, which references the unchanged
+`shin-logo.png` in this directory. It uses Avenir Next when available, with
+Segoe UI and sans-serif fallbacks; fonts are not embedded or fetched remotely.
+To regenerate, serve this directory locally, open the SVG in a browser and
+export its exact 1280×640 canvas, excluding browser chrome and page margins.
+Inspect the result and keep the PNG below GitHub's 1 MB upload limit.
+
+Set the exported PNG in **Repository Settings → General → Social preview**.
+The source image and GitHub's preview are independent: a Git commit alone does
+not update the repository's Social preview setting.

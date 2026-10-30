@@ -4,6 +4,13 @@ The project-owned tap distributes the complete macOS preview: Core, Observer,
 CLI, MCP, usage collector, Sand TUI and Shin Monitor. The first package builds
 from a pinned source release on your Mac. It needs Homebrew's build tools and
 can take several minutes; no Python or Node runtime is required afterward.
+The selected Apple toolchain must provide C++20 `std::jthread` and `std::stop_token`:
+use Command Line Tools for Xcode 26 or newer, or a current full Xcode installation.
+On macOS 15, apply current system updates if those tools are unavailable. The formula
+checks this before compiling the engine and explains how to update an older toolchain.
+If Homebrew requests full Xcode while older CLT are installed, updating the CLT to
+version 26 or newer also satisfies the requirements. With older CLT and current
+Xcode installed together, the formula selects the current Xcode SDK.
 Local compilation does not require an Apple Developer Program membership.
 The current package targets macOS 15 or newer and is tested on Apple Silicon.
 

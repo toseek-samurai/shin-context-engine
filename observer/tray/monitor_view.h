@@ -496,7 +496,7 @@ void graph(const Json& samples, int mode, bool connected, float height = 112) {
     ImGui::PopFont();
 }
 
-struct UiAction { std::string label, project; ImVec2 origin, size; int chart = -1; bool enabled = true; bool informational = false; };
+struct UiAction { std::string label, project; ImVec2 origin, size; int chart = -1; bool enabled = true; bool informational = false; ImGuiID item_id = 0; };
 std::vector<UiAction> ui_actions;
 bool profile_accept_within_parent_clip = false;
 ImVec2 profile_accept_origin{}, profile_accept_size{}, profile_accept_clip_min{}, profile_accept_clip_max{};
@@ -609,7 +609,7 @@ void action_button(const std::string& label, int code, float width = -1, bool en
         const ImVec2 visible_min{std::max(item_min.x, clip_min.x), std::max(item_min.y, clip_min.y)};
         const ImVec2 visible_max{std::min(item_max.x, clip_max.x), std::min(item_max.y, clip_max.y)};
         if (visible_max.x > visible_min.x && visible_max.y > visible_min.y)
-            ui_actions.push_back({label, selected, visible_min, {visible_max.x - visible_min.x, visible_max.y - visible_min.y}, code, enabled});
+            ui_actions.push_back({label, selected, visible_min, {visible_max.x - visible_min.x, visible_max.y - visible_min.y}, code, enabled, false, ImGui::GetItemID()});
     }
     ImGui::EndDisabled();
     ImGui::PopID();
@@ -657,7 +657,7 @@ void view_tab(const char* label, int code, bool active, float width) {
         const auto clip_min = draw->GetClipRectMin(), clip_max = draw->GetClipRectMax();
         const ImVec2 lo{std::max(origin.x, clip_min.x), std::max(origin.y, clip_min.y)};
         const ImVec2 hi{std::min(origin.x + width, clip_max.x), std::min(origin.y + height, clip_max.y)};
-        if (hi.x > lo.x && hi.y > lo.y) ui_actions.push_back({label, "", lo, {hi.x - lo.x, hi.y - lo.y}, code});
+        if (hi.x > lo.x && hi.y > lo.y) ui_actions.push_back({label, "", lo, {hi.x - lo.x, hi.y - lo.y}, code, true, false, ImGui::GetItemID()});
     }
     ImGui::PopID();
 }
@@ -1392,8 +1392,9 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         action_button(shin::ui::tr("Connect agent…"), 116, half, view.connected && !root.empty()); ImGui::SameLine();
         action_button(shin::ui::tr("Project actions"), 84, half, view.connected && !root.empty() && !project_management_busy.load());
 #else
-        action_button(shin::ui::tr("Project history"), 34, half); ImGui::SameLine();
-        action_button(shin::ui::tr("Show project folder"), 38, half, !root.empty());
+        // The primary action already opens history for a healthy project.
+        // Keep each action once: duplicate labels/codes also collide in ImGui.
+        action_button(shin::ui::tr(healthy ? "Technical report" : "Project history"), healthy ? 39 : 34);
 #endif
     }
     const bool copied = diagnostic_copied != Clock::time_point{} && Clock::now() - diagnostic_copied < std::chrono::seconds(3);
@@ -1795,11 +1796,13 @@ void render_settings() {
 #if defined(__APPLE__)
     action_button(shin::ui::tr("Connect projects and agents…"), 85);
     action_button(shin::ui::tr("Storage and cleanup…"), 83);
-    action_button(shin::ui::tr("Check for updates…"), 110);
-    action_button(shin::ui::tr("Last update result…"), 111);
-    action_button(shin::ui::tr("Login settings…"), 112);
 #else
     ImGui::TextWrapped("%s", shin::ui::tr("Use the installed CLI to connect projects and manage the background service."));
+#endif
+    action_button(shin::ui::tr("Check for updates…"), 110);
+#if defined(__APPLE__)
+    action_button(shin::ui::tr("Last update result…"), 111);
+    action_button(shin::ui::tr("Login settings…"), 112);
 #endif
     action_button(shin::ui::tr("Choose agent history…"), 43);
     ImGui::Spacing();

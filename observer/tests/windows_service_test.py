@@ -156,8 +156,13 @@ def scenario(base):
         def probe():
             result = ce('query', 'quotaLimit', '--root', root, okay=False)
             if not result['ok']:
+                # A write can invalidate admission while the watch is checking
+                # a generation. Require refusal without context, then the fresh
+                # result within the original deadline; a stable failure times out.
+                assert 'source_context' not in result, result
                 assert result.get('error', {}).get('code') in {
-                    'project-updating', 'project-busy', 'service-busy', 'source-read-hash-mismatch'}, result
+                    'project-updating', 'project-busy', 'service-busy', 'source-read-hash-mismatch',
+                    'generation-admission-changed'}, result
                 return None
             return result if expected in result.get('source_context', '') else None
         return await_condition(probe, f'query {root.name}')

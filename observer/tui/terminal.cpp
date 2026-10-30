@@ -1,5 +1,6 @@
 #include "sand.h"
 #include "shin/observer/local_updates.h"
+#include "shin/observer/local_package.h"
 #include "../ui/language.h"
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_supervision.h"
@@ -207,6 +208,7 @@ private:
 
 namespace {
 UpdateOperation update_operation(const fs::path& home) {
+    if (homebrew_managed()) return {};
 #ifdef __APPLE__
     fs::path user;
     for (auto** item = environ; item && *item; ++item)

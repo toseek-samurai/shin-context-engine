@@ -12,7 +12,7 @@ Use it to find unfamiliar code, retrieve related documentation, and pick up a
 task with evidence your agent can inspect. Query results carry a snapshot that
 binds subsequent inspection and reads to the matching source.
 
-[Download preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66) ·
+[Download preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.69) ·
 [macOS setup](#get-started-on-macos) · [Windows setup](docs/windows-desktop.md#download-a-preview) ·
 [Linux / WSL2](docs/building.md#linux-and-wsl2-terminal-tools) ·
 [Connect your coding agent](docs/native-client-setup.md)
@@ -99,16 +99,30 @@ here is included in preview dev.66 and later.
 [All terminal screens, including Russian and compact layouts](docs/tui.md) ·
 [Keyboard controls and usage setup](docs/cli.md#interactive-terminal-monitor).
 
+## Install with Homebrew
+
+The project-owned tap builds the complete macOS preview, including Monitor,
+CLI/TUI and MCP:
+
+```sh
+brew install toseek-samurai/tap/shin-context-engine
+shin-monitor
+```
+
+The first installation builds from source and can take several minutes.
+[Homebrew setup, agent connections, upgrades and removal](docs/homebrew.md).
+Homebrew manages this package; use `brew upgrade` for updates.
+
 ## Get started on macOS
 
 The preview includes a first-run setup window, automatic agent connections
 and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.69)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.66/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.69/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it
@@ -161,7 +175,7 @@ project data and restores the previous kit if activation fails.
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS, Linux and native Windows x64 source builds; [build instructions](docs/building.md) |
 | Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | macOS and Linux source builds; [Linux/WSL instructions](docs/building.md#linux-and-wsl2-terminal-tools) |
-| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66) and [development checks](docs/building.md#native-windows-development-builds) |
+| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.69) and [development checks](docs/building.md#native-windows-development-builds) |
 
 Windows support adds platform adapters to the same Core, profiles and protocols.
 Published ZIP/MSI previews pass the matching CI matrix and exact-package checks;

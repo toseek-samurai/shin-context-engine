@@ -237,6 +237,23 @@
 }
 - (void)checkForUpdates:(id)sender { (void)sender; [self beginUpdateCheck:YES]; }
 - (void)beginUpdateCheck:(BOOL)manual {
+    if (shin::observer::homebrew_managed()) {
+        if (manual) {
+            NSAlert* alert = [NSAlert new];
+            alert.icon = NSApp.applicationIconImage;
+            alert.messageText = ui_text("Update with Homebrew");
+            alert.informativeText = [NSString stringWithFormat:@"%@\n\nbrew upgrade toseek-samurai/tap/shin-context-engine",
+                ui_text("Homebrew manages this installation. Quit Monitor and TUI before upgrading, then restart the background service and persistent MCP clients.")];
+            [alert addButtonWithTitle:ui_text("Close")];
+            [alert addButtonWithTitle:ui_text("Copy command")];
+            [NSApp activateIgnoringOtherApps:YES];
+            if ([alert runModal] == NSAlertSecondButtonReturn) {
+                [NSPasteboard.generalPasteboard clearContents];
+                [NSPasteboard.generalPasteboard setString:@"brew upgrade toseek-samurai/tap/shin-context-engine" forType:NSPasteboardTypeString];
+            }
+        }
+        return;
+    }
     if (manual) {
         [self showUpdateWindow];
         if (self.updateActionBusy) return;
@@ -266,12 +283,14 @@
 }
 - (void)toggleAutomaticUpdates:(id)sender {
     (void)sender;
+    if (shin::observer::homebrew_managed()) return;
     const BOOL disabled = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"];
     [[NSUserDefaults standardUserDefaults] setBool:!disabled forKey:@"ShinAutomaticUpdatesDisabled"];
     if (disabled) self.nextUpdateCheck = NSDate.date;
 }
 - (void)showLastUpdateResult:(id)sender { (void)sender; [self showUpdateResult]; }
 - (void)showUpdateResult {
+    if (shin::observer::homebrew_managed()) { [self beginUpdateCheck:YES]; return; }
     [self showUpdateWindow];
     if (self.updateActionBusy || self.updateScreen == UpdateScreen::resultLoading) return;
     [self setUpdatePending:NO];

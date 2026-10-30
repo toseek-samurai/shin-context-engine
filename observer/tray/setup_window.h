@@ -215,6 +215,10 @@
 }
 - (void)enableSetupLogin:(id)sender {
     (void)sender;
+    if (shin::observer::homebrew_managed()) {
+        self.setupStatus.stringValue = ui_text("For login startup, stop the session service and run: brew services start toseek-samurai/tap/shin-context-engine");
+        return;
+    }
     if (!self.setupLogin.enabled) return;
     self.setupLogin.enabled = NO; const NSUInteger epoch = self.setupEpoch;
     [self runCLI:@"service-install" arguments:@[] completion:^(Json result, NSString* failure) {

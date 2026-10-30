@@ -1,4 +1,5 @@
 #include "view.h"
+#include "shin/observer/local_package.h"
 #include "../ui/update_progress.h"
 
 #include "../ui/project_diagnostics.h"
@@ -159,6 +160,12 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
     if (state.tab == 6) {
         const auto& update = snapshot.updates;
         out.push_back({shin::ui::tr("Updates"), Tone::heading});
+        if (homebrew_managed()) {
+            out.push_back({shin::ui::tr("Update with Homebrew"), Tone::heading});
+            out.push_back({shin::ui::tr("Homebrew manages this installation. Quit Monitor and TUI before upgrading, then restart the background service and persistent MCP clients.")});
+            out.push_back({"brew upgrade toseek-samurai/tap/shin-context-engine"});
+            return out;
+        }
         if (update.phase == UpdatePhase::unsupported) {
             out.push_back({shin::ui::tr("Automatic release updates are currently available on macOS only."), Tone::warning});
             out.push_back({shin::ui::tr("For this platform, install a complete published kit using its installer.")});

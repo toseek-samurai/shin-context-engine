@@ -3,6 +3,7 @@
 #include "shin/observer/local_query.h"
 #include "shin/observer/local_changes.h"
 #include "shin/observer/local_registry.h"
+#include "shin/observer/local_package.h"
 #include "shin/observer/local_identity.h"
 #include "context_internal.h"
 #include "profile_policy.h"
@@ -230,7 +231,7 @@ void verify_binding(const Json& binding, const fs::path& root, const std::string
         binding.at("workspace_identity") != directory_identity(workspace, true))
         throw Error("binding-identity-changed", "Project directory or private binding identity changed.");
     const fs::path registry = binding.at("profile_dir").get<std::string>();
-    if (!registry.is_absolute() || registry.lexically_normal() != registry || fs::canonical(registry) != registry)
+    if (!registry.is_absolute() || registry.lexically_normal() != registry || package_profile_registry(registry) != registry)
         throw Error("binding-invalid", "Bound profile registry is not an existing canonical directory.");
 }
 
@@ -1316,9 +1317,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     if (initialize) check_local_identity(home,root);
     if (!loaded && !request.profile_dir) throw Error("profiles-unavailable", "Initial attachment requires bundled profiles.");
     const auto registry = loaded ? fs::path(loaded->at("profile_dir").get<std::string>()) :
-                                  fs::canonical(request.profile_dir.value());
+                                  package_profile_registry(request.profile_dir.value());
     if (overlaps(home, registry)) throw Error("unsafe-home", "Private state must be separate from the profile registry.");
-    if (loaded && request.profile_dir_explicit && request.profile_dir && fs::canonical(*request.profile_dir) != registry)
+    if (loaded && request.profile_dir_explicit && request.profile_dir && package_profile_registry(*request.profile_dir) != registry)
         throw Error("binding-profile-conflict", "An existing project cannot silently switch profile registries.");
     auto policy = core::inspect_profile_policy(root, registry, "generic-source",
         loaded ? std::optional<std::string>(loaded->at("profile_config_hash").get<std::string>()) : std::nullopt);

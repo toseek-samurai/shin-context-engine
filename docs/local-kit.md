@@ -1,5 +1,8 @@
 # Local macOS kit
 
+For a full source-built installation managed by Homebrew, use the
+[Homebrew guide](homebrew.md). Its update and service ownership differs from this native kit.
+
 The kit includes Core, Observer, the `shin-ce` CLI, `shin-mcp`, the usage collector,
 Shin Monitor, profiles, contracts, and dependency notices. Local retrieval needs
 no account or AI model service.
@@ -12,7 +15,7 @@ Windows ZIP/MSI packaging route are described in [Windows source status](https:/
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.69).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -20,7 +23,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.66/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.69/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.

@@ -9,6 +9,7 @@
 #include "shin/observer/local_installation.h"
 #include "shin/observer/local_updates.h"
 #include "shin/observer/local_client_setup.h"
+#include "shin/observer/local_package.h"
 #include "shin/observer/model_usage.h"
 #include "context_internal.h"
 #include <array>
@@ -43,6 +44,7 @@ fs::path executable_path() {
     return current_executable_path();
 }
 std::optional<fs::path> bundled_profiles() {
+    if (homebrew_managed()) return stable_package_path(executable_path(), SHIN_OBSERVER_HOMEBREW_PREFIX, "share/shin-context/profiles");
     const auto bin = executable_path().parent_path();
     for (const auto& prefix : {bin, bin.parent_path()}) {
         const auto registry = prefix / "share/shin-context/profiles";
@@ -119,6 +121,13 @@ int run(int argc, char** argv, char** environment) {
     }
     LocalProjectRequest request;
     request.command = argv[1];
+    if (homebrew_managed()) {
+        if (request.command.starts_with("update-") || request.command == "install" || request.command == "update" ||
+            request.command == "uninstall" || request.command == "installation")
+            throw Error("package-managed-installation", "Homebrew owns this installation. Use brew upgrade toseek-samurai/tap/shin-context-engine or brew uninstall toseek-samurai/tap/shin-context-engine.");
+        if (request.command == "service-install" || request.command == "service-update" || request.command == "service-uninstall")
+            throw Error("package-managed-service", "Use brew services start, restart or stop toseek-samurai/tap/shin-context-engine for login startup.");
+    }
 #ifdef __APPLE__
     if (request.command == "update-check" || request.command == "update-download" ||
         request.command == "update-install" || request.command == "update-status" || request.command == "update-acknowledge") {

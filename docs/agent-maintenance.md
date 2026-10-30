@@ -46,6 +46,17 @@ distinguish obsolete contracts from engine misses, and complete native approval
 and current-route verification. Without installed Shin this creates no setup,
 build or CI requirement. The same procedure ships in the Hermes and MCP guidance.
 
+## Homebrew packaging
+
+The [Homebrew distribution](homebrew.md) is built with a fixed stable opt prefix.
+Only that package's bundled profile registry may retain an alias in private
+bindings; Observer resolves it to the current physical package for file reads.
+All other source/state paths retain canonical identity checks. MCP and Monitor
+locators verify their package generation before generating or using stable paths.
+Homebrew owns updates and service registration; native kit receipts and native
+Updater commands must not take over a Cellar payload. Keep package builds and
+install/reinstall tests isolated from existing native kits and enrolled projects.
+
 ## Verification
 
 Build with CMake and run the relevant CTest suite. For shared changes, include

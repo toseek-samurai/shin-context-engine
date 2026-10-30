@@ -1,4 +1,5 @@
 #include "shin/observer/observer.h"
+#include "shin/observer/local_package.h"
 #ifdef _WIN32
 #include <windows.h>
 #include <bcrypt.h>
@@ -96,7 +97,12 @@ Config config_from_json(const Json& value, const fs::path& file) {
     Config result;
     result.root = path(value, "root");
     result.out_dir = path(value, "out_dir");
-    result.profile_dir = path(value, "profile_dir");
+    const auto proposed_registry = fs::path(text(value, "profile_dir", 4096));
+    const auto bundled_registry = fs::path(SHIN_OBSERVER_HOMEBREW_PREFIX) / "share/shin-context/profiles";
+    const bool package_registry = homebrew_managed() && proposed_registry == bundled_registry;
+    result.profile_dir = package_registry ?
+        fs::canonical(package_profile_registry(proposed_registry)) :
+        path(value, "profile_dir");
     result.state_dir = path(value, "state_dir");
     result.profile = identifier(value, "profile");
     result.poll_interval_ms = number(value, "poll_interval_ms", 100, 60000);
@@ -115,7 +121,7 @@ Config config_from_json(const Json& value, const fs::path& file) {
     result.binding = {{"observer_id", identifier(value, "observer_id")},
         {"source_host_id", identifier(value, "source_host_id")}, {"project_id", identifier(value, "project_id")},
         {"workspace_id", identifier(value, "workspace_id")}, {"root", result.root.string()},
-        {"profile", result.profile}, {"profile_dir", result.profile_dir.string()}, {"out_dir", result.out_dir.string()},
+        {"profile", result.profile}, {"profile_dir", package_registry ? proposed_registry.string() : result.profile_dir.string()}, {"out_dir", result.out_dir.string()},
         {"state_dir", result.state_dir.string()}, {"state_identity", directory_identity(result.state_dir, true)},
         {"outbox_policy", outbox}};
     result.binding_key = digest(result.binding.dump());

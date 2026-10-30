@@ -17,7 +17,7 @@
   },
   "developmentLane": {
     "coreVersion": "2.0.5-dev.13",
-    "observerSourceVersion": "2.0.5-dev.69",
+    "observerSourceVersion": "2.0.5-dev.70",
     "artifactRetention": {
       "policy": "Generated build outputs and measurements are disposable unless explicitly retained by a separate reviewed process.",
       "releaseClaim": false

@@ -39,6 +39,7 @@ target_include_directories(shin-observer-native PUBLIC "${SHIN_OBSERVER_ROOT}/in
 target_link_libraries(shin-observer-native PUBLIC shin-context-core shin-observer-protocol PRIVATE httplib::httplib)
 target_compile_definitions(shin-observer-native PUBLIC SHIN_OBSERVER_VERSION="${SHIN_OBSERVER_VERSION}"
     SHIN_OBSERVER_STABILITY="${SHIN_OBSERVER_STABILITY}" SHIN_OBSERVER_SOURCE_DISCOVERY=$<BOOL:${SHIN_OBSERVER_SOURCE_DISCOVERY}>)
+target_compile_definitions(shin-observer-native PUBLIC SHIN_OBSERVER_HOMEBREW_PREFIX="${SHIN_OBSERVER_HOMEBREW_PREFIX}")
 target_compile_options(shin-observer-native PRIVATE ${SHIN_NATIVE_WARNINGS})
 if(WIN32)
     target_link_libraries(shin-observer-native PUBLIC shin-windows-io PRIVATE bcrypt advapi32 userenv wtsapi32)
@@ -184,7 +185,11 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
             "${SHIN_OBSERVER_ROOT}/src/local_updates_macos.mm" "${SHIN_OBSERVER_ROOT}/ui/update_window_macos.mm")
         target_compile_options(shin-updater PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)
         target_link_libraries(shin-updater PRIVATE shin-observer-native "-framework Foundation" "-framework Cocoa")
-        install(TARGETS shin-updater RUNTIME DESTINATION bin)
+        if(SHIN_OBSERVER_HOMEBREW_PREFIX)
+            set_target_properties(shin-updater PROPERTIES EXCLUDE_FROM_ALL TRUE)
+        else()
+            install(TARGETS shin-updater RUNTIME DESTINATION bin)
+        endif()
         set_source_files_properties("${SHIN_OBSERVER_ROOT}/src/local_updates_macos.mm"
             "${SHIN_OBSERVER_ROOT}/src/local_update_bootstrap_macos.mm"
             "${SHIN_OBSERVER_ROOT}/ui/update_window_macos.mm" PROPERTIES COMPILE_OPTIONS "-fobjc-arc")

@@ -17,6 +17,7 @@
 #include "monitor_view.h"
 #include "status_item.h"
 #include "../ui/update_window_macos.h"
+#include "shin/observer/local_package.h"
 
 namespace {
 // Clang recognizes this adapter as returning text from the shared EN/RU catalog.
@@ -594,6 +595,12 @@ static std::unique_ptr<Monitor> monitor;
 }
 
 - (NSString*)nativeCLIPath {
+    if (shin::observer::homebrew_managed()) {
+        try {
+            const auto cli = shin::observer::package_binary(current_executable_path(), "shin-ce");
+            return [NSString stringWithUTF8String:cli.c_str()];
+        } catch (const std::exception&) { return nil; }
+    }
     const auto executable = current_executable_path();
     const auto canonical = fs::canonical(executable);
     const auto prefix = canonical.parent_path().filename() == "MacOS"
@@ -607,7 +614,9 @@ static std::unique_ptr<Monitor> monitor;
     if (!self.shinHome.length) { completion(Json::object(), ui_text("Cannot locate the Shin folder.")); return; }
     NSString* cli = [self nativeCLIPath];
     if (!cli || ![NSFileManager.defaultManager isExecutableFileAtPath:cli]) {
-        completion(Json::object(), ui_text("shin-ce is missing from the installed kit."));
+        completion(Json::object(), shin::observer::homebrew_managed() ?
+            ui_text("Homebrew changed the installed package. Restart Monitor to use the current version.") :
+            ui_text("shin-ce is missing from the installed kit."));
         return;
     }
     NSArray<NSString*>* argv = [@[command, @"--home", self.shinHome] arrayByAddingObjectsFromArray:arguments];
@@ -1195,11 +1204,11 @@ static std::unique_ptr<Monitor> monitor;
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(activatedApplication:)
         name:NSWorkspaceDidActivateApplicationNotification object:nil];
     self.nextUpdateCheck=[NSDate dateWithTimeIntervalSinceNow:15];
-    if([[NSUserDefaults standardUserDefaults] boolForKey:@"ShinUpdatePending"]) [self showUpdateResult];
+    if(!shin::observer::homebrew_managed() && [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinUpdatePending"]) [self showUpdateResult];
     self.timer = [NSTimer scheduledTimerWithTimeInterval:0.5 repeats:YES block:^(NSTimer* timer) {
         (void)timer;
         if (!monitor) return;
-        if (![[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] &&
+        if (!shin::observer::homebrew_managed() && ![[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] &&
             self.nextUpdateCheck.timeIntervalSinceNow<=0) [self beginUpdateCheck:NO];
         shin_status_presentation(self.item, release_update_version.empty() ? self.statusLogo : self.statusUpdateLogo);
         NSWindow* statusWindow = self.item.button.window;
@@ -1275,6 +1284,8 @@ static std::unique_ptr<Monitor> monitor;
     }
 }
 - (BOOL)validateMenuItem:(NSMenuItem*)item {
+    if (shin::observer::homebrew_managed() &&
+        (item.action == @selector(toggleAutomaticUpdates:) || item.action == @selector(showLastUpdateResult:))) return NO;
     if (item.action == @selector(toggleLoginStartup:)) {
         const auto status = [self loginStartupStatus];
         item.state = status == SMAppServiceStatusEnabled ? NSControlStateValueOn :
@@ -1320,7 +1331,7 @@ static std::unique_ptr<Monitor> monitor;
         NSMenuItem* login = [menu addItemWithTitle:ui_text("Launch Monitor at login") action:@selector(toggleLoginStartup:) keyEquivalent:@""];
         login.target = self;
         NSMenuItem* result=[menu addItemWithTitle:ui_text("Last update result…") action:@selector(showLastUpdateResult:) keyEquivalent:@""];result.target=self;
-        automatic.state=[[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] ? NSControlStateValueOff : NSControlStateValueOn;
+        automatic.state=shin::observer::homebrew_managed() || [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinAutomaticUpdatesDisabled"] ? NSControlStateValueOff : NSControlStateValueOn;
         compact.state = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"] ? NSControlStateValueOn : NSControlStateValueOff;
         [menu addItem:[NSMenuItem separatorItem]];
         NSMenuItem* quit = [menu addItemWithTitle:ui_text("Quit Shin Monitor") action:@selector(quitMonitor:) keyEquivalent:@""];

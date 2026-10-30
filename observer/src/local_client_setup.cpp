@@ -1,4 +1,5 @@
 #include "shin/observer/local_client_setup.h"
+#include "shin/observer/local_package.h"
 
 namespace shin::observer {
 Json local_client_setup(const fs::path& executable, const fs::path& root,
@@ -9,11 +10,11 @@ Json local_client_setup(const fs::path& executable, const fs::path& root,
         throw Error("project-root-unavailable", "Choose an existing project folder.");
     const auto project = fs::canonical(root).string();
     const auto data_home = fs::absolute(home).lexically_normal().string();
-    const auto adapter = fs::canonical(executable).parent_path() /
+    const auto adapter = package_binary(executable,
 #ifdef _WIN32
-        "shin-mcp.exe";
+        "shin-mcp.exe");
 #else
-        "shin-mcp";
+        "shin-mcp");
 #endif
     if (!fs::is_regular_file(adapter))
         throw Error("mcp-unavailable", "shin-mcp is missing beside shin-ce. Use a complete native kit.");

@@ -1,5 +1,8 @@
 # Building from source
 
+For a complete managed macOS source build, including Monitor, use the
+[project Homebrew tap](homebrew.md).
+
 For the complete macOS application, follow the [local kit guide](local-kit.md).
 Core can be built alone for development or embedding. Linux and WSL2 can also
 build the local service, CLI, terminal monitor and MCP without the desktop app.

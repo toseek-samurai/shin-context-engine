@@ -165,7 +165,11 @@ class GitHubFixture:
             (directory / name).write_bytes(self.payloads[name])
             return ''
         if args[:3] == ('gh', 'release', 'create'):
-            self.state = dict(isDraft=True, isPrerelease=True, targetCommitish=SHA, assets=[], url='fixture-release',
+            if '--target' in args:
+                raise subprocess.CalledProcessError(1, args,
+                    stderr='HTTP 403: Resource not accessible by integration')
+            self.state = dict(isDraft=True, isPrerelease=True, tagName=TAG,
+                              targetCommitish='main', assets=[], url='fixture-release',
                               body=Path(args[args.index('--notes-file')+1]).read_text())
         elif args[:3] == ('gh', 'release', 'upload'):
             asset = Path(args[-1])
@@ -443,7 +447,7 @@ class Publication(unittest.TestCase):
 
     def test_changed_existing_release_is_never_overwritten(self):
         github = GitHubFixture()
-        github.state = dict(isDraft=True, isPrerelease=True, targetCommitish=SHA,
+        github.state = dict(isDraft=True, isPrerelease=True, tagName=TAG, targetCommitish=SHA,
                             assets=[dict(name='foreign', state='uploaded', digest='sha256:'+'a'*64)])
         with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt):
             with self.assertRaises(ValueError):
@@ -484,6 +488,37 @@ class Publication(unittest.TestCase):
     def publish_with(self, github, platform='macos'):
         with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt):
             return publisher.publish(REPO, SHA, TAG, 123, github.run['run_attempt'], platform=platform)
+
+    def test_existing_tag_is_authority_instead_of_target_creation_hint(self):
+        github = GitHubFixture(platform='linux')
+        self.assertEqual(self.publish_with(github, 'linux'), 'fixture-release')
+        self.assertEqual(github.state['targetCommitish'], 'main')
+        create = [c for c in github.calls if c[:3] == ('gh', 'release', 'create')]
+        self.assertEqual(len(create), 1)
+        self.assertIn('--verify-tag', create[0])
+        self.assertNotIn('--target', create[0])
+        self.assertEqual(self.publish_with(github, 'linux'), 'fixture-release')
+
+    def test_different_release_tag_or_moved_tag_in_readback_refuses_mutation(self):
+        for failure in ('wrong-tag', 'moved-tag'):
+            with self.subTest(failure=failure):
+                github = GitHubFixture(platform='linux')
+                self.publish_with(github, 'linux')
+                before = len(github.calls)
+                original = github.command
+                if failure == 'wrong-tag':
+                    github.state['tagName'] = 'v2.0.5-dev.20'
+                else:
+                    def moved(*args):
+                        if args[:2] == ('gh', 'api') and '/commits/' in args[2]:
+                            github.calls.append(args)
+                            return json.dumps({'sha': 'c' * 40})
+                        return original(*args)
+                    github.command = moved
+                with self.assertRaisesRegex(ValueError, 'tag differs|tag moved'):
+                    self.publish_with(github, 'linux')
+                self.assertFalse(any(c[:3] in (('gh','release','create'), ('gh','release','upload'),
+                                               ('gh','release','edit')) for c in github.calls[before:]))
 
     def test_windows_publishes_while_arm_is_queued_then_macos_appends_immutably(self):
         github = GitHubFixture(platform='windows')

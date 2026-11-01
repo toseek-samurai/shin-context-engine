@@ -184,7 +184,7 @@ def verify_assets(directory, version, core):
 
 
 def release_matches(receipt, sha, expected, complete=True):
-    require(receipt['targetCommitish'] == sha, 'Existing release targets different source')
+    require(receipt['source_sha'] == sha, 'Existing release targets different source')
     assets = receipt['assets']
     require(len({a['name'] for a in assets}) == len(assets), 'Duplicate release assets')
     for asset in assets:
@@ -305,11 +305,17 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
 
     def receipt():
         result = subprocess.run(['gh', 'release', 'view', tag, '--repo', repo, '--json',
-                                 'isDraft,isPrerelease,targetCommitish,assets,url,body'], capture_output=True, text=True, timeout=30)
+                                 'isDraft,isPrerelease,tagName,assets,url,body'], capture_output=True, text=True, timeout=30)
         if result.returncode:
             require('release not found' in result.stderr.lower(), 'Release state is unknown; refusing mutation')
             return None
-        return json.loads(result.stdout)
+        value = json.loads(result.stdout)
+        require(value['tagName'] == tag, 'Release tag differs from qualified preview')
+        # target_commitish is only a tag-creation hint; GitHub ignores it for
+        # an existing tag. Resolve the actual release tag on every readback.
+        value['source_sha'] = api(f'commits/{tag}')['sha']
+        require(value['source_sha'] == sha, 'Release tag moved away from qualified source')
+        return value
 
     gate(platform, run_id, attempt)  # No download or release mutation precedes this proof.
     with tempfile.TemporaryDirectory(prefix='shin-qualified-release-') as folder:
@@ -340,7 +346,7 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
             if current is None:
                 return allowed, completed
             require(current['isPrerelease'], 'Existing release is not a preview')
-            require(current['targetCommitish'] == sha, 'Existing release targets different source')
+            require(current['source_sha'] == sha, 'Existing release targets different source')
             names = {a['name'] for a in current['assets']}
             require(len(names) == len(current['assets']), 'Duplicate release assets')
             for target in PLATFORMS:
@@ -379,7 +385,9 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
             body = directory / 'notes.md'
             body.write_text(notes)
             gate(platform, run_id, attempt)
-            failure = mutation('gh', 'release', 'create', tag, '--repo', repo, '--target', sha, '--draft', '--prerelease',
+            # The verified tag already exists. Sending --target can make
+            # GITHUB_TOKEN fail GitHub's ref/workflow permission checks.
+            failure = mutation('gh', 'release', 'create', tag, '--repo', repo, '--draft', '--prerelease',
                                '--title', f'Shin {version} preview', '--notes-file', str(body), '--verify-tag')
             current = receipt()
             require(current is not None and current['isDraft'] and current['isPrerelease'],

@@ -18,6 +18,11 @@ with the component version files. Before tagging, run both
 `shin-context-universality` and `shin-context-codex-skill`; the latter also checks
 the root agent-entry byte budget after maintenance-policy edits.
 
+Automatic source qualification runs on pull requests and `v*` tag pushes.
+Ordinary branch pushes, including `main`, do not start another matrix. Use the
+manual workflow for an untagged direct change that needs hosted checks. A release
+tag performs its platform tests, exact packaging and guarded publication once.
+
 Installation examples must point to a published release with its complete kit,
 checksum and installer assets. Update those pins after publication, not when a
 candidate is tagged. Label screenshots and controls from unreleased source

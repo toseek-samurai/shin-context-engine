@@ -566,6 +566,12 @@ class Publication(unittest.TestCase):
     def test_workflow_publishers_have_independent_dependencies_and_one_shared_queue(self):
         root=Path(__file__).resolve().parents[1]
         text=(root/'.github/workflows/ci.yml').read_text()
+        events=text.split('\npermissions:',1)[0]
+        push=re.search(r'^  push:\n(.*?)(?=^  [a-zA-Z]|\Z)',events,re.M|re.S)
+        self.assertIsNotNone(push)
+        self.assertEqual(push[1].strip(), "tags:\n      - 'v*'")
+        self.assertRegex(events,r'(?m)^  pull_request:\s*$')
+        self.assertRegex(events,r'(?m)^  workflow_dispatch:\s*$')
         for target in publisher.PLATFORMS:
             match=re.search(r'^  publish-'+target+r':\n(.*?)(?=^  [a-zA-Z]|\Z)',text,re.M|re.S)
             self.assertIsNotNone(match,target)

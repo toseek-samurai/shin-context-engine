@@ -14,7 +14,9 @@ authorize installation or changes to any running service.
 
 For release version changes, synchronize `developmentLane.coreVersion` and
 `developmentLane.observerSourceVersion` in `docs/machine/shin-development-v1.json`
-with the component version files. Run `shin-context-universality` before tagging.
+with the component version files. Before tagging, run both
+`shin-context-universality` and `shin-context-codex-skill`; the latter also checks
+the root agent-entry byte budget after maintenance-policy edits.
 
 Installation examples must point to a published release with its complete kit,
 checksum and installer assets. Update those pins after publication, not when a

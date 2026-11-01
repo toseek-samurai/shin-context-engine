@@ -20,13 +20,10 @@ do not import private repository history, objects, tags or refs.
   histories or managed indexes as part of source preparation.
 - Qualify the prepared source and exact package independently. Existing internal
   results are background evidence, not public release qualification.
-- Publish each preview platform only through the guarded CI publisher after that
-  platform's matching Core/Observer source and exact archive checks pass. A queued
-  or failed unrelated platform does not qualify or block its downloads. Preserve
-  source/run/attempt provenance and immutable assets when adding another platform
-  to the same release. Never publish local binaries
-  to bypass pending CI. "Do not wait for CI" means push the reviewed preview tag
-  and let its workflow finish publication; it does not waive qualification.
+- Publish via guarded CI only after the platform's Core/Observer and exact archive
+  gates pass, independently of other platforms. Preserve source/run/attempt proof
+  and immutable assets. Never publish local binaries to bypass CI. "Do not wait"
+  permits tag handoff, not unqualified publication.
 - Do not start model comparison campaigns. Keep performance claims tied to the
   measured workload, hardware, cold/warm state, memory, disk and refresh costs.
 

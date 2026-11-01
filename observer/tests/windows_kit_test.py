@@ -146,7 +146,8 @@ def check_msi(path):
         actions = {row[0]: row[1:] for row in rows('SELECT `Action`, `Type`, `Source`, `Target` FROM `CustomAction`', 4)}
         assert 'v' in properties.get('MsiLogging', ''), 'MSI must retain native diagnostics on double-click install'
         assert properties['WIXUI_EXITDIALOGOPTIONALCHECKBOX'] == '1'
-        assert properties['WixUnelevatedShellExecTarget'] == '[#CM_FP_bin.shin_tray.exe]'
+        assert properties['WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT'] == 'Finish project setup and open Shin Monitor'
+        assert properties['WixUnelevatedShellExecTarget'] == '[#CM_FP_bin.shin_windows_updater.exe]'
         assert actions['ShinLaunchMonitor'][1:] == ['Wix4UtilCA_X64', 'WixUnelevatedShellExec']
         assert not int(actions['ShinLaunchMonitor'][0]) & (0x400 | 0x800)
         launch = rows("SELECT `Dialog_`, `Control_`, `Event`, `Argument`, `Condition` FROM `ControlEvent` WHERE `Argument` = 'ShinLaunchMonitor'", 5)
@@ -223,7 +224,12 @@ def main():
             assert len(data) == item['size'] and hashlib.sha256(data).hexdigest() == item['sha256'], relative
         actual = {p.relative_to(kit).as_posix() for p in kit.rglob('*') if p.is_file()}
         assert actual == expected, (actual - expected, expected - actual)
+        for profile in (kit / 'share/shin-context/profiles').glob('*.json'):
+            data = profile.read_bytes()
+            remainder = data.replace(b'\r\n', b'')
+            assert b'\n' not in remainder and b'\r' not in remainder, f'Unstable Windows profile line endings: {profile.name}'
         for name in ('shin-ce.exe', 'shin-context.exe', 'shin-observer.exe', 'shin-mcp.exe', 'shin-tray.exe',
+                     'shin-windows-updater.exe',
                      'vcruntime140.dll', 'msvcp140.dll'):
             assert (kit / 'bin' / name).is_file(), name
         ce = kit / 'bin/shin-ce.exe'

@@ -6,7 +6,10 @@
 #include <wrl/client.h>
 #include <winhttp.h>
 #include "shin/observer/local_updates.h"
+#include "shin/windows/file.h"
+#include "windows_installation.h"
 #include "imgui_impl_win32.h"
+#include "windows_dpi.h"
 #include "imgui_impl_dx11.h"
 #include "monitor_view.h"
 #include <fstream>
@@ -35,7 +38,12 @@ NOTIFYICONDATAW tray{};
 UINT taskbar_created = 0;
 bool compact = false, modal = false, test_mode = false;
 bool updates_page = false;
-void open_updates();
+float test_dpi_scale = 1.0f;
+void open_updates(bool check=true);
+bool management_page = false;
+void open_management(int code);
+void show_panel();
+void render_management();
 
 void checked(HRESULT result, const char* message) {
     if (FAILED(result)) throw std::runtime_error(message);
@@ -117,7 +125,8 @@ void show_report() {
     ShowWindow(report, SW_SHOW); SetForegroundWindow(report);
 }
 void platform_action(int code) {
-    if (code == 110 || code == 86) { open_updates(); return; }
+    if (code == 80 || code == 83 || code == 84 || code == 85 || code == 116 || code == 112) { open_management(code); return; }
+    if (code == 111 || code == 110 || code == 86) { open_updates(code!=111); return; }
     if (code == 39) { show_report(); return; }
     if (code == 43) {
         ComPtr<IFileOpenDialog> dialog;
@@ -238,18 +247,26 @@ void close_panel() { ShowWindow(panel,SW_HIDE); monitor_motion.initialized=false
 void show_panel() {
     POINT point{}; GetCursorPos(&point); MONITORINFO info{sizeof(info)};
     GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&info);
-    const int width=std::min(compact?360:448,static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
-    const int height=std::min(updates_page || compact?440:620,static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
+    const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST));
+    const int width=std::min(static_cast<int>((management_page?620:compact?360:448)*scale),static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
+    const int height=std::min(static_cast<int>((management_page?660:updates_page || compact?440:620)*scale),static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
     const int x=std::clamp(static_cast<int>(point.x)-width/2,static_cast<int>(info.rcWork.left)+12,static_cast<int>(info.rcWork.right)-width-12);
     const int y=std::clamp(static_cast<int>(point.y)-height,static_cast<int>(info.rcWork.top)+12,static_cast<int>(info.rcWork.bottom)-height-12);
-    SetWindowPos(panel,HWND_TOPMOST,x,y,width,height,SWP_SHOWWINDOW); SetForegroundWindow(panel);
+    SetWindowPos(panel,management_page || updates_page ? HWND_NOTOPMOST : HWND_TOPMOST,x,y,width,height,SWP_SHOWWINDOW); SetForegroundWindow(panel);
     if(monitor) monitor->visible=true;
 }
+#include "windows_command.h"
+#include "windows_management.h"
 #include "windows_updates.h"
 
 void render_frame(const ViewState& state) {
-    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
-    if (updates_page && release_check) render_windows_updates(release_check->snapshot());
+    const float dpi = test_mode ? test_dpi_scale : static_cast<float>(GetDpiForWindow(panel))/96.0f;
+    shin_imgui_win32_scale(dpi);
+    ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
+    auto& io = ImGui::GetIO(); io.DisplaySize = {io.DisplaySize.x/dpi,io.DisplaySize.y/dpi}; io.DisplayFramebufferScale = {dpi,dpi};
+    ImGui::NewFrame();
+    if (management_page) render_management();
+    else if (updates_page && release_check) render_windows_updates(release_check->snapshot());
     else render(state);
     ImGui::Render();
     constexpr float clear[]{background.x,background.y,background.z,1};
@@ -277,17 +294,23 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         return 0;
     }
     try {
+        shin_imgui_win32_scale(test_mode?test_dpi_scale:static_cast<float>(GetDpiForWindow(window))/96.0f);
         if(ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(window,message,wparam,lparam)) return 1;
         if(taskbar_created && message==taskbar_created) { register_icon();return 0; }
         switch(message) {
+        case WM_APP+4: DestroyWindow(window); return 0;
         case reopen_message: show_panel(); return 0;
         case WM_SIZE:
             if(swap_chain && wparam!=SIZE_MINIMIZED) {
                 context->OMSetRenderTargets(0,nullptr,nullptr); target.Reset();
                 checked(swap_chain->ResizeBuffers(0,LOWORD(lparam),HIWORD(lparam),DXGI_FORMAT_UNKNOWN,0),"Cannot resize Monitor."); make_target();
             } return 0;
+        case WM_DPICHANGED: {
+            const auto* rect = reinterpret_cast<const RECT*>(lparam);
+            SetWindowPos(window,nullptr,rect->left,rect->top,rect->right-rect->left,rect->bottom-rect->top,SWP_NOZORDER|SWP_NOACTIVATE); return 0;
+        }
         case WM_ACTIVATE:
-            if(LOWORD(wparam)==WA_INACTIVE && !modal) close_panel(); return 0;
+            if(LOWORD(wparam)==WA_INACTIVE && !modal && !management_page && !updates_page) close_panel(); return 0;
         case WM_KEYDOWN: if(wparam==VK_ESCAPE) {close_panel();return 0;} break;
         case WM_CLOSE: close_panel(); return 0;
         case WM_DESTROY: PostQuitMessage(0);return 0;
@@ -427,6 +450,23 @@ unsigned updates_render(const fs::path& output, ImVec2 size) {
                 std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+"-"+std::to_string(static_cast<int>(phase))+".png"));
             ++frames;
         }
+        windows_update_result=windows_setup_result({{"phase","review-required"},{"ok",false},
+            {"error",{{"code","installation-project-not-ready"}}},
+            {"projects",Json::array({{{"root","C:/Synthetic/Project"},{"ok",false},{"error_code","profile-policy-revision-conflict"}}})}});
+        for(int frame=0;frame<3;++frame) {
+            ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
+            render_windows_updates({});ImGui::Render();
+            constexpr float clear[]{background.x,background.y,background.z,1};
+            context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr);context->ClearRenderTargetView(target.Get(),clear);
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        }
+        check_action_bounds(size);check_action_ids();
+        if(size.y>=600) for(const int action:{206,207})
+            if(std::none_of(ui_actions.begin(),ui_actions.end(),[=](const auto& item){return item.chart==action;}))
+                throw std::runtime_error("MSI project preparation has no visible report or retry action.");
+        save_frame(output/(std::string("setup-result-")+(language==shin::ui::Language::ru?"ru-":"en-")+
+            std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+".png"));
+        ++frames;windows_update_result=Json::object();
     }
     shin::ui::set_language(previous_language);
     return frames;
@@ -456,6 +496,42 @@ void check_update_worker() {
     WindowsReleaseCheck failed([]() -> Json { throw Error("update-check-failed", "Synthetic offline response."); });
     failed.check();
     if (await_result(failed).state != WindowsUpdateState::failed) throw std::runtime_error("Windows update worker lost failure state.");
+}
+
+void management_and_dpi_test(const fs::path& output,const ViewState& state) {
+    for(float scale:{1.0f,1.5f,2.0f}) {
+        test_dpi_scale=scale;dashboard_view=0;management_page=false;updates_page=false;
+        SetWindowPos(panel,nullptr,0,0,static_cast<int>(448*scale),static_cast<int>(620*scale),SWP_NOZORDER|SWP_NOACTIVATE);
+        for(int frame=0;frame<3;++frame) render_frame(state);
+        check_action_bounds({448,620});
+        auto tab=std::find_if(ui_actions.begin(),ui_actions.end(),[](const auto& action){return action.chart==13;});
+        if(tab==ui_actions.end()) throw std::runtime_error("DPI Settings tab missing.");
+        const auto x=static_cast<int>((tab->origin.x+tab->size.x/2)*scale),y=static_cast<int>((tab->origin.y+tab->size.y/2)*scale);
+        SendMessageW(panel,WM_SETFOCUS,0,0);SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(x,y));
+        SendMessageW(panel,WM_LBUTTONDOWN,MK_LBUTTON,MAKELPARAM(x,y));
+        for(int frame=0;frame<2;++frame) render_frame(state);
+        SendMessageW(panel,WM_LBUTTONUP,0,MAKELPARAM(x,y));
+        for(int frame=0;frame<2;++frame) render_frame(state);
+        if(dashboard_view!=3) throw std::runtime_error("DPI physical click did not activate Settings.");
+        save_frame(output/("dpi-"+std::to_string(static_cast<int>(scale*100))+".png"));
+    }
+    test_dpi_scale=1;
+    const auto language=shin::ui::language();management.root="C:\\Projects\\Synthetic";
+    management.agents={{{{"client","codex"},{"label","Codex"},{"config","C:\\Users\\Example\\.codex\\config.toml"},{"detected",true}},false,Json()}};
+    for(const auto selected_language:{shin::ui::Language::en,shin::ui::Language::ru}) {
+        shin::ui::set_language(selected_language);
+        for(const auto size:{ImVec2{620,660},ImVec2{360,440},ImVec2{280,240}}) {
+            SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
+            for(const auto page:{WindowsManagement::Page::setup,WindowsManagement::Page::storage,WindowsManagement::Page::project,WindowsManagement::Page::login}) {
+                management.page=page;management_page=true;
+                management.storage={{"ok",true},{"used_bytes",1048576},{"quota_bytes",1073741824},{"reclaimable_bytes",524288},{"revision","synthetic"}};
+                for(int frame=0;frame<3;++frame) render_frame(state);
+                check_action_bounds(size);check_action_ids();
+                save_frame(output/("management-"+std::to_string(static_cast<int>(page))+"-"+std::to_string(static_cast<int>(size.x))+"-"+(selected_language==shin::ui::Language::ru?"ru":"en")+".png"));
+            }
+        }
+    }
+    management_page=false;management.root.clear();shin::ui::set_language(language);dashboard_view=0;
 }
 
 int render_test(const fs::path& output, bool shell) {
@@ -495,6 +571,7 @@ int render_test(const fs::path& output, bool shell) {
         check_action_ids(); check_action_bounds(size); selected.clear();
         update_frames+=updates_render(output,size);
     }
+    management_and_dpi_test(output,state);
     const auto icon=logo();DestroyIcon(icon);
     {
         struct Restore { ~Restore(){test_mode=true;} } restore;
@@ -514,6 +591,7 @@ int render_test(const fs::path& output, bool shell) {
         if(IsWindowVisible(panel)) throw std::runtime_error("Popover did not dismiss on Escape.");
     }
     std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},{"update_frames",update_frames},
+        {"dpi_scales",Json::array({100,150,200})},{"dpi_physical_clicks",true},{"management_en_ru",true},
         {"unique_action_ids",true},{"update_controls",true},{"update_worker",true},
         {"nonblank",true},{"action_bounds",true},{"logo",true},
         {"shell_integration",shell},{"taskbar_recreated_event",shell ? Json(true) : Json(nullptr)},
@@ -566,11 +644,12 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             apply_language_preference(settings.value("language",0));
             dashboard_view=std::clamp(settings.value("view",0),0,3);compact=settings.value("compact",false);
             model_project=settings.value("model_project","");
+            management.home=home;
             monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")));
         }
-        // Let DWM scale this fixed logical-size popover. It avoids mixed physical
-        // mouse coordinates and preserves the same tested layout at every DPI.
-        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_UNAWARE);
+        // Render in logical coordinates into a physical-resolution framebuffer.
+        // Mouse coordinates use the same DPI transform; no DWM bitmap scaling.
+        SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
         WNDCLASSEXW wc{sizeof(wc)};wc.lpfnWndProc=window_proc;wc.hInstance=instance;wc.lpszClassName=window_class;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);
         if(!RegisterClassExW(&wc)) throw std::runtime_error(shin::ui::tr("Cannot register Monitor window."));
         wc.lpfnWndProc=report_proc;wc.lpszClassName=L"ShinMonitorReport";RegisterClassExW(&wc);
@@ -598,6 +677,12 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                     TranslateMessage(&message);DispatchMessageW(&message);
                 }
                 if(!running) break;
+                poll_windows_installation();
+                static auto update_due=Clock::now()+std::chrono::seconds(5);
+                if(settings.value("automatic_update_checks",true) && Clock::now()>=update_due) {
+                    if(!release_check) release_check=std::make_unique<WindowsReleaseCheck>();
+                    release_check->check();update_due=Clock::now()+std::chrono::hours(6);
+                }
                 if(release_check) {
                     const auto update=release_check->snapshot();
                     release_update_version=update.state==WindowsUpdateState::offer ? update.offer.value("version","") : "";

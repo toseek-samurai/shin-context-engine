@@ -7,8 +7,13 @@
 #include <set>
 #include <thread>
 #include <array>
+#ifdef _WIN32
+#include <windows.h>
+#include <userenv.h>
+#else
 #include <pwd.h>
 #include <unistd.h>
+#endif
 
 namespace shin::observer {
 namespace {
@@ -31,13 +36,37 @@ Json default_model_usage_sources(char** environment) {
     for (auto** entry = environment; entry && *entry; ++entry) {
         const std::string_view text(*entry); const auto end = text.find('=');
         const std::string key(text.substr(0,end));
-        if (end != std::string_view::npos && (key == "HOME" || key == "CODEX_HOME" || key == "XDG_DATA_HOME" || key == "HERMES_HOME"))
+        if (end != std::string_view::npos && (key == "HOME" || key == "USERPROFILE" || key == "CODEX_HOME" || key == "XDG_DATA_HOME" || key == "HERMES_HOME"))
             variables[key] = text.substr(end+1);
     }
+#ifdef _WIN32
+    // The SCM user-runtime entry calls this without a CRT environment array.
+    // Read only the same supported path variables from its user environment.
+    for(const auto* key:{"USERPROFILE","CODEX_HOME","XDG_DATA_HOME","HERMES_HOME"}) if(!variables.contains(key)) {
+        const std::wstring name(key,key+std::char_traits<char>::length(key));
+        std::array<wchar_t,32768> value{};const auto size=GetEnvironmentVariableW(name.c_str(),value.data(),static_cast<DWORD>(value.size()));
+        require(size<value.size(),"usage-source-path-invalid");
+        if(size) variables[key]=fs::path(std::wstring(value.data(),size)).string();
+    }
+    // Windows user identity comes from USERPROFILE/the native token, not a
+    // Unix HOME inherited from an interoperability shell.
+    variables.erase("HOME");
+#endif
     if (!variables.contains("HOME")) {
+#ifdef _WIN32
+        if(variables.contains("USERPROFILE")) variables["HOME"]=variables["USERPROFILE"];
+        else {
+            HANDLE token=nullptr; std::array<wchar_t,32768> profile{}; DWORD size=static_cast<DWORD>(profile.size());
+            if(OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&token)) {
+                if(GetUserProfileDirectoryW(token,profile.data(),&size)) variables["HOME"]=fs::path(profile.data()).string();
+                CloseHandle(token);
+            }
+        }
+#else
         struct passwd user_record{}; struct passwd* found = nullptr; std::array<char,16384> buffer{};
         if (::getpwuid_r(::geteuid(), &user_record, buffer.data(), buffer.size(), &found) == 0 && found && found->pw_dir)
             variables["HOME"] = found->pw_dir;
+#endif
     }
     const fs::path user = variables["HOME"];
     const auto path = [&](const char* key, const fs::path& fallback) {

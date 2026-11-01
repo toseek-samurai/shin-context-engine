@@ -69,10 +69,6 @@ Json local_client_targets(const fs::path& user_home, char** environment) {
 Json local_client_connect(const fs::path& executable, const fs::path& root,
                           const fs::path& home, const std::string& client,
                           const fs::path& config, const std::string& revision) {
-#ifdef _WIN32
-    (void)executable; (void)root; (void)home; (void)client; (void)config; (void)revision;
-    throw Error("client-config-platform", "Automatic client setup is currently available on macOS and Linux.");
-#else
     if (client != "codex" && client != "opencode" && client != "command-code" && client != "hermes")
         throw Error("invalid-arguments", "Choose codex, opencode, command-code or hermes.");
     if (!config.is_absolute() || config.filename().empty() || config.lexically_normal() != config)
@@ -108,6 +104,5 @@ Json local_client_connect(const fs::path& executable, const fs::path& root,
     result["client_modified"] = true;
     result["status"] = "configured";
     return result;
-#endif
 }
 }

@@ -18,10 +18,14 @@ struct FileStamp {
 };
 
 // Holds every path component against replacement. No data writes or
-// symlink/junction traversal; writable opens conflict for this short lifetime.
+// symlink/junction traversal; immutable reads reject writable opens. The explicit
+// numerical-history mode permits concurrent writers without allowing replacement.
 class ReadFile {
 public:
-    explicit ReadFile(const std::filesystem::path& absolute);
+    enum class Sharing { immutable, concurrent_writer };
+    // Only numerical client-history readers allow an existing writer. Paths and
+    // file identity remain pinned; Core source/evidence reads stay immutable.
+    explicit ReadFile(const std::filesystem::path& absolute, Sharing sharing = Sharing::immutable);
     ~ReadFile();
     ReadFile(const ReadFile&) = delete;
     ReadFile& operator=(const ReadFile&) = delete;

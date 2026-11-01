@@ -17,6 +17,9 @@
 #include <cstring>
 #include <charconv>
 #include <csignal>
+#ifdef _WIN32
+#include "shin/observer/windows_setup.h"
+#endif
 #ifndef _WIN32
 #include "../tui/view.h"
 #include <sys/stat.h>
@@ -77,6 +80,8 @@ int run(int argc, char** argv, char** environment) {
         std::cout << "Connect a project once. Existing settings are reused; new projects refresh in the background.\n"
 #ifndef _WIN32
                      "shin-ce stats [--home DIR] [--usage-file FILE] [--language auto|en|ru] opens the interactive read-only monitor.\n"
+#else
+                     "shin-ce prepare-projects [--home DIR] [--check] prepares or checks existing projects after a successful MSI update.\n"
 #endif
                      "shin-ce update-check|update-status [--prefix DIR] checks public releases or the last update result (macOS).\n"
                      "shin-ce update-install --revision HASH [--prefix DIR] installs an explicitly reviewed release (macOS).\n"
@@ -154,12 +159,13 @@ int run(int argc, char** argv, char** environment) {
     const bool supervised_child = request.command == "_serve-supervised";
     bool registered = background_child || supervised_child;
     bool no_service = false;
+    [[maybe_unused]] bool preparation_check = false;
     bool text_status = false;
     std::string setup_client = "generic", client_revision;
     fs::path client_config;
     fs::path usage_file;
     if (background_child || supervised_child) request.command = "serve";
-    if (!std::set<std::string>{"client-targets", "client-connect", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
+    if (!std::set<std::string>{"prepare-projects", "client-targets", "client-connect", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
                                "profile-relocate", "service-start", "service-status", "service-stop", "service-definition",
                                "service-install", "service-update", "service-uninstall", "service-installation"}.contains(request.command))
         throw Error("invalid-arguments", "Unsupported command; see shin-ce --help.");
@@ -172,6 +178,9 @@ int run(int argc, char** argv, char** environment) {
     std::set<std::string> seen;
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
+        if(request.command=="prepare-projects" && option=="--check" && seen.insert(option).second) {preparation_check=true;continue;}
+        if(request.command=="prepare-projects" && option!="--home")
+            throw Error("invalid-arguments","Use prepare-projects [--home DIR] [--check].");
         if ((request.command == "mcp-config" || request.command == "client-connect") && option == "--client" && seen.insert(option).second && i + 1 < argc) {
             setup_client = argv[++i];
             continue;
@@ -304,6 +313,14 @@ int run(int argc, char** argv, char** environment) {
     }
     if (!request.model_id.empty() && request.session_id.empty())
         throw Error("invalid-arguments", "Model attribution requires --session-id from the current host session.");
+    if(request.command=="prepare-projects") {
+#ifdef _WIN32
+        const auto result=prepare_windows_projects(request.home,executable_path(),preparation_check);
+        std::cout<<result.dump(2)<<'\n';return result.at("ok")==true?0:1;
+#else
+        throw Error("installation-platform-unsupported","MSI project preparation is available on Windows.");
+#endif
+    }
     if (!request.session_id.empty())
         request.session_id = digest("shin-session-v1:" + fs::weakly_canonical(request.home).string() + ":" + request.session_id);
     if (request.command == "client-targets" || request.command == "client-connect") {
@@ -364,13 +381,11 @@ int run(int argc, char** argv, char** environment) {
     else if (request.command == "serve")
         result = serve_local_projects(request, watch_roots, executable_path(), [] { return stop_requested != 0; }, registered, supervised_child,
                                       [&] { installation_guard.reset(); }
-#ifndef _WIN32
                                       , [&]() -> Json {
                                           if (!registered) return nullptr;
                                           try { return default_model_usage_sources(environment); }
                                           catch (...) { return Json::object(); }
                                       }()
-#endif
                                       );
     else if (request.command == "service-start") result = start_local_service(request, executable_path());
     else if (request.command.starts_with("storage-")) {
@@ -399,10 +414,8 @@ int run(int argc, char** argv, char** environment) {
     else if (use_service) result = request_local_service(request);
     else result = local_project(request);
     if (request.command == "init" && result.value("ok", false) && !no_service) {
-#ifndef _WIN32
         result["model_usage"] = {{"collection","automatic-background"},{"snapshot",(request.home/"usage/state.json").string()},
                                  {"history_completeness","depends-on-client-history"}};
-#endif
     }
     // The service-status projection budgets diagnostic detail, not indentation.
     // Project/query and control-response limits stay unchanged.

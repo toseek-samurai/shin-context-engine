@@ -12,6 +12,24 @@ NAMESPACE = uuid.UUID('4D5D4627-1B39-4F4A-ABEE-17CE51649F28')
 
 
 class WindowsPackageVersionTests(unittest.TestCase):
+    def test_profile_revision_is_independent_of_checkout_line_endings(self):
+        original = '{\n  "id": "synthetic",\n  "literal": "@KEEP@ ${EXPAND}",\n  "sourceFactMaxFiles": 15000\n}\n'
+        expected = original.replace('\n', '\r\n').encode()
+        with tempfile.TemporaryDirectory(prefix='shin-windows-profiles-') as directory:
+            root = Path(directory)
+            for ending in ('\n', '\r\n'):
+                source, output = root/'input.json', root/'output.json'
+                content = original.replace('\n', ending).encode()
+                source.write_bytes(content)
+                script = root/'profile.cmake'
+                script.write_text(f'include("{(MODULE.parent / "WindowsProfiles.cmake").as_posix()}")\n'
+                                  f'set(KEEP changed)\nset(EXPAND changed)\n'
+                                  f'shin_windows_profile_bytes("{source.as_posix()}" "{output.as_posix()}")\n')
+                result = subprocess.run([CMAKE, '-P', str(script)], capture_output=True, text=True, timeout=10)
+                self.assertEqual(result.returncode, 0, result.stderr)
+                self.assertEqual(output.read_bytes(), expected)
+                self.assertEqual(source.read_bytes(), content)
+
     def identity(self, version, valid=True):
         with tempfile.TemporaryDirectory(prefix='shin-msi-version-') as directory:
             root = Path(directory)

@@ -12,7 +12,10 @@ endfunction()
 shin_windows_test(shin-observer-windows-storage-tests windows_storage_test.cpp shin-observer-windows-storage)
 shin_windows_test(shin-windows-scm-transport-tests windows_scm_transport_test.cpp shin-windows-scm-transport)
 target_compile_options(shin-windows-scm-transport-tests PRIVATE /UNDEBUG)
-add_test(NAME shin-windows-machine-code COMMAND shin-observer-windows-storage-tests --machine-image "${CMAKE_COMMAND}")
+# This fixture must have protected machine ownership and one hard link. A user
+# SDK cannot provide that; Windows system files may be hard-linked by servicing.
+set(SHIN_WINDOWS_MACHINE_TEST_IMAGE "${CMAKE_COMMAND}" CACHE FILEPATH "Protected, singly linked executable for Windows machine-code tests")
+add_test(NAME shin-windows-machine-code COMMAND shin-observer-windows-storage-tests --machine-image "${SHIN_WINDOWS_MACHINE_TEST_IMAGE}")
 set_tests_properties(shin-windows-machine-code PROPERTIES TIMEOUT 30)
 shin_windows_test(shin-observer-windows-runtime-tests windows_runtime_test.cpp shin-observer-windows-runtime)
 shin_windows_test(shin-local-changes-tests local_changes_test.cpp shin-local-changes)

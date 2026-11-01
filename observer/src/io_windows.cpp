@@ -93,8 +93,8 @@ void replace_user_archive(const fs::path& path, const std::string& expected, con
 }
 
 void replace_user_config(const fs::path& path, const std::string& expected, const std::string& content, const std::string& identity) {
-    // Profile relocation owns a private configuration. Keep that exact ACL
-    // contract; automatic editing of broader client ACLs is not enabled here.
+    // Client configuration uses the same pinned parent, owner/ACL checks and
+    // expected-byte replacement as a private profile relocation. Never relax ACLs.
     replace_user_archive(path, expected, content, identity);
 }
 

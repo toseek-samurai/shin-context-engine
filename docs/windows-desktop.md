@@ -76,6 +76,79 @@ Projects, settings and history remain outside the installed binaries.
 The update page uses the tray popup: switching focus to the browser hides the
 panel. Reopen it from the tray to return to the check result.
 
+## Unreleased source
+
+The following is implemented in working source and is **not part of published
+dev.70**. Keep download pins above on the complete published release until a new
+candidate has passed the guarded publisher.
+
+Windows packages preserve CRLF in bundled profile JSON independently of checkout
+line endings. Project bindings pin exact profile bytes: packaging the same policy
+from LF and CRLF checkouts must not create different approved revisions. Source
+files and project-owned profiles are not rewritten; revision checks remain strict.
+
+After Windows Installer confirms success and the installed inventory is verified,
+the helper runs the **new installed** `shin-ce prepare-projects` as the ordinary
+desktop user. Existing enrolled projects are prepared with their approved profiles
+and original source/workspace identities, including a rebuild when Core changes.
+Completion requires every enrolled project to be admitted by the current service.
+Changed profile approvals, missing roots or concurrent enrollment changes remain
+errors; preparation never accepts policy changes or reattaches detached projects.
+
+The full MSI wizard offers a checked **Finish project setup and open Shin Monitor**
+action. It runs the same helper unelevated after the Installer transaction has
+finished. Monitor-initiated updates use passive Windows Installer progress, then
+prepare projects explicitly. An unchecked Finish action or an independently run
+quiet/passive MSI skips the desktop callback: run `shin-ce prepare-projects`
+after installation, with `--home DIR` for a custom data home. `--check` only checks
+the saved completion against the current kit, enrollment and live readiness.
+No project data is changed by SYSTEM during the MSI transaction.
+
+- **Settings → Connect projects and agents…**, and the empty-state setup action,
+  select and add a project, discover supported agent configuration locations and
+  let the user choose which configurations to change. **Review connections**
+  precedes **Connect selected agents**. Codex, OpenCode, Command Code and Hermes
+  reuse the shared lossless parsers, exact revision checks, private backups and
+  atomic replacement. Other configuration is preserved; reconnect MCP afterward.
+- **Projects → project → Project actions** provides agent connection,
+  disconnection and storage access. Disconnecting preserves sources, indexes,
+  history and settings. Cache deletion is separate, confirmed and tied to the
+  exact storage-plan revision. A partial connection failure retains the completed
+  results in the diagnostic report; it does not undo or repeat earlier writes.
+- **Settings → Login settings…** opens Windows Startup Apps for Monitor.
+  The machine MSI host continues to own the background service.
+- The registered service collects readable Codex, OpenCode and Hermes history
+  automatically. Missing or unsupported history remains visible as unavailable
+  or partial. Windows paths with different slash/case spellings are matched only
+  after confirming the same directory identity. History readers may coexist with
+  active writers; ordinary Core readers retain immutable file sharing.
+- The Monitor uses per-monitor DPI awareness and physical-resolution DX11 frames,
+  with mouse positions converted into the same logical coordinates. Automated
+  native checks cover physical clicks at 100%, 150% and 200%; mixed-monitor moves
+  and interactive accessibility remain separate checks.
+- Update checks run after startup and every six hours, with an opt-out and manual
+  entry points in Settings and the tray menu. Checks use public metadata only.
+  **Download and install** requires confirmation, copies the installed helper to
+  private staging, rechecks the exact offer, downloads and verifies the MSI and
+  checksum, then closes only the initiating Monitor and invokes Windows Installer
+  with normal UAC. Stages and download bytes are shown; MSI owns installation
+  progress and rollback. Portable ZIPs use manual MSI installation.
+- **Last update result…** works offline. **Review previous update** refuses a live
+  helper, can confirm an installed target only after checking its complete file
+  inventory, and can acknowledge a known failure before installation. An unknown
+  Installer outcome requires review and never silently starts another MSI.
+  Project preparation has its own private `windows-setup` journal. The result
+  page shows per-project errors even after ordinary MSI setup and offers
+  **Retry project preparation** without reinstalling MSI or changing approvals.
+  A failing project does not stop preparation of the others. Setup and update
+  pages stay visible when another window gains focus.
+
+Native source compilation, synthetic configuration/history checks and D3D11 render
+checks establish source behavior. They do not qualify a newly published archive
+or an installed upgrade through UAC. Rehearse that path with a distinct next
+candidate; do not install altered binaries under the published dev.70 identity.
+The terminal dashboard remains unavailable on Windows.
+
 ## Build and verification
 
 Use the matching checkout's `docs/building.md` for PowerShell commands and full
@@ -93,7 +166,8 @@ also describes the distinction between local and hosted-runner checks.
 
 Keep the checkout and an absolute external `SHIN_BUILD_ROOT` outside AppData
 and TEMP. Full local tests need an unelevated interactive desktop, symlink
-creation rights for refusal fixtures, and a protected CMake installation. Do not substitute an
+creation rights for refusal fixtures, and a protected machine-image test fixture
+(CMake by default; the build guide describes an explicit override). Do not substitute an
 elevated shell for the user-runtime checks. The source workflow uploads test
 reports. The guarded publisher requires Windows package qualification before
 making a preview release public.

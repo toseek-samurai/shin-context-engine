@@ -5,6 +5,7 @@
 #include <windows.h>
 #include <array>
 #include <vector>
+#include <map>
 
 namespace shin::observer {
 namespace {
@@ -99,10 +100,18 @@ public:
         std::array<wchar_t, 32768> windows{};
         const auto length = GetWindowsDirectoryW(windows.data(), static_cast<UINT>(windows.size()));
         require(length && length < windows.size());
-        std::wstring environment = L"SystemRoot=" + std::wstring(windows.data(), length);
-        environment += L'\0'; environment += L"TEMP=" + fs::temp_directory_path().native();
-        environment += L'\0'; environment += L"TMP=" + fs::temp_directory_path().native();
-        environment += L'\0'; environment += L'\0';
+        std::map<std::wstring,std::wstring> variables{{L"SystemRoot",std::wstring(windows.data(),length)},
+            {L"TEMP",fs::temp_directory_path().native()},{L"TMP",fs::temp_directory_path().native()}};
+        // Preserve only supported usage-source overrides when detaching. Never
+        // inherit PATH, loader hooks, credentials or the caller's full environment.
+        for(const auto* key:{L"USERPROFILE",L"CODEX_HOME",L"XDG_DATA_HOME",L"HERMES_HOME"}) {
+            std::array<wchar_t,32768> value{};
+            const auto count=GetEnvironmentVariableW(key,value.data(),static_cast<DWORD>(value.size()));
+            require(count<value.size());if(count) variables[key]=std::wstring(value.data(),count);
+        }
+        std::wstring environment;
+        for(const auto& [key,value]:variables) {environment+=key+L"="+value;environment+=L'\0';}
+        environment+=L'\0';require(environment.size()<=32767);
         auto command = quoted(executable.native()) + L" _serve-registered --home " + quoted(home.native());
         PROCESS_INFORMATION child{};
         require(CreateProcessW(executable.c_str(), command.data(), nullptr, nullptr, TRUE,

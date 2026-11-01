@@ -888,15 +888,11 @@ Json serve_local_projects(const LocalProjectRequest& request, const std::vector<
         }
     });
     std::jthread usage_collection;
-#ifndef _WIN32
     if (registered && !usage_sources.is_null())
         usage_collection = std::jthread([&request, &usage_sources](std::stop_token stop) {
             try { watch_registered_model_usage(request.home, usage_sources, stop); }
             catch (...) { return; } // A stopped collector leaves a visibly stale snapshot, never a crashed service.
         });
-#else
-    (void)usage_sources;
-#endif
     LocalEnrollmentHooks enrollment;
     enrollment.removed = [&](const auto& root) { service.retire_project(root); };
     enrollment.preparing = [&](const auto& root, bool active) {

@@ -17,7 +17,7 @@ not restart those IDE sessions.
 
 ## Capabilities by platform
 
-This table describes the current preview and source routes. A shared engine or
+This table describes published dev.70 and the Linux source route. A shared engine or
 dashboard does not imply that every platform has the same setup and update tools.
 
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 source build | Windows x64 ZIP / MSI |
@@ -45,6 +45,15 @@ Linux implementation, not the native Windows application.
 
 The macOS preview is ad-hoc signed, without Developer ID or notarization.
 Homebrew is a project-owned tap, not an entry in Homebrew's official catalog.
+
+## Unreleased Windows source
+
+The current working source adds graphical project/agent setup, project actions,
+storage management, startup-settings access, automatic client-history collection
+and reviewed MSI installation with UAC. It also uses physical-resolution rendering
+and matching logical input coordinates at 100–200% DPI. These changes are not in
+published dev.70. See the [source behavior and verification boundary](windows-desktop.md#unreleased-source)
+before testing a development build.
 
 ## Installation and everyday use
 

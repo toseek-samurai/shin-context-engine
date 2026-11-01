@@ -158,8 +158,9 @@ publisher. It neither extends the caller's wait nor overrides failure backoff.
 
 ## Monitor and CLI
 
-The table maps the macOS Monitor to CLI/TUI actions. Windows lacks graphical
-project onboarding and storage management; use its CLI for those operations.
+The table maps the macOS Monitor to CLI/TUI actions. Published Windows dev.70
+uses the CLI for project onboarding and storage management; unreleased Windows
+source adds corresponding Monitor pages. See [Windows scope](windows-desktop.md#unreleased-source).
 
 | In Monitor | In the CLI today |
 | --- | --- |
@@ -199,7 +200,8 @@ See [installation](local-kit.md) and [MCP setup](native-client-setup.md).
 
 Shin's usage collector observes supported local client usage records. It is not
 required for indexing or retrieval. On macOS and Linux, adding a project enables
-automatic collection for that project. Windows has no automatic collector.
+automatic collection for that project. Unreleased Windows source also collects
+client history through the registered service; published dev.70 has no collector.
 Counters depend on readable client history; missing history is
 reported as incomplete. See [the local kit guide](local-kit.md)
 for configuration details.
@@ -390,6 +392,15 @@ default model in shared client configuration would also mislabel model switches.
 These commands belong to the native kit. Homebrew packages use `brew upgrade`;
 Windows Monitor offers manual release checks and MSI links, not these native
 installation commands.
+
+Unreleased Windows source adds `shin-ce prepare-projects [--home DIR] [--check]`.
+After a successful MSI installation, it prepares all currently enrolled projects
+with the installed Core and existing approvals, then verifies their service
+readiness. It runs as the normal desktop user; policy failures are reported per
+project in the private `windows-setup` journal. `--check` is read-only and refuses
+missing, interrupted or outdated completion. It does not approve profiles or
+re-enroll detached projects. See the [Windows guide](windows-desktop.md#unreleased-source)
+for the MSI completion action and unattended installation boundaries.
 
 `shin-ce update-check [--prefix DIR]` reads the public releases feed and returns
 an eligible newer kit with an opaque `revision`. It performs no installation.

@@ -1,7 +1,7 @@
 #pragma once
 
-// Public metadata only. The reviewed MSI and checksum are opened in the user's
-// browser; this route never downloads, executes or elevates an installer.
+// Release checks read public metadata only. Installation is a separate explicit
+// handoff to the staged helper and native Windows Installer.
 Json fetch_windows_release() {
     struct Close { void operator()(void* value) const { if (value) WinHttpCloseHandle(value); } };
     using Internet = std::unique_ptr<void, Close>;
@@ -76,10 +76,10 @@ private:
 };
 std::unique_ptr<WindowsReleaseCheck> release_check;
 
-void open_updates() {
-    updates_page = true;
+void open_updates(bool check) {
+    updates_page = true; management_page = false;
     if (!release_check) release_check = std::make_unique<WindowsReleaseCheck>();
-    release_check->check();
+    if(check) release_check->check();
     show_panel();
 }
 
@@ -103,12 +103,156 @@ void open_update_link(const Json& offer, const char* field) {
         MessageBoxW(panel, wide(shin::ui::tr("Cannot open the release in your browser.")).c_str(), L"Shin", MB_OK | MB_ICONWARNING);
 }
 
+fs::path windows_update_folder;
+Json windows_update_result=Json::object();
+Clock::time_point windows_update_poll;
+std::future<Json> windows_update_review;
+std::string windows_update_review_error;
+
+Json windows_project_preparation(const fs::path& prefix, bool check_only) {
+    const auto manifest=windows_update::verify_installed(prefix,SHIN_OBSERVER_VERSION);
+    std::vector<std::string> arguments{"prepare-projects","--home",management.home.string()};
+    if(check_only) arguments.push_back("--check");
+    const auto result=windows_command(prefix/"bin/shin-ce.exe",arguments,std::chrono::seconds(1105));
+    if(result.value("version","")!=manifest.at("version").get_ref<const std::string&>() ||
+        result.value("core_version","")!=manifest.at("core_version").get_ref<const std::string&>())
+        throw Error("update-installation-changed","Project preparation belongs to another installation.");
+    return result;
+}
+Json windows_setup_result(Json preparation) {
+    return {{"kind","setup-only"},{"phase",preparation.value("phase","review-required")},
+        {"error_code",preparation.value("error",Json::object()).value("code","")},
+        {"project_preparation",std::move(preparation)}};
+}
+void read_windows_setup_result() {
+    const auto path=management.home/"windows-setup";
+    if(!fs::exists(path)) return;
+    StateStore state(path,false);auto preparation=state.load();
+    if(!preparation) return;
+    if(!state.writer_present() && (preparation->value("phase","")=="preparing" ||
+        preparation->value("version","")!=SHIN_OBSERVER_VERSION || preparation->value("core_version","")!=SHIN_VERSION)) {
+        (*preparation)["phase"]="review-required";
+        (*preparation)["error"]={{"code","installation-preparation-unavailable"}};
+    }
+    windows_update_result=windows_setup_result(std::move(*preparation));
+}
+
+Json review_windows_installation(const fs::path& folder,const std::string& identity,const fs::path& prefix) {
+    if(directory_identity(folder,true)!=identity) throw Error("update-stage-changed","Update state changed.");
+    StateStore store(folder,true);store.recover_pending(); // Refuses a live helper.
+    auto saved=store.load().value();
+    if(saved.value("schema_version","")!="shin.windows-update.v1" || directory_identity(prefix)!=directory_identity(fs::path(saved.at("prefix").get<std::string>())))
+        throw Error("update-review-changed","The installation or review changed.");
+    shin::windows::ReadFile file(prefix/"shin-kit.json");file.require_machine_owned();
+    const auto manifest=parse_json(file.read(kMaximumStateBytes));
+    const auto version=manifest.at("version").get<std::string>();
+    if(version==saved.at("offer").at("version").get_ref<const std::string&>()) {
+        const auto code=saved.value("installer_exit_code",DWORD(-1));
+        const auto prepared=windows_project_preparation(prefix,code!=0 && code!=3010 && code!=1641);
+        saved["project_preparation"]=prepared;
+        if(!prepared.value("ok",false)) {
+            saved["phase"]="review-required";saved["error_code"]="installation-project-not-ready";
+            store.save(saved);return saved;
+        }
+        saved["phase"]="completed";saved["installed_version"]=version;saved.erase("error_code");
+    } else {
+        const std::set<std::string> before_install{"reviewed","checking","downloading","verifying","waiting-monitor"};
+        const std::set<std::string> no_install{"update-uac-cancelled","update-offer-changed","update-download-invalid","update-helper-launch-failed","update-monitor-running"};
+        if(version!=saved.at("from_version").get_ref<const std::string&>() || (!before_install.contains(saved.value("phase","")) &&
+            !(saved.value("phase","")=="review-required" && no_install.contains(saved.value("error_code","")))))
+            throw Error("update-outcome-unknown","Review Windows Installer before retrying. Its outcome could not be confirmed.");
+        saved["phase"]="acknowledged";
+    }
+    store.save(saved);return saved;
+}
+
+void poll_windows_installation() {
+    if(test_mode || Clock::now()<windows_update_poll) return;
+    windows_update_poll=Clock::now()+std::chrono::seconds(1);
+    if(windows_update_folder.empty()) {
+        const auto saved=settings.value("windows_update_folder","");
+        if(saved.empty()) {
+            try {read_windows_setup_result();} catch(...) {windows_update_result={{"kind","setup-only"},{"phase","review-required"},{"error_code","update-state-unavailable"}};}
+            return;
+        }
+        const fs::path folder(saved);
+        if(folder.parent_path()!=management.home/"updates/windows") return;
+        windows_update_folder=folder;
+    }
+    try {
+        if(directory_identity(windows_update_folder,true)!=settings.value("windows_update_identity","")) throw Error("update-stage-changed","Update state changed.");
+        StateStore store(windows_update_folder,false);
+        windows_update_result=store.load().value_or(Json::object());
+        if(windows_update_result.value("schema_version","")!="shin.windows-update.v1") throw Error("update-state-invalid","Unknown update state.");
+        const auto phase=windows_update_result.value("phase","");
+        if((phase=="completed" || phase=="acknowledged") && windows_update_result.value("installed_version","")!=SHIN_OBSERVER_VERSION)
+            read_windows_setup_result();
+        FILETIME created{},exited{},kernel{},user{};GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user);
+        const auto identity=(static_cast<std::uint64_t>(created.dwHighDateTime)<<32)|created.dwLowDateTime;
+        if(windows_update_result.value("phase","")=="waiting-monitor" && windows_update_result.value("monitor_pid",0UL)==GetCurrentProcessId() &&
+            windows_update_result.value("monitor_created",0ULL)==identity) PostMessageW(panel,WM_APP+4,0,0);
+    } catch(...) { windows_update_result={{"phase","review-required"},{"error_code","update-state-unavailable"}}; }
+}
+void install_windows_update(const Json& offer) {
+    using shin::ui::tr;
+    poll_windows_installation();
+    const auto previous=windows_update_result.value("phase","");
+    if(!previous.empty() && previous!="completed" && previous!="acknowledged" && previous!="review-required")
+        throw Error("update-in-progress","An update is already in progress. Review its saved result.");
+    if(previous=="review-required") throw Error("update-review-required","Review the previous update before retrying.");
+    if(test_mode || !offer.value("available",false)) return;
+    modal=true;
+    const auto confirmed=MessageBoxW(panel,wide(tr("Download, verify and install this update? Windows Installer will request UAC. Projects, settings and history are preserved.")).c_str(),L"Shin",MB_YESNO|MB_ICONQUESTION);
+    modal=false;if(confirmed!=IDYES) return;
+    const auto prefix=current_executable_path().parent_path().parent_path();
+    std::array<wchar_t,32768> registry{};DWORD length=static_cast<DWORD>(registry.size()*sizeof(wchar_t));
+    if(RegGetValueW(HKEY_LOCAL_MACHINE,L"Software\\Shin\\DesktopPreview",L"InstallRoot",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,registry.data(),&length)!=ERROR_SUCCESS ||
+        directory_identity(prefix)!=directory_identity(fs::path(registry.data())))
+        throw Error("update-msi-installation-required","This route updates an MSI installation. Install the MSI manually for a portable package.");
+    const auto bin=prefix/"bin";
+    shin::windows::ReadFile helper(bin/"shin-windows-updater.exe");helper.require_machine_owned();
+    ensure_private_directory(management.home/"updates");ensure_private_directory(management.home/"updates/windows");
+    const auto folder=management.home/"updates/windows"/("update-"+digest(std::to_string(now_ms())+std::to_string(GetCurrentProcessId())).substr(0,24));
+    shin::windows::Directory::ensure_private(folder,true);
+    shin::windows::Directory destination(folder,shin::windows::Directory::Access::private_owner);
+    if(!destination.create("updater.exe",helper.read(64U*1024*1024))) throw Error("update-stage-conflict","Update helper already exists.");
+    unsigned files=0;
+    for(const auto& entry:fs::directory_iterator(bin)) if(entry.path().extension()==".dll") {
+        if(++files>16) throw Error("update-stage-invalid","Too many helper libraries.");
+        shin::windows::ReadFile library(entry.path());library.require_machine_owned();
+        if(!destination.create(entry.path().filename().string(),library.read(32U*1024*1024))) throw Error("update-stage-conflict","Update helper library already exists.");
+    }
+    FILETIME created{},exited{},kernel{},user{};GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user);
+    const auto identity=(static_cast<std::uint64_t>(created.dwHighDateTime)<<32)|created.dwLowDateTime;
+    { StateStore store(folder,true);store.recover_pending();
+      store.save({{"schema_version","shin.windows-update.v1"},{"phase","reviewed"},{"offer",offer},{"prefix",prefix.string()},
+        {"from_version",SHIN_OBSERVER_VERSION},{"monitor_pid",GetCurrentProcessId()},{"monitor_created",identity},{"language",shin::ui::language()==shin::ui::Language::ru?"ru":"en"}}); }
+    settings["windows_update_folder"]=folder.string();settings["windows_update_identity"]=directory_identity(folder,true);save_settings();
+    windows_update_folder=folder;windows_update_poll={};
+    const auto executable=folder/"updater.exe";
+    const std::wstring arguments=L"--review \""+folder.wstring()+L"\"";
+    SHELLEXECUTEINFOW start{};start.cbSize=sizeof(start);start.fMask=SEE_MASK_NOCLOSEPROCESS;start.hwnd=panel;
+    start.lpVerb=L"open";start.lpFile=executable.c_str();start.lpParameters=arguments.c_str();start.nShow=SW_SHOWNORMAL;
+    if(!ShellExecuteExW(&start)) {
+        {StateStore store(folder,true);store.recover_pending();auto state=store.load().value();state["phase"]="review-required";state["error_code"]="update-helper-launch-failed";store.save(state);}
+        throw Error("update-helper-launch-failed","Could not open the update progress window.");
+    }
+    if(start.hProcess) CloseHandle(start.hProcess);
+    poll_windows_installation();
+}
+
 void render_windows_updates(const WindowsUpdateSnapshot& state) {
     using shin::ui::tr;
     ui_actions.clear();
+    if(windows_update_review.valid() && windows_update_review.wait_for(std::chrono::seconds(0))==std::future_status::ready) {
+        try {windows_update_result=windows_update_review.get();windows_update_poll={};}
+        catch(const Error& error) {windows_update_review_error=error.code;}
+        catch(...) {windows_update_review_error="update-outcome-unknown";}
+    }
     ImGui::SetNextWindowPos({0, 0}); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Shin updates", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+    ImGui::PushFont(nullptr,14);
     const auto origin = ImGui::GetCursorScreenPos();
     draw_brand({origin.x, origin.y + 3}, 32);
     ImGui::Dummy({32, 40}); ImGui::SameLine(); ImGui::BeginGroup();
@@ -118,6 +262,8 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
     ImGui::TextColored(muted, "%s · v%s", tr("Current version"), SHIN_OBSERVER_VERSION);
     ImGui::PopFont(); ImGui::EndGroup();
     ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
+    bool automatic=settings.value("automatic_update_checks",true);
+    if(ImGui::Checkbox(tr("Automatically check for updates"),&automatic) && !test_mode) { settings["automatic_update_checks"]=automatic;save_settings(); }
     const float footer = ImGui::GetWindowHeight() - 42;
     ImGui::BeginChild("update-content", {0, std::max(1.0f, footer - ImGui::GetCursorPosY() - 6)});
     const bool busy = state.state == WindowsUpdateState::checking;
@@ -129,24 +275,61 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
     ImGui::Spacing();
     if (offer) {
         ImGui::TextColored(sand, "v%s  ->  v%s", SHIN_OBSERVER_VERSION, state.offer.at("version").get_ref<const std::string&>().c_str());
-        ImGui::TextWrapped("%s", tr("Download the MSI and its checksum. Verify the download, close Monitor, then run the installer and confirm Windows UAC. Projects, settings and history stay in place."));
+        ImGui::TextWrapped("%s", tr("Shin downloads and verifies the MSI, then opens Windows Installer. Confirm UAC to install. The installer owns progress and rollback; projects, settings and history stay in place."));
         ImGui::Spacing();
         ImGui::PushStyleColor(ImGuiCol_Button, sand); ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ink);
         ImGui::PushStyleColor(ImGuiCol_ButtonActive, muted); ImGui::PushStyleColor(ImGuiCol_Text, background);
-        const bool download = update_button(tr("Download MSI"), 202);
+        poll_windows_installation();
+        const auto phase=windows_update_result.value("phase","");
+        const bool download = update_button(tr("Download and install"), 202,!windows_update_review.valid() && (phase.empty() || phase=="completed" || phase=="acknowledged"));
         ImGui::PopStyleColor(4);
-        if (download) open_update_link(state.offer, "archive_url");
+        if (download) install_windows_update(state.offer);
         if (update_button(tr("Download checksum"), 203)) open_update_link(state.offer, "checksum_url");
         if (update_button(tr("Release notes"), 204)) open_update_link(state.offer, "release_url");
     } else {
         ImGui::TextWrapped("%s", busy ? tr("Shin continues to work while the release is checked. You can leave this window open or close it.") :
             state.state == WindowsUpdateState::failed ? tr("GitHub is unavailable or no complete release feed could be read. Shin continues to work offline. Try again later.") :
-            tr("Checks public Windows releases on GitHub. Installation starts only when you run the downloaded MSI."));
+            tr("Checks public Windows releases on GitHub. Installation starts only after your confirmation."));
+    }
+    poll_windows_installation();
+    if(!windows_update_result.empty()) {
+        ImGui::Separator();
+        const bool setup_only=windows_update_result.value("kind","")=="setup-only";
+        const auto phase=windows_update_result.value("phase","");
+        ImGui::TextWrapped("%s",setup_only?tr("Project preparation"):tr("Last update result…"));
+        const std::map<std::string,const char*> phases{{"reviewed",tr("Checking reviewed release…")},{"checking",tr("Checking reviewed release…")},
+            {"downloading",tr("Downloading update…")},{"verifying",tr("Verifying download…")},{"waiting-monitor",tr("Waiting for Monitor to close…")},
+            {"preparing-projects",tr("Preparing projects…")},{"preparing",tr("Preparing projects…")},
+            {"installing",tr("Windows Installer is installing the update. Confirm UAC to continue.")},
+            {"completed",tr("Update completed. Restart persistent MCP clients.")},{"acknowledged",tr("Operation completed.")}};
+        const auto found=phases.find(windows_update_result.value("phase",""));
+        ImGui::TextWrapped("%s",setup_only?(phase=="completed"?tr("Projects ready to use"):
+            phase=="preparing"?tr("Preparing projects…"):tr("Project preparation needs attention.")):
+            found==phases.end()?tr("Update was not confirmed. Check the saved result before retrying."):found->second);
+        const auto code=windows_update_result.value("error_code","");
+        if(!code.empty()) ImGui::TextWrapped("%s",code.c_str());
+        for(const auto& project:windows_update_result.value("project_preparation",Json::object()).value("projects",Json::array())) {
+            const auto ok=project.value("ok",false);
+            ImGui::TextColored(ok?green:red,"%s",ok?tr("ready"):tr("Needs attention"));
+            ImGui::SameLine();ImGui::TextWrapped("%s",project.value("root","").c_str());
+            if(!ok) ImGui::TextWrapped("%s",project.value("error_code","").c_str());
+        }
+        if(update_button(tr("Copy diagnostic report"),206)) platform_copy(windows_update_result.dump(2));
+        if(phase!="completed" && phase!="acknowledged" && update_button(setup_only?tr("Retry project preparation"):tr("Review previous update"),207,!windows_update_review.valid()) && !test_mode) {
+            const auto folder=windows_update_folder,prefix=current_executable_path().parent_path().parent_path();
+            const auto identity=settings.value("windows_update_identity","");windows_update_review_error.clear();
+            windows_update_review=std::async(std::launch::async,[folder,identity,prefix,setup_only]{
+                return setup_only?windows_setup_result(windows_project_preparation(prefix,false)):review_windows_installation(folder,identity,prefix);
+            });
+        }
+        if(windows_update_review.valid()) ImGui::TextWrapped("%s",tr("Operation in progress…"));
+        if(!windows_update_review_error.empty()) ImGui::TextWrapped("%s",windows_update_review_error.c_str());
     }
     ImGui::Spacing();
     if (update_button(tr("Check again"), 205, !busy) && !test_mode) release_check->check();
     ImGui::EndChild();
     ImGui::SetCursorPosY(footer);
     if (update_button(tr("Back to Monitor"), 201)) { updates_page = false; if (!test_mode) show_panel(); }
+    ImGui::PopFont();
     ImGui::End();
 }

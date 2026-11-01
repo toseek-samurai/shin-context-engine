@@ -6,12 +6,17 @@
 #include <algorithm>
 #include <chrono>
 #include <deque>
+#ifdef _WIN32
+#include <windows.h>
+#include "shin/windows/file.h"
+#else
 #include <fcntl.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 #include <map>
 #include <mutex>
 #include <set>
-#include <sys/stat.h>
-#include <unistd.h>
 
 namespace shin::observer {
 namespace {
@@ -46,14 +51,22 @@ std::string day_text(std::int64_t ms) {
     char text[16]; std::snprintf(text, sizeof(text), "%04d-%02u-%02u", static_cast<int>(date.year()), static_cast<unsigned>(date.month()), static_cast<unsigned>(date.day())); return text;
 }
 struct Database {
+#ifdef _WIN32
+    std::unique_ptr<shin::windows::ReadFile> pinned;
+#endif
     std::unique_ptr<sqlite3, decltype(&sqlite3_close)> db{nullptr, sqlite3_close};
     Clock::time_point deadline;
     std::stop_token stop;
     Database(const fs::path& path, Clock::time_point until, std::stop_token token) : deadline(until), stop(token) {
         need(fs::canonical(path) == fs::absolute(path).lexically_normal());
+#ifdef _WIN32
+        pinned=std::make_unique<shin::windows::ReadFile>(path,shin::windows::ReadFile::Sharing::concurrent_writer); pinned->require_user_owned();
+        need(pinned->stamp().links==1);
+#else
         struct stat status{}; need(::lstat(path.c_str(), &status) == 0 && S_ISREG(status.st_mode) && status.st_uid == ::geteuid() && status.st_nlink == 1 && !(status.st_mode & 0022));
+#endif
         sqlite3* raw = nullptr;
-        const int rc = sqlite3_open_v2(path.c_str(), &raw, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW | SQLITE_OPEN_NOMUTEX, nullptr);
+        const int rc = sqlite3_open_v2(path.string().c_str(), &raw, SQLITE_OPEN_READONLY | SQLITE_OPEN_NOFOLLOW | SQLITE_OPEN_NOMUTEX, nullptr);
         db.reset(raw); need(rc == SQLITE_OK);
         sqlite3_busy_timeout(raw, 200);
         need(sqlite3_db_config(raw, SQLITE_DBCONFIG_TRUSTED_SCHEMA, 0, nullptr) == SQLITE_OK);
@@ -111,31 +124,47 @@ Cached codex_file(const fs::path& path, const Json& config, const std::string& s
         if (!relative.empty() && *relative.begin() != "..") allowed = true;
     }
     need(allowed, "rollout-outside-roots");
+#ifdef _WIN32
+    shin::windows::ReadFile pinned(path,shin::windows::ReadFile::Sharing::concurrent_writer); pinned.require_user_owned();
+    const auto metadata=pinned.stamp(); need(metadata.links==1,"rollout-unsafe-file");
+    const auto file_size=metadata.bytes; const auto mtime=metadata.modified_ns;
+    need(file_size<=maximum_read_bytes,"rollout-too-large");
+    struct Close { HANDLE fd; ~Close(){ CloseHandle(fd); } } file{CreateFileW(path.c_str(),GENERIC_READ,FILE_SHARE_READ|FILE_SHARE_WRITE,nullptr,OPEN_EXISTING,FILE_FLAG_OPEN_REPARSE_POINT,nullptr)};
+    need(file.fd!=INVALID_HANDLE_VALUE,"rollout-read-failed");
+#else
     const int fd = ::open(path.c_str(), O_RDONLY | O_NOFOLLOW | O_CLOEXEC | O_NONBLOCK); need(fd >= 0, "rollout-read-failed");
     struct Close { int fd; ~Close(){ ::close(fd); } } close{fd};
     struct stat s{}; need(::fstat(fd, &s) == 0, "rollout-read-failed");
     need(S_ISREG(s.st_mode) && s.st_uid == ::geteuid() && s.st_nlink == 1 && !(s.st_mode & 0022) && s.st_size >= 0, "rollout-unsafe-file");
-    need(static_cast<std::uint64_t>(s.st_size) <= maximum_read_bytes, "rollout-too-large");
+    const auto file_size=static_cast<std::uint64_t>(s.st_size);
+    need(file_size <= maximum_read_bytes, "rollout-too-large");
 #ifdef __APPLE__
     const auto mtime = static_cast<std::int64_t>(s.st_mtimespec.tv_sec) * 1000000000 + s.st_mtimespec.tv_nsec;
 #else
     const auto mtime = static_cast<std::int64_t>(s.st_mtim.tv_sec) * 1000000000 + s.st_mtim.tv_nsec;
 #endif
+#endif
     const auto key = path.string() + ":" + session + ":" + digest(config.dump()) + ":" + day_text(from) + ":" + session_home.string();
-    if (const auto it = cache.find(key); it != cache.end() && !it->second.future && it->second.size == static_cast<std::uint64_t>(s.st_size) && it->second.mtime == mtime) return it->second;
+    if (const auto it = cache.find(key); it != cache.end() && !it->second.future && it->second.size == file_size && it->second.mtime == mtime) return it->second;
     // Admit a complete file against the existing sweep budget. Large sessions
     // need no separate smaller ceiling; memory remains a bounded line/chunk buffer.
-    need(static_cast<std::uint64_t>(s.st_size) <= maximum_read_bytes - bytes, "usage-byte-budget-exhausted");
-    Cached result; result.size = static_cast<std::uint64_t>(s.st_size); result.mtime = mtime;
+    need(file_size <= maximum_read_bytes - bytes, "usage-byte-budget-exhausted");
+    Cached result; result.size = file_size; result.mtime = mtime;
     std::string line, model = "unknown", previous_total; bool discard = false, owned = false, seen_owner = false;
     std::array<char, 65536> buffer{};
     std::uint64_t consumed = 0, lines = 0;
     while (consumed < result.size) {
         need(!stop.stop_requested(), "usage-cancelled");
         need(Clock::now() < deadline, "usage-time-budget-exhausted");
-        const auto count = ::read(fd, buffer.data(), std::min<std::uint64_t>(buffer.size(), result.size - consumed)); need(count > 0, "rollout-read-failed");
+#ifdef _WIN32
+        DWORD read=0; need(::ReadFile(file.fd,buffer.data(),static_cast<DWORD>(std::min<std::uint64_t>(buffer.size(),result.size-consumed)),&read,nullptr)!=FALSE,"rollout-read-failed");
+        const auto count=static_cast<std::size_t>(read); need(count>0,"rollout-read-failed");
+#else
+        const auto read=::read(fd,buffer.data(),std::min<std::uint64_t>(buffer.size(),result.size-consumed)); need(read>0,"rollout-read-failed");
+        const auto count=static_cast<std::size_t>(read);
+#endif
         consumed += static_cast<std::uint64_t>(count); bytes += static_cast<std::uint64_t>(count);
-        for (ssize_t i = 0; i < count; ++i) {
+        for (std::size_t i = 0; i < count; ++i) {
             const char c = buffer[static_cast<std::size_t>(i)];
             if (c != '\n') {
                 if (!discard) { if (line.size() < 1024*1024) line.push_back(c); else { discard = true; line.clear(); } }
@@ -223,6 +252,32 @@ Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token s
         }
         projects.push_back({{"id",id},{"name",p.at("name")},{"workspace_keys",workspace_keys}});
     }
+#ifdef _WIN32
+    std::map<std::string,std::string> root_aliases;
+#endif
+    const auto project_for=[&](const std::string& root) -> std::string {
+        if(const auto found=paths.find(root);found!=paths.end()) return found->second;
+#ifdef _WIN32
+        if(const auto found=root_aliases.find(root);found!=root_aliases.end()) return found->second;
+        if(root_aliases.size()>=1024) return {};
+        std::string match;
+        try {
+            const auto actual=fs::path(root).lexically_normal();
+            if(!actual.is_absolute()) return {};
+            auto actual_name=actual;actual_name.make_preferred();
+            for(const auto& [allowed,project]:paths) {
+                auto name=fs::path(allowed).lexically_normal();name.make_preferred();
+                if(CompareStringOrdinal(actual_name.c_str(),-1,name.c_str(),-1,TRUE)!=CSTR_EQUAL) continue;
+                if(shin::windows::Directory(actual).identity()!=shin::windows::Directory(fs::path(allowed)).identity()) continue;
+                if(!match.empty() && match!=project) {match.clear();break;}
+                match=project;
+            }
+        } catch(...) {match.clear();}
+        root_aliases[root]=match;return match;
+#else
+        return {};
+#endif
+    };
     const auto from = (now / 86400000 - 29) * 86400000;
     const auto deadline = Clock::now() + std::chrono::seconds(120);
     Json output{{"schema_version","shin.model-usage.v3"},{"config_sha256",digest(config.dump())},{"updated_at_unix_ms",now},
@@ -240,9 +295,10 @@ Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token s
                 need(sqlite3_bind_int64(sessions.get(),1,from) == SQLITE_OK); int rc = 0, count = 0;
                 while ((rc = sqlite3_step(sessions.get())) == SQLITE_ROW) {
                     need(++count <= 512); const auto session = text(sessions.get(),0), root = text(sessions.get(),2);
-                    if (!paths.contains(root)) { unassigned.insert(session); continue; }
+                    const auto project=project_for(root);
+                    if (project.empty()) { unassigned.insert(session); continue; }
                     try {
-                        const auto data = codex_file(text(sessions.get(),1),config,session,paths.at(root),sqlite3_column_int64(sessions.get(),3),from,now,deadline,bytes,stop,session_home);
+                        const auto data = codex_file(text(sessions.get(),1),config,session,project,sqlite3_column_int64(sessions.get(),3),from,now,deadline,bytes,stop,session_home);
                         for (const auto& event : data.context_events) context_events.push_back(event);
                         if (context_events.size() > 64) {
                             std::sort(context_events.begin(),context_events.end(),[](const Json& a,const Json& b) { return a.at("at_ms") > b.at("at_ms"); });
@@ -277,13 +333,13 @@ Json collect_model_usage(const Json& config, std::int64_t now, std::stop_token s
                 need(sqlite3_bind_int64(query.get(),1,from) == SQLITE_OK); int rc = 0, count = 0;
                 while ((rc = sqlite3_step(query.get())) == SQLITE_ROW) {
                     need(++count <= 200000 && Clock::now() < deadline && !stop.stop_requested());
-                    const auto root = text(query.get(),1); if (!paths.contains(root)) { unassigned.insert(text(query.get(),0)); continue; }
+                    const auto root = text(query.get(),1), project=project_for(root); if (project.empty()) { unassigned.insert(text(query.get(),0)); continue; }
                     const auto when = sqlite3_column_int64(query.get(),2); need(when >= from && when <= now);
                     Json usage = Json::object(); for (int i = 0; i < 5; ++i) {
                         need(sqlite3_column_type(query.get(),i+4) == SQLITE_INTEGER || sqlite3_column_type(query.get(),i+4) == SQLITE_NULL);
                         usage[fields[static_cast<std::size_t>(i)]] = sqlite3_column_int64(query.get(),i+4);
                     }
-                    rows.add(paths.at(root),client,text(query.get(),3),open ? "usage-event" : "session-total",when,usage);
+                    rows.add(project,client,text(query.get(),3),open ? "usage-event" : "session-total",when,usage);
                     state["source_records"] = integer(state.at("source_records")) + 1;
                 }
                 need(rc == SQLITE_DONE);

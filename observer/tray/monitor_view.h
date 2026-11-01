@@ -1328,7 +1328,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     const float half = (width - 7) / 2;
     action_button(diagnostic_history_first ? shin::ui::tr("Back to project status") : shin::ui::tr("Back to project list"),
         diagnostic_history_first ? 35 : 32,
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
         tiny ? half : -1);
     if (tiny) { ImGui::SameLine(); action_button(shin::ui::tr("Project actions"), 84, half, view.connected && !root.empty()); }
 #else
@@ -1388,7 +1388,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         review ? 70 : search ? 120 : healthy ? 34 : 39);
     if (tiny) return;
     if (!compact) {
-        #if defined(__APPLE__)
+        #if defined(__APPLE__) || defined(_WIN32)
         action_button(shin::ui::tr("Connect agent…"), 116, half, view.connected && !root.empty()); ImGui::SameLine();
         action_button(shin::ui::tr("Project actions"), 84, half, view.connected && !root.empty() && !project_management_busy.load());
 #else
@@ -1399,7 +1399,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     }
     const bool copied = diagnostic_copied != Clock::time_point{} && Clock::now() - diagnostic_copied < std::chrono::seconds(3);
     action_button(shin::ui::tr(copied ? "Diagnostics copied" : "Copy report"), 36, half, !diagnostic_copy.empty());
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     ImGui::SameLine(); action_button(shin::ui::tr(compact ? "Project actions" : "Technical report"), compact ? 84 : 39, half, compact ? view.connected && !root.empty() : true);
 #else
     ImGui::SameLine(); action_button(shin::ui::tr("Show project folder"), 38, half, !root.empty());
@@ -1419,7 +1419,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         return;
     }
     const float width = ImGui::GetContentRegionAvail().x;
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     const bool project_busy = project_management_busy.load();
     const bool compact_actions = ImGui::GetIO().DisplaySize.y < 300;
     ImGui::BeginDisabled(project_busy);
@@ -1435,7 +1435,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     const bool detailed = width >= 310 && ImGui::GetIO().DisplaySize.y >= 400;
     const float row_height = detailed ? 44.0f : 26.0f;
     float count_height = projects.empty() ? 0.0f : ImGui::GetTextLineHeightWithSpacing();
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     if (compact_actions && !projects.empty()) count_height = ImGui::GetTextLineHeightWithSpacing();
 #endif
     const auto layout = shin::ui::project_table_layout(ImGui::GetContentRegionAvail().y - count_height, static_cast<int>(projects.size()), row_height);
@@ -1445,11 +1445,11 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         std::snprintf(range, sizeof(range), shin::ui::tr("Projects %d–%d of %d"),
             project_page * layout.page_size + 1,
             std::min((project_page + 1) * layout.page_size, static_cast<int>(projects.size())), static_cast<int>(projects.size()));
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
         if (compact_actions) ImGui::AlignTextToFramePadding();
 #endif
         std::string shown_range = range;
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
         if (compact_actions) shown_range = std::to_string(project_page * layout.page_size + 1) + "–" +
             std::to_string(std::min((project_page + 1) * layout.page_size, static_cast<int>(projects.size()))) + " / " + std::to_string(projects.size());
 #endif
@@ -1793,14 +1793,14 @@ void render_settings() {
         if (i != 2) ImGui::SameLine();
     }
     ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     action_button(shin::ui::tr("Connect projects and agents…"), 85);
     action_button(shin::ui::tr("Storage and cleanup…"), 83);
 #else
     ImGui::TextWrapped("%s", shin::ui::tr("Use the installed CLI to connect projects and manage the background service."));
 #endif
     action_button(shin::ui::tr("Check for updates…"), 110);
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     action_button(shin::ui::tr("Last update result…"), 111);
     action_button(shin::ui::tr("Login settings…"), 112);
 #endif
@@ -1911,7 +1911,7 @@ void render(const ViewState& view) {
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, monitor_motion.reveal.value());
     ImGui::BeginChild("view-content", {0, std::max(1.0f, footer_y - ImGui::GetCursorPosY() - 5)}, ImGuiChildFlags_None,
         ImGuiWindowFlags_None);
-#if defined(__APPLE__)
+#if defined(__APPLE__) || defined(_WIN32)
     if (projects.empty() && dashboard_view < 2) {
         ImGui::TextWrapped("%s", shin::ui::tr("Choose a project to start using Shin. Setup also helps connect your coding agent."));
         ImGui::Spacing();

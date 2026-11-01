@@ -1,15 +1,17 @@
 # Native client setup
 
 The graphical setup below belongs to the macOS Monitor, including the Homebrew
-package. Native Windows ZIP/MSI previews and source builds provide the MCP
-adapter and read-only `mcp-config` export, but automatic
-client-file editing and graphical project onboarding are not enabled. See
+package. Published Windows dev.70 provides the MCP adapter and read-only
+`mcp-config` export; automatic client editing and graphical onboarding are
+implemented in unreleased Windows source. See
 [Windows scope](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
 
 ## Automatic setup
 
 The macOS Monitor and the macOS/Linux CLI support reviewed automatic setup.
-Manual configuration remains available for other clients and for Windows.
+Unreleased Windows source also supports this reviewed connection workflow, with
+**Review connections** before the final confirmation. Manual configuration remains
+available for other clients and for published Windows dev.70.
 
 1. On a fresh installation, open **Set up Shin…**. Otherwise use
    **Settings → Connect projects and agents…**. Choose a project folder. Shin connects it

@@ -41,9 +41,9 @@ std::wstring extended(const fs::path& path) {
     return L"\\\\?\\" + value;
 }
 
-Handle open_component(const fs::path& path, bool directory, bool inspect_acl = false) {
+Handle open_component(const fs::path& path, bool directory, bool inspect_acl = false, bool concurrent_writer = false) {
     Handle handle(CreateFileW(extended(path).c_str(), directory ? FILE_READ_ATTRIBUTES | (inspect_acl ? READ_CONTROL : 0) : GENERIC_READ,
-        FILE_SHARE_READ, nullptr, OPEN_EXISTING,
+        FILE_SHARE_READ | (concurrent_writer ? FILE_SHARE_WRITE : 0), nullptr, OPEN_EXISTING,
         FILE_FLAG_OPEN_REPARSE_POINT | FILE_FLAG_BACKUP_SEMANTICS, nullptr));
     if (handle.get() == INVALID_HANDLE_VALUE) failed("Cannot pin a local file component");
     FILE_ATTRIBUTE_TAG_INFO tag{};
@@ -174,10 +174,11 @@ struct ReadFile::Impl {
     fs::path path;
     std::vector<Handle> parents;
     Handle file{INVALID_HANDLE_VALUE};
-    explicit Impl(const fs::path& input) : path(input), parents(pin_parents(path)), file(open_component(path, false)) {}
+    Impl(const fs::path& input, ReadFile::Sharing sharing) : path(input), parents(pin_parents(path)),
+        file(open_component(path, false, false, sharing == ReadFile::Sharing::concurrent_writer)) {}
 };
 
-ReadFile::ReadFile(const fs::path& absolute) : impl_(std::make_unique<Impl>(absolute)) {}
+ReadFile::ReadFile(const fs::path& absolute, Sharing sharing) : impl_(std::make_unique<Impl>(absolute, sharing)) {}
 ReadFile::~ReadFile() = default;
 FileStamp ReadFile::stamp() const { return file_stamp(impl_->file.get()); }
 void ReadFile::require_user_owned() const {

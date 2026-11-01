@@ -44,6 +44,7 @@ struct LocalProjectRequest {
     std::string maintenance_worktree;
     std::string maintenance_root_identity;
     std::string maintenance_workspace_identity;
+    std::optional<std::uint64_t> maintenance_lifecycle_revision;
     std::function<bool()> maintenance_stop;
     // Optional bounded stage observation (refresh and final reader verification); never authority.
     std::function<void(const std::string&)> maintenance_progress;

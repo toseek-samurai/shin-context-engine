@@ -126,7 +126,11 @@ the full suite to work around a missing symlink privilege.
 Use a protected CMake installation, such as the one bundled with Visual Studio
 under Program Files. `shin-windows-machine-code` uses the configured CMake
 executable as its machine-owned image fixture; a user-writable CMake installation
-does not satisfy that check. Missing prerequisites must be reported as failures,
+does not satisfy that check. With a per-user SDK, pass
+`-DSHIN_WINDOWS_MACHINE_TEST_IMAGE="C:/Program Files/YourTool/tool.exe"` to select
+an existing protected, singly linked executable instead. The same ownership,
+ancestor and image checks still apply; Windows system files with servicing hard
+links are unsuitable fixtures. Missing prerequisites must be reported as failures,
 not replaced with a reduced test set described as full qualification.
 
 Keep both the checkout and its absolute external build root outside AppData
@@ -171,9 +175,13 @@ preset builds production binaries in `kit/`, with source tests disabled; run
 the desktop test preset first, then the [exact ZIP/MSI checks](windows-desktop.md#installer-presentation-checks).
 MSI packaging requires CPack 4.3+ and WiX 4. Published previews pass exact-archive
 checks; interactive installed SCM lifecycle tests remain a separate rehearsal.
-TUI, automatic client connection, automatic usage collection and automatic update
-installation are not implemented on Windows. Monitor includes a manual release
-check and MSI/checksum download links in dev.70.
+Published dev.70 includes manual Monitor release checks and MSI/checksum links.
+Unreleased source adds project/agent setup, storage actions, automatic usage
+collection, DPI-aware input/rendering and reviewed MSI installation with UAC;
+see [the source boundary](windows-desktop.md#unreleased-source). TUI remains
+unavailable on Windows. The `shin-windows-client-features` native test covers
+configuration preservation, stale-review/hardlink refusal, download/inventory
+validation and active-history collection. It is included in the hosted smoke preset.
 
 Do not run an unfiltered CTest against a manually configured packaging build
 with `BUILD_TESTING=ON`: enabling the Core CLI also registers POSIX-only Core

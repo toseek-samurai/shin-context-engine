@@ -2,9 +2,9 @@
 <CPackWiXPatch>
   <CPackWiXFragment Id="#PRODUCT">
     <Property Id="MsiLogging" Value="voicewarmup"/>
-    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Launch Shin Monitor"/>
+    <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOXTEXT" Value="Finish project setup and open Shin Monitor"/>
     <Property Id="WIXUI_EXITDIALOGOPTIONALCHECKBOX" Value="1"/>
-    <Property Id="WixUnelevatedShellExecTarget" Value="[#CM_FP_bin.shin_tray.exe]"/>
+    <Property Id="WixUnelevatedShellExecTarget" Value="[#CM_FP_bin.shin_windows_updater.exe]"/>
     <CustomAction Id="ShinLaunchMonitor" BinaryRef="Wix4UtilCA_X64" DllEntry="WixUnelevatedShellExec" Execute="immediate" Return="check"/>
     <UI>
       <Publish Dialog="ExitDialog" Control="Finish" Event="DoAction" Value="ShinLaunchMonitor" Order="1"

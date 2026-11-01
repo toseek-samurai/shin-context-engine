@@ -1267,6 +1267,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     guard_unbound_workspace(workspace, loaded);
     guard_ancestor_bindings(root, home);
     const auto lifecycle = local_project_lifecycle(workspace);
+    if (request.maintenance_lifecycle_revision &&
+        (lifecycle.phase != "active" || lifecycle.revision != *request.maintenance_lifecycle_revision))
+        throw Error("project-detached", "Project lifecycle changed after update preparation was requested.");
     if (detach) {
         if (!loaded || loaded->value("root", "") != root.string() ||
             loaded->value("root_identity", "") != root_identity ||

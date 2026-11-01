@@ -1,5 +1,6 @@
 # Only ephemeral hosted VMs: never create a test account on a developer machine.
-param([string]$Packages, [Parameter(Mandatory)][string]$Output, [switch]$Probe)
+param([string]$Packages, [Parameter(Mandatory)][string]$Output, [switch]$Probe,
+    [string]$FeatureTest, [string]$Cli, [string]$Profiles)
 $ErrorActionPreference = 'Stop'
 if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hosted') {
     throw 'This account-isolation harness is restricted to disposable GitHub-hosted VMs'
@@ -7,12 +8,20 @@ if ($env:GITHUB_ACTIONS -ne 'true' -or $env:RUNNER_ENVIRONMENT -ne 'github-hoste
 # Pass canonical Win32 directories to the process launcher.
 $Output = [System.IO.Path]::GetFullPath($Output)
 if ($Packages) { $Packages = [System.IO.Path]::GetFullPath($Packages) }
+$features = ![string]::IsNullOrEmpty($FeatureTest)
+if ($features) {
+    if ($Probe -or $Packages -or !$Cli -or !$Profiles) { throw 'Feature tests require only test, CLI and profile paths' }
+    $FeatureTest = [System.IO.Path]::GetFullPath($FeatureTest)
+    $Cli = [System.IO.Path]::GetFullPath($Cli)
+    $Profiles = [System.IO.Path]::GetFullPath($Profiles)
+}
 $python = (Get-Command python).Source
 $script = Join-Path $PSScriptRoot 'qualify_windows.py'
 $arguments = @('-B', $script, '--output', $Output, '--sha', $env:GITHUB_SHA,
     '--run-id', $env:GITHUB_RUN_ID, '--attempt', $env:GITHUB_RUN_ATTEMPT)
 New-Item -ItemType Directory -Path $Output -Force | Out-Null
-if (!$Probe) {
+if ($features) { $arguments += @('--feature-test', $FeatureTest, '--cli', $Cli, '--profiles', $Profiles) }
+if (!$Probe -and !$features) {
     if (!$Packages) { throw 'Package directory is required' }
     $archive = @(Get-ChildItem $Packages -Filter '*.zip')
     $msi = @(Get-ChildItem $Packages -Filter '*.msi')
@@ -32,14 +41,17 @@ try {
     & icacls $env:GITHUB_WORKSPACE /grant "${user}:(OI)(CI)RX" /T /Q | Out-Null
     if ($LASTEXITCODE) { throw 'Source access could not be granted' }
     if (!$Probe) {
-        & icacls $Packages /grant "${user}:(OI)(CI)RX" /T /Q | Out-Null
-        if ($LASTEXITCODE) { throw 'Package access could not be granted' }
+        $readPaths = if ($features) { @((Split-Path $FeatureTest), (Split-Path $Cli), $Profiles) } else { @($Packages) }
+        foreach ($readPath in $readPaths) {
+            & icacls $readPath /grant "${user}:(OI)(CI)RX" /T /Q | Out-Null
+            if ($LASTEXITCODE) { throw 'Test input access could not be granted' }
+        }
     }
     & icacls $Output /grant "${user}:(OI)(CI)M" /T /Q | Out-Null
     if ($LASTEXITCODE) { throw 'Proof access could not be granted' }
     # CreateProcessWithLogonW via Start-Process: a direct, bounded child with a
     # loaded standard-user profile. No Scheduler/interactive-logon dependency.
-    $phase = if ($Probe) { 'probe' } else { 'runtime' }
+    $phase = if ($Probe) { 'probe' } elseif ($features) { 'features' } else { 'runtime' }
     $quoted = ($arguments + @('--phase', $phase) | ForEach-Object { '"' + $_ + '"' }) -join ' '
     $credential = [System.Management.Automation.PSCredential]::new("$env:COMPUTERNAME\$user",
         (ConvertTo-SecureString $password -AsPlainText -Force))
@@ -47,7 +59,7 @@ try {
         -Credential $credential -LoadUserProfile -PassThru `
         -RedirectStandardOutput (Join-Path $Output 'launcher.stdout.log') `
         -RedirectStandardError (Join-Path $Output 'launcher.stderr.log')
-    $timeout = if ($Probe) { 30000 } else { 300000 }
+    $timeout = if ($Probe) { 30000 } elseif ($features) { 60000 } else { 300000 }
     if (!$child.WaitForExit($timeout)) {
         $child.Kill($true)
         $child.WaitForExit()
@@ -59,7 +71,7 @@ try {
         Get-Content (Join-Path $Output 'launcher.stderr.log') -ErrorAction SilentlyContinue
         throw "Standard-user child failed: $($child.ExitCode)"
     }
-    if (!$Probe) {
+    if (!$Probe -and !$features) {
         & $python @arguments --phase receipt
         if ($LASTEXITCODE) { throw 'Windows receipt did not confirm qualification' }
     }

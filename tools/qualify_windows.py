@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Exact Windows package gate. MSI extraction does not install or enroll projects."""
+"""Standard-user source tests and exact Windows package qualification."""
 import argparse
 from contextlib import contextmanager
 import ctypes
@@ -84,9 +84,12 @@ def package(archive, msi, output):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--phase', choices=('probe', 'package', 'runtime', 'receipt'), required=True)
+    parser.add_argument('--phase', choices=('probe', 'features', 'package', 'runtime', 'receipt'), required=True)
     parser.add_argument('--archive', type=Path)
     parser.add_argument('--msi', type=Path)
+    parser.add_argument('--feature-test', type=Path)
+    parser.add_argument('--cli', type=Path)
+    parser.add_argument('--profiles', type=Path)
     parser.add_argument('--output', type=Path, required=True)
     parser.add_argument('--sha', required=True)
     parser.add_argument('--run-id', type=int, required=True)
@@ -96,7 +99,7 @@ def main():
     assert args.run_id > 0 and args.attempt > 0
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    if args.phase in ('probe', 'runtime'):
+    if args.phase in ('probe', 'features', 'runtime'):
         elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
         (output / (args.phase + '-started.json')).write_text(json.dumps({'elevated': elevated}) + '\n')
         assert not elevated, 'Runtime qualification must be unelevated'
@@ -105,6 +108,18 @@ def main():
             subprocess.run([sys.executable, '-c', 'import pathlib,tempfile; p=pathlib.Path(tempfile.gettempdir())/"probe"; p.write_text("ok"); p.unlink()'],
                            env=environment, check=True, timeout=10)
         (output / 'probe.json').write_text(json.dumps({'unelevated': True}) + '\n')
+        return
+    if args.phase == 'features':
+        assert args.feature_test and args.cli and args.profiles, 'Feature test inputs are required'
+        log_path = output / 'features.log'
+        with user_environment() as environment, log_path.open('w', encoding='utf-8') as log:
+            result = subprocess.run([str(args.feature_test.resolve()), str(args.cli.resolve()), str(args.profiles.resolve())],
+                                    env=environment, stdout=log, stderr=subprocess.STDOUT, timeout=45)
+        if result.returncode:
+            print(log_path.read_text(), file=sys.stderr)
+            raise subprocess.CalledProcessError(result.returncode, result.args)
+        (output / 'features.json').write_text(json.dumps(dict(unelevated=True, source_sha=args.sha,
+            run_id=args.run_id, attempt=args.attempt, test='shin-windows-client-features')) + '\n')
         return
     assert args.archive and args.msi, 'Both package paths are required'
     archive, msi = args.archive.resolve(), args.msi.resolve()

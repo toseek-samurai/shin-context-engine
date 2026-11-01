@@ -193,7 +193,19 @@ jobs:
       - name: Build
         run: cmake --build --preset ${{ matrix.preset }}
       - name: Tests
-        run: ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+        run: |
+          if ('${{ matrix.component }}' -eq 'desktop') {
+            # Native client history and post-MSI preparation use a standard
+            # desktop token. The hosted build runner itself is elevated.
+            ctest --preset ${{ matrix.tests }} -E '^shin-windows-client-features$' --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+            if ($LASTEXITCODE) { exit $LASTEXITCODE }
+            ../tools/qualify_windows.ps1 -Output "$env:SHIN_BUILD_ROOT/source-user-proof" `
+              -FeatureTest "$env:SHIN_BUILD_ROOT/desktop/tray/Release/shin-windows-client-features-tests.exe" `
+              -Cli "$env:SHIN_BUILD_ROOT/desktop/Release/shin-ce.exe" `
+              -Profiles "$env:GITHUB_WORKSPACE/profiles"
+          } else {
+            ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+          }
       - name: Build Windows packages
         if: matrix.component == 'desktop'
         run: |
@@ -233,6 +245,7 @@ jobs:
             ${{ steps.paths.outputs.build_root }}/tests.xml
             ${{ steps.paths.outputs.build_root }}/proof/**
             ${{ steps.paths.outputs.build_root }}/user-probe/**
+            ${{ steps.paths.outputs.build_root }}/source-user-proof/**
             ${{ steps.paths.outputs.build_root }}/desktop/_CPack_Packages/win64/WIX/*.log
             ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTest.log
             ${{ steps.paths.outputs.build_root }}/**/Testing/Temporary/LastTestsFailed.log

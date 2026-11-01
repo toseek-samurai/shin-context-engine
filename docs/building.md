@@ -182,6 +182,11 @@ see [the source boundary](windows-desktop.md#unreleased-source). TUI remains
 unavailable on Windows. The `shin-windows-client-features` native test covers
 configuration preservation, stale-review/hardlink refusal, download/inventory
 validation and active-history collection. It is included in the hosted smoke preset.
+Run this fixture as an unelevated user: elevated Windows processes can create
+SQLite files owned by Administrators, and post-MSI project preparation refuses
+an elevated token. Hosted CI runs this fixture through the existing disposable
+standard-user harness, while the remaining source tests retain their normal
+preset. Its native output and token proof are uploaded with the source reports.
 
 Do not run an unfiltered CTest against a manually configured packaging build
 with `BUILD_TESTING=ON`: enabling the Core CLI also registers POSIX-only Core

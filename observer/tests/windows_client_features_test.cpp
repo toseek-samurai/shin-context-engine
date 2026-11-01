@@ -23,6 +23,11 @@ int main(int argc,char** argv) {
     const char* phase="client configuration";
     try {
         require(argc==3,"pass matching CLI and profiles");
+        HANDLE access_token=nullptr;TOKEN_ELEVATION elevation{};DWORD token_size=0;
+        require(OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&access_token)!=FALSE,"cannot inspect fixture token");
+        const bool inspected=GetTokenInformation(access_token,TokenElevation,&elevation,sizeof(elevation),&token_size)!=FALSE;
+        CloseHandle(access_token);
+        require(inspected&&!elevation.TokenIsElevated,"run client/history and post-MSI fixtures as an unelevated user");
         const auto root=fs::temp_directory_path()/("shin client features-"+digest(std::to_string(GetCurrentProcessId())+std::to_string(now_ms())).substr(0,20));
         ensure_private_directory(root,true);
         struct Cleanup {fs::path path;~Cleanup(){std::error_code error;fs::remove_all(path,error);}} cleanup{root};
@@ -130,6 +135,8 @@ int main(int argc,char** argv) {
         std::unique_ptr<sqlite3,decltype(&sqlite3_close)> live(live_raw,sqlite3_close);
         require(sqlite3_exec(live_raw,"BEGIN IMMEDIATE",nullptr,nullptr,nullptr)==SQLITE_OK,"live database writer lease");
         const auto first=collect_model_usage(config,now),second=collect_model_usage(config,now+1);
+        if(first.at("sources").at("codex").at("state")!="available")
+            std::cerr<<"Codex fixture source: "<<first.at("sources").at("codex").dump()<<'\n';
         require(first.at("sources").at("codex").at("state")=="available","Windows Codex source unavailable");
         require(first.at("buckets").size()==1&&first.at("buckets").at(0).at("records")==1,"Windows usage dedup failed");
         require(first.at("buckets")==second.at("buckets"),"Windows repeat counts changed");

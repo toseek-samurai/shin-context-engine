@@ -781,7 +781,8 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     };
     auto quality_binding = binding;
     quality_binding["observer_config_hash"] = digest(config_text);
-    const auto quality_key = qualification_key(quality_binding, options.profile.config_hash, marker_hash);
+    const auto quality_key = qualification_key(quality_binding, options.profile.config_hash, marker_hash,
+                                               refresh && request.refresh_session);
     std::shared_ptr<LocalRefreshSession> idle_session;
     if (refresh && request.refresh_session && grant.active() && !grant.pending_snapshot() && loaded &&
         grant.last_snapshot() == binding.at("prepared_snapshot").get<std::string>() &&
@@ -1392,7 +1393,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         throw Error("binding-profile-conflict", "Profile changed during local attachment.");
     const bool engine_changed = binding.at("core_version") != SHIN_VERSION ||
                                 binding.at("generator_version") != core::kGeneratorVersion;
-    const auto quality_key = qualification_key(binding, options.profile.config_hash);
+    const auto quality_key = qualification_key(binding, options.profile.config_hash, std::nullopt,
+                                               refresh && request.refresh_session);
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
         return qualified_readiness(options, {}, config, workspace, binding, quality_key);

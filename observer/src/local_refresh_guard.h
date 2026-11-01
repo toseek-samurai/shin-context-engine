@@ -74,11 +74,21 @@ inline Json envelope(const std::string& command, bool ok) {
             {"delivery_performed", false}, {"daemon_started", false}, {"consumer_mutated", false}};
 }
 
-// Retain one binary hash per process, never a receipt imported from storage.
+// A persistent refresh worker may retain one binary hash per process, never a
+// receipt imported from storage. One-shot admission keeps a stable full read,
+// avoiding native stream startup and delivery fences for short-lived commands.
 // Native events plus file identity, size, mtime and platform change time fence
 // every reuse. A replaced named executable must still change the key even while
 // the old image runs. Loss/unavailability of native events restores full hashing.
-inline std::string qualification_image_digest(const fs::path& executable) {
+inline std::string qualification_image_digest(const fs::path& executable, bool retain = false) {
+    if (!retain) {
+        const auto before = shin::context::file_metadata(executable);
+        const auto image = executing_image_identity();
+        const auto hash = digest(read_text(executable, 128U * 1024U * 1024U, false));
+        if (shin::context::file_metadata(executable) != before || executing_image_identity() != image)
+            throw Error("qualification-engine-changed", "The executing image changed during qualification admission.");
+        return hash;
+    }
     struct CachedImage {
         fs::path path;
         shin::context::FileMetadata metadata;
@@ -118,14 +128,15 @@ inline std::string qualification_image_digest(const fs::path& executable) {
 }
 
 inline std::string qualification_key(Json binding, const std::string& profile_hash,
-                              const std::optional<std::string>& marker_hash = std::nullopt) {
+                              const std::optional<std::string>& marker_hash = std::nullopt,
+                              bool retain_image = false) {
     fs::path executable;
     try { executable = current_executable_path(); }
     catch (const Error& error) {
         if (error.code != "installation-unavailable") throw;
         throw Error("qualification-engine-changed", "The executing image is unavailable; restart with one matched kit.");
     }
-    const auto binary = qualification_image_digest(executable);
+    const auto binary = qualification_image_digest(executable, retain_image);
     binding.erase("prepared_snapshot");
     binding["profile_config_hash"] = profile_hash;
     if (marker_hash) binding["marker_hash"] = *marker_hash;

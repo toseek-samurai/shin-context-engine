@@ -59,10 +59,12 @@ the profile's coverage or quality bounds.
 Small policy and authority files are still read; the diagnostic verification
 flags describe the work performed, not raw operating-system I/O counters.
 
-The qualification key also retains one process-local executable hash behind
+Persistent refresh admission also retains one process-local executable hash behind
 healthy native events, fresh file identity, size, modification/change time and
 running-image checks. Replacing the named executable invalidates it and the
-qualification key. Unavailable events restore full binary hashing.
+qualification key. Unavailable events restore full binary hashing. One-shot CLI
+admission and final qualification recording read the full executable and check
+its identity and metadata before/after, without starting a native event stream.
 
 An idle observation reports `content_reverified: false` and
 `verification_level: source-inventory-and-metadata-observed`; it does not create

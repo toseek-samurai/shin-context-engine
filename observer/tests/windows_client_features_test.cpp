@@ -19,6 +19,16 @@ std::wstring wide(const std::string& value) {return windows_update::wide_url(val
 }
 void require(bool value,const char* message) {if(!value) throw std::runtime_error(message);}
 template<class F> void refused(F action) {try {action();}catch(const Error&){return;}throw std::runtime_error("unsafe operation succeeded");}
+void wait_for_fixture_service_stop(const fs::path& home) {
+    // service-stop acknowledges the request before workers, collectors and the
+    // endpoint have finished shutting down. Model MSI's completed stop before
+    // changing the old binding or trying preparation with the replacement CLI.
+    StateStore owner(home/"service",false);
+    const auto deadline=std::chrono::steady_clock::now()+std::chrono::seconds(5);
+    while(owner.writer_present()&&std::chrono::steady_clock::now()<deadline)
+        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+    require(!owner.writer_present(),"fixture service did not finish shutdown");
+}
 int main(int argc,char** argv) {
     const char* phase="client configuration";
     try {
@@ -142,7 +152,7 @@ int main(int argc,char** argv) {
         require(first.at("buckets")==second.at("buckets"),"Windows repeat counts changed");
         phase="enrolled project collection";
         const auto runtime_home=root/"runtime-data";
-        struct Service {fs::path cli,home;~Service(){try {windows_command(cli,{"service-stop","--home",home.string()});}catch(...) {}}} service{commands/"shin-ce.exe",runtime_home};
+        struct Service {fs::path cli,home;~Service(){try {windows_command(cli,{"service-stop","--home",home.string()});wait_for_fixture_service_stop(home);}catch(...) {}}} service{commands/"shin-ce.exe",runtime_home};
         write_user_archive(project/"sample.cpp","int syntheticContext() { return 7; }\n");
         require(SetEnvironmentVariableW(L"CODEX_HOME",root.c_str())!=FALSE,"usage environment fixture");
         require(SetEnvironmentVariableW(L"XDG_DATA_HOME",(root/"absent-data").c_str())!=FALSE,"usage environment fixture");
@@ -167,12 +177,14 @@ int main(int argc,char** argv) {
         }catch(...) {}
         require(collected,"Windows project enrollment did not start automatic collection");
         require(windows_command(service.cli,{"service-stop","--home",runtime_home.string()}).value("ok",false),"fixture service stop failed");
+        wait_for_fixture_service_stop(runtime_home);
         const auto workspace=runtime_home/"projects"/digest(project.string());
         Json original_binding;
         {StateStore state(workspace,true);state.recover_pending();original_binding=state.load().value();
          auto previous=original_binding;previous["core_version"]="2.0.5-dev.12";state.save(previous);}
         phase="post-MSI Core preparation";
         const auto prepared=windows_command(service.cli,{"prepare-projects","--home",runtime_home.string()});
+        if(!prepared.value("ok",false)) std::cerr<<"Core preparation result: "<<prepared.dump()<<'\n';
         require(prepared.value("ok",false)&&prepared.at("projects").size()==1,"post-MSI Core preparation failed");
         {StateStore state(workspace,false);const auto binding=state.load().value();
          require(binding.at("core_version")==SHIN_VERSION,"Core version was not transferred");

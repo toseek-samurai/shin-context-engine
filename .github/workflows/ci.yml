@@ -56,7 +56,9 @@ jobs:
         shell: bash
         run: |
           ccache --zero-stats
+          # Keep CMake tests on the workflow's Python, including versioned Homebrew.
           flags=(-G Ninja -DCMAKE_BUILD_TYPE=Release
+            -DPython3_EXECUTABLE="$(command -v python3)"
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
           if [[ "$RUNNER_OS" == macOS ]]; then
             # Hash the selected compiler itself, not Apple's /usr/bin dispatch shim.

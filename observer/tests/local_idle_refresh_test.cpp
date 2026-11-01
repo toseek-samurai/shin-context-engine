@@ -64,17 +64,20 @@ LocalProjectRequest project(const fs::path& base, const fs::path& profiles, cons
     return request;
 }
 void image_digest_is_fenced(const fs::path& base) {
-    const auto binary = base / "image-digest-fixture";
-    write(binary, "first-image");
-    const auto original = qualification_image_digest(binary);
-    const auto stamp = fs::last_write_time(binary);
-    check(qualification_image_digest(binary) == original, "unchanged executable digest drifted");
-    write(binary, "other-image"); fs::last_write_time(binary, stamp);
-    check(qualification_image_digest(binary) != original, "restored-mtime image edit reused its hash");
-    const auto replacement = base / "replacement-image";
-    write(replacement, "first-image"); fs::last_write_time(replacement, stamp);
-    fs::remove(binary); fs::rename(replacement, binary);
-    check(qualification_image_digest(binary) == original, "named image replacement retained an old digest");
+    for (const bool retain : {false, true}) {
+        const auto binary = base / (retain ? "cached-image-digest-fixture" : "one-shot-image-digest-fixture");
+        write(binary, "first-image");
+        const auto original = qualification_image_digest(binary, retain);
+        check(original == digest("first-image"), "executable digest did not match its content");
+        const auto stamp = fs::last_write_time(binary);
+        check(qualification_image_digest(binary, retain) == original, "unchanged executable digest drifted");
+        write(binary, "other-image"); fs::last_write_time(binary, stamp);
+        check(qualification_image_digest(binary, retain) == digest("other-image"), "restored-mtime image edit reused its hash");
+        const auto replacement = base / "replacement-image";
+        write(replacement, "first-image"); fs::last_write_time(replacement, stamp);
+        fs::remove(binary); fs::rename(replacement, binary);
+        check(qualification_image_digest(binary, retain) == original, "named image replacement retained an old digest");
+    }
 }
 void canonical_authority(const fs::path& base, const fs::path& profiles) {
     namespace core = shin::context;

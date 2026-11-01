@@ -370,12 +370,28 @@ class LocalRouteTests(unittest.TestCase):
                        'validation_adoption-check_ms'):
             self.assertIsInstance(tick['refresh_work'][metric], (int, float))
             self.assertGreaterEqual(tick['refresh_work'][metric], 0)
+        self.assertGreater(tick['refresh_work']['qualification_reused_output_bytes'], 0)
+        self.assertGreater(tick['refresh_work']['qualification_reused_output_files'], 0)
+        receipt = self.workspace() / 'qualification/state.json'
+        qualified = (receipt.read_bytes(), receipt.stat().st_mtime_ns)
         idle = self.ce('watch', '--samples', '1')['watch']['last_result']
+        self.assertEqual(idle['phase'], 'current')
         self.assertFalse(idle['rebuilt'])
-        self.assertIn('qualification_generation_ms', idle['refresh_work'])
+        self.assertFalse(idle['prepared_new_snapshot'])
+        self.assertEqual(idle['snapshot_id'], tick['snapshot_id'])
+        self.assertTrue(idle['quality_reuse']['reused'])
+        self.assertIs(idle['refresh_work']['idle_checkpoint_hit'], True)
+        self.assertIsInstance(idle['refresh_work']['metadata_reconciliation_ms'], (int, float))
+        self.assertGreaterEqual(idle['refresh_work']['metadata_reconciliation_ms'], 0)
+        self.assertIs(idle['refresh_work']['source_content_reverified'], False)
+        self.assertIs(idle['refresh_work']['generated_content_reverified'], False)
+        self.assertEqual(idle['observation']['verification_level'], 'source-inventory-and-metadata-observed')
+        self.assertIs(idle['observation']['content_reverified'], False)
+        self.assertNotIn('qualification_generation_ms', idle['refresh_work'])
+        self.assertNotIn('qualification_snapshot_ms', idle['refresh_work'])
         self.assertNotIn('validation_check_ms', idle['refresh_work'])
-        self.assertGreater(idle['refresh_work']['qualification_reused_output_bytes'], 0)
-        self.assertGreater(idle['refresh_work']['qualification_reused_output_files'], 0)
+        self.assertEqual(idle['work_performed']['full_generations'], 0)
+        self.assertEqual(qualified, (receipt.read_bytes(), receipt.stat().st_mtime_ns))
         self.assertTrue(list((self.workspace() / 'source-cache').glob('*.sqlite')),
                         'candidate cache should be persisted under the published identity')
         # One candidate generation plus strict validation's four exact audits;

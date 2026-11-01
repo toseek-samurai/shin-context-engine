@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.70](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.70).
-It contains Core **2.0.5-dev.13** and Observer/CLI/MCP/Monitor **2.0.5-dev.70**.
+The current published preview is [dev.74](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.74).
+It contains Core **2.0.5-dev.13** and Observer/CLI/MCP/Monitor **2.0.5-dev.74**.
 Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
@@ -17,7 +17,7 @@ not restart those IDE sessions.
 
 ## Capabilities by platform
 
-This table describes published dev.70 and the Linux source route. A shared engine or
+This table describes published dev.74 and the Linux source route. A shared engine or
 dashboard does not imply that every platform has the same setup and update tools.
 
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 source build | Windows x64 ZIP / MSI |
@@ -25,17 +25,17 @@ dashboard does not imply that every platform has the same setup and update tools
 | Core, local Observer, CLI and MCP | Yes | Yes | Yes | Yes |
 | Desktop Monitor: Overview, Projects, Activity, Settings; Sand; EN/RU | Yes | Yes | No native desktop host | Yes |
 | TUI `shin-ce stats`, line charts and EN/RU | Yes | Yes | Yes | Not implemented |
-| Add a project from Monitor | Yes | Yes | Use CLI | Use CLI |
-| Automatic MCP client configuration | Reviewed CLI / Monitor setup | Reviewed CLI / Monitor setup | Reviewed CLI setup | Manual configuration exported by `mcp-config` |
-| Automatic agent token-history collection | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes | Not implemented; an existing normalized snapshot can be selected |
-| Storage management | Monitor and CLI | Monitor and CLI | CLI; TUI inspection | CLI; no management window |
-| Release checks | Automatic or manual | Homebrew commands | No automatic release download | Manual check in Monitor |
-| Update installation | Independent Updater, Monitor or CLI/TUI | `brew upgrade` | Rebuild and replace source-built tools | Download and run the MSI manually |
+| Add a project from Monitor | Yes | Yes | Use CLI | Yes |
+| Automatic MCP client configuration | Reviewed CLI / Monitor setup | Reviewed CLI / Monitor setup | Reviewed CLI setup | Reviewed CLI / Monitor setup |
+| Automatic agent token-history collection | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes |
+| Storage management | Monitor and CLI | Monitor and CLI | CLI; TUI inspection | Monitor and CLI |
+| Release checks | Automatic or manual | Homebrew commands | No automatic release download | Automatic or manual in Monitor |
+| Update installation | Independent Updater, Monitor or CLI/TUI | `brew upgrade` | Rebuild and replace source-built tools | Reviewed MSI installation with UAC |
 | Background startup at login | Opt-in native service registration | `brew services` | No built-in OS service registration | MSI machine host supervises unelevated user runtimes |
 
 Token totals from agent history are separate from MCP request statistics.
-Missing history does not mean zero usage. A Windows Monitor can show Shin's
-request timing and journal without an automatic agent-history collector.
+Missing or unavailable client history does not mean zero usage. Request timing
+and the session journal remain available independently of agent token history.
 
 The native binary kit targets **macOS 15+ on Apple Silicon**. Homebrew builds the
 complete application from source and has passed its installation checks on Apple
@@ -46,20 +46,19 @@ Linux implementation, not the native Windows application.
 The macOS preview is ad-hoc signed, without Developer ID or notarization.
 Homebrew is a project-owned tap, not an entry in Homebrew's official catalog.
 
-## Unreleased Windows source
+## Windows Monitor
 
-The current working source adds graphical project/agent setup, project actions,
-storage management, startup-settings access, automatic client-history collection
-and reviewed MSI installation with UAC. It also uses physical-resolution rendering
-and matching logical input coordinates at 100–200% DPI. These changes are not in
-published dev.70. See the [source behavior and verification boundary](windows-desktop.md#unreleased-source)
-before testing a development build.
+Preview dev.74 includes graphical project/agent setup, project actions, storage
+management, startup-settings access, automatic client-history collection and
+reviewed MSI installation with UAC. Project preparation follows confirmed MSI
+success using the new installed CLI. See [setup and updates](windows-desktop.md#monitor-setup-and-updates)
+for the wizard Finish action, saved results and unattended installation boundaries.
 
 ## Installation and everyday use
 
 - [macOS native kit](local-kit.md): installation, startup, updating and recovery.
 - [Homebrew](homebrew.md): full macOS source package and its separate lifecycle.
-- [Windows desktop preview](windows-desktop.md): ZIP/MSI, manual update checks and platform limits.
+- [Windows desktop preview](windows-desktop.md): ZIP/MSI, setup, reviewed updates and platform limits.
 - [Build from source](building.md): Core, Linux/WSL2 and native Windows development.
 - [Connect a coding agent](native-client-setup.md): automatic setup where supported and manual MCP examples.
 - [CLI and diagnostics](cli.md): readiness, source reads, statistics and recovery.

@@ -1,17 +1,14 @@
 # Native client setup
 
-The graphical setup below belongs to the macOS Monitor, including the Homebrew
-package. Published Windows dev.70 provides the MCP adapter and read-only
-`mcp-config` export; automatic client editing and graphical onboarding are
-implemented in unreleased Windows source. See
-[Windows scope](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
+The graphical setup below is available in macOS Monitor, including the Homebrew
+package, and Windows Monitor dev.74. The CLI provides the reviewed setup workflow
+on macOS, Linux and Windows. See the [Windows guide](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md)
+for MSI and portable-kit ownership.
 
 ## Automatic setup
 
-The macOS Monitor and the macOS/Linux CLI support reviewed automatic setup.
-Unreleased Windows source also supports this reviewed connection workflow, with
-**Review connections** before the final confirmation. Manual configuration remains
-available for other clients and for published Windows dev.70.
+Manual configuration remains available for clients without automatic writers.
+On Windows, **Review connections** precedes the final connection confirmation.
 
 1. On a fresh installation, open **Set up Shin…**. Otherwise use
    **Settings → Connect projects and agents…**. Choose a project folder. Shin connects it
@@ -22,7 +19,8 @@ available for other clients and for published Windows dev.70.
    the selected project is available. **Check project** in Monitor checks local
    search readiness; it does not claim that a running agent has reloaded its settings.
 
-For an existing project, use **Projects → project → Connect agent…**.
+For an existing project on macOS, use **Projects → project → Connect agent…**.
+On Windows, open **Projects → project → Project actions** to connect agents.
 The list detects settings directories and, on macOS, installed applications.
 It shows the exact destination path. Detection does not modify files or select
 agents on your behalf. Undetected supported agents can be configured for later use.
@@ -48,8 +46,9 @@ entry is enabled when explicitly selected. Repeating the operation is a no-op.
 Comments outside changed values and unrelated source text are retained.
 
 All selected files are checked before writing begins. Each changed existing file
-gets a mode-0600 copy under its parent's `.shin-backups` directory. Replacements
-are atomic and retain file permission bits; changed revisions, symlinks, hardlinks,
+gets a private copy under its parent's `.shin-backups` directory. On POSIX,
+backups use mode 0600 and replacements retain file permission bits; Windows uses
+owner-private ACL checks and atomic replacement. Changed revisions, symlinks, hardlinks,
 foreign ownership and writable-by-others files are refused. Invalid or ambiguous
 formats, including YAML anchors, aliases and merge keys, are preserved for manual
 review. Configuration files are bounded to 256 KiB.
@@ -62,7 +61,7 @@ and the UI reports where it stopped. Retry safely after reviewing that conflict;
 already configured targets are not duplicated. Restore a backup only after stopping
 the affected client and reviewing changes made since that backup.
 
-On macOS and Linux, the CLI exposes discovery and the same two-step write contract:
+On macOS, Linux and Windows, the CLI exposes discovery and the same two-step write contract:
 
 ```sh
 shin-ce client-targets

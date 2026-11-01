@@ -11,76 +11,55 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-Download the Windows files from [preview dev.70](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.70):
+Download the Windows files from [preview dev.74](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.74):
 
-- `shin-desktop-2.0.5-dev.70-windows-AMD64.msi` for the installed desktop route.
-- `shin-desktop-2.0.5-dev.70-windows-AMD64.zip` for a portable extraction.
+- `shin-desktop-2.0.5-dev.74-windows-AMD64.msi` for the installed desktop route.
+- `shin-desktop-2.0.5-dev.74-windows-AMD64.zip` for a portable extraction.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
-Installation and project connection are separate steps. See the platform scope
-below and [MCP client setup](native-client-setup.md) before connecting an agent.
-Automatic agent configuration, client-history collection, the terminal dashboard
-and automatic installation of updates are not available on Windows yet.
+Installation and new-project connection are separate steps. The MSI Finish action
+prepares already enrolled projects and opens Monitor; use **Settings → Connect
+projects and agents…** to add a new project. See [MCP client setup](native-client-setup.md)
+for connection review and manual integrations.
 
 ## Current scope
 
 | Area | Current Windows preview behavior |
 | --- | --- |
-| Core and retrieval | Indexing, source discovery and snapshot-bound reads use the shared engine. Windows smoke checks cover a selected native subset of the Core suite. |
-| Local Observer, CLI and MCP | Native processes and authenticated named pipes; user runtimes require unelevated tokens. Explicit project/root authority and output bounds remain enforced. |
-| Storage and workers | Windows file identities, owner-private ACLs, atomic replacement and bounded Job Objects. UNC paths and reparse-point traversal are refused. |
-| Monitor | Win32/DX11 tray host with shared Sand, EN/RU, Overview, Projects, Activity and Settings. Render checks include documentation warnings, unique action IDs and Windows update screens. |
-| Client configuration | `mcp-config` exports configuration for manual review. Automatic `client-connect` editing and graphical project onboarding are not enabled. |
-| Terminal UI, usage and updating | `shin-ce stats`, automatic client-history collection and automatic update installation are not implemented on Windows. Monitor supports a manual release check and reviewed MSI/checksum links; see below. |
-| Distribution | Published ZIP/MSI previews pass the guarded source matrix and exact-package checks. Development presets leave packaging disabled; interactive installed lifecycle checks remain separate. |
+| Core and retrieval | Shared indexing, source discovery and snapshot-bound reads. Hosted smoke checks cover a selected native subset of the Core suite. |
+| Observer, CLI and MCP | Native processes and authenticated named pipes; project work runs with unelevated user tokens and explicit root authority. |
+| Storage and workers | Owner-private ACLs, Windows file identities, atomic replacement and bounded Job Objects. UNC paths and reparse traversal are refused. |
+| Monitor | Win32/DX11 tray host, Sand, EN/RU, Overview, Projects, Activity and Settings; per-monitor DPI awareness with matching logical input. |
+| Setup and management | Reviewed agent connections, project actions, storage management and Windows Startup Apps access. |
+| Usage | Automatic collection from readable supported Codex, OpenCode and Hermes history; missing sources remain visibly unavailable or partial. |
+| Updates | Automatic or manual release checks; confirmed MSI download/verification, normal UAC, project preparation and retained results. |
+| Terminal UI | `shin-ce stats` is not implemented on Windows. |
 
 Runtime binaries do not require WSL, Bash, Python, Node or a model service.
 Python and the native compiler are development/test dependencies. WSL builds
-exercise the Linux implementation and do not substitute for native Windows tests.
-
-The shared dashboard does not provide full macOS feature parity. Windows has no
-graphical project/agent onboarding, project-management menu, storage-cleanup
-window, native login-settings control or saved native-Updater result. Use the
-CLI for project and storage operations. Request timing and the session journal
-are available independently of agent token-history collection. See the
+exercise Linux and do not substitute for native Windows tests. Mixed-monitor
+moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
-
-The Windows host currently lets DWM scale a fixed logical-size, DPI-unaware
-window. Fonts and icons use Windows system resources. This differs from the
-macOS Retina host; current render tests do not establish visual parity at
-125–200% scaling or across mixed-DPI monitors.
 
 ### Windows Monitor update screen
 
-Open **Settings → Check for updates…**, or right-click the notification-area
-icon and choose **Check for updates…**. The check runs in the background and
-shows the running version, checking/current/available/error state and, for a
-newer complete Windows release, **Download MSI**, **Download checksum** and
-**Release notes**. A visible update offer also appears in the Monitor footer.
-The panel supports English/Russian, keyboard navigation and scrolling on small
-screens. These controls are included in preview dev.70. Older Windows previews
-may lack the entry points; install a current MSI manually if necessary.
+Open **Settings → Check for updates…**, or use the notification-area menu.
+The check runs in the background and shows the running version and the
+checking/current/available/error state. A complete newer release offers
+**Download and install**, MSI/checksum links and release notes. Setup and update
+pages stay visible when focus moves to another application.
 
-Checks are manual: Monitor reads the public GitHub release feed over HTTPS,
-without account credentials or project data. The existing version/channel rules
-apply; stable installations do not receive development previews. Offers require
-the exact repository URLs, uploaded Windows ZIP/MSI and paired checksum assets,
-bounded sizes and valid SHA-256 metadata. A failed check does not stop Shin.
+Checks read public GitHub release metadata over HTTPS without account credentials
+or project data. Existing version/channel rules apply; stable installations do
+not receive development previews. Offers require exact repository URLs, complete
+ZIP/MSI and checksum assets, bounded sizes and valid SHA-256 metadata. A failed
+check does not stop Shin. The Settings opt-out disables automatic checks;
+installation always requires confirmation and Windows UAC.
 
-Download links open in the user's browser. Verify the MSI against its checksum,
-close Monitor, then run the MSI and confirm native Windows UAC. Windows Installer
-owns progress, completion and any restart request; this screen does not perform
-installation or expose the macOS updater's last-result/automatic-update controls.
-Projects, settings and history remain outside the installed binaries.
-The update page uses the tray popup: switching focus to the browser hides the
-panel. Reopen it from the tray to return to the check result.
+## Monitor setup and updates
 
-## Unreleased source
-
-The following is implemented in working source and is **not part of published
-dev.70**. Keep download pins above on the complete published release until a new
-candidate has passed the guarded publisher.
+The following behavior is included in preview dev.74.
 
 Windows packages preserve CRLF in bundled profile JSON independently of checkout
 line endings. Project bindings pin exact profile bytes: packaging the same policy
@@ -143,11 +122,10 @@ No project data is changed by SYSTEM during the MSI transaction.
   A failing project does not stop preparation of the others. Setup and update
   pages stay visible when another window gains focus.
 
-Native source compilation, synthetic configuration/history checks and D3D11 render
-checks establish source behavior. They do not qualify a newly published archive
-or an installed upgrade through UAC. Rehearse that path with a distinct next
-candidate; do not install altered binaries under the published dev.70 identity.
-The terminal dashboard remains unavailable on Windows.
+Source and D3D11 render checks, exact-archive qualification and installed MSI
+checks provide separate evidence. The local dev.72 rehearsal confirmed automatic
+post-MSI project preparation and preserved project settings and history. New
+installer changes require their own exact-package and installed checks.
 
 ## Build and verification
 
@@ -279,9 +257,11 @@ uninstall/reinstall and data/history preservation were rehearsed for the dev.54
 packaging policy. That is separate installed evidence, not a claim that every
 hosted package check repeats the lifecycle rehearsal. Changes to installer or
 SCM behavior still need a new installed rehearsal, including multi-user and
-rollback scenarios where affected. TUI, automatic client setup/usage collection
-and automatic Windows update installation remain pending. The dev.70 Monitor
-includes the manual release-check/download screen described above.
+rollback scenarios where affected. The local dev.72 rehearsal additionally covered
+MSI upgrade and automatic project preparation. Reviewed client setup, automatic
+usage collection and MSI updates are available in dev.74; the Windows TUI remains
+unimplemented. The rehearsal does not certify all future payloads or every
+multi-user, restart and rollback scenario.
 
 Linux/macOS gates, Windows source checks, exact-archive checks and installed
 service checks retain separate proof boundaries. Local binaries never substitute

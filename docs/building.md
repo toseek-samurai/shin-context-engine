@@ -175,10 +175,9 @@ preset builds production binaries in `kit/`, with source tests disabled; run
 the desktop test preset first, then the [exact ZIP/MSI checks](windows-desktop.md#installer-presentation-checks).
 MSI packaging requires CPack 4.3+ and WiX 4. Published previews pass exact-archive
 checks; interactive installed SCM lifecycle tests remain a separate rehearsal.
-Published dev.70 includes manual Monitor release checks and MSI/checksum links.
-Unreleased source adds project/agent setup, storage actions, automatic usage
-collection, DPI-aware input/rendering and reviewed MSI installation with UAC;
-see [the source boundary](windows-desktop.md#unreleased-source). TUI remains
+Published dev.74 includes project/agent setup, storage actions, automatic usage
+collection, DPI-aware input/rendering and reviewed MSI installation with UAC.
+See [setup and update boundaries](windows-desktop.md#monitor-setup-and-updates). TUI remains
 unavailable on Windows. The `shin-windows-client-features` native test covers
 configuration preservation, stale-review/hardlink refusal, download/inventory
 validation and active-history collection. It is included in the hosted smoke preset.

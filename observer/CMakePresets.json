@@ -49,7 +49,7 @@
       "inherits": "windows-desktop",
       "filter": {
         "include": {
-          "name": "^(shin-ui-(language|terminal-language|catalog)|shin-platform-boundaries|shin-windows-(build-placement|package-version|file|scm-transport|client-features)|shin-context-source-discovery|shin-observer-(protocol|windows-(storage|runtime|project|worker))|shin-local-(startup|release|mcp-scope|rpc|session-analysis|mcp-activity|history-files|history-recovery|changes|worker-process|refresh-races)|shin-native-install|shin-tray-(diagnostics|request-timing))$"
+          "name": "^(shin-ui-(language|terminal-language|catalog)|shin-platform-boundaries|shin-windows-(build-placement|package-version|file|scm-transport|client-features)|shin-context-source-discovery|shin-observer-(protocol|windows-(storage|runtime|project|worker))|shin-local-(startup|release|mcp-scope|rpc|session-analysis|mcp-activity|history-files|history-recovery|changes|worker-process|refresh-races|idle-refresh)|shin-native-install|shin-tray-(diagnostics|request-timing))$"
         }
       }
     }

@@ -96,6 +96,7 @@ public:
 
     ~Service() {
         connections.clear();
+        refresh_process.reset();
         residents.clear();
         telemetry.close_history();
         endpoint.reset();
@@ -110,7 +111,7 @@ public:
             else rss.reset();
         };
         for (const auto& [root, reader] : residents) { (void)root; account(reader->process.rss_bytes()); }
-        if (refresh_worker) account(refresh_worker->rss_bytes());
+        if (refresh_process) account(refresh_process->rss_bytes());
         telemetry.sample(active_workers(), rss);
         endpoint->verify();
         for (std::size_t count = 0; count < connection_limit; ++count) {
@@ -189,9 +190,16 @@ public:
         try {
         if (service_executable_identity(executable) != executable_id)
             throw Error("service-executable-changed", "Restart after replacing the native executable.");
-        LocalWorkerProcess worker(executable, LocalWorkerRole::refresh);
+        if (!refresh_process) refresh_process = std::make_unique<LocalWorkerProcess>(executable, LocalWorkerRole::refresh);
+        auto& worker = *refresh_process;
         refresh_worker = &worker;
-        struct ResetRefresh { LocalWorkerProcess*& value; ~ResetRefresh() { value = nullptr; } } reset_refresh{refresh_worker};
+        struct ResetRefresh {
+            Service& service;
+            ~ResetRefresh() {
+                service.refresh_worker = nullptr;
+                if (service.retired_refresh_scope) { service.refresh_process.reset(); service.retired_refresh_scope = false; }
+            }
+        } reset_refresh{*this};
         const Json payload{{"schema_version", "shin.local-refresh.v1"}, {"version", SHIN_OBSERVER_VERSION},
             {"core_version", SHIN_VERSION}, {"root", request.root.string()}, {"home", request.home.string()},
             {"root_identity", request.maintenance_root_identity},
@@ -228,8 +236,8 @@ public:
         if (!result.is_object() || !result.contains("ok") || !result.at("ok").is_boolean())
             throw Error("refresh-worker-failed", "Invalid refresh worker response.");
         // Preparation is never performed in a caller's query path. The child
-        // independently qualifies its generation before advertising readiness.
-        worker.stop();
+        // qualifies changed generations; idle replies retain an in-memory proof
+        // only behind native-event, metadata and current-authority fences.
         work = result.value("refresh_work", Json::object());
         if (result.at("ok") == true && (result.value("phase", "") == "current" || result.value("phase", "") == "partial")) {
             const auto snapshot = result.value("snapshot_id", result.value("observation", Json::object()).value("snapshot_id", ""));
@@ -254,10 +262,12 @@ public:
         persist(code.empty() ? "success" : "error", code, result.value("phase", "unknown"));
         return result;
         } catch (const Error& error) {
+            refresh_process.reset();
             persist(error.code == "refresh-suspended" ? "paused" : "error", error.code,
                     error.code == "refresh-suspended" ? "coalescing" : "unknown");
             throw;
         } catch (...) {
+            refresh_process.reset();
             persist("error", "refresh-worker-failed", "unknown");
             throw;
         }
@@ -270,6 +280,9 @@ public:
         enrollment_errors.erase(root);
     }
     void retire_project(const fs::path& root) {
+        // Release native watches for detached scopes as well as their readers.
+        if (refresh_worker) retired_refresh_scope = true;
+        else refresh_process.reset();
         discard_resident(root.string(), "project-detached");
         bindings.erase(root.string());
         enrollment_errors.erase(root.string());
@@ -830,6 +843,8 @@ private:
     }
     std::map<std::string, std::string> resident_errors;
     std::map<std::string, Json> project_blockers;
+    std::unique_ptr<LocalWorkerProcess> refresh_process;
+    bool retired_refresh_scope = false;
     LocalWorkerProcess* refresh_worker = nullptr;
 };
 } // namespace

@@ -12,6 +12,7 @@ inline bool valid_reported_model(const std::string& value) {
     });
 }
 class LocalQuerySession;
+class LocalRefreshSession;
 struct LocalProjectRequest {
     std::string command;
     fs::path root;
@@ -50,6 +51,8 @@ struct LocalProjectRequest {
     std::function<void(const std::string&)> maintenance_progress;
     // Private resident preparation hook, never accepted from CLI or RPC JSON.
     std::shared_ptr<LocalQuerySession>* query_session = nullptr;
+    // Process-owned background continuation, never imported from CLI/RPC/state.
+    std::shared_ptr<LocalRefreshSession>* refresh_session = nullptr;
 };
 
 // Single-threaded CLI adapter over native Core/Observer commands.

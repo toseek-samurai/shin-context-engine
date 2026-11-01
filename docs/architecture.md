@@ -42,6 +42,34 @@ publication or filesystem authority.
 
 ## Quality gates and performance limitations
 
+Observer dev.75 adds an idle refresh path shared by Windows, macOS and Linux.
+Package availability follows guarded CI publication. The local service retains
+one owned serial refresh process rather than starting one for every timer tick.
+Native changes still wake the controller; its periodic reconciliation remains
+bounded by the existing 15-second idle wait.
+
+After full qualification, a process-local checkpoint can avoid full corpus reads
+and content rehashing while native source/output observation is healthy. Each
+idle pass still checks complete input membership, file metadata, generated layout,
+profile, external dependencies and current project authority. Any change, lost
+events, invalid authority or process restart restores the full qualification
+path. Checkpoints are never persisted or imported from RPC; service LRU retention is
+limited to 16 scopes and 8192 input records in total. Eviction changes cost, not
+the profile's coverage or quality bounds.
+Small policy and authority files are still read; the diagnostic verification
+flags describe the work performed, not raw operating-system I/O counters.
+
+The qualification key also retains one process-local executable hash behind
+healthy native events, fresh file identity, size, modification/change time and
+running-image checks. Replacing the named executable invalidates it and the
+qualification key. Unavailable events restore full binary hashing.
+
+An idle observation reports `content_reverified: false` and
+`verification_level: source-inventory-and-metadata-observed`; it does not create
+a new full-audit receipt. Query/read still verify the selected source bytes.
+Each active refresh retains its 60-second deadline and suspend/cancellation
+checks. System sleep between completed operations starts a new operation clock.
+
 Quality gates combine source/profile validation, generated-index integrity,
 declared retrieval cases, Pack completion and resource checks. CTest separately
 exercises runtime correctness, isolation, refusal and recovery. A passing

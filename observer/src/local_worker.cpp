@@ -5,6 +5,8 @@
 #include "shin/observer/local_service_platform.h"
 #include "shin/observer/local_rpc.h"
 #include "shin/observer/local_query.h"
+#include "shin/observer/local_registry.h"
+#include "local_refresh_session.h"
 #include "context_internal.h"
 #include <chrono>
 #include <atomic>
@@ -108,7 +110,8 @@ Json execute_local_worker_read(const Json& payload) {
     return response;
 }
 Json execute_local_worker_refresh(const Json& payload, const std::function<bool()>& stopped,
-                                  const std::function<void(const Json&)>& progress) {
+                                  const std::function<void(const Json&)>& progress,
+                                  std::shared_ptr<LocalRefreshSession>* session) {
     Json result;
     try {
         if (!payload.is_object() || (payload.size() != 8 && payload.size() != 9) ||
@@ -129,6 +132,7 @@ Json execute_local_worker_refresh(const Json& payload, const std::function<bool(
         require_binding(request, false);
         request.maintenance_worktree = local_rpc::string_field(payload, "worktree", 128);
         request.maintenance_stop = stopped;
+        request.refresh_session = session;
         const auto started = Clock::now();
         const std::set<std::string> stages{"admission", "observation", "candidate-build", "candidate-validation",
             "publication", "qualification", "source-cache", "candidate-source-cache", "source-cache-transfer", "final-verification"};
@@ -147,6 +151,27 @@ Json execute_local_worker_refresh(const Json& payload, const std::function<bool(
     catch (const std::exception&) { result = {{"ok", false}, {"error", {{"code", "refresh-worker-failed"}, {"message", "Native refresh failed."}}}}; }
     if (result.dump().size() + 1 > response_limit)
         result = {{"ok", false}, {"error", {{"code", "refresh-worker-failed"}, {"message", "Refresh response exceeds its bound."}}}};
+    return result;
+}
+Json LocalRefreshWorker::execute(const Json& payload, const std::function<bool()>& stopped,
+                                 const std::function<void(const Json&)>& progress) {
+    if (!payload.is_object() || !payload.contains("root") || !payload.at("root").is_string() ||
+        !payload.contains("home") || !payload.at("home").is_string())
+        return execute_local_worker_refresh(payload, stopped, progress);
+    const auto key = payload.at("home").get<std::string>() + '\n' + payload.at("root").get<std::string>();
+    auto& entry = sessions_[key];
+    entry.used = ++sequence_;
+    auto result = execute_local_worker_refresh(payload, stopped, progress, &entry.session);
+    if (!result.value("ok", false) || result.value("phase", "") != "current") entry.session.reset();
+    // Bound retained metadata, not source membership or qualification. Eviction
+    // merely restores the original full path for the next visit to that scope.
+    for (;;) {
+        std::size_t weight = 0;
+        for (const auto& [scope, value] : sessions_) { (void)scope; if (value.session) weight += value.session->weight(); }
+        if (sessions_.size() <= kLocalServiceProjectLimit && weight <= 8192) break;
+        const auto oldest = std::min_element(sessions_.begin(), sessions_.end(), [](const auto& a, const auto& b) { return a.second.used < b.second.used; });
+        sessions_.erase(oldest);
+    }
     return result;
 }
 Json local_worker_metric(const Json& response, double duration_ms) {

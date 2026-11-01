@@ -19,7 +19,9 @@ def main():
             )
             return group, result.returncode == 0, result.stdout
         except subprocess.TimeoutExpired as error:
-            output = (error.output or b'').decode('utf-8', errors='replace')
+            output = error.output or ''
+            if isinstance(output, bytes):
+                output = output.decode('utf-8', errors='replace')
             return group, False, output + '\nShared refresh test deadline exceeded.\n'
 
     # Each executable owns its Core stdout capture and disposable fixtures.

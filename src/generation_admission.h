@@ -11,9 +11,12 @@ struct VerifiedSnapshot;
 // only around a successful full qualification of the same unchanged generation.
 std::string generation_fingerprint(const RuntimeOptions& options);
 
-// Request-scoped admission from a trusted, kit/policy-bound qualification receipt.
+// Process-owned admission from a trusted, kit/policy-bound qualification receipt.
 // No CLI flag imports receipts. The caller holds the publication lock throughout
 // use and performs verify_content before returning or persisting a qualification.
+// Observer may retain an admission in memory for background continuity only when
+// healthy native events fence the full source/output closure. assess then checks
+// inventory and metadata; it is not a new content audit or source-read authority.
 class GenerationAdmission {
 public:
     // Optional observations come from a fresh verified load under the same

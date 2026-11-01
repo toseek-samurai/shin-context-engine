@@ -261,7 +261,7 @@ public:
 };
 LocalWorkerProcess::LocalWorkerProcess(const fs::path& executable, LocalWorkerRole role,
                                        LocalSuspendObservation::Sampler sampler)
-    : role_(role), suspension_(std::move(sampler)) {
+    : role_(role), suspend_sampler_(std::move(sampler)), suspension_(suspend_sampler_) {
     const auto* command = role == LocalWorkerRole::resident ? "_resident-worker" :
         role == LocalWorkerRole::refresh ? "_refresh-worker" : "_service-worker";
     try { impl_ = std::make_unique<Impl>(executable, command); }
@@ -283,6 +283,10 @@ bool LocalWorkerProcess::cancelled_or_suspended(const std::function<bool()>& can
     return cancelled && cancelled();
 }
 void LocalWorkerProcess::send(const Json& payload, Clock::time_point deadline, const std::function<bool()>& cancelled) {
+    if (role_ == LocalWorkerRole::refresh && refresh_idle_) {
+        suspension_ = LocalSuspendObservation(suspend_sampler_);
+        refresh_idle_ = false;
+    }
     const auto checked = [&] { return cancelled_or_suspended(cancelled); };
     active(deadline, checked);
     const auto frame = payload.dump();
@@ -340,6 +344,7 @@ Json LocalWorkerProcess::receive(Clock::time_point deadline, const std::function
             }
             if (role_ == LocalWorkerRole::refresh && !buffered_.empty())
                 throw Error("service-frame-invalid", "Refresh final frame must be the only trailing worker output.");
+            if (role_ == LocalWorkerRole::refresh) refresh_idle_ = true;
             return value;
         }
         if (output.ended) throw Error("service-disconnected", "Worker closed before its reply.");

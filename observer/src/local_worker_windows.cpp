@@ -27,25 +27,42 @@ public:
     }
     ~WorkerDeadline() { SetEvent(done); timer.join(); CloseHandle(done); }
 };
-int worker(bool refresh) {
-    WorkerDeadline bound(refresh ? 60000 : 30000);
+int read_worker() {
+    WorkerDeadline bound(30000);
     auto [input, output] = native::Channel::worker_stdio();
     Json result;
     try {
         const auto payload = parse_json(input.read_frame(16384, deadline(2)));
-        result = refresh ? execute_local_worker_refresh(payload, [&] { return input.input_or_closed(); },
-            [&](const Json& progress) { output.write_frame(progress.dump(), 128 * 1024, deadline(2)); }) :
-            execute_local_worker_read(payload);
+        result = execute_local_worker_read(payload);
     } catch (const Error& error) {
-        result = refresh ? Json{{"ok", false}, {"error", error_json(error)}} : local_rpc::failure("", error.code, error.what());
+        result = local_rpc::failure("", error.code, error.what());
     }
     output.write_frame(result.dump(), 128 * 1024, deadline(2));
     output.finish_reply(deadline(2));
     return 0;
 }
 }
-int local_service_worker() { return worker(false); }
-int local_refresh_worker() { return worker(true); }
+int local_service_worker() { return read_worker(); }
+int local_refresh_worker() {
+    auto [input, output] = native::Channel::worker_stdio();
+    LocalRefreshWorker refresh;
+    for (;;) {
+        try {
+            if (!input.wait_input(Clock::now() + std::chrono::seconds(1))) continue;
+        } catch (const native::TransportError& error) {
+            if (error.code == "service-disconnected") return 0;
+            throw;
+        }
+        WorkerDeadline bound(60000); // Renew only for actual work, never idle time.
+        Json result;
+        try {
+            const auto payload = parse_json(input.read_frame(16384, deadline(2)));
+            result = refresh.execute(payload, [&] { return input.input_or_closed(); },
+                [&](const Json& progress) { output.write_frame(progress.dump(), 128 * 1024, deadline(2)); });
+        } catch (const Error& error) { result = {{"ok", false}, {"error", error_json(error)}}; }
+        output.write_frame(result.dump(), 128 * 1024, deadline(2));
+    }
+}
 int local_resident_worker() {
     auto [input, output] = native::Channel::worker_stdio();
     std::unique_ptr<LocalResidentWorker> resident;

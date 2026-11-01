@@ -323,27 +323,35 @@ int local_refresh_worker() {
     sigaddset(&alarm_signal, SIGALRM);
     if (::pthread_sigmask(SIG_UNBLOCK, &alarm_signal, nullptr) != 0)
         throw Error("refresh-worker-failed", "Cannot activate refresh deadline.");
-    ::alarm(60);
-    Json result;
-    try {
-        require_peer(STDIN_FILENO);
-        const auto payload = parse_json(read_frame(STDIN_FILENO, 16384, Clock::now() + std::chrono::seconds(2)));
-        result = execute_local_worker_refresh(payload, [] {
-            char byte = 0;
-            const auto count = ::recv(STDIN_FILENO, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
-            return count >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR);
-        }, [](const Json& progress) {
-            const auto frame = progress.dump() + '\n';
-            write_frame(STDOUT_FILENO, frame, Clock::now() + std::chrono::seconds(2));
-        });
-    } catch (const Error& error) { result = {{"ok", false}, {"error", error_json(error)}}; }
-    catch (const shin::context::CliError& error) { result = {{"ok", false}, {"error", {{"code", error.code()}, {"message", error.what()}}}}; }
-    catch (const std::exception&) { result = {{"ok", false}, {"error", {{"code", "refresh-worker-failed"}, {"message", "Native refresh failed."}}}}; }
-    auto frame = result.dump() + '\n';
-    if (frame.size() > response_limit)
-        frame = "{\"ok\":false,\"error\":{\"code\":\"refresh-worker-failed\",\"message\":\"Refresh response exceeds its bound.\"}}\n";
-    write_frame(STDOUT_FILENO, frame, Clock::now() + std::chrono::seconds(2));
-    return 0;
+    LocalRefreshWorker refresh;
+    for (;;) {
+        pollfd input{STDIN_FILENO, POLLIN, 0};
+        const auto available = ::poll(&input, 1, 1000);
+        if (available < 0 && errno == EINTR) continue;
+        if (available < 0 || (input.revents & (POLLHUP | POLLERR | POLLNVAL))) return 0;
+        if (!available) continue;
+        ::alarm(60);
+        Json result;
+        try {
+            require_peer(STDIN_FILENO);
+            const auto payload = parse_json(read_frame(STDIN_FILENO, 16384, Clock::now() + std::chrono::seconds(2)));
+            result = refresh.execute(payload, [] {
+                char byte = 0;
+                const auto count = ::recv(STDIN_FILENO, &byte, 1, MSG_PEEK | MSG_DONTWAIT);
+                return count >= 0 || (errno != EAGAIN && errno != EWOULDBLOCK && errno != EINTR);
+            }, [](const Json& progress) {
+                const auto frame = progress.dump() + '\n';
+                write_frame(STDOUT_FILENO, frame, Clock::now() + std::chrono::seconds(2));
+            });
+        } catch (const Error& error) { result = {{"ok", false}, {"error", error_json(error)}}; }
+        catch (const shin::context::CliError& error) { result = {{"ok", false}, {"error", {{"code", error.code()}, {"message", error.what()}}}}; }
+        catch (const std::exception&) { result = {{"ok", false}, {"error", {{"code", "refresh-worker-failed"}, {"message", "Native refresh failed."}}}}; }
+        auto frame = result.dump() + '\n';
+        if (frame.size() > response_limit)
+            frame = "{\"ok\":false,\"error\":{\"code\":\"refresh-worker-failed\",\"message\":\"Refresh response exceeds its bound.\"}}\n";
+        write_frame(STDOUT_FILENO, frame, Clock::now() + std::chrono::seconds(2));
+        ::alarm(0);
+    }
 }
 
 int local_resident_worker() {

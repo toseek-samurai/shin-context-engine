@@ -63,9 +63,11 @@ private:
     bool cancelled_or_suspended(const std::function<bool()>& cancelled);
     class Impl;
     const LocalWorkerRole role_;
+    LocalSuspendObservation::Sampler suspend_sampler_;
     LocalSuspendObservation suspension_;
     std::unique_ptr<Impl> impl_;
     std::string buffered_;
     bool ended_ = false;
+    bool refresh_idle_ = false;
 };
 }

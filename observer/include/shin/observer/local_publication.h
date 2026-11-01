@@ -51,6 +51,7 @@ public:
     std::string token() const;
     std::string approved_profile_hash() const;
     std::string last_snapshot() const { return receipt().at("last_snapshot").get<std::string>(); }
+    bool pending_snapshot() const { return receipt().at("pending_snapshot") != ""; }
     std::string approved_marker_hash() const;
     void accept_profile(const std::string& profile_hash);
     void accept_marker(const std::string& marker_hash);

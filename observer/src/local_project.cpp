@@ -17,6 +17,7 @@
 #include "local_partial_context.h"
 #include "local_route_guard.h"
 #include "local_index_rebuild.h"
+#include "local_refresh_session.h"
 #include <chrono>
 #include <cstdlib>
 #include <thread>
@@ -764,6 +765,46 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             directory_identity(workspace, true) != binding.at("workspace_identity").get<std::string>())
             throw Error("refresh-authority-changed", "Granted configuration, policy or directory changed before publication.");
     };
+    const auto verify_route = [&](const std::optional<Json>& expected) {
+      if (read_text(file, 65536, true) != config_text ||
+        !configuration_approved(workspace, binding, digest(config_text)) ||
+        core::make_profile(config.profile, config.profile_dir).config_hash != options.profile.config_hash ||
+        (!marker.empty() && digest(read_text(root / marker, 1024 * 1024, false)) != marker_hash))
+        throw Error("route-revision-conflict", "Canonical policy or configuration changed; no automatic reattachment.");
+      if (local_project_lifecycle(workspace) != lifecycle ||
+        core::find_existing_adoption_marker(root) != conventional ||
+        directory_identity(root) != binding.at("root_identity").get<std::string>() ||
+        directory_identity(config.out_dir) != binding.at("index_identity").get<std::string>() ||
+        directory_identity(config.state_dir, true) != config.binding.at("state_identity").get<std::string>() ||
+        (!attach && !refresh && !grant.active() && store.writer_present()) || store.load() != expected)
+        throw Error("binding-changed", "Canonical route changed before returning the result.");
+    };
+    auto quality_binding = binding;
+    quality_binding["observer_config_hash"] = digest(config_text);
+    const auto quality_key = qualification_key(quality_binding, options.profile.config_hash, marker_hash);
+    std::shared_ptr<LocalRefreshSession> idle_session;
+    if (refresh && request.refresh_session && grant.active() && !grant.pending_snapshot() && loaded &&
+        grant.last_snapshot() == binding.at("prepared_snapshot").get<std::string>() &&
+        grant.approved_profile_hash() == options.profile.config_hash &&
+        !shin::generated_io::publication_in_progress(config.out_dir)) {
+        managed_authority();
+        recover_refresh_candidate(workspace);
+        // Validate approved policy evidence before taking the continuation. The
+        // expensive publication reconciliation remains on every full path.
+        const auto approved = LocalProfileRevision(workspace, binding, grant).approved(grant.approved_profile_hash());
+        if (approved) {
+            if (!*request.refresh_session) *request.refresh_session = std::make_shared<LocalRefreshSession>();
+            idle_session = *request.refresh_session;
+            Json cached;
+            if (idle_session->reuse(options, workspace, digest(quality_key + binding.dump() + grant.token() +
+                    std::to_string(lifecycle.revision)), cached)) {
+                managed_authority();
+                verify_route(loaded);
+                guard_ancestor_bindings(root, home);
+                return cached;
+            }
+        }
+    }
     const auto repair = refresh && grant.active() ? (managed_authority(), grant.reconcile()) : std::optional<SnapshotRepairBase>{};
     LocalProfileRevision revision(workspace, binding, grant);
     const auto profile_text = read_text(options.profile.config_source, 1024 * 1024, false);
@@ -789,9 +830,6 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             }
     }
     bool partial_allowed = automatic_revision || missing_members;
-    auto quality_binding = binding;
-    quality_binding["observer_config_hash"] = digest(config_text);
-    const auto quality_key = qualification_key(quality_binding, options.profile.config_hash, marker_hash);
     // The publisher grant keeps its original route identity across an index
     // rebuild. Retrieval independently requires the current generated format.
     if ((grant.active() && !rebuildable_binding) ||
@@ -1023,20 +1061,6 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     // Managed readers hold the publication read lock and recheck every binding.
     // An unchanged maintenance writer alone must not invalidate that evidence.
     if (!attach && !refresh && grant.active()) grant.verify();
-    const auto verify_route = [&](const std::optional<Json>& expected) {
-      if (read_text(file, 65536, true) != config_text ||
-        !configuration_approved(workspace, binding, digest(config_text)) ||
-        core::make_profile(config.profile, config.profile_dir).config_hash != options.profile.config_hash ||
-        (!marker.empty() && digest(read_text(root / marker, 1024 * 1024, false)) != marker_hash))
-        throw Error("route-revision-conflict", "Canonical policy or configuration changed; no automatic reattachment.");
-      if (local_project_lifecycle(workspace) != lifecycle ||
-        core::find_existing_adoption_marker(root) != conventional ||
-        directory_identity(root) != binding.at("root_identity").get<std::string>() ||
-        directory_identity(config.out_dir) != binding.at("index_identity").get<std::string>() ||
-        directory_identity(config.state_dir, true) != config.binding.at("state_identity").get<std::string>() ||
-        (!attach && !refresh && !grant.active() && store.writer_present()) || store.load() != expected)
-        throw Error("binding-changed", "Canonical route changed before returning the result.");
-    };
     refresh_stage(request, "final-verification");
     const auto verification_started = core::SteadyClock::now();
     if (local_ready && request.query_session) {
@@ -1129,6 +1153,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         if (!managed_observation.is_null()) tick["observation"] = managed_observation;
         if (tick.dump(2).size() + 1 > 65536) throw Error("output-limit", "Refresh result exceeds its bounded view.");
         qualify();
+        if (idle_session) idle_session->remember(options, tick);
         return tick;
     }
     const auto watch_directory = workspace / "watch";
@@ -1377,6 +1402,20 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             save_qualification(workspace, binding, config, binding.at("prepared_snapshot"), readiness, quality_key, options);
     };
     if (refresh) {
+        const auto authority = [&] {
+            if (request.maintenance_stop && request.maintenance_stop())
+                throw Error("refresh-stopped", "Local refresh was stopped before publication.");
+            guard_existing_routes(root, home);
+            guard_ancestor_bindings(root, home);
+            if (require_local_project_active(workspace) != lifecycle)
+                throw Error("project-detached", "Project lifecycle changed during refresh.");
+            if (directory_identity(root) != root_identity || store.load() != loaded ||
+                config_reader.load() != config_document ||
+                directory_identity(workspace, true) != binding.at("workspace_identity").get<std::string>() ||
+                directory_identity(config.state_dir, true) != config.binding.at("state_identity").get<std::string>() ||
+                core::make_profile("generic-source", registry).config_hash != options.profile.config_hash)
+                throw Error("refresh-authority-changed", "Project, profile or configuration changed during refresh.");
+        };
         const bool rebuildable_index = retired_source_generator(binding.at("generator_version").get<std::string>());
         if (engine_changed && !rebuildable_index)
             throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
@@ -1385,6 +1424,18 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             shin::generated_io::IndexLock recovery_writer(options.out_root, shin::generated_io::LockMode::exclusive,
                                                  shin::generated_io::LockTarget::writer);
             shin::generated_io::recover_snapshot(options.out_root, core::kGeneratedDir);
+        }
+        std::shared_ptr<LocalRefreshSession> idle_session;
+        if (request.refresh_session && !engine_changed) {
+            authority();
+            if (!*request.refresh_session) *request.refresh_session = std::make_shared<LocalRefreshSession>();
+            idle_session = *request.refresh_session;
+            Json cached;
+            if (idle_session->reuse(options, workspace, digest(quality_key + binding.dump() +
+                    config_document->dump() + std::to_string(require_local_project_active(workspace).revision)), cached)) {
+                authority();
+                return cached;
+            }
         }
         refresh_stage(request, "observation");
         auto observation = sample_worktree(config, root_identity);
@@ -1405,15 +1456,6 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             result["error"] = source_observation_error(observation);
             return result;
         }
-        const auto authority = [&] {
-            if (request.maintenance_stop && request.maintenance_stop())
-                throw Error("refresh-stopped", "Local refresh was stopped before publication.");
-            guard_existing_routes(root, home);
-            if (directory_identity(root) != root_identity || store.load() != loaded ||
-                config_reader.load() != config_document ||
-                core::make_profile("generic-source", registry).config_hash != options.profile.config_hash)
-                throw Error("refresh-authority-changed", "Project, profile or configuration changed during refresh.");
-        };
         if (observation.at("snapshot_current") == true &&
             binding.at("prepared_snapshot") == observation.at("snapshot_id")) {
             const auto read = core::lock_index_for_read(options.out_root);
@@ -1425,6 +1467,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             authority();
             qualify(readiness);
             result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
+            if (idle_session) idle_session->remember(options, result);
             return result;
         }
         if (request.maintenance_worktree != observation.at("worktree_id").get<std::string>()) {
@@ -1594,6 +1637,7 @@ public:
         request.maintenance_stop = stopped;
         const auto workspace = request.home / "projects" / digest(request.root.string());
         const auto lifecycle = require_local_project_active(workspace);
+        if (!refresh) request.refresh_session = &idle_session;
         const auto admission = refresh ? refresh(request) : local_project(request);
         if (!admission.contains("refresh_authority") ||
             (admission.at("refresh_authority") != "private-bootstrap" &&
@@ -1836,6 +1880,7 @@ private:
     }
 
     LocalProjectRequest request;
+    std::shared_ptr<LocalRefreshSession> idle_session;
     LocalRefresh refresh;
     std::unique_ptr<StateStore> controller;
     std::unique_ptr<LocalChanges> changes;

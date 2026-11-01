@@ -86,6 +86,16 @@ the compact layout intentionally shortens text while retaining the full report.
 
 ### Shared refresh regressions
 
+`shin-local-idle-refresh` exercises the shared process-local background
+checkpoint: unchanged passes, independent project scopes and bounded eviction,
+persistent worker reuse, executable-hash invalidation,
+same-size source edits with restored mtime, additions/deletions, generated-output
+corruption, changed private configuration, monitor loss, cancellation and suspend
+boundaries. Idle reuse must report no content revalidation; changed inputs must
+enter the ordinary full path. Fixtures and copied worker executables remain in
+owner-private temporary directories. This source test does not qualify an
+installed package or measure fan speed.
+
 `shin-local-refresh-races` runs the same native scenarios on Windows and POSIX.
 The Windows fixture creates an owner-private temporary directory; POSIX keeps
 its `mkdtemp` fixture. Initial bootstrap, automatic refresh, cached queries,

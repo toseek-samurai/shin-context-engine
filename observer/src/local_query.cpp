@@ -5,6 +5,7 @@
 #include "generated_io.h"
 #include "generated_snapshot.h"
 #include "snapshot_verification.h"
+#include "local_source_relevance.h"
 #include "source_discovery.h"
 #include "source_read.h"
 
@@ -32,48 +33,6 @@ namespace {
 namespace core = shin::context;
 constexpr std::uintmax_t selected_bytes_limit = 16U * 1024U * 1024U;
 constexpr std::size_t selected_files_limit = 64;
-
-bool below(const fs::path& path, const fs::path& parent) {
-    const auto [a, b] = std::mismatch(path.begin(), path.end(), parent.begin(), parent.end());
-    (void)a;
-    return b == parent.end();
-}
-
-// The watcher may over-invalidate; it must never miss a possible new input.
-bool relevant_source(const core::RuntimeOptions& options, const fs::path& path, bool directory) {
-    if (!below(path, options.root)) return false;
-    const auto relative = path.lexically_relative(options.root).generic_string();
-    if (relative == ".") return directory;
-    if (below(path, options.out_root / core::kGeneratedDir) || below(path, options.root / core::kGeneratedDir) ||
-        core::shin_internal_control_path(relative)) return false;
-    const auto& profile = options.profile;
-    for (const auto* files : {&profile.root_files, &profile.optional_root_files})
-        for (const auto& file : *files)
-            if (relative == file || (directory && below(options.root / file, path))) return true;
-    if (below(path, options.root / "docs")) {
-        if (directory) return true;
-        if (core::document_path_allowed(profile, relative) && core::extension_allowed(profile.source_extensions, relative)) return true;
-    }
-    for (const auto& source : profile.source_fact_roots) {
-        auto base = (options.root / source).lexically_normal();
-        if (base.filename().empty()) base = base.parent_path();
-        if (directory && below(base, path)) return true;
-        if (!below(path, base)) continue;
-        // Match the existing source enumerator's generated/dependency pruning.
-        const auto inside = path.lexically_relative(base);
-        auto components = inside.begin();
-        bool pruned = false;
-        for (; components != inside.end(); ++components) {
-            if (!directory && std::next(components) == inside.end()) break;
-            if (core::should_skip_source_fact_dir(components->string())) { pruned = true; break; }
-        }
-        if (pruned) continue;
-        if (directory || core::extension_allowed(profile.source_fact_extensions, relative)) return true;
-        if (std::find(profile.source_fact_extractors.begin(), profile.source_fact_extractors.end(), "retool") !=
-            profile.source_fact_extractors.end()) return true;
-    }
-    return false;
-}
 
 void collect_paths(const Json& value, const std::map<std::string, Json>& sources, std::set<std::string>& selected) {
     if (value.is_array()) {
@@ -117,7 +76,7 @@ struct LocalQuerySession::Impl {
         partial = approved_profile != nullptr;
         options.profile = partial ? *approved_profile : core::make_profile(config.profile, config.profile_dir);
         changes = std::make_unique<LocalChanges>(std::vector<fs::path>{config.root},
-            [this](const fs::path& path, bool directory) { return relevant_source(options, path, directory); });
+            [this](const fs::path& path, bool directory) { return local_source_relevant(options, path, directory); });
         changes->flush();
         if (!changes->healthy()) throw Error("local-watcher-unavailable", "Reactive source observation could not start.");
         epoch = changes->sequence();

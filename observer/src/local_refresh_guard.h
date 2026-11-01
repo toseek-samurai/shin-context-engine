@@ -1,7 +1,9 @@
 #pragma once
 #include "context_internal.h"
 #include "shin/observer/io.h"
+#include "shin/observer/local_changes.h"
 #include <functional>
+#include <mutex>
 
 namespace shin::observer {
 // Core's strict quality verdict remains intact. Only its independently
@@ -72,6 +74,49 @@ inline Json envelope(const std::string& command, bool ok) {
             {"delivery_performed", false}, {"daemon_started", false}, {"consumer_mutated", false}};
 }
 
+// Retain one binary hash per process, never a receipt imported from storage.
+// Native events plus file identity, size, mtime and platform change time fence
+// every reuse. A replaced named executable must still change the key even while
+// the old image runs. Loss/unavailability of native events restores full hashing.
+inline std::string qualification_image_digest(const fs::path& executable) {
+    struct CachedImage {
+        fs::path path;
+        shin::context::FileMetadata metadata;
+        std::string image, digest;
+        std::uint64_t epoch;
+    };
+    static std::mutex mutex;
+    static std::optional<CachedImage> cached;
+    static fs::path watched;
+    static std::unique_ptr<LocalChanges> changes;
+    const std::lock_guard<std::mutex> lock(mutex);
+    if (!changes || watched != executable || !changes->healthy()) {
+        cached.reset(); watched = executable;
+        changes = std::make_unique<LocalChanges>(std::vector<fs::path>{executable.parent_path()},
+            [executable](const fs::path& path, bool directory) {
+                return path == executable || (directory &&
+                    std::mismatch(executable.begin(), executable.end(), path.begin(), path.end()).second == path.end());
+            });
+    }
+    changes->flush();
+    const auto epoch = changes->sequence();
+    const auto image = executing_image_identity();
+    const auto before = shin::context::file_metadata(executable);
+    if (cached && changes->healthy() && cached->epoch == epoch &&
+        cached->path == executable && cached->metadata == before && cached->image == image) {
+        changes->flush();
+        if (changes->healthy() && changes->sequence() == epoch) return cached->digest;
+    }
+    const auto hash = digest(read_text(executable, 128U * 1024U * 1024U, false));
+    changes->flush();
+    if (shin::context::file_metadata(executable) != before || executing_image_identity() != image ||
+        (changes->healthy() && changes->sequence() != epoch))
+        throw Error("qualification-engine-changed", "The executing image changed during qualification admission.");
+    if (changes->healthy()) cached = CachedImage{executable, before, image, hash, epoch};
+    else cached.reset();
+    return hash;
+}
+
 inline std::string qualification_key(Json binding, const std::string& profile_hash,
                               const std::optional<std::string>& marker_hash = std::nullopt) {
     fs::path executable;
@@ -80,7 +125,7 @@ inline std::string qualification_key(Json binding, const std::string& profile_ha
         if (error.code != "installation-unavailable") throw;
         throw Error("qualification-engine-changed", "The executing image is unavailable; restart with one matched kit.");
     }
-    const auto binary = digest(read_text(executable, 128U * 1024U * 1024U, false));
+    const auto binary = qualification_image_digest(executable);
     binding.erase("prepared_snapshot");
     binding["profile_config_hash"] = profile_hash;
     if (marker_hash) binding["marker_hash"] = *marker_hash;

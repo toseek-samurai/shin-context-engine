@@ -12,7 +12,11 @@ If Homebrew requests full Xcode while older CLT are installed, updating the CLT 
 version 26 or newer also satisfies the requirements. With older CLT and current
 Xcode installed together, the formula selects the current Xcode SDK.
 Local compilation does not require an Apple Developer Program membership.
-The current package targets macOS 15 or newer and is tested on Apple Silicon.
+The current package targets macOS 15 or newer. Its installation, reinstall and
+removal checks passed on Apple Silicon. Intel installation qualification is
+incomplete: the Intel CI job did not complete installation, so the formula's
+source availability is not proof of a working Intel package. The first version
+has no prebuilt bottles; Homebrew may also build dependencies from source.
 
 ## Install and start
 

@@ -1,7 +1,7 @@
 # Local macOS kit
 
 For a full source-built installation managed by Homebrew, use the
-[Homebrew guide](homebrew.md). Its update and service ownership differs from this native kit.
+[Homebrew guide](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/homebrew.md). Its update and service ownership differs from this native kit.
 
 The kit includes Core, Observer, the `shin-ce` CLI, `shin-mcp`, the usage collector,
 Shin Monitor, profiles, contracts, and dependency notices. Local retrieval needs
@@ -11,7 +11,7 @@ ad-hoc signature, without Developer ID or notarization; first launch on another
 Mac may require manual approval. This is not a stable release.
 
 This guide covers the macOS kit. Native Windows source builds and the separate,
-Windows ZIP/MSI packaging route are described in [Windows source status](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
+Windows ZIP/MSI packaging route are described in the [Windows guide](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
 
 ## Download a preview release
 
@@ -93,11 +93,11 @@ Wait for search readiness in `status --text`; on a large first import, inspect
 the setup without starting the service. Adding a project does not modify its
 source files.
 
-In dev.53 source, a project using the default bootstrap profile keeps serving
-verified context when local Markdown links are broken. Projects and its details
+A project using the default bootstrap profile keeps serving
+verified context when local Markdown links are broken. Projects and project details
 show a documentation warning, which clears after the corrected sources qualify.
 Index integrity, source freshness, secrets and resource checks remain required.
-Preview dev.57 separates retrieval availability from declared search quality
+Shin separates retrieval availability from declared search quality
 for explicit project profiles. Ordinary eval/Pack misses become a bounded search
 warning while a safe, current candidate is published and served. Strict Core
 `eval`, `validate` and `ready` verdicts and exit codes remain unchanged for CI.
@@ -111,22 +111,22 @@ Open the menu bar application:
 open "$HOME/.local/opt/shin-local/Shin Monitor.app"
 ```
 
-Monitor supports English and Russian. Use the language selector at the top of
-the panel; it applies immediately, including open native windows and menus. System
+Monitor supports English and Russian. Use **Settings → Language**;
+it applies immediately, including open native windows and menus. System
 uses the operating system language, with English as fallback. Translations are
 compiled into the kit and need no downloads.
 
 Click the Shin icon in the menu bar. The update indicator
 stays inside the same square icon. macOS can still hide menu-bar extras when
 space is tight; it provides no public always-visible priority for an app's icon.
-Preview dev.62 runs **Shin Monitor.app** as a tray application: opening it
+**Shin Monitor.app** runs as a tray application: opening it
 shows the popup, and closing the popup leaves Monitor running. The dashboard
 stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-In preview dev.66 and later, the desktop panel
-groups tasks under **Overview**, **Projects**, **Activity** and **Settings**.
+The desktop panel groups tasks under **Overview**, **Projects**, **Activity**
+and **Settings**.
 Overview summarizes current project readiness and leads to a project needing
 review. Project explanations expose a labeled next action, with search-check
 details inside the panel and technical reports available separately. Activity
@@ -134,10 +134,10 @@ groups request timing, agent token history and the session journal; agent token
 totals are distinct from calls to Shin. Timing explicitly selects this service
 run or retained history, independently of the overview chart's period. Settings
 provides language, connection, storage and update entry points. Agent setup keeps
-custom configuration paths under **Advanced agent settings**. The installed TUI
-retains its existing navigation while this desktop workflow is evaluated.
+custom configuration paths under **Advanced agent settings**. The TUI uses the
+same four sections, with platform-specific setup and update capabilities.
 
-In preview dev.62, the installed Monitor registers itself with macOS Login Items
+The installed native-kit Monitor registers itself with macOS Login Items
 on its first launch. Use **Launch Monitor at login** in its app or
 status-item menu to disable or re-enable this. The checkmark reads the actual
 macOS setting; external opt-out is preserved. If approval is needed, the menu
@@ -150,7 +150,7 @@ Add more projects with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
 For the Sand terminal dashboard with line charts, run `shin-ce stats`.
-Preview dev.66 groups the TUI under Overview, Projects, Activity and
+The TUI groups its screens under Overview, Projects, Activity and
 Settings (`1`–`4`, Tab / Shift-Tab). Left/Right or `[` / `]` switches pages within
 Activity and Settings. Activity includes request timing, agents and the session
 journal, including explicit host context markers when available.
@@ -181,12 +181,12 @@ per file. The language-specific bootstrap profiles allow 10,000 files and 1 MiB
 per file. These are extraction budgets, not the amount of text sent to an agent
 or a guarantee about peak indexing memory.
 
-In current development source, Core defaults to 10,000 files and 1 MiB per file
+Core defaults to 10,000 files and 1 MiB per file
 when a profile omits those fields, matching the language-specific templates.
 The bundled new-project template declares its budgets explicitly. An existing
 permanent project keeps its explicit reviewed limits. `profile-policy` reports
 the effective values and whether each came from the profile or Core. Check that
-output for the installed kit; source defaults take effect with a new release.
+output for the installed kit; explicit project limits take precedence over defaults.
 
 Set deliberate budgets in a permanent profile and approve its exact revision
 through the native profile-review/approval workflow. Let the existing managed
@@ -203,7 +203,7 @@ roots so the configuration does not become retrieval evidence itself.
 The generated index and local history remain in
 their existing external storage. This does not make Shin a project build dependency.
 
-In current development source, `profile-relocate` moves an enrolled, active,
+`profile-relocate` moves an enrolled, active,
 managed route to an existing directory containing an exact copy of its approved
 `PROFILE.json`. Stop the local service first, then run:
 
@@ -246,7 +246,7 @@ recollects the group without summing cumulative counters twice. The collector re
 its existing bounds, including 24 usage groups; exhausted capacity is reported and
 requires review rather than silently deleting old groups.
 
-An explicit `--usage-file` or Monitor's **Model history…** selection still overrides
+An explicit `--usage-file` or Monitor's **Settings → Choose agent history…** selection overrides
 the automatic snapshot. For an existing custom collector, stop it before migrating
 and preserve its files. Before the first automatic collection, import its group
 names, root aliases and source locations once:
@@ -265,8 +265,7 @@ history; retain the old snapshot for any history no longer present in the client
 
 ## Connect a coding agent
 
-In dev.13, Monitor opens
-**Set up Shin** on a fresh installation. Choose the first folder, select agents
+Monitor opens **Set up Shin** on a fresh installation. Choose the first folder, select agents
 and profiles, and apply their MCP settings directly. Existing settings are preserved. You can opt into background service
 startup at login from the same window. It does not register Monitor itself.
 See [guided client setup](native-client-setup.md#automatic-setup).
@@ -327,7 +326,7 @@ include readable stages in a log. No desktop window opens for a terminal command
 Restart Monitor after completion. Restart persistent MCP connections in your coding
 agent as well: already-running adapters retain the old version and cannot query
 the new service until relaunched. Client configuration paths stay the same.
-The dev.45 kit diagnoses this as `service-version-mismatch`, includes client
+Shin diagnoses this as `service-version-mismatch`, includes client
 and service versions and asks for client reconnection. Successful responses still
 require matching versions; the current service can keep serving other clients.
 
@@ -338,15 +337,15 @@ previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
-The dev.45 kit uses Core dev.7 and the Unicode v23 index format. It
-rebuilds previous derived indexes under their existing project authority; no
-old retrieval reader or term conversion is retained. During rollback to an
+The current preview uses Core dev.13 and the Objective-C++ v24 index format. It
+rebuilds older derived indexes from approved project sources under their existing
+authority; no old retrieval reader or data conversion is retained. During rollback to an
 older kit, a private bootstrap index that the old CLI cannot read is atomically
 retired through the owned temporary-publication lifecycle before the old CLI
 builds it again. The installation journal retains pending recovery throughout.
 Bindings, profiles, sources, grants, identity and history are not deleted.
 
-Starting with the dev.20 source candidate, failed activation retains bounded
+Failed activation retains bounded
 enrollment error codes and opaque project hashes in `error.diagnostic` and
 `shin-ce installation` (`last_update_diagnostic`). Rollback checks the previous
 service independently if its startup acknowledgement fails. A restored service
@@ -356,26 +355,26 @@ the rollback observation, not current readiness; use `service-status` and projec
 `status` for the current state. Identity, integrity and registry failures still
 leave recovery incomplete. The updater never changes project policy or ownership to clear a refusal.
 
-The dev.33 source candidate also handles a registered project that the previous
-service could not admit after rollback. During a qualified Core patch transition,
+The updater also handles a registered project that the previous
+service could not admit after rollback. During a qualified Core transition,
 the installer checks the previous service using its exact Observer/Core versions
 and verifies the registered root and its enrollment error. A known quality or
 temporary refusal records an unready baseline; an unknown root, registry conflict,
 identity change or integrity failure still stops recovery. The target must qualify
 every project's retrieval readiness under the existing publication grants before
-installation succeeds. Since preview dev.57, a search-quality warning alone does
+installation succeeds. A search-quality warning alone does
 not reject an update; incompatible, unsafe or stale context still does.
 Qualification errors retain the failing project's opaque hash and bounded gate
 diagnostics, including failures before service startup.
 
-Preview dev.41 and newer record the previous readiness baseline for every
+Updates record the previous readiness baseline for every
 kit update, including updates that keep the same Core. A source-limit refusal is
 an explicit degraded baseline, not a transient failure or target readiness.
 Cold admission can verify retained partial context without a saved limit
 observation; the first controller check preserves its admitted partial result.
 
 An older failed update may retain a runtime journal without that baseline. The
-following recovery option is included in preview dev.41 and newer; it is not in dev.39.
+following option is only for that explicitly reviewed recovery case.
 After reviewing the verified previous kit and its known content refusals, run
 from a new complete extracted kit:
 
@@ -403,8 +402,9 @@ Updating with the exact installed archive is a no-op. A changed archive must hav
 a newer version; downgrades and altered same-version kits are refused. The updater
 applies the version and project-qualification rules described in
 [Core transitions and index rebuilds](#core-transitions-and-index-rebuilds).
-It does not download releases or change shell,
-client, project or model-usage configuration.
+The extracted-kit command does not download releases or change shell, client or
+model-usage configuration. Its bounded generator-pin transition is described below;
+other project settings and profile policy are preserved.
 
 ### Preview publication and CI
 
@@ -472,8 +472,11 @@ changing the publisher or binding.
 
 ## Build the package
 
-From a macOS source checkout, use a C++20 compiler, CMake 3.24+, SQLite with FTS5
-3.38+ and OpenSSL Crypto.
+From a macOS source checkout, use a C++20 compiler and standard library with
+`std::jthread` and `std::stop_token`, CMake 3.24+, SQLite with FTS5
+3.38+ and OpenSSL Crypto. Command Line Tools for Xcode 26 or newer, or a current
+full Xcode installation, provides the required Apple standard library. Full Xcode
+and an Apple Developer Program membership are not required for local compilation.
 Python 3.11+, Bash, and jq are needed for the checks.
 CMake downloads pinned dependencies with checked hashes, including FTXUI 7.0.3
 (MIT) for the terminal monitor. FTXUI is linked statically; users need no
@@ -500,41 +503,48 @@ architectures or macOS versions. Stable distribution still needs Developer ID si
 first-launch check on a clean machine; an ad-hoc signature alone does not
 establish that experience.
 
-To reproduce recovery against real previous executables in a disposable home,
-extract the official dev.28 kit (Core dev.3) and the candidate kit (Core dev.4), then
-run:
+Exact-archive qualification tests the current candidate against the published
+previous-generator kit pinned in
+`.github/fixtures/macos-previous-generator.json` (currently dev.66 / Core dev.11,
+generator v23). To repeat that check with a complete current kit archive:
 
 ```sh
-python3 -B observer/installer/previous_update_test.py \
-  --previous-kit /tmp/shin-previous-kit \
-  --candidate-kit /tmp/shin-candidate-kit \
-  --report /tmp/shin-previous-update-proof.json
+python3 -B observer/installer/previous_generator_test.py \
+  --cmake "$(command -v cmake)" \
+  --candidate-archive /absolute/path/to/shin-local-VERSION-macos-arm64.zip \
+  --proof /tmp/shin-previous-generator-proof
 ```
 
-The fixture enrolls one canonical project and one bootstrap project, forces a
-native activation rollback, then retries while the old service is running with a
-rejected project. It checks target readiness, service restoration, registry,
-identity, grants and existing history. No live installation or managed index is
-repaired. For the regression baseline, use the unmodified dev.32 kit as candidate
-and add `--expected-error installation-recovery-command`. This exercises the
-native installation child used by automatic updates; HTTPS delivery and the
-Monitor offer are separate checks.
+This downloads and verifies the pinned old archive, then runs forward update,
+interrupted rollback/resume and refusal of unapproved profile-policy or marker
+edits in disposable installations. Canonical and bootstrap projects use real
+adoption markers pinned to the old generator. The checks retain registry,
+identity, grants, source bytes and SQLite history. No live installation or managed
+index is repaired. GitHub offer discovery and the interactive Monitor handoff
+remain separate checks. The older `previous_update_test.py` is a historical
+Core dev.3 → dev.4 regression fixture, not a current-kit qualification command.
 
 
 ## Core transitions and index rebuilds
 
-The dev.45 kit admits forward Core transitions within the same major
+The native kit admits forward Core transitions within the same major
 version, subject to installation and project qualification. This replaces the
 historical list of individual version pairs. Downgrades are not normal updates;
 rollback uses the verified previous payload recorded by the installation journal.
 
-The qualified transition from the dev.42 kit upgrades Core dev.6 to dev.7 and
-rebuilds v22 indexes into Unicode v23. Older format identifiers are recognized
+The current generator is `shin-generator-v24-objective-cpp`. Older format identifiers are recognized
 only to rebuild approved source inputs, not to read or convert old retrieval
 data. Canonical publications are refreshed by the ordinary Observer under
 existing grants. Private-bootstrap bindings are updated through native
-initialization without new enrollment or changed identity/profile. All projects
-must qualify before success.
+initialization without new enrollment or changed identity/profile policy.
+All projects must qualify before success.
+
+If an already approved project marker pins the previous generator, the installer
+journals the original and replacement bytes, changes only that generator value
+and uses native `marker-accept` before rebuilding. Pending owner edits or an
+unapproved profile remain refusals. Rollback restores the original marker bytes
+and approval through the previous CLI. This is a bounded installation operation;
+ordinary agents and MCP reads cannot approve marker changes.
 
 Interrupted recovery resumes from the same archive. Failed activation restores
 the previous kit and rebuilds its derived indexes when necessary, including the
@@ -550,8 +560,8 @@ checks or choose **Check for updates…** in the tray menu. Failed checks do not
 interrupt offline retrieval. Manual checks fetch the current offer even after a
 recent check; concurrent checks are coalesced.
 
-Preview dev.57 uses the same 1 MiB release-feed limit for downloading and
-parsing metadata in both the launcher and the independent Updater. Local state
+The launcher and independent Updater use the same 1 MiB release-feed limit for
+downloading and parsing metadata. Local state
 keeps its separate 256 KiB limit. Duplicate JSON keys, excessive nesting and
 invalid release assets are still rejected.
 
@@ -560,7 +570,7 @@ checks, the offer, launch failures and saved results. Opening it closes the tray
 popover and brings that window forward. Release notes open the browser while
 preserving the review; copying diagnostics preserves the result and its actions.
 Background replies update the window without stealing focus from another
-application. In unreleased source, a failed explicit installation returns its
+application. A failed explicit installation returns its
 still-open result window to the foreground; a closed or minimized window stays
 dismissed. A manual request during a background check
 shows that check's result instead of discarding the request. After selecting
@@ -590,8 +600,9 @@ cancellation once the native operation has started. CLI updates show the same
 stages on a terminal, in the language selected by LC_ALL/LC_MESSAGES/LANG. stdout
 retains the JSON result; `--progress` enables readable stderr output in redirected
 runs. The helper filters child progress separately from the native receipt, and
-only the independent installed-kit readback confirms completion. This window is
-supplied by the installed helper, so the change takes effect for updates started from the new kit.
+only the independent installed-kit readback confirms completion. The downloaded
+independent Updater supplies the progress window; the bootstrap's initial handoff
+is described below.
 Checksums protect download integrity; this preview is not Developer ID signed or
 notarized and does not provide an independent signature over a compromised release.
 
@@ -610,15 +621,12 @@ the native `installation` command and the saved candidate's `update` command to
 review/reconcile its journal before trying another installation. Project refresh
 under heavy machine load may still delay or refuse update activation.
 
-Release update checks are included in dev.19 and newer kits. Existing dev.16/dev.17
-binaries acquire them only after an explicitly selected new kit is installed.
-
 **Last update result…** remains available in the tray menu. After resolving a
 native recovery, **Acknowledge verified result** verifies the installed payload
 and completed journal before clearing the review gate and cleaning its identified
 private staging folder. A stale review or unfinished native operation is refused.
 
-In unreleased source, a blocked installation also offers **Review previous update**
+A blocked installation also offers **Review previous update**
 directly in its error window. Offline review uses the verified installed Updater
 if the earlier temporary Updater has disappeared. Confirmation is bound to the
 current verified installation receipt, so a directly repaired kit can settle an
@@ -632,7 +640,7 @@ confirmation.
 Starting with dev.49, Shin separates the installed bootstrap from the updater
 shipped with each release. The release adds `shin-updater-v1-macos-arm64.zip` and
 its SHA-256 file.
-The bootstrap understands only the stable [updater envelope and protocol](machine/updater-bootstrap-v1.json),
+The bootstrap understands only the stable [updater envelope and protocol](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/machine/updater-bootstrap-v1.json),
 not the application's manifest, Core generator or native recovery journal.
 
 A manual/background check selects a complete updater offer without downloading
@@ -663,8 +671,7 @@ An existing installation retains its recorded data and command directories when
 the caller supplies only its prefix; defaults apply only to a first installation.
 The independent entry also supports resuming an interrupted native update.
 
-This source change first takes effect after installing a kit that contains it.
-Older clients can acquire that kit through their existing full-kit update path or
-the independent installer. Release hashes provide download integrity under the
+Older launchers that cannot complete an update can use the versioned independent
+installer above. Release hashes provide download integrity under the
 existing GitHub HTTPS trust boundary; this preview has no independent publisher
 signature and remains without Developer ID/notarization.

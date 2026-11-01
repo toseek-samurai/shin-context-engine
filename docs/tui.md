@@ -4,6 +4,8 @@
 calculations to an interactive terminal. The Sand TUI is included in preview
 dev.39 and later; use the [preview kit](local-kit.md#download-a-preview-release)
 on macOS or [build from source](building.md) on Linux.
+Homebrew also includes the complete TUI. Native Windows does not implement
+`shin-ce stats`; WSL2 uses the Linux build.
 
 The four-section layout shown below is included in preview dev.66 and later.
 Use `1`–`4` or Tab / Shift-Tab for Overview, Projects, Activity
@@ -127,8 +129,10 @@ Installation uses the same native verification and recovery path as Monitor.
 The full plan, actual byte percentages, completed-project counts and stage elapsed
 time remain visible. Quitting becomes available after installation settles;
 `v` shows the saved result and `a` acknowledges it only when native status permits.
-After success, restart the TUI and persistent MCP clients. Linux shows the
-published-kit installer route instead of offering unsupported automatic downloads.
+After success, restart the TUI and persistent MCP clients. Homebrew builds show
+`brew upgrade` guidance and do not invoke the native Updater. Linux has no
+published installer: rebuild the source tools and restart the service and clients.
+Its generic Updates guidance links to Releases but does not install a Linux kit.
 
 ![Native update progress with measured download percentage](images/tui-update-progress.svg)
 

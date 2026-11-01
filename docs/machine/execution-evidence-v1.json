@@ -8,7 +8,7 @@
   "release": {
     "productVersion": "2.0.4",
     "generator": "shin-generator-v17-explicit-authority",
-    "generatorCompatibility": "Current generator-v17 publication identity; this contract does not add a compatibility reader or migration branch."
+    "generatorCompatibility": "The generator above records the historical contract baseline. Current retrieval requires the running binary generator declared in lexical-retrieval-v1.json; this contract does not add a compatibility reader or migration branch."
   },
   "workflow": [
     {

@@ -12,14 +12,15 @@
   },
   "localMcp": {
     "observer": "2.0.5-dev.3",
+    "identityScope": "Observer version records introduction of multi-root MCP, not the current executable identity.",
     "catalog": "shin.mcp-projects.v1",
     "contract": "docs/native-client-setup.md#one-conversation-multiple-projects",
-    "singleRoot": "Unchanged four-tool surface and arguments.",
+    "singleRoot": "Project status/query/inspect/read plus static shin_help and explicit shin_checkpoint/shin_resume task notes. Discover the advertised tools; optional notes never block ordinary retrieval.",
     "multiRoot": "Two to sixteen explicit startup roots under one home; shin_projects plus required per-call project handle on status/query/inspect/read. No registry-wide implicit grant.",
     "followUp": "Query retains native snapshot_id and adds mcp_project/mcp_snapshot. Multi-root inspect/read require the same project and its mcp_snapshot; equal native snapshot strings do not cross scopes.",
     "lifecycle": "Pin root/home/workspace directory identity and lifecycle revision; verify before and after service reads and match successful response root. Reconnect after detach/re-init or identity change; unchanged reordered reconnect preserves selectors.",
     "bounds": "Existing two outstanding tool calls and 128KiB transport bound; catalog JSON at most32KiB. No bulk context merge or per-chat current project.",
-    "boundary": "Read-only local MCP; no enrollment, publication or model-token reassignment. Clients require an explicit host allowlist."
+    "boundary": "Project context access is read-only; explicit checkpoint stores private task notes outside project source. No enrollment, publication, client configuration or model-token reassignment. Clients require an explicit host allowlist."
   },
   "observerFormats": {
     "sourceConfig": "shin.observer-config.v2",

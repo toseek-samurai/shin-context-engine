@@ -20,7 +20,14 @@ Extracting a kit does not configure client credentials, edit client settings, or
 
 Core and Observer provide CMake source routes for macOS, Linux and native Windows x64. Windows adds adapters to the same engine, profile registry, freshness checks and versioned protocols. Private storage uses Windows file identities and ACL checks, local transport authenticates named-pipe peers, and worker lifetime is bounded through Job Objects. These adapters preserve the shared authority and refusal contracts.
 
-The published local-kit route remains macOS. Windows has development build/test presets and a separate source-check workflow; these do not qualify ZIP/MSI distribution, installed SCM behavior, or feature parity. See [Windows source status](windows-desktop.md) for implemented scope and pending gates, and [building](building.md) for commands. Linux/macOS qualification remains independently required.
+Published previews provide a macOS Apple Silicon kit and Windows x64 ZIP/MSI
+packages. The project-owned Homebrew tap builds the complete macOS application
+from source; Linux/WSL2 uses source builds without a native desktop host. The
+unified CI requires four Linux/macOS jobs and two Windows jobs, including exact
+package qualification, before publishing a preview. Hosted package tests remain
+separate from interactive desktop and installed SCM lifecycle checks. See the
+[platform capability matrix](README.md#capabilities-by-platform),
+[Windows scope](windows-desktop.md) and [build guide](building.md).
 
 Component identities and qualification state come from the checked-in version files and product manifest. Source builds do not qualify a Stable release.
 

@@ -11,9 +11,11 @@ the referenced build files; system-library versions depend on the build host.
 | pugixml | Vendored 1.16 | `third_party/pugixml/LICENSE.MIT` |
 | Tree-sitter runtime | Vendored 0.27.0 | Runtime MIT; Unicode notice in `src/unicode/LICENSE` |
 | Java, C++, TypeScript/TSX grammars | 0.23.5, 0.23.4, 0.23.2 | Each grammar's `LICENSE` and `UPSTREAM.json` |
+| Objective-C/Objective-C++ grammar | Vendored 0.1.0, `third_party/tree-sitter-objcpp/UPSTREAM.json` | Upstream MIT `LICENSE` |
+| utf8proc | Vendored 2.12.0, `third_party/utf8proc/UPSTREAM.json` | MIT and Unicode data notices in `LICENSE.md` |
 | cpp-httplib | 0.54.1, `shared/cmake/Http.cmake` | Upstream MIT `LICENSE` |
 | MCP C++ SDK | Commit pinned in `shared/cmake/Mcp.cmake` | Upstream MIT `LICENSE` |
-| Dear ImGui | 1.92.9b, `observer/tray/CMakeLists.txt` | Upstream MIT `LICENSE.txt` |
+| Dear ImGui | 1.93.0, `observer/tray/CMakeLists.txt` | Upstream MIT `LICENSE.txt` |
 | FTXUI | 7.0.3, `shared/cmake/Ftxui.cmake` | Upstream MIT `LICENSE` |
 | mimalloc | Optional Linux 3.5.3, `shared/cmake/CoreAllocator.cmake` | Upstream MIT `LICENSE` |
 

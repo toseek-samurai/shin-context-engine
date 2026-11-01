@@ -23,7 +23,7 @@ Platform capabilities differ; see the [component table](#choose-the-component-yo
 and [Windows scope](docs/windows-desktop.md).
 
 [Report a bug or suggest a feature](https://github.com/toseek-samurai/shin-context-engine/issues/new/choose) ·
-[CLI guide](docs/cli.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
+[Documentation and platform support](docs/README.md) · [CLI guide](docs/cli.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
 
 ## From a question to source
 
@@ -55,7 +55,9 @@ Sand terminal monitor with the same project states and timing calculations.
 </p>
 
 The four-section Sand interface shown here is included in preview dev.66 and
-later. These real Monitor renders use synthetic sample data.
+later. These macOS Monitor renders use synthetic sample data. Windows shares the
+dashboard, but its setup and update controls differ; see the
+[capability matrix](docs/README.md#capabilities-by-platform).
 Monitor supports
 English and Russian; these examples use English. Names, counts, and timings above are examples, not benchmark results.
 [Screenshot sources and reproduction](docs/images/README.md).
@@ -109,7 +111,9 @@ brew install toseek-samurai/tap/shin-context-engine
 shin-monitor
 ```
 
-The first installation builds from source and can take several minutes.
+This route targets macOS 15+ and is qualified on Apple Silicon; Intel installation
+qualification remains incomplete. The first installation builds from source and
+can take several minutes.
 [Homebrew setup, agent connections, upgrades and removal](docs/homebrew.md).
 Homebrew manages this package; use `brew upgrade` for updates.
 
@@ -174,14 +178,14 @@ project data and restores the previous kit if activation fails.
 | --- | --- | --- |
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS, Linux and native Windows x64 source builds; [build instructions](docs/building.md) |
-| Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | macOS and Linux source builds; [Linux/WSL instructions](docs/building.md#linux-and-wsl2-terminal-tools) |
+| Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | macOS, Linux and Windows x64 source builds; [build instructions](docs/building.md) |
 | Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.70) and [development checks](docs/building.md#native-windows-development-builds) |
 
 Windows support adds platform adapters to the same Core, profiles and protocols.
 Published ZIP/MSI previews pass the matching CI matrix and exact-package checks;
 see the [Windows scope and remaining gates](docs/windows-desktop.md) for the
 distinction between hosted checks, interactive tests and installation lifecycle.
-Linux desktop packaging and macOS Intel package
+Linux desktop packaging and complete macOS Intel installation
 qualification remain pending. Configuring an AI client may send the context it retrieves to that
 client's chosen model provider.
 

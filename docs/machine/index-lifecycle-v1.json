@@ -5,7 +5,8 @@
   "release": {
     "productVersion": "2.0.4",
     "generator": "shin-generator-v17-explicit-authority",
-    "indexCompatibility": "Only current generator-v17 snapshots are retrievable; rebuild earlier publications explicitly."
+    "indexCompatibility": "Only snapshots matching the running binary generator are retrievable. Current reader identity is declared in lexical-retrieval-v1.json; rebuild older publications from approved source.",
+    "identityScope": "Product version and generator record this contract's historical baseline, not the current executable or a supported compatibility reader."
   },
   "summary": "Inspect and reclaim external Shin snapshot payloads under one explicit cache root without scanning consumer repositories or deleting unverified data.",
   "commands": {

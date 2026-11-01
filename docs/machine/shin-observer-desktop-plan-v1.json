@@ -3,7 +3,7 @@
   "document": "shin-observer-desktop-plan-v1",
   "status": "active-contract",
   "title": "Optional Observer Desktop Integration",
-  "summary": "Keep desktop controls and query views as optional adapters around the local Observer and Core contracts.",
+  "summary": "Keep desktop status and management controls as optional adapters around the local Observer and Core contracts. Platform-specific setup and update capabilities are documented separately.",
   "ownership": {
     "core": "Owns profile selection, indexing, retrieval, and evidence schemas.",
     "observer": "Owns local source observation, state, and explicit delivery.",
@@ -11,8 +11,8 @@
   },
   "interaction": {
     "statusView": "Show selected route, observation age, queue state, and typed errors.",
-    "queryView": "Submit an explicit bounded query and render evidence with source references.",
-    "actions": "Build, delivery, retention, and profile changes require explicit user actions."
+    "queryView": "Context retrieval is available through CLI and MCP. The current Monitor displays readiness, projects, activity and settings; it does not provide an interactive source-query view.",
+    "actions": "Project enrollment, agent configuration, storage cleanup, profile approval and update installation remain explicit operations. Available graphical actions differ by platform; Windows currently checks releases and opens download links without installing them."
   },
   "safety": [
     "Closing a window does not imply source mutation or queue acknowledgement.",

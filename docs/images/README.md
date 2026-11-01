@@ -4,6 +4,9 @@ These PNGs are rendered by the actual macOS ImGui/Metal Monitor UI using the
 synthetic scenarios in [layout_test.inc](../../observer/tray/layout_test.inc).
 No live service, enrolled project, client usage history, or saved user preference
 is read. Displayed metrics are fixture values, not performance measurements.
+These are macOS captures, not Windows screenshots. Windows uses the shared
+dashboard with different system fonts, icons, scaling and available actions;
+see the [platform matrix](../README.md#capabilities-by-platform).
 
 | README asset | Native fixture output |
 | --- | --- |
@@ -104,8 +107,8 @@ They contain no remote resources, scripts, screenshots or embedded fonts.
 
 ## Repository social preview
 
-`social-preview.png` is the 1280×640 Sand card used by GitHub when a repository
-link is shared. It is project artwork, not an application screenshot or a
+`social-preview.png` is the 1280×640 Sand card intended for GitHub repository
+link previews. It is project artwork, not an application screenshot or a
 performance measurement. Its PNG metadata identifies Shin Context Engine,
 Anton Petropavlovskiy and Apache-2.0; it contains no inherited EXIF or XMP.
 

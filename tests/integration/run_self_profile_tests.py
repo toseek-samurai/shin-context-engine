@@ -71,7 +71,8 @@ class SelfProfileTests(unittest.TestCase):
         cls.work = Path(cls.temporary.name)
         cls.root = cls.work / "root"
         root_files = json.loads((SOURCE_ROOT / "profiles/shin.json").read_text())["rootFiles"]
-        root_files = root_files + ["LICENSE", "NOTICE", "THIRD_PARTY.md", "CONTRIBUTING.md", "SECURITY.md", "Makefile"]
+        root_files = root_files + ["LICENSE", "NOTICE", "THIRD_PARTY.md", "CONTRIBUTING.md", "SECURITY.md", "Makefile",
+                                   "tests/README.md"]  # Linked by the selected documentation indexes.
         copy_fixture(SOURCE_ROOT, cls.root, root_files)
         cls.profile = cls.read_json("profiles/shin.json")
         cls.history_documents = {"docs/archive-fixture.md"}
@@ -172,7 +173,7 @@ class SelfProfileTests(unittest.TestCase):
         indexed = {source["path"] for source in self.manifest["sources"]}
         self.assertEqual(
             {path for path in indexed if path.startswith("docs/machine/")},
-            self.core_documents,
+            self.core_documents | {"docs/machine/README.md"},
         )
         self.assertNotIn("docs/kb-context-engine-improvement-notes.md", indexed)
         self.assertFalse(self.history_documents & indexed)

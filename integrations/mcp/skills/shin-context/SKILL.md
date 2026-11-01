@@ -23,7 +23,7 @@ Pass real host session IDs only, with the query's request ID for follow-ups.
 Missing correlation is unknown. Never infer model identity, success or token savings
 from call counts; client token usage and Shin requests measure different things.
 
-Use the installed local Shin2.0 service (`shin-generator-v22-compact-lexical`),
+Use the installed local Shin service (`shin-generator-v24-objective-cpp`),
 not an archived source checkout or an older project helper that builds indexes.
 
 1. If `shin_projects` is available, choose the exact host-allowed workspace

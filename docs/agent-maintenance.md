@@ -21,6 +21,20 @@ checksum and installer assets. Update those pins after publication, not when a
 candidate is tagged. Label screenshots and controls from unreleased source
 explicitly so the current preview's capabilities stay clear.
 
+The [documentation index](README.md) owns the current platform capability matrix.
+Keep download pins in README, local-kit and Windows guides aligned only after
+publication. UI actions must describe the supported platform and package owner:
+native Updater, Homebrew and Windows MSI have different lifecycles. A source
+feature, hosted render or successful build alone is not installed-platform proof.
+Release notes retain their historical version; current guides must not call an
+already shipped feature unreleased. Contract baseline identities are explained
+in the [machine documentation guide](machine/README.md).
+
+The native kit ships only `local-kit.md` and `native-client-setup.md` as operator
+guides. Keep their mutual/anchor links relative; links to unshipped guides and
+contracts must use repository URLs. Run `tools/check_package_docs.py` against the
+exact package to verify those links; source-tree link checks alone cannot do so.
+
 Profiles classify current product contracts and source by component. Preserve
 the declared source, byte, output and quality bounds. Fixture changes must retain
 the positive and negative behaviors that motivated each test. Historical

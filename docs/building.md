@@ -7,7 +7,9 @@ For the complete macOS application, follow the [local kit guide](local-kit.md).
 Core can be built alone for development or embedding. Linux and WSL2 can also
 build the local service, CLI, terminal monitor and MCP without the desktop app.
 Native Windows development builds provide Core, Observer, CLI, MCP and a
-Win32/DX11 Monitor; their scope is described in [Windows source status](windows-desktop.md).
+Win32/DX11 Monitor; their scope is described in the [Windows guide](windows-desktop.md).
+See the [capability matrix](README.md#capabilities-by-platform) for setup and
+update differences between these routes.
 
 ## Dependencies
 
@@ -17,10 +19,12 @@ discovery requires SQLite with FTS5, version 3.38 or newer, and Observer require
 OpenSSL Crypto. Windows uses a pinned static SQLite build and native cryptography.
 CMake downloads pinned dependencies and checks their hashes.
 
-macOS CI uses Xcode 26.3 on macOS 15. The C++20 standard library must provide
-`std::jthread` and stop tokens; the Xcode 15 toolchain is insufficient. Select
-the intended Xcode installation before configuring CMake so its compiler and
-SDK headers are used together.
+macOS CI uses Xcode 26.3 on macOS 15. Local builds can use Command Line Tools
+for Xcode 26 or newer, or a current full Xcode installation. The C++20 standard
+library must provide `std::jthread` and `std::stop_token`; an older Apple standard
+library can fail even when the compiler accepts C++20. Keep compiler and SDK
+headers from the same selected toolchain. Local builds need no paid Apple
+Developer Program membership.
 
 The native Sand terminal monitor links the pinned FTXUI 7.0.3 statically.
 CMake fetches its checked archive; macOS/Linux need no curses or terminfo
@@ -98,7 +102,11 @@ build directory. For a new project, use an explicit private data home:
 The project folder stays separate from that home. A source build does not
 install the commands, replace another kit or enable login startup. In WSL, use
 a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
-native desktop Monitor or prebuilt local-kit download yet.
+native desktop Monitor or prebuilt local-kit download. The TUI's generic Updates
+guidance links to Releases, but there is currently no Linux installer there:
+rebuild the source tools, restart the service and reconnect persistent MCP clients.
+Built-in OS service registration (`service-install`) is not implemented on Linux;
+session service start/stop commands are available.
 
 ## Native Windows development builds
 
@@ -161,9 +169,11 @@ These are development source checks, not Windows distribution qualification.
 The desktop presets leave ZIP/MSI packaging disabled. The separate `windows-kit`
 preset builds production binaries in `kit/`, with source tests disabled; run
 the desktop test preset first, then the [exact ZIP/MSI checks](windows-desktop.md#installer-presentation-checks).
-MSI packaging requires CPack 4.3+ and WiX 4; exact-archive and installed SCM lifecycle checks
-are still required before a Windows release. TUI, automatic client connection,
-automatic usage collection and in-app updating remain pending on Windows.
+MSI packaging requires CPack 4.3+ and WiX 4. Published previews pass exact-archive
+checks; interactive installed SCM lifecycle tests remain a separate rehearsal.
+TUI, automatic client connection, automatic usage collection and automatic update
+installation are not implemented on Windows. Monitor includes a manual release
+check and MSI/checksum download links in dev.70.
 
 Do not run an unfiltered CTest against a manually configured packaging build
 with `BUILD_TESTING=ON`: enabling the Core CLI also registers POSIX-only Core

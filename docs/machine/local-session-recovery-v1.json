@@ -2,7 +2,7 @@
   "schemaVersion": "shin.local-session-recovery-contract.v1",
   "document": "local-session-recovery-v1",
   "status": "accepted",
-  "availability": "unreleased-source",
+  "availability": "published-preview",
   "summary": "Optional explicit MCP task notes reusing the existing Core checkpoint/resume assessment. Notes never establish source authority or task success.",
   "scope": {
     "tools": [
@@ -38,8 +38,8 @@
   },
   "presentation": {
     "surfaces": [
-      "Monitor Sessions",
-      "shin-ce stats view 6"
+      "Monitor Activity / Journal",
+      "shin-ce stats Activity / Journal"
     ],
     "maximumSessions": 8,
     "timelinePerSession": 8,

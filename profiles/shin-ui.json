@@ -12,6 +12,7 @@
     "docs/machine/shin-component-profiles-v1.json",
     "integrations/shin-development/shin-integration-bundle-v1.json",
     "docs/tui.md",
+    "docs/README.md",
     "docs/cli.md"
   ],
   "sourceExtensions": [
@@ -21,6 +22,7 @@
   "documentIncludePrefixes": [
     "AGENTS.md",
     "docs/tui.md",
+    "docs/README.md",
     "docs/cli.md",
     "docs/images/README.md",
     "docs/machine/shin-component-profiles-v1.json",

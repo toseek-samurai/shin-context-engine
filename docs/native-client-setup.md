@@ -1,16 +1,18 @@
 # Native client setup
 
-The graphical setup below belongs to the macOS Monitor. Native Windows source
-builds provide the MCP adapter and read-only `mcp-config` export, but automatic
+The graphical setup below belongs to the macOS Monitor, including the Homebrew
+package. Native Windows ZIP/MSI previews and source builds provide the MCP
+adapter and read-only `mcp-config` export, but automatic
 client-file editing and graphical project onboarding are not enabled. See
-[Windows source status](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
+[Windows scope](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md).
 
 ## Automatic setup
 
-The macOS dev.13 preview includes automatic setup. Manual configuration remains
-available for clients that need it.
+The macOS Monitor and the macOS/Linux CLI support reviewed automatic setup.
+Manual configuration remains available for other clients and for Windows.
 
-1. Open Monitor → **Set up Shin…** and choose a project folder. Shin connects it
+1. On a fresh installation, open **Set up Shin…**. Otherwise use
+   **Settings → Connect projects and agents…**. Choose a project folder. Shin connects it
    and starts the local service, including on a fresh installation.
 2. Select the agents and profiles that should have access, then click
    **Connect selected agents**. No JSON copying is needed.
@@ -18,7 +20,7 @@ available for clients that need it.
    the selected project is available. **Check project** in Monitor checks local
    search readiness; it does not claim that a running agent has reloaded its settings.
 
-For an existing project, use **Projects → project → actions → Connect coding agent…**.
+For an existing project, use **Projects → project → Connect agent…**.
 The list detects settings directories and, on macOS, installed applications.
 It shows the exact destination path. Detection does not modify files or select
 agents on your behalf. Undetected supported agents can be configured for later use.
@@ -58,7 +60,7 @@ and the UI reports where it stopped. Retry safely after reviewing that conflict;
 already configured targets are not duplicated. Restore a backup only after stopping
 the affected client and reviewing changes made since that backup.
 
-The CLI exposes discovery and the same two-step write contract:
+On macOS and Linux, the CLI exposes discovery and the same two-step write contract:
 
 ```sh
 shin-ce client-targets
@@ -96,8 +98,8 @@ shin-ce mcp-config --client rider --root /absolute/path/to/project --text
 ```
 
 For a portable installation, add `--home /absolute/path/to/private-data`.
-The export command is included in dev.13; for older kits use the
-command and arguments in [Manual configuration](#manual-configuration).
+The export supplies the installed package's executable and matching data-home
+arguments; keep both when adding the server to your client.
 
 - **Rider AI Assistant:** open Settings → Tools → AI Assistant → Model Context
   Protocol, add a STDIO server and paste the exported configuration. Choose the
@@ -304,4 +306,4 @@ When tools or the binding are unavailable, use a useful current-code query.
 Missing notes do not require re-enrollment, another chat ID, profile changes or
 manual index repair. There are no per-turn saves, artificial call quotas or
 automatic compaction hooks. Model labels from client history stay separate from
-models reported in individual calls. See the [session contract](machine/local-session-recovery-v1.json).
+models reported in individual calls. See the [session contract](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/machine/local-session-recovery-v1.json).

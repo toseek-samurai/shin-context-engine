@@ -9,9 +9,10 @@ shin-ce service-status --text
 shin-ce query "Where are requests validated?"
 ```
 
-Native Windows source builds provide the same CLI/MCP contracts, with `.exe`
-binaries and an explicit development data home. The terminal dashboard and
-automatic client setup have platform limits; see [Windows source status](windows-desktop.md).
+Native Windows ZIP/MSI previews and source builds provide the same retrieval
+CLI/MCP contracts, with `.exe` binaries. The terminal dashboard, automatic client
+setup, agent-history collection and update installation have platform limits;
+see the [capability matrix](README.md#capabilities-by-platform).
 
 ## Interactive terminal monitor
 
@@ -45,7 +46,7 @@ Colors, symbols and text distinguish ready, on-demand, preparing and blocked
 search; partial source coverage has its own column. Enter opens the cause,
 next step and any reported excluded file paths.
 
-In dev.53 source, project details also explain nonblocking documentation warnings.
+Project details also explain nonblocking documentation warnings.
 The default bootstrap route keeps serving verified context when local links are
 broken; `documentation_warnings` counts these warnings in readiness and service
 project rows. Strict Core audits still report the documentation defect.
@@ -60,7 +61,7 @@ project rows. Strict Core audits still report the documentation defect.
 | `g`, `h` | Overview chart metric; Live / 1 hour / 24 hours |
 | Mouse | Select tabs, metrics, periods and projects; wheel scrolls text |
 | `t`, `f` | Toggle recent/retained timings; filter query traffic |
-| `p` | Next usage project in Models |
+| `p` | Next usage project in Agents |
 | `r` | Refresh observations; explicitly rescan storage in Storage |
 | `u` | Open Settings / Updates |
 | Updates: `r`, `v` | Check public releases; read the saved update result |
@@ -74,7 +75,7 @@ as Monitor. It requires no curses/terminfo package. Colors adapt to the terminal
 `NO_COLOR` keeps a monochrome view. Basic `vt100`/`ansi` terminals use a simple
 character plot instead of Braille.
 
-Unreleased source adds an **Updates** view on macOS. It uses the existing native
+The **Updates** view on a native macOS kit uses the independent
 updater and the installed kit's recorded home. Opening the view performs no network
 request; `r` checks the public GitHub feed. Release notes are shown as a URL. The
 review pins the offered revision; neither Enter nor opening the tab installs it.
@@ -89,8 +90,10 @@ time, real download/staging bytes and project counts. There is no estimated
 overall percentage. Completion comes from the native receipt, independently of
 progress. `v` reads retained outcomes; a recoverable result exposes `a` only when
 the native status permits acknowledgement. After a successful swap, restart
-Monitor, `shin-ce stats` and persistent MCP clients to load the new binaries. Linux shows
-the published-kit installation route; automatic release download remains macOS-only.
+Monitor, `shin-ce stats` and persistent MCP clients to load the new binaries.
+Homebrew builds show `brew upgrade` instead of invoking the native Updater.
+Linux has no release installer: rebuild its source tools and restart them.
+The generic Updates message links to Releases but does not provide a Linux package.
 
 Service observations refresh every two seconds. Storage is inspected when you
 open its tab or press `r`, not continuously. Usage is read every 30 seconds or
@@ -100,13 +103,13 @@ on refresh, using the same normalized file and parser as Monitor:
 shin-ce stats --usage-file /absolute/path/to/usage/state.json
 ```
 
-By default, Models reads the automatically collected `usage/state.json` in the
+By default, Agents reads the automatically collected `usage/state.json` in the
 selected data home. `--usage-file` overrides that path; it must point to a private
 collector snapshot, not a configuration file. If no snapshot is available,
-Models shows setup guidance. No client-session scanning or usage
+Agents shows setup guidance. No client-session scanning or usage
 collection is performed by the TUI. Partial, stale, and missing measurements
 remain explicit. Project management and cleanup use the existing CLI commands;
-the first TUI version is for observation.
+outside explicit update actions, the dashboard observes existing state.
 
 `status` describes the current project. `service-status` lists all projects in
 the selected service, their search and observer states, recent memory usage,
@@ -155,6 +158,9 @@ publisher. It neither extends the caller's wait nor overrides failure backoff.
 
 ## Monitor and CLI
 
+The table maps the macOS Monitor to CLI/TUI actions. Windows lacks graphical
+project onboarding and storage management; use its CLI for those operations.
+
 | In Monitor | In the CLI today |
 | --- | --- |
 | Project readiness and partial coverage | `shin-ce status --text` |
@@ -163,7 +169,7 @@ publisher. It neither extends the caller's wait nor overrides failure backoff.
 | Add a project from a folder | `shin-ce project-add --root /absolute/path/to/project` |
 | Storage inventory and cleanup plan | TUI Storage or `shin-ce storage-status` JSON; cleanup remains a separate command requiring the reported revision |
 | Profile changes requiring review | `shin-ce profile-review`; acceptance is a separate explicit action |
-| Model usage | TUI Models reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
+| Model usage | TUI Activity / Agents reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
 
 The TUI shares Monitor's project-state and request-timing calculations. It uses
 native service status for observations and the existing read-only storage
@@ -192,8 +198,9 @@ portable extraction also needs the same explicit `--home` used at initialization
 See [installation](local-kit.md) and [MCP setup](native-client-setup.md).
 
 Shin's usage collector observes supported local client usage records. It is not
-required for indexing or retrieval. Adding a project enables automatic collection
-for that project. Counters depend on readable client history; missing history is
+required for indexing or retrieval. On macOS and Linux, adding a project enables
+automatic collection for that project. Windows has no automatic collector.
+Counters depend on readable client history; missing history is
 reported as incomplete. See [the local kit guide](local-kit.md)
 for configuration details.
 
@@ -225,7 +232,7 @@ Catalog/help calls handled inside the MCP adapter and service monitoring polls a
 excluded from these **service-run** counters; client token counters are a different
 measurement. No historical status or missing session information is fabricated.
 
-The dev.45 source also exposes **MCP calls · history** in Monitor Timing,
+**MCP calls · history** is available in Monitor Timing,
 the terminal Timing view and `service-status` JSON (`telemetry.mcp_activity`). This
 separate journal includes status, catalog/help, unknown tools, argument errors and
 connection failures, even while the service is unavailable. Initial and terminal
@@ -244,17 +251,22 @@ client receipt or task success. Queries, source bodies, raw chat IDs and absolut
 project paths are not retained. See the [activity contract](machine/mcp-activity-v1.json).
 
 MCP project status returns promptly when a reader needs background preparation.
-`project-updating` is a transient observation; a subsequent useful query retains
-its normal bounded readiness wait. CLI project status keeps its existing waiting
-behavior. Query/inspect/read tools accept `diagnostic: true` for explicit probes.
+`state=preparing` is pending, not a project failure. Submit the useful `shin_query`
+once: it waits up to 20 seconds for preparation inside the existing service and
+transport deadlines. Cancellation ends that wait. A client-supplied MCP progress
+token permits elapsed-time notifications; the client decides how to display them.
+No polling or manual index rebuild is needed. CLI project status keeps its
+existing waiting behavior. Query/inspect/read tools accept `diagnostic: true`
+for explicit probes.
 
 ### Requests during contention (dev.45)
 
 A brief overlap between requests for one project now uses a bounded FIFO admission
 queue. Waiting does not occupy another project's execution slot. The existing
 limits remain two executing requests, four waiting requests and eight connections.
-A ready reader's execution queue waits at most 500 ms; cold preparation keeps its
-five-second ceiling. Reader readiness and completed requests wake admission
+A ready reader's execution queue waits at most 500 ms; native cold preparation
+defaults to five seconds and MCP queries use a 20-second preparation wait.
+Reader readiness and completed requests wake admission
 immediately. Transitioning from cold preparation to an occupied execution slot
 also caps that phase at 500 ms. Repeated internal checks never extend a deadline.
 
@@ -275,7 +287,7 @@ an old snapshot usable again.
 
 ### Sessions and optional recovery notes (dev.45)
 
-Monitor's dev.52 source presents these observations as a Sand journal with UTC
+Monitor presents these observations as a Sand journal with UTC
 timestamps, short opaque session IDs, a monospace font and vector icons. Success,
 error, unfinished and explicit host events have distinct colors and text labels.
 Session counters and details remain available below the journal; **What is
@@ -296,8 +308,8 @@ require omitting session rows; the UI then reports that omission rather than an
 empty history. The response ceiling remains 60 KiB, independently of the
 48-event desktop display limit.
 
-Monitor now has a **Sessions** view; `shin-ce stats` opens the same observations
-with key **6**. The latest eight correlated sessions show context calls, errors,
+Open **Activity → Journal** in Monitor or `shin-ce stats`. In the TUI, press `3`,
+then Left/Right or `[` / `]` to select Journal. The latest eight correlated sessions show context calls, errors,
 caller task labels, recovery requests and recent invocation outcomes. Calls can
 supply `task_key` and `intent` (`explore`, `follow-up`, `context-recovery`); labels
 are optional and do not impose quotas or create inferred tasks.
@@ -374,6 +386,10 @@ those names do not identify the model behind a particular MCP call. Supplying a
 default model in shared client configuration would also mislabel model switches.
 
 ### Release update checks (macOS)
+
+These commands belong to the native kit. Homebrew packages use `brew upgrade`;
+Windows Monitor offers manual release checks and MSI links, not these native
+installation commands.
 
 `shin-ce update-check [--prefix DIR]` reads the public releases feed and returns
 an eligible newer kit with an opaque `revision`. It performs no installation.

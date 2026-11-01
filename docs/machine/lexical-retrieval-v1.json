@@ -10,7 +10,7 @@
   },
   "nativeSourceQuery": {
     "policy": "source-software-terms-en-ru-porter-bm25-diversity-v4",
-    "status": "unreleased",
+    "status": "implemented",
     "scope": "Native source_context and explicit source discovery. These query hints do not redefine Core query-group coverage, evidence authority or source permissions; Core Unicode normalization is specified separately.",
     "terms": "Tokenize the original query with unicode61. Remove EN/RU question stop words only from multi-token queries. Keep original meaningful terms; add bounded English hints for reviewed Russian software concepts and inflections from src/source_query_terms.cpp. No repository names, source paths, known-answer symbols, external translation service or model are part of this lexicon.",
     "matching": "The source index retains raw source text and CamelCase components under the built-in Porter/unicode61 tokenizer. Porter normalizes English forms; it is not a Russian stemmer. Deduplicate query terms by their actual indexed stem before OR matching, so multiple inflections do not multiply BM25 weight. Keep one original term as each stem's representative; do not stem an already-stemmed string again.",
@@ -114,7 +114,7 @@
     "boundary": "This invariant does not equate Brief owner/planner routing with source-scan Brief or legacy raw-line source-scan Search. Those modes are explicit and never an implicit fallback from a corrupt or stale snapshot."
   },
   "unicodePublication": {
-    "status": "unreleased",
+    "status": "implemented",
     "generator": "shin-generator-v24-objective-cpp",
     "format": "shin.lexical.v1",
     "compatibility": "One current reader/writer. Older generator retrieval is rejected; there is no legacy JSONL/TSV term reader or writer. Raw prior manifest integrity/ownership may be inspected only to authorize rebuilding from current approved sources.",

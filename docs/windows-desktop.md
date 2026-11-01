@@ -11,10 +11,10 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-Download the Windows files from [preview dev.66](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.66):
+Download the Windows files from [preview dev.70](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.70):
 
-- `shin-desktop-2.0.5-dev.66-windows-AMD64.msi` for the installed desktop route.
-- `shin-desktop-2.0.5-dev.66-windows-AMD64.zip` for a portable extraction.
+- `shin-desktop-2.0.5-dev.70-windows-AMD64.msi` for the installed desktop route.
+- `shin-desktop-2.0.5-dev.70-windows-AMD64.zip` for a portable extraction.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
@@ -25,21 +25,33 @@ and automatic installation of updates are not available on Windows yet.
 
 ## Current scope
 
-| Area | Native Windows source behavior |
+| Area | Current Windows preview behavior |
 | --- | --- |
 | Core and retrieval | Indexing, source discovery and snapshot-bound reads use the shared engine. Windows smoke checks cover a selected native subset of the Core suite. |
 | Local Observer, CLI and MCP | Native processes and authenticated named pipes; user runtimes require unelevated tokens. Explicit project/root authority and output bounds remain enforced. |
 | Storage and workers | Windows file identities, owner-private ACLs, atomic replacement and bounded Job Objects. UNC paths and reparse-point traversal are refused. |
-| Monitor | Win32/DX11 host with the shared EN/RU presentation and diagnostics. Source render checks include documentation warnings, unique action IDs and Windows update screens. |
+| Monitor | Win32/DX11 tray host with shared Sand, EN/RU, Overview, Projects, Activity and Settings. Render checks include documentation warnings, unique action IDs and Windows update screens. |
 | Client configuration | `mcp-config` exports configuration for manual review. Automatic `client-connect` editing and graphical project onboarding are not enabled. |
-| Terminal UI, usage and updating | `shin-ce stats`, automatic client-history collection and automatic update installation remain pending on Windows. Monitor source supports a manual release check and reviewed MSI/checksum links; see below. |
+| Terminal UI, usage and updating | `shin-ce stats`, automatic client-history collection and automatic update installation are not implemented on Windows. Monitor supports a manual release check and reviewed MSI/checksum links; see below. |
 | Distribution | Published ZIP/MSI previews pass the guarded source matrix and exact-package checks. Development presets leave packaging disabled; interactive installed lifecycle checks remain separate. |
 
 Runtime binaries do not require WSL, Bash, Python, Node or a model service.
 Python and the native compiler are development/test dependencies. WSL builds
 exercise the Linux implementation and do not substitute for native Windows tests.
 
-### Windows Monitor update screen (unreleased source)
+The shared dashboard does not provide full macOS feature parity. Windows has no
+graphical project/agent onboarding, project-management menu, storage-cleanup
+window, native login-settings control or saved native-Updater result. Use the
+CLI for project and storage operations. Request timing and the session journal
+are available independently of agent token-history collection. See the
+[platform capability matrix](README.md#capabilities-by-platform).
+
+The Windows host currently lets DWM scale a fixed logical-size, DPI-unaware
+window. Fonts and icons use Windows system resources. This differs from the
+macOS Retina host; current render tests do not establish visual parity at
+125–200% scaling or across mixed-DPI monitors.
+
+### Windows Monitor update screen
 
 Open **Settings → Check for updates…**, or right-click the notification-area
 icon and choose **Check for updates…**. The check runs in the background and
@@ -47,7 +59,8 @@ shows the running version, checking/current/available/error state and, for a
 newer complete Windows release, **Download MSI**, **Download checksum** and
 **Release notes**. A visible update offer also appears in the Monitor footer.
 The panel supports English/Russian, keyboard navigation and scrolling on small
-screens. These source changes are not yet part of the pinned published preview.
+screens. These controls are included in preview dev.70. Older Windows previews
+may lack the entry points; install a current MSI manually if necessary.
 
 Checks are manual: Monitor reads the public GitHub release feed over HTTPS,
 without account credentials or project data. The existing version/channel rules
@@ -60,6 +73,8 @@ close Monitor, then run the MSI and confirm native Windows UAC. Windows Installe
 owns progress, completion and any restart request; this screen does not perform
 installation or expose the macOS updater's last-result/automatic-update controls.
 Projects, settings and history remain outside the installed binaries.
+The update page uses the tray popup: switching focus to the browser hides the
+panel. Reopen it from the tray to return to the check result.
 
 ## Build and verification
 
@@ -163,7 +178,7 @@ Keep the WiX bitmap canvases at 493 x 58 and 493 x 312 pixels.
 
 ## Package publication and remaining gates
 
-In unreleased source, the [unified CI](../.github/workflows/ci.yml) requires both
+The [unified CI](../.github/workflows/ci.yml) requires both
 Windows source jobs and all four Linux/macOS jobs before publishing either
 platform. The Windows desktop job builds ZIP/MSI with pinned CPack 4.3.5 and WiX
 4.0.6. Qualification checks the compiled MSI identity, UI, upgrade bounds and
@@ -191,8 +206,8 @@ packaging policy. That is separate installed evidence, not a claim that every
 hosted package check repeats the lifecycle rehearsal. Changes to installer or
 SCM behavior still need a new installed rehearsal, including multi-user and
 rollback scenarios where affected. TUI, automatic client setup/usage collection
-and automatic Windows update installation remain pending. The unreleased Monitor
-source adds the manual release-check/download screen described above.
+and automatic Windows update installation remain pending. The dev.70 Monitor
+includes the manual release-check/download screen described above.
 
 Linux/macOS gates, Windows source checks, exact-archive checks and installed
 service checks retain separate proof boundaries. Local binaries never substitute

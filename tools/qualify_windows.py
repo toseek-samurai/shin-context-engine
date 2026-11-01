@@ -11,10 +11,24 @@ import re
 import subprocess
 import sys
 import tempfile
+import time
 import zipfile
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / 'observer/tests'))
+
+
+def cleanup_temporary(temporary):
+    """Bound the release of owned Windows image locks; retain other failures."""
+    deadline = time.monotonic() + 5
+    while True:
+        try:
+            temporary.cleanup()
+            return
+        except PermissionError as error:
+            if getattr(error, 'winerror', None) not in (32, 33) or time.monotonic() >= deadline:
+                raise
+            time.sleep(0.05)
 
 
 @contextmanager
@@ -38,11 +52,18 @@ def user_environment():
     finally:
         kernel.CloseHandle(token)
     # Short paths also keep the longest archive members below legacy Win32 limits.
-    with tempfile.TemporaryDirectory(prefix='s-', dir=profile) as directory:
+    temporary = tempfile.TemporaryDirectory(prefix='s-', dir=profile)
+    directory = temporary.name
+    try:
         environment = os.environ.copy()
         environment.update(TEMP=directory, TMP=directory, TMPDIR=directory, USERPROFILE=str(profile),
                            HOMEDRIVE=profile.drive, HOMEPATH=str(profile)[len(profile.drive):])
         yield environment
+    finally:
+        # A stop reply acknowledges the request before the owned background
+        # process releases its image. Wait only for Windows sharing locks on
+        # this disposable tree; access/ownership errors and leaked locks fail.
+        cleanup_temporary(temporary)
 
 
 def hashes(archive, msi):

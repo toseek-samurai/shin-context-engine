@@ -187,6 +187,9 @@ SQLite files owned by Administrators, and post-MSI project preparation refuses
 an elevated token. Hosted CI runs this fixture through the existing disposable
 standard-user harness, while the remaining source tests retain their normal
 preset. Its native output and token proof are uploaded with the source reports.
+The harness waits up to five seconds for Windows sharing locks to settle during
+private TEMP cleanup. Access/ownership errors and locks beyond that deadline
+still fail qualification.
 
 Do not run an unfiltered CTest against a manually configured packaging build
 with `BUILD_TESTING=ON`: enabling the Core CLI also registers POSIX-only Core

@@ -166,7 +166,10 @@ jobs:
           "build_root=$buildRoot" >> $env:GITHUB_OUTPUT
       - name: Check standard-user launcher
         if: matrix.component == 'desktop'
-        run: ../tools/qualify_windows.ps1 -Probe -Output "$env:SHIN_BUILD_ROOT/user-probe"
+        run: |
+          python -B ../tools/test_qualify_windows.py
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          ../tools/qualify_windows.ps1 -Probe -Output "$env:SHIN_BUILD_ROOT/user-probe"
       - name: Packaging toolchain
         if: matrix.component == 'desktop'
         run: |

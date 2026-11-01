@@ -703,6 +703,35 @@ class LocalServiceTests(unittest.TestCase):
         metric = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
         self.assertEqual(metric['reader_state'], 'warm')
 
+    def test_invalid_query_keeps_the_qualified_resident(self):
+        self.start()
+        initial = self.raw('query', query='readLimit')
+        self.assertTrue(initial['ok'], initial)
+        snapshot = initial['result']['snapshot_id']
+        before = self.raw('service-status')['result']
+        reader = next(r for r in before['resident_projects'] if r['root'] == str(self.root))
+        for query in ('', ' \t\n'):
+            with self.subTest(query=repr(query)):
+                refused = self.raw('query', query=query)
+                self.assertFalse(refused['ok'], refused)
+                self.assertIn(refused['error']['code'], ('invalid-source-query', 'missing-query'))
+                self.assertNotIn('source_context', refused)
+                status = self.raw('service-status')['result']
+                retained = [r for r in status['resident_projects'] if r['root'] == str(self.root)]
+                self.assertEqual(len(retained), 1, {
+                    'resident_errors': status['resident_errors'],
+                    'qualified_projects': status['qualified_projects'],
+                })
+                self.assertEqual(retained[0]['pid'], reader['pid'])
+                self.assertTrue(retained[0]['ready'])
+                self.assertEqual(status['qualified_projects'], before['qualified_projects'])
+                valid = self.raw('query', query='readLimit', diagnostic=True)
+                self.assertTrue(valid['ok'], valid)
+                self.assertEqual(valid['result']['snapshot_id'], snapshot)
+                self.assertIn('return 7;', valid['result']['source_context'])
+                metric = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
+                self.assertEqual(metric['reader_state'], 'warm')
+
 
 
     def wait_service_state(self, predicate, timeout=5):
@@ -1134,7 +1163,8 @@ if __name__ == '__main__':
     if '--group' in sys.argv:
         at=sys.argv.index('--group');group=sys.argv[at+1];del sys.argv[at:at+2]
         dedicated={'refresh-deadline':{'test_updating_wait_is_bounded_and_disconnect_releases_capacity'},
-                   'fifo':{'test_project_queue_is_fifo_bounded_and_resolves_each_frame_once'}}
+                   'fifo':{'test_project_queue_is_fifo_bounded_and_resolves_each_frame_once',
+                           'test_short_same_project_collision_waits_and_preserves_execution_capacity'}}
         names=set(unittest.defaultTestLoader.getTestCaseNames(LocalServiceTests))
         assert set.union(*dedicated.values()) <= names
         groups={**dedicated,'ordinary':names-set.union(*dedicated.values())}

@@ -17,7 +17,7 @@ not restart those IDE sessions.
 
 ## Capabilities by platform
 
-This table describes published dev.74 and the Linux source route. A shared engine or
+This table describes the published platform routes and the Linux source route. A shared engine or
 dashboard does not imply that every platform has the same setup and update tools.
 
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 source build | Windows x64 ZIP / MSI |
@@ -40,7 +40,10 @@ and the session journal remain available independently of agent token history.
 The native binary kit targets **macOS 15+ on Apple Silicon**. Homebrew builds the
 complete application from source and has passed its installation checks on Apple
 Silicon; Intel installation qualification is incomplete. Linux/WSL2 currently
-uses source builds. Windows targets **x64 on local NTFS**; WSL tests exercise the
+uses source builds. Source CI can also prepare an independently qualified Ubuntu
+24.04 x86_64 terminal archive; use it only when that release includes the asset.
+This packaging route is prepared for the next preview and does not add a Linux
+desktop host or automatic updater. Windows targets **x64 on local NTFS**; WSL tests exercise the
 Linux implementation, not the native Windows application.
 
 The macOS preview is ad-hoc signed, without Developer ID or notarization.
@@ -78,8 +81,9 @@ installation. Old generator or release identities retained in contracts record
 provenance; they do not promise a compatibility reader or a supported old kit.
 
 Source tests, exact-package checks and installed interactive tests establish
-different things. The guarded publisher requires the matching Linux/macOS and
-Windows jobs and exact package proof. Hosted Windows renders use software D3D11
+different things. Each guarded platform publisher requires that platform's
+matching source jobs and exact package proof; another platform's pending runner
+does not block qualified downloads. Hosted Windows renders use software D3D11
 without Explorer and do not certify notification-area behavior or an installed
 MSI lifecycle. Screenshot fixtures use synthetic data; they are not measurements
 of a live installation. See each platform guide for its verification scope.

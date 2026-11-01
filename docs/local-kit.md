@@ -410,14 +410,26 @@ other project settings and profile policy are preserved.
 
 Only a CI-qualified published Release is offered to users. Maintainers prepare
 `docs/releases/<tag>.md`, commit the matching Observer version, and push its
-reviewed `vX.Y.Z-dev.N` tag. The tag workflow waits for all
-four Linux/macOS Core and Observer jobs and both Windows jobs, including exact
-macOS and Windows package qualification, before publishing either platform.
+reviewed `vX.Y.Z-dev.N` tag. Each platform waits for its own Core/Observer
+source jobs and exact package qualification. Linux, Windows and macOS publish
+independently; a queued macOS ARM runner does not hold ready Windows or Linux
+downloads. The Linux terminal archive targets Ubuntu 24.04 x86_64, with its
+declared system libraries; it does not include a desktop Monitor.
 `tools/publish_preview.py` independently checks the source commit, workflow,
-attempt, job results and artifact provenance, then downloads that run's exact
-macOS kit/updater and Windows ZIP/MSI with their checksums. Local binaries cannot be substituted. A pending
-or failed qualification leaves no published offer; a mismatched existing release
-is preserved for review rather than overwritten.
+attempt, platform job results and artifact provenance, then downloads that
+platform's exact CI archive and checksums. Local binaries cannot be substituted.
+A pending or failed platform has no published offer. Already qualified platforms
+stay available while another platform waits.
+
+Publishers share a per-tag [queued concurrency group](https://docs.github.com/en/actions/how-tos/write-workflows/choose-when-workflows-run/control-workflow-concurrency)
+with `queue: max`; adding one platform cannot cancel another pending publisher.
+Each `shin-preview-PLATFORM.json` binds the platform assets to their source, run,
+attempt and hashes. Appending a platform revalidates existing assets against
+their original CI artifacts, including a previous successful attempt. Unknown,
+changed or incomplete proven assets are preserved for review, never replaced.
+Retain those CI artifacts while another platform is pending (currently 14 days).
+The macOS kit ZIP is uploaded after its updater, installer and checksums so an
+already public Windows/Linux release cannot expose an incomplete macOS offer.
 
 "Do not wait for CI" means the maintainer can finish after pushing the tag. The
 workflow completes publication when qualification succeeds. It does not permit
@@ -429,9 +441,13 @@ complete. The publisher refetches missing package proof for up to 27 seconds;
 failed proof still refuses immediately, and no download or release mutation
 precedes qualification. If only the publication job failed, maintainers can run
 **Recover qualified preview publication** from `main` with the existing tag,
-source qualification run ID and exact attempt. It checks out that source and
-publishes its original CI archive after the same gates. It cannot recover failed
-native qualification, change a tag, rebuild binaries or replace release assets.
+source qualification run ID, exact attempt and platform. It checks out that
+source and publishes its original CI archive after the same platform gates.
+Rerunning all jobs is required if a rerun attempt lacks either of that platform's
+source jobs. Recovery cannot qualify failed native tests, change a tag, rebuild
+binaries or replace release assets. The current publisher and platform receipts
+must belong to this independently qualified workflow; an older all-platform
+candidate needs a new reviewed tag rather than retroactive publication policy.
 
 ### Adopt a previous manually installed kit
 

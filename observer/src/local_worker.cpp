@@ -233,7 +233,9 @@ Json LocalResidentWorker::execute(const std::string& frame, Clock::time_point st
             error.code.starts_with("session-") || error.code == "invalid-session-identity";
     } catch (const shin::context::CliError& error) {
         response = local_rpc::failure(id, error.code(), error.what());
-        reusable = error.code().starts_with("source-read-unknown") || error.code() == "invalid-inspect-path" ||
+        // A rejected empty/whitespace query changes no reader or publication state.
+        reusable = error.code() == "missing-query" ||
+            error.code().starts_with("source-read-unknown") || error.code() == "invalid-inspect-path" ||
             error.code().starts_with("session-") || error.code().starts_with("invalid-session");
     } catch (const std::exception&) {
         response = local_rpc::failure(id, "service-request-failed", "Resident project request failed.");

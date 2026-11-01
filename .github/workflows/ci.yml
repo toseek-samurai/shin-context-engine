@@ -13,11 +13,131 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  native:
+  linux:
+    name: native (${{ matrix.os }}, ${{ matrix.component }})
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15]
+        os: [ubuntu-24.04]
+        component: [core, observer]
+    runs-on: ${{ matrix.os }}
+    env:
+      CCACHE_BASEDIR: ${{ github.workspace }}
+      CCACHE_COMPILERCHECK: content
+      CCACHE_MAXSIZE: 500M
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Linux prerequisites
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake ninja-build ccache jq python3 libsqlite3-dev libssl-dev
+      - name: macOS prerequisites
+        if: runner.os == 'macOS'
+        run: |
+          sudo xcode-select --switch /Applications/Xcode_26.3.app/Contents/Developer
+          xcodebuild -version
+          xcrun --sdk macosx --show-sdk-path
+          brew install cmake ninja ccache jq openssl@3 python@3.14
+          echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
+          echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
+      - name: Prepare compiler cache
+        shell: bash
+        run: echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
+      - name: Restore compiler cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/ccache
+          key: ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.component }}-${{ github.sha }}
+          restore-keys: |
+            ccache-v1-${{ runner.os }}-${{ runner.arch }}-${{ matrix.component }}-
+      - name: Configure
+        shell: bash
+        run: |
+          ccache --zero-stats
+          # Keep CMake tests on the workflow's Python, including versioned Homebrew.
+          flags=(-G Ninja -DCMAKE_BUILD_TYPE=Release
+            -DPython3_EXECUTABLE="$(command -v python3)"
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache)
+          if [[ "$RUNNER_OS" == macOS ]]; then
+            # Hash the selected compiler itself, not Apple's /usr/bin dispatch shim.
+            flags+=(-DCMAKE_OSX_DEPLOYMENT_TARGET=15.0
+              -DCMAKE_C_COMPILER="$(xcrun --find clang)"
+              -DCMAKE_CXX_COMPILER="$(xcrun --find clang++)")
+            if [[ '${{ matrix.component }}' == observer ]]; then
+              flags+=(-DCMAKE_OBJCXX_COMPILER="$(xcrun --find clang++)"
+                -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache)
+            fi
+          fi
+          if [[ '${{ matrix.component }}' == core ]]; then
+            cmake -S . -B "$RUNNER_TEMP/core" "${flags[@]}" \
+              -DSHIN_CONTEXT_BUILD_SOURCE_DISCOVERY=ON -DSHIN_CONTEXT_BUILD_SEMANTIC_EXPORTER=ON
+          else
+            if [[ "$RUNNER_OS" == macOS ]]; then
+              flags+=(-DSHIN_OBSERVER_TRAY=ON -DSHIN_OBSERVER_LOCAL_KIT=ON)
+            else
+              flags+=(-DSHIN_OBSERVER_LINUX_KIT=ON)
+            fi
+            cmake -S observer -B "$RUNNER_TEMP/observer" "${flags[@]}" \
+              -DSHIN_OBSERVER_SOURCE_DISCOVERY=ON -DSHIN_OBSERVER_MCP=ON
+          fi
+      - name: Build
+        run: python3 tools/ci_progress.py build -- cmake --build "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4
+      - name: Compiler cache statistics
+        if: always()
+        run: |
+          ccache --show-stats --verbose
+          ccache --print-stats > "$RUNNER_TEMP/ccache-stats.tsv"
+      - name: Tests
+        run: python3 tools/ci_progress.py tests -- ctest --test-dir "$RUNNER_TEMP/${{ matrix.component }}" --parallel 4 --output-on-failure --no-tests=error --output-junit "$RUNNER_TEMP/${{ matrix.component }}-tests.xml"
+      - name: Strict source profiles
+        if: matrix.component == 'core'
+        run: python3 tools/verify_source_profiles.py "$RUNNER_TEMP/core/shin-context" "$RUNNER_TEMP/profile-proof"
+      - name: Exact Linux kit qualification
+        id: qualify-kit
+        if: matrix.component == 'observer'
+        shell: bash
+        run: |
+          python3 -B tools/linux_package.py package --cmake "$(command -v cmake)" \
+            --build "$RUNNER_TEMP/observer" --output "$RUNNER_TEMP/observer/packages" \
+            --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
+            2>&1 | tee "$RUNNER_TEMP/package-smoke.log"
+      - name: Upload qualified Linux kit
+        if: success() && steps.qualify-kit.outcome == 'success'
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: shin-terminal-linux-X64-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/observer/packages/*.tar.gz
+            ${{ runner.temp }}/observer/packages/*.tar.gz.sha256
+            ${{ runner.temp }}/observer/packages/linux-qualification.json
+          if-no-files-found: error
+          retention-days: 14
+          compression-level: 0
+      - name: Upload test reports
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: test-reports-${{ matrix.os }}-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/${{ matrix.component }}-tests.xml
+            ${{ runner.temp }}/${{ matrix.component }}/Testing/Temporary/LastTest.log
+            ${{ runner.temp }}/${{ matrix.component }}/Testing/Temporary/LastTestsFailed.log
+            ${{ runner.temp }}/package-build.log
+            ${{ runner.temp }}/package-smoke.log
+            ${{ runner.temp }}/package-checksum.log
+            ${{ runner.temp }}/ccache-stats.tsv
+          if-no-files-found: warn
+          retention-days: 14
+
+  macos:
+    name: native (${{ matrix.os }}, ${{ matrix.component }})
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [macos-15]
         component: [core, observer]
     runs-on: ${{ matrix.os }}
     env:
@@ -258,11 +378,16 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
-  publish-preview:
-    needs: [native, windows]
-    if: github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.native.result == 'success' && needs.windows.result == 'success'
+  publish-linux:
+    name: publish-preview (linux)
+    needs: [linux]
+    if: ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.linux.result == 'success' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    # Serialize additions to one release without canceling another platform.
+    concurrency:
+      group: preview-assets-${{ github.ref }}
+      queue: max
     permissions:
       contents: write
       actions: read
@@ -270,10 +395,60 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - name: Publish exact CI-qualified preview
+      - name: Publish exact CI-qualified linux preview
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           python3 -B tools/publish_preview.py --repo "$GITHUB_REPOSITORY" \
-            --sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" \
+            --sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --platform linux \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+
+  publish-macos:
+    name: publish-preview (macos)
+    needs: [macos]
+    if: ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.macos.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Serialize additions to one release without canceling another platform.
+    concurrency:
+      group: preview-assets-${{ github.ref }}
+      queue: max
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish exact CI-qualified macos preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B tools/publish_preview.py --repo "$GITHUB_REPOSITORY" \
+            --sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --platform macos \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"
+
+  publish-windows:
+    name: publish-preview (windows)
+    needs: [windows]
+    if: ${{ !cancelled() && github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') && needs.windows.result == 'success' }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    # Serialize additions to one release without canceling another platform.
+    concurrency:
+      group: preview-assets-${{ github.ref }}
+      queue: max
+    permissions:
+      contents: write
+      actions: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Publish exact CI-qualified windows preview
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python3 -B tools/publish_preview.py --repo "$GITHUB_REPOSITORY" \
+            --sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" --platform windows \
             --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT"

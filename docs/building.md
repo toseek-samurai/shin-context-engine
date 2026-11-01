@@ -108,6 +108,36 @@ rebuild the source tools, restart the service and reconnect persistent MCP clien
 Built-in OS service registration (`service-install`) is not implemented on Linux;
 session service start/stop commands are available.
 
+### Prepare a Linux terminal archive
+
+The next-preview packaging route produces
+`shin-terminal-VERSION-linux-x86_64.tar.gz`, its checksum and
+`linux-qualification.json`. This is an Ubuntu 24.04 x86_64/glibc 2.39+ archive,
+with system `libc6`, `libstdc++6`, OpenSSL 3 (`libssl3t64`) and `libsqlite3-0`.
+It contains Core, Observer, CLI, MCP, usage collection and the EN/RU terminal
+monitor. It does not contain a desktop host, a service-manager installer or an
+automatic updater. Other Linux distributions and CPU architectures need their
+own qualification.
+
+Use the source build procedure above with `-DSHIN_OBSERVER_LINUX_KIT=ON` to
+include the Core executable. Complete its tests, then choose a new empty output
+directory and run:
+
+```sh
+python3 -B tools/linux_package.py package \
+  --cmake "$(command -v cmake)" --build /tmp/shin-observer-build \
+  --output /tmp/shin-linux-packages \
+  --source-sha "$(git rev-parse HEAD)" --run-id 0 --attempt 0
+```
+
+The packager installs into disposable state, checks the exact archive inventory,
+hashes, ELF architecture and system dependencies, then exercises relocated CLI,
+MCP snapshot reads and the EN/RU PTY/signals/restoration gate. Runtime checks use
+only synthetic projects and their own service processes. Local `0/0` provenance
+is explicitly ineligible for public release; CI records its real run and attempt.
+Downloads appear per platform only after its source and exact-archive checks pass.
+Until a preview actually includes this Linux asset, use the source route above.
+
 ## Native Windows development builds
 
 The Windows source route uses Visual Studio 2022 with the C++ desktop workload,

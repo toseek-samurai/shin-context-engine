@@ -86,6 +86,21 @@ path disclosure and preserved data in a disposable installation. Keep private
 raw diagnostics outside the public repository. Scope any performance statement
 to its workload, hardware and measured cold/warm state.
 
+An installed stress probe must select current enrolled roots without enrolling,
+resetting or manually rebuilding them. Label calls as diagnostic with the real
+host session; omit unknown model identity. Cover sequential and concurrent
+queries, languages, snapshot-bound reads and invalid-input controls. Record
+documented capacity refusals, source-change races and readiness timeouts
+separately from invalid data or process failures, and verify the service drains
+after load. Keep consumer queries, source paths and raw responses private.
+Synthetic fixtures, rather than consumer profiles, preserve reproduced bugs.
+
+Compare delivery quality at identical snapshot, profile, result and per-document
+limits. An eval request with eight records and an MCP response with four records
+are different workloads. A full record budget does not itself prove complete
+document coverage. Preserve the original expected owners and profile checks
+when investigating delivery misses; do not weaken them to match a smaller view.
+
 On a generator cutover, retire its predecessor in the shared source-rebuild
 policy and update the pinned previous-generator kit fixture. Exact macOS archive
 qualification exercises that published format through forward update and resumed

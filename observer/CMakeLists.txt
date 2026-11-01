@@ -11,7 +11,14 @@ option(SHIN_OBSERVER_SOURCE_DISCOVERY "Enable local source queries with a privat
 option(SHIN_OBSERVER_MCP "Build the native project-bound MCP stdio adapter" OFF)
 option(SHIN_OBSERVER_TRAY "Build the native desktop ImGui tray client" OFF)
 option(SHIN_OBSERVER_LOCAL_KIT "Package the complete relocatable macOS local kit" OFF)
+option(SHIN_OBSERVER_LINUX_KIT "Build the Linux terminal archive payload" OFF)
 option(SHIN_OBSERVER_WINDOWS_KIT "Package the native Windows desktop candidate (ZIP/MSI)" OFF)
+if(SHIN_OBSERVER_LINUX_KIT AND (NOT CMAKE_SYSTEM_NAME STREQUAL "Linux" OR
+        NOT SHIN_OBSERVER_SOURCE_DISCOVERY OR NOT SHIN_OBSERVER_MCP OR SHIN_OBSERVER_TRAY OR
+        SHIN_OBSERVER_LOCAL_KIT OR SHIN_OBSERVER_WINDOWS_KIT OR SHIN_OBSERVER_HOMEBREW_PREFIX OR
+        SHIN_OBSERVER_SANITIZERS OR SHIN_OBSERVER_TSAN))
+    message(FATAL_ERROR "Linux archive requires Linux, source discovery and MCP without Monitor, another package owner or sanitizer runtimes")
+endif()
 if(SHIN_OBSERVER_WINDOWS_KIT AND (NOT WIN32 OR NOT SHIN_OBSERVER_SOURCE_DISCOVERY OR NOT SHIN_OBSERVER_MCP OR NOT SHIN_OBSERVER_TRAY))
     message(FATAL_ERROR "Windows kit requires native Windows, source discovery, MCP and Monitor")
 endif()
@@ -46,7 +53,7 @@ if(SHIN_OBSERVER_HOMEBREW_PREFIX)
         message(FATAL_ERROR "Homebrew opt prefix must be a normalized absolute path")
     endif()
 endif()
-if(SHIN_OBSERVER_LOCAL_KIT OR SHIN_OBSERVER_WINDOWS_KIT OR SHIN_OBSERVER_HOMEBREW_PREFIX)
+if(SHIN_OBSERVER_LOCAL_KIT OR SHIN_OBSERVER_WINDOWS_KIT OR SHIN_OBSERVER_LINUX_KIT OR SHIN_OBSERVER_HOMEBREW_PREFIX)
     set(SHIN_CONTEXT_BUILD_CLI ON CACHE BOOL "" FORCE)
 else()
     set(SHIN_CONTEXT_BUILD_CLI OFF CACHE BOOL "" FORCE)
@@ -94,6 +101,9 @@ if(BUILD_TESTING AND NOT WIN32)
         add_test(NAME shin-preview-publication
             COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_publish_preview.py)
         set_tests_properties(shin-preview-publication PROPERTIES TIMEOUT 30)
+        add_test(NAME shin-linux-package
+            COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_linux_package.py)
+        set_tests_properties(shin-linux-package PROPERTIES TIMEOUT 30)
         add_executable(shin-resident-retention-tests tests/resident_retention_test.cpp)
         target_link_libraries(shin-resident-retention-tests PRIVATE shin-observer-native)
         add_test(NAME shin-resident-retention COMMAND shin-resident-retention-tests)

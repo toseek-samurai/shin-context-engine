@@ -289,6 +289,7 @@
     {"Could not obtain a cleanup preview.", "Не удалось получить предварительный расчёт."},
     {"Could not obtain a safe cleanup preview. Caches were preserved.", "Не удалось получить безопасный предварительный расчёт. Кеши не очищались."},
     {"Could not run the shin-ce command.", "Не удалось выполнить команду shin-ce."},
+    {"Could not start the update. Monitor is still running.", "Не удалось запустить обновление. Monitor продолжает работать."},
     {"Could not update agent settings.", "Не удалось обновить настройки агента."},
     {"Could not verify this installation's data directory.", "Не удалось подтвердить каталог данных этой установки."},
     {"Could not wait for the shin-ce response.", "Не удалось дождаться ответа shin-ce."},

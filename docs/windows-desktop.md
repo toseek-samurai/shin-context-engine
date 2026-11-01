@@ -11,10 +11,10 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-Download the Windows files from [preview dev.74](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.74):
+Download the Windows files from [preview dev.77](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77):
 
-- `shin-desktop-2.0.5-dev.74-windows-AMD64.msi` for the installed desktop route.
-- `shin-desktop-2.0.5-dev.74-windows-AMD64.zip` for a portable extraction.
+- `shin-desktop-2.0.5-dev.77-windows-AMD64.msi` for the installed desktop route.
+- `shin-desktop-2.0.5-dev.77-windows-AMD64.zip` for a portable extraction.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
@@ -56,6 +56,24 @@ not receive development previews. Offers require exact repository URLs, complete
 ZIP/MSI and checksum assets, bounded sizes and valid SHA-256 metadata. A failed
 check does not stop Shin. The Settings opt-out disables automatic checks;
 installation always requires confirmation and Windows UAC.
+
+### Recover an update from dev.77 or earlier
+
+These versions can report **Private path is unavailable or unsafe** after
+**Download and install** and exit Monitor before starting the helper. The MSI's
+registered directory has a trailing separator which that launch path rejects.
+Use the published MSI and its matching checksum to update through Windows
+Installer, then complete project setup and open Monitor. Uninstalling the
+existing kit is unnecessary. Restart persistent MCP clients after the update.
+The path error itself does not require an operating-system restart.
+
+The unreleased dev.78 source accepts the MSI directory spelling while retaining
+native identity, alias and reparse checks. Launch failures remain in Monitor
+with a diagnostic action. After installer handoff, the helper reopens Monitor
+only after verifying a complete known old or new kit; it retains Installer logs and
+never retries an unknown installation automatically. New package qualification
+also exercises the real registered MSI path and protected helper staging under a
+standard-user token, before the guarded publisher accepts the package receipt.
 
 ## Monitor setup and updates
 

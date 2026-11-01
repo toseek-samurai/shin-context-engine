@@ -108,6 +108,14 @@ Json windows_update_result=Json::object();
 Clock::time_point windows_update_poll;
 std::future<Json> windows_update_review;
 std::string windows_update_review_error;
+std::string windows_update_launch_error;
+
+template<class Action> void run_windows_update_action(Action&& action) {
+    windows_update_launch_error.clear();
+    try { action(); }
+    catch(const Error& error) { windows_update_launch_error=error.code; }
+    catch(const std::exception&) { windows_update_launch_error="update-helper-launch-failed"; }
+}
 
 Json windows_project_preparation(const fs::path& prefix, bool check_only) {
     const auto manifest=windows_update::verify_installed(prefix,SHIN_OBSERVER_VERSION);
@@ -205,23 +213,10 @@ void install_windows_update(const Json& offer) {
     const auto confirmed=MessageBoxW(panel,wide(tr("Download, verify and install this update? Windows Installer will request UAC. Projects, settings and history are preserved.")).c_str(),L"Shin",MB_YESNO|MB_ICONQUESTION);
     modal=false;if(confirmed!=IDYES) return;
     const auto prefix=current_executable_path().parent_path().parent_path();
-    std::array<wchar_t,32768> registry{};DWORD length=static_cast<DWORD>(registry.size()*sizeof(wchar_t));
-    if(RegGetValueW(HKEY_LOCAL_MACHINE,L"Software\\Shin\\DesktopPreview",L"InstallRoot",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,registry.data(),&length)!=ERROR_SUCCESS ||
-        directory_identity(prefix)!=directory_identity(fs::path(registry.data())))
-        throw Error("update-msi-installation-required","This route updates an MSI installation. Install the MSI manually for a portable package.");
-    const auto bin=prefix/"bin";
-    shin::windows::ReadFile helper(bin/"shin-windows-updater.exe");helper.require_machine_owned();
+    windows_update::verify_registered_msi_installation(prefix);
     ensure_private_directory(management.home/"updates");ensure_private_directory(management.home/"updates/windows");
     const auto folder=management.home/"updates/windows"/("update-"+digest(std::to_string(now_ms())+std::to_string(GetCurrentProcessId())).substr(0,24));
-    shin::windows::Directory::ensure_private(folder,true);
-    shin::windows::Directory destination(folder,shin::windows::Directory::Access::private_owner);
-    if(!destination.create("updater.exe",helper.read(64U*1024*1024))) throw Error("update-stage-conflict","Update helper already exists.");
-    unsigned files=0;
-    for(const auto& entry:fs::directory_iterator(bin)) if(entry.path().extension()==".dll") {
-        if(++files>16) throw Error("update-stage-invalid","Too many helper libraries.");
-        shin::windows::ReadFile library(entry.path());library.require_machine_owned();
-        if(!destination.create(entry.path().filename().string(),library.read(32U*1024*1024))) throw Error("update-stage-conflict","Update helper library already exists.");
-    }
+    windows_update::stage_update_helper(prefix,folder);
     FILETIME created{},exited{},kernel{},user{};GetProcessTimes(GetCurrentProcess(),&created,&exited,&kernel,&user);
     const auto identity=(static_cast<std::uint64_t>(created.dwHighDateTime)<<32)|created.dwLowDateTime;
     { StateStore store(folder,true);store.recover_pending();
@@ -273,6 +268,12 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
         state.state == WindowsUpdateState::failed ? tr("Could not check for updates") : tr("Check for updates…");
     ImGui::PushTextWrapPos(); ImGui::TextColored(offer ? sand : ink, "%s", title); ImGui::PopTextWrapPos();
     ImGui::Spacing();
+    if(!windows_update_launch_error.empty()) {
+        ImGui::TextWrapped("%s",tr("Could not start the update. Monitor is still running."));
+        ImGui::TextWrapped("%s",windows_update_launch_error.c_str());
+        if(update_button(tr("Copy diagnostic report"),208))
+            platform_copy(Json{{"command","update-launch"},{"ok",false},{"error_code",windows_update_launch_error}}.dump(2));
+    }
     if (offer) {
         ImGui::TextColored(sand, "v%s  ->  v%s", SHIN_OBSERVER_VERSION, state.offer.at("version").get_ref<const std::string&>().c_str());
         ImGui::TextWrapped("%s", tr("Shin downloads and verifies the MSI, then opens Windows Installer. Confirm UAC to install. The installer owns progress and rollback; projects, settings and history stay in place."));
@@ -283,7 +284,7 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
         const auto phase=windows_update_result.value("phase","");
         const bool download = update_button(tr("Download and install"), 202,!windows_update_review.valid() && (phase.empty() || phase=="completed" || phase=="acknowledged"));
         ImGui::PopStyleColor(4);
-        if (download) install_windows_update(state.offer);
+        if (download) run_windows_update_action([&] {install_windows_update(state.offer);});
         if (update_button(tr("Download checksum"), 203)) open_update_link(state.offer, "checksum_url");
         if (update_button(tr("Release notes"), 204)) open_update_link(state.offer, "release_url");
     } else {

@@ -240,6 +240,7 @@ def main():
         rendered = json.loads((base / 'renders/result.json').read_text())
         assert rendered['frames'] == 60 and rendered['cold_frames'] == 30
         assert rendered['documentation_frames'] == 20
+        assert rendered['update_frames'] == 70 and rendered['update_launch_attempts'] == 3
         assert rendered['shell_integration'] is (not args.headless_render)
         assert rendered['taskbar_recreated_event'] is (None if args.headless_render else True)
         assert rendered['focus_dismissal'] and rendered['escape']

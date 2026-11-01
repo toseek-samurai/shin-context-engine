@@ -1,11 +1,50 @@
 #pragma once
 #include "shin/observer/observer.h"
 #include "shin/windows/file.h"
+#include <windows.h>
+#include <array>
+#include <functional>
 #include <set>
 #include <cctype>
 #include <algorithm>
 
 namespace shin::observer::windows_update {
+inline fs::path msi_install_root(fs::path path) {
+    // Windows Installer directory properties end in a separator. Remove only
+    // that spelling detail; native IO must still reject aliases and reparse paths.
+    if(path!=path.root_path() && path.filename().empty()) path=path.parent_path();
+    return path;
+}
+inline void verify_msi_install_root(const fs::path& prefix,const fs::path& registered) {
+    if(directory_identity(prefix)!=directory_identity(msi_install_root(registered)))
+        throw Error("update-msi-installation-required","This route updates the registered MSI installation.");
+}
+inline void verify_registered_msi_installation(const fs::path& prefix) {
+    std::array<wchar_t,32768> value{};DWORD bytes=static_cast<DWORD>(sizeof(value));
+    if(RegGetValueW(HKEY_LOCAL_MACHINE,L"Software\\Shin\\DesktopPreview",L"InstallRoot",RRF_RT_REG_SZ|RRF_SUBKEY_WOW6464KEY,nullptr,value.data(),&bytes)!=ERROR_SUCCESS)
+        throw Error("update-msi-installation-required","This route updates the registered MSI installation.");
+    verify_msi_install_root(prefix,fs::path(value.data()));
+}
+inline Json stage_update_helper(const fs::path& prefix,const fs::path& folder) {
+    const auto bin=prefix/"bin";
+    shin::windows::ReadFile helper(bin/"shin-windows-updater.exe");helper.require_machine_owned();
+    shin::windows::Directory::ensure_private(folder,true);
+    shin::windows::Directory destination(folder,shin::windows::Directory::Access::private_owner);
+    if(!destination.create("updater.exe",helper.read(64U*1024*1024))) throw Error("update-stage-conflict","Update helper already exists.");
+    unsigned files=0;
+    for(const auto& entry:fs::directory_iterator(bin)) if(entry.path().extension()==".dll") {
+        if(++files>16) throw Error("update-stage-invalid","Too many helper libraries.");
+        shin::windows::ReadFile library(entry.path());library.require_machine_owned();
+        if(!destination.create(entry.path().filename().string(),library.read(32U*1024*1024))) throw Error("update-stage-conflict","Update helper library already exists.");
+    }
+    return {{"helper_staged",true},{"libraries",files}};
+}
+inline void restore_update_monitor(bool& pending,const std::function<void()>& verify,const std::function<void()>& launch) {
+    if(!pending) return;
+    verify();
+    launch();
+    pending=false;
+}
 // Check the complete bounded inventory before reading any payload path.
 inline void validate_inventory(const Json& manifest,const std::string& version) {
     const auto require=[](bool valid) {

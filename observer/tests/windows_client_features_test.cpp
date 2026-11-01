@@ -32,12 +32,20 @@ void wait_for_fixture_service_stop(const fs::path& home) {
 int main(int argc,char** argv) {
     const char* phase="client configuration";
     try {
-        require(argc==3,"pass matching CLI and profiles");
+        const bool installed_preflight=argc==4&&std::string_view(argv[1])=="--installed-update-preflight";
+        require(argc==3||installed_preflight,"pass matching CLI and profiles");
         HANDLE access_token=nullptr;TOKEN_ELEVATION elevation{};DWORD token_size=0;
         require(OpenProcessToken(GetCurrentProcess(),TOKEN_QUERY,&access_token)!=FALSE,"cannot inspect fixture token");
         const bool inspected=GetTokenInformation(access_token,TokenElevation,&elevation,sizeof(elevation),&token_size)!=FALSE;
         CloseHandle(access_token);
         require(inspected&&!elevation.TokenIsElevated,"run client/history and post-MSI fixtures as an unelevated user");
+        if(installed_preflight) {
+            const fs::path prefix(argv[2]),folder(argv[3]);
+            windows_update::verify_registered_msi_installation(prefix);
+            auto report=windows_update::stage_update_helper(prefix,folder);
+            report["ok"]=true;report["msi_root_verified"]=true;
+            std::cout<<report.dump()<<'\n';return 0;
+        }
         const auto root=fs::temp_directory_path()/("shin client features-"+digest(std::to_string(GetCurrentProcessId())+std::to_string(now_ms())).substr(0,20));
         ensure_private_directory(root,true);
         struct Cleanup {fs::path path;~Cleanup(){std::error_code error;fs::remove_all(path,error);}} cleanup{root};
@@ -86,6 +94,26 @@ int main(int argc,char** argv) {
         const auto discovered=windows_command(commands/"shin-ce.exe",{"client-targets","--home",home.string()});
         require(discovered.value("ok",false) && discovered.at("targets").is_array(),"native command runner failed");
         phase="update payload validation";
+        windows_update::verify_msi_install_root(commands,commands);
+        windows_update::verify_msi_install_root(commands,fs::path(commands.wstring()+L"\\"));
+        windows_update::verify_msi_install_root(commands,fs::path(commands.wstring()+L"/"));
+        refused([&]{windows_update::verify_msi_install_root(commands,project);});
+        refused([&]{windows_update::verify_msi_install_root(commands,commands/L".");});
+        refused([&]{windows_update::verify_msi_install_root(commands,commands/L".."/L"commands");});
+        bool restore_pending=false;std::string restore_order;
+        const auto verify_monitor=[&]{restore_order+='V';};
+        const auto launch_monitor=[&]{restore_order+='L';};
+        windows_update::restore_update_monitor(restore_pending,verify_monitor,launch_monitor);
+        require(restore_order.empty(),"Monitor restarted before handoff");
+        restore_pending=true;
+        refused([&]{windows_update::restore_update_monitor(restore_pending,[]{throw Error("update-outcome-unknown","Synthetic invalid installation");},launch_monitor);});
+        require(restore_pending&&restore_order.empty(),"unverified Monitor was launched");
+        refused([&]{windows_update::restore_update_monitor(restore_pending,verify_monitor,[]{throw Error("monitor-launch-failed","Synthetic launch failure");});});
+        require(restore_pending&&restore_order=="V","failed Monitor launch was treated as complete");
+        restore_order.clear();
+        windows_update::restore_update_monitor(restore_pending,verify_monitor,launch_monitor);
+        windows_update::restore_update_monitor(restore_pending,verify_monitor,launch_monitor);
+        require(!restore_pending&&restore_order=="VL","Monitor recovery was repeated or bypassed verification");
         const std::string body="independent synthetic installer";
         Json offer{{"bytes",body.size()},{"sha256",digest(body)},{"archive_name","test.msi"}};
         windows_update::verify(offer,body,digest(body)+"  test.msi\r\n");

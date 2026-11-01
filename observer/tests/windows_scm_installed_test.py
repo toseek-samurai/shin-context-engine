@@ -79,6 +79,21 @@ def main():
     registry = home / 'registry/state.json'
     wait(lambda: registry.is_file(), 'SCM worker private registry bootstrap')
     assert json.loads(registry.read_text(encoding='utf-8'))['projects'] == [], 'Do not interrupt an enrolled real project'
+    # Exercise the same registry spelling and protected helper staging as the
+    # real update button. Render-only tests cannot qualify an MSI installation.
+    registry_before = registry.read_bytes()
+    with tempfile.TemporaryDirectory(prefix='shin-update-preflight-') as temporary:
+        stage = Path(temporary) / 'staged helper'
+        subprocess.run([str(tool.parent / 'shin-tray.exe'), '--update-preflight-test', str(stage)],
+                       capture_output=True, encoding='utf-8', check=True, timeout=45)
+        report = json.loads((stage / 'state.json').read_text(encoding='utf-8'))
+        assert report['ok'] and report['msi_root_verified'] and report['helper_staged'], report
+        assert (stage / 'updater.exe').read_bytes() == (tool.parent / 'shin-windows-updater.exe').read_bytes()
+        libraries = list(tool.parent.glob('*.dll'))
+        assert report['libraries'] == len(libraries)
+        for library in libraries:
+            assert (stage / library.name).read_bytes() == library.read_bytes()
+        assert registry.read_bytes() == registry_before, 'Update preflight changed enrollment'
     ce('service-start')
     root = Path(tempfile.mkdtemp(prefix='shin-scm-runtime-')).resolve()
     (root / 'quota.cpp').write_text('int quotaLimit() { return 37; }\n', encoding='utf-8')

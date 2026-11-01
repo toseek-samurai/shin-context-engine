@@ -84,7 +84,7 @@ def verify_windows_assets(directory, version, core, sha, run_id, attempt):
     require(receipt == dict(schema_version='shin.windows-qualification.v1', version=version, core_version=core,
                            render_scope='headless',
                            source_sha=sha, run_id=run_id, attempt=attempt, assets=expected,
-                           checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime']),
+                           checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime', 'installed-update-preflight']),
             'Windows qualification receipt differs from this source, attempt or package')
     with zipfile.ZipFile(directory / (stem + '.zip')) as kit:
         prefix = stem + '/'

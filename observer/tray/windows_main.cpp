@@ -450,6 +450,25 @@ unsigned updates_render(const fs::path& output, ImVec2 size) {
                 std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+"-"+std::to_string(static_cast<int>(phase))+".png"));
             ++frames;
         }
+        run_windows_update_action([] {throw Error("unsafe-directory","Synthetic launch refusal");});
+        const WindowsUpdateSnapshot retry{WindowsUpdateState::offer,{{"available",true},{"version","2.0.5-dev.999"}}};
+        for(int frame=0;frame<3;++frame) {
+            ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
+            render_windows_updates(retry);ImGui::Render();
+            constexpr float clear[]{background.x,background.y,background.z,1};
+            context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr);context->ClearRenderTargetView(target.Get(),clear);
+            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+        }
+        check_action_bounds(size);check_action_ids();
+        if(!IsWindow(panel) || windows_update_launch_error!="unsafe-directory")
+            throw std::runtime_error("Update launch failure closed Monitor or lost the offer.");
+        if(size.y>=600 && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& action){return action.chart==202 && action.enabled;}))
+            throw std::runtime_error("Update launch refusal disabled the next explicit attempt.");
+        if(size.y>=440 && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& action){return action.chart==208;}))
+            throw std::runtime_error("Update launch failure has no visible diagnostic action.");
+        save_frame(output/(std::string("update-launch-error-")+(language==shin::ui::Language::ru?"ru-":"en-")+
+            std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+".png"));
+        ++frames;windows_update_launch_error.clear();
         windows_update_result=windows_setup_result({{"phase","review-required"},{"ok",false},
             {"error",{{"code","installation-project-not-ready"}}},
             {"projects",Json::array({{{"root","C:/Synthetic/Project"},{"ok",false},{"error_code","profile-policy-revision-conflict"}}})}});
@@ -498,6 +517,20 @@ void check_update_worker() {
     if (await_result(failed).state != WindowsUpdateState::failed) throw std::runtime_error("Windows update worker lost failure state.");
 }
 
+unsigned check_update_launch_errors() {
+    unsigned calls=0;
+    run_windows_update_action([&] {++calls;throw Error("unsafe-directory","Synthetic refusal");});
+    if(calls!=1 || windows_update_launch_error!="unsafe-directory")
+        throw std::runtime_error("Typed update launch refusal escaped or lost its code.");
+    run_windows_update_action([&] {++calls;throw std::runtime_error("Synthetic native failure");});
+    if(calls!=2 || windows_update_launch_error!="update-helper-launch-failed")
+        throw std::runtime_error("Native update launch failure escaped its action boundary.");
+    run_windows_update_action([&] {++calls;});
+    if(calls!=3 || !windows_update_launch_error.empty() || !IsWindow(panel))
+        throw std::runtime_error("Update launch retry did not recover in the same Monitor.");
+    return calls;
+}
+
 void management_and_dpi_test(const fs::path& output,const ViewState& state) {
     for(float scale:{1.0f,1.5f,2.0f}) {
         test_dpi_scale=scale;dashboard_view=0;management_page=false;updates_page=false;
@@ -537,6 +570,7 @@ void management_and_dpi_test(const fs::path& output,const ViewState& state) {
 int render_test(const fs::path& output, bool shell) {
     fs::create_directories(output);
     check_update_worker();
+    const auto launch_attempts=check_update_launch_errors();
     ViewState state; state.connected=true;
     const Json project{{"id","shin"},{"name","Shin Context Engine"},{"root","C:\\Projects\\Shin"},
         {"phase","current"},{"active_issue",false},{"error_code",""},{"publications",12},{"preparations",12},{"last_tick_ms",42},{"authority","local"},{"query_ready",true}};
@@ -592,7 +626,7 @@ int render_test(const fs::path& output, bool shell) {
     }
     std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},{"update_frames",update_frames},
         {"dpi_scales",Json::array({100,150,200})},{"dpi_physical_clicks",true},{"management_en_ru",true},
-        {"unique_action_ids",true},{"update_controls",true},{"update_worker",true},
+        {"unique_action_ids",true},{"update_controls",true},{"update_worker",true},{"update_launch_attempts",launch_attempts},
         {"nonblank",true},{"action_bounds",true},{"logo",true},
         {"shell_integration",shell},{"taskbar_recreated_event",shell ? Json(true) : Json(nullptr)},
         {"focus_dismissal",true},{"escape",true}}.dump(2);
@@ -608,6 +642,16 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         int argc=0;auto argv=CommandLineToArgvW(GetCommandLineW(),&argc);
         if(!argv) throw std::runtime_error(shin::ui::tr("Cannot read Monitor arguments."));
         std::vector<std::wstring> args(argv,argv+argc);LocalFree(argv);
+        if(args.size()==3 && args[1]==L"--update-preflight-test") {
+            test_mode=true;
+            const auto prefix=current_executable_path().parent_path().parent_path();
+            windows_update::verify_registered_msi_installation(prefix);
+            const auto folder=fs::absolute(fs::path(args[2])).lexically_normal();
+            auto result=windows_update::stage_update_helper(prefix,folder);
+            result.update({{"ok",true},{"msi_root_verified",true},{"version",SHIN_OBSERVER_VERSION}});
+            {StateStore preflight_state(folder,true);preflight_state.recover_pending();preflight_state.save(result);}
+            CoUninitialize();return 0;
+        }
         if(args.size()==3 && args[1]==L"--update-check-test") {
             test_mode=true;
             std::ofstream(fs::path(args[2])) << fetch_windows_release().dump(2);

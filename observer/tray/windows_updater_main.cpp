@@ -14,6 +14,7 @@
 #include <vector>
 #include <array>
 #include <fstream>
+#include <exception>
 
 using namespace shin::observer;
 namespace {
@@ -57,10 +58,15 @@ std::optional<fs::path> installed_root() {
 void install(const fs::path& folder) {
     std::unique_ptr<StateStore> state;
     Json receipt;
+    fs::path installation;
+    bool restore_pending=false,monitor_closed=false;
+    std::exception_ptr failure;
+    std::string restore_error;
     const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     struct Com {HRESULT result;~Com(){if(SUCCEEDED(result)) CoUninitialize();}} apartment{com};
     try {
         if(FAILED(com)) throw Error("update-installer-unavailable","Windows desktop components are unavailable.");
+        update("Checking reviewed release…");
         state=std::make_unique<StateStore>(folder,true);state->recover_pending();
         receipt=state->load().value();
         if(receipt.value("schema_version","")!="shin.windows-update.v1" || receipt.value("phase","")!="reviewed")
@@ -68,9 +74,10 @@ void install(const fs::path& folder) {
         const auto prefix=installed_root();
         if(!prefix || *prefix!=fs::canonical(fs::path(receipt.at("prefix").get<std::string>())))
             throw Error("update-installation-changed","The MSI installation changed after review.");
-        const auto before=parse_json(read_text(*prefix/"shin-kit.json",kMaximumStateBytes,false));
+        installation=*prefix;
+        const auto before=windows_update::verify_installed(*prefix,receipt.at("from_version").get<std::string>());
         if(before.at("version")!=receipt.at("from_version")) throw Error("update-installation-changed","The installation changed. Restart Monitor before updating.");
-        monitor_path=*prefix/"bin/shin-tray.exe";
+        {std::lock_guard lock(mutex);monitor_path=*prefix/"bin/shin-tray.exe";}
         const auto save=[&](const char* phase) {receipt["phase"]=phase;state->save(receipt);};
         update("Checking reviewed release…");save("checking");
         const auto releases=parse_release_feed(windows_update::download(L"https://api.github.com/repos/toseek-samurai/shin-context-engine/releases?per_page=30",kMaximumReleaseFeedBytes));
@@ -86,21 +93,33 @@ void install(const fs::path& folder) {
         windows_update::verify(offer,payload,checksum);
         shin::windows::Directory directory(folder,shin::windows::Directory::Access::private_owner);
         if(!directory.create("installer.msi",payload)) throw Error("update-stage-conflict","Update staging already contains an installer.");
-        receipt["installer_sha256"]=offer.at("sha256");save("waiting-monitor");update("Waiting for Monitor to close…");
+        receipt["installer_sha256"]=offer.at("sha256");
         const DWORD parent=receipt.at("monitor_pid").get<DWORD>();
-        HANDLE monitor=OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,parent);
+        std::unique_ptr<void,decltype(&CloseHandle)> monitor(OpenProcess(SYNCHRONIZE|PROCESS_QUERY_LIMITED_INFORMATION,FALSE,parent),&CloseHandle);
         if(monitor) {
-            FILETIME created{},exited{},kernel{},user{};const bool known=GetProcessTimes(monitor,&created,&exited,&kernel,&user)!=FALSE;
+            FILETIME created{},exited{},kernel{},user{};const bool known=GetProcessTimes(monitor.get(),&created,&exited,&kernel,&user)!=FALSE;
             const auto identity=(static_cast<std::uint64_t>(created.dwHighDateTime)<<32)|created.dwLowDateTime;
-            const auto status=known && identity==receipt.value("monitor_created",0ULL)?WaitForSingleObject(monitor,30000):WAIT_OBJECT_0;
-            CloseHandle(monitor);if(status!=WAIT_OBJECT_0) throw Error("update-monitor-running","Close Monitor before installation.");
-        }
+            if(!known) throw Error("update-monitor-running","Monitor identity could not be confirmed.");
+            DWORD status=WAIT_OBJECT_0;
+            if(identity==receipt.value("monitor_created",0ULL)) {
+                // Publish the close request only after the original process is
+                // identified and pinned. A failed probe must leave Monitor open.
+                save("waiting-monitor");update("Waiting for Monitor to close…");
+                status=WaitForSingleObject(monitor.get(),30000);
+            }
+            if(status!=WAIT_OBJECT_0) throw Error("update-monitor-running","Close Monitor before installation.");
+        } else if(GetLastError()!=ERROR_INVALID_PARAMETER)
+            throw Error("update-monitor-running","Monitor shutdown could not be confirmed.");
+        restore_pending=true;monitor_closed=true;
+        if(!directory.create_empty_file("installer.log")) throw Error("update-stage-conflict","Update staging already contains an installer log.");
+        receipt["installer_log"]="installer.log";
         save("installing");update("Windows Installer is installing the update. Confirm UAC to continue.");
         DWORD code=1;
         {
             // Pin the verified file and every parent against replacement through
             // elevation and the complete Installer operation.
             shin::windows::ReadFile pinned(folder/"installer.msi");pinned.require_user_owned();
+            shin::windows::ReadFile log(folder/"installer.log",shin::windows::ReadFile::Sharing::concurrent_writer);log.require_user_owned();
             if(pinned.stamp().bytes!=total || digest(pinned.read(static_cast<std::size_t>(total)))!=offer.at("sha256").get_ref<const std::string&>())
                 throw Error("update-stage-changed","The verified installer changed.");
             std::array<wchar_t,32768> system{};const UINT length=GetSystemDirectoryW(system.data(),static_cast<UINT>(system.size()));
@@ -108,7 +127,7 @@ void install(const fs::path& folder) {
             const auto executable=fs::path(system.data())/"msiexec.exe";
             // The owner already confirmed in Monitor. Native passive UI shows
             // real Installer progress without also launching the wizard's setup.
-            const std::wstring arguments=L"/i \""+(folder/"installer.msi").wstring()+L"\" /passive /norestart";
+            const std::wstring arguments=L"/i \""+(folder/"installer.msi").wstring()+L"\" /passive /norestart /L*V \""+(folder/"installer.log").wstring()+L"\"";
             SHELLEXECUTEINFOW start{};start.cbSize=sizeof(start);start.fMask=SEE_MASK_NOCLOSEPROCESS;start.hwnd=window;
             start.lpVerb=L"runas";start.lpFile=executable.c_str();start.lpParameters=arguments.c_str();start.nShow=SW_SHOWNORMAL;
             if(!ShellExecuteExW(&start) || !start.hProcess) throw Error(GetLastError()==ERROR_CANCELLED?"update-uac-cancelled":"update-installer-unavailable","Windows Installer did not start.");
@@ -128,11 +147,43 @@ void install(const fs::path& folder) {
             throw Error("installation-project-not-ready","Some projects require review. The installed kit and project policy are preserved.");
         receipt["installed_version"]=manifest.at("version");save("completed");
         try {directory.remove("installer.msi",static_cast<std::size_t>(total),payload);} catch(...) { /* Verified installation remains successful; keep the staged file for review. */ }
-        update("Update completed. Restart persistent MCP clients.",100,true);
     } catch(const std::exception& error) {
+        failure=std::current_exception();
         const auto* typed=dynamic_cast<const Error*>(&error);
         if(state) try {receipt["phase"]="review-required";receipt["error_code"]=typed?typed->code:"update-failed";state->save(receipt);} catch(...) {}
-        show_failure(error);
+        if(restore_pending) {std::lock_guard lock(mutex);monitor_path.clear();}
+    }
+    try {
+        fs::path restored;
+        windows_update::restore_update_monitor(restore_pending,[&] {
+            {std::lock_guard lock(mutex);monitor_path.clear();}
+            shin::windows::ReadFile inventory(installation/"shin-kit.json");inventory.require_machine_owned();
+            const auto current=parse_json(inventory.read(kMaximumStateBytes));
+            const auto version=current.at("version").get<std::string>();
+            if(version!=receipt.at("from_version").get_ref<const std::string&>() &&
+                version!=receipt.at("offer").at("version").get_ref<const std::string&>())
+                throw Error("update-outcome-unknown","Monitor belongs to an unconfirmed installation.");
+            windows_update::verify_installed(installation,version);
+            restored=installation/"bin/shin-tray.exe";
+        },[&] {
+            {std::lock_guard lock(mutex);monitor_path=restored;}
+            if(reinterpret_cast<INT_PTR>(ShellExecuteW(window,L"open",restored.c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32)
+                throw Error("monitor-launch-failed","The installed Monitor could not be reopened.");
+        });
+        if(state && monitor_closed) {receipt["monitor_launch_accepted"]=!restore_pending;state->save(receipt);}
+    } catch(const std::exception& error) {
+        const auto* typed=dynamic_cast<const Error*>(&error);
+        restore_error=typed?typed->code:std::string("monitor-launch-failed");
+        if(state) try {receipt["monitor_restore_error"]=restore_error;state->save(receipt);} catch(...) {}
+    }
+    // Keep the progress window alive until recovery finishes. A terminal Close
+    // must not destroy its owner HWND while Monitor is being relaunched.
+    if(failure) {
+        try {std::rethrow_exception(failure);} catch(const std::exception& error) {show_failure(error);}
+    } else update("Update completed. Restart persistent MCP clients.",100,true);
+    if(!restore_error.empty()) {
+        {std::lock_guard lock(mutex);description+="\n"+restore_error;}
+        if(window) PostMessageW(window,WM_APP,0,0);
     }
 }
 // Called by the successful MSI wizard's normal-user completion action. The
@@ -150,7 +201,7 @@ void finish_setup() {
         PWSTR profile=nullptr;
         if(FAILED(SHGetKnownFolderPath(FOLDERID_Profile,0,nullptr,&profile))) throw Error("home-unavailable","User profile is unavailable.");
         const fs::path home=fs::path(profile)/".shin-ce";CoTaskMemFree(profile);
-        monitor_path=*prefix/"bin/shin-tray.exe";
+        {std::lock_guard lock(mutex);monitor_path=*prefix/"bin/shin-tray.exe";}
         update("Preparing projects…");
         const auto result=prepare_projects(*prefix,home,manifest);
         if(!result.value("ok",false)) throw Error("installation-project-not-ready","Some projects require review.",result);
@@ -175,7 +226,7 @@ LRESULT CALLBACK procedure(HWND target,UINT message,WPARAM key,LPARAM data) {
         SetWindowLongPtrW(bar,GWL_STYLE,marquee?style|PBS_MARQUEE:style&~static_cast<LONG_PTR>(PBS_MARQUEE));
         SendMessageW(bar,PBM_SETMARQUEE,marquee,40);
         if(downloading || terminal) SendMessageW(bar,PBM_SETPOS,percent,0);
-        EnableWindow(GetDlgItem(target,1),terminal);
+        EnableWindow(GetDlgItem(target,1),terminal&&!monitor_path.empty());
         if(terminal && IsWindowVisible(target) && !IsIconic(target) && !SetForegroundWindow(target)) {
             FLASHWINFO flash{sizeof(flash),target,FLASHW_TRAY,3,0};FlashWindowEx(&flash);
         }
@@ -185,7 +236,13 @@ LRESULT CALLBACK procedure(HWND target,UINT message,WPARAM key,LPARAM data) {
         SetTextColor(reinterpret_cast<HDC>(key),RGB(236,237,224));SetBkColor(reinterpret_cast<HDC>(key),RGB(38,42,39));
         return reinterpret_cast<LRESULT>(background);
     case WM_COMMAND:
-        if(LOWORD(key)==1 && !monitor_path.empty()) ShellExecuteW(target,L"open",monitor_path.c_str(),nullptr,nullptr,SW_SHOWNORMAL);
+        if(LOWORD(key)==1) {
+            fs::path selected;{std::lock_guard lock(mutex);selected=monitor_path;}
+            if(!selected.empty() && reinterpret_cast<INT_PTR>(ShellExecuteW(target,L"open",selected.c_str(),nullptr,nullptr,SW_SHOWNORMAL))<=32) {
+                {std::lock_guard lock(mutex);description+="\nmonitor-launch-failed";}
+                PostMessageW(target,WM_APP,0,0);
+            }
+        }
         return 0;
     case WM_CLOSE: {std::lock_guard lock(mutex);if(terminal) DestroyWindow(target);else ShowWindow(target,SW_MINIMIZE);return 0;}
     case WM_DESTROY: PostQuitMessage(0);return 0;

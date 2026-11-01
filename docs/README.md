@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.74](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.74).
-It contains Core **2.0.5-dev.13** and Observer/CLI/MCP/Monitor **2.0.5-dev.74**.
+The current published preview is [dev.77](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77).
+It contains Core **2.0.5-dev.13** and Observer/CLI/MCP/Monitor **2.0.5-dev.77**.
 Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.

@@ -82,7 +82,7 @@ def windows_kit(directory):
     receipt = dict(schema_version='shin.windows-qualification.v1', version=VERSION, core_version='2.0.5-dev.3',
                    render_scope='headless',
                    source_sha=SHA, run_id=123, attempt=1, assets=assets,
-                   checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime'])
+                   checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime', 'installed-update-preflight'])
     (directory / 'windows-qualification.json').write_text(json.dumps(receipt))
 
 
@@ -202,7 +202,8 @@ class Publication(unittest.TestCase):
 
     def test_windows_receipt_binds_packages_source_attempt_and_runtime(self):
         changes = [lambda a, r: r.update(attempt=2), lambda a, r: r.update(source_sha='c'*40),
-                   lambda a, r: r.update(core_version='wrong'), lambda a, r: r['checks'].pop(),
+                   lambda a, r: r.update(core_version='wrong'), lambda a, r: r['checks'].remove('unelevated-runtime'),
+                   lambda a, r: r['checks'].remove('installed-update-preflight'),
                    lambda a, r: r.update(render_scope='unverified'),
                    lambda a, r: r.update(assets={}),
                    lambda a, r: (a / f'shin-desktop-{VERSION}-windows-AMD64.msi').write_bytes(b'changed')]

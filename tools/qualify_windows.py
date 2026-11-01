@@ -103,9 +103,24 @@ def package(archive, msi, output):
     return manifest
 
 
+def qualification_receipt(output, identity):
+    metadata = json.loads((output / 'package.json').read_text())
+    runtime = json.loads((output / 'runtime.json').read_text())
+    installed = json.loads((output / 'installed-preflight.json').read_text())
+    assert all(metadata.get(k) == v and runtime.get(k) == v and installed.get(k) == v for k, v in identity.items())
+    assert runtime.get('unelevated') is True
+    assert runtime.get('render_scope') == 'headless'
+    assert installed.get('unelevated') is True and installed.get('msi_root_verified') is True and installed.get('helper_staged') is True
+    assert installed.get('version') == metadata['version'] and installed.get('core_version') == metadata['core_version']
+    assert metadata['version'] == (ROOT / 'observer/VERSION').read_text().strip()
+    assert metadata['core_version'] == (ROOT / 'VERSION').read_text().strip()
+    return dict(schema_version='shin.windows-qualification.v1', **metadata, render_scope='headless',
+                checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime', 'installed-update-preflight'])
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--phase', choices=('probe', 'features', 'package', 'runtime', 'receipt'), required=True)
+    parser.add_argument('--phase', choices=('probe', 'features', 'package', 'runtime', 'installed-preflight', 'receipt'), required=True)
     parser.add_argument('--archive', type=Path)
     parser.add_argument('--msi', type=Path)
     parser.add_argument('--feature-test', type=Path)
@@ -120,7 +135,7 @@ def main():
     assert args.run_id > 0 and args.attempt > 0
     output = args.output.resolve()
     output.mkdir(parents=True, exist_ok=True)
-    if args.phase in ('probe', 'features', 'runtime'):
+    if args.phase in ('probe', 'features', 'runtime', 'installed-preflight'):
         elevated = bool(ctypes.windll.shell32.IsUserAnAdmin())
         (output / (args.phase + '-started.json')).write_text(json.dumps({'elevated': elevated}) + '\n')
         assert not elevated, 'Runtime qualification must be unelevated'
@@ -155,16 +170,32 @@ def main():
                             str(archive), '--headless-render'],
                            env=environment, stdout=log, stderr=subprocess.STDOUT, check=True, timeout=240)
         proof = dict(identity, unelevated=True, render_scope='headless')
+    elif args.phase == 'installed-preflight':
+        import winreg
+        with winreg.OpenKey(winreg.HKEY_LOCAL_MACHINE, r'Software\Shin\DesktopPreview',
+                            access=winreg.KEY_READ | winreg.KEY_WOW64_64KEY) as key:
+            prefix = Path(winreg.QueryValueEx(key, 'InstallRoot')[0]).resolve()
+        with user_environment() as environment:
+            stage = Path(environment['TEMP']) / 'update preflight'
+            subprocess.run([str(prefix / 'bin/shin-tray.exe'), '--update-preflight-test', str(stage)],
+                           env=environment, check=True, timeout=45)
+            report = json.loads((stage / 'state.json').read_text(encoding='utf-8'))
+            assert report.get('ok') is True and report.get('msi_root_verified') is True and report.get('helper_staged') is True, report
+            with zipfile.ZipFile(archive) as kit:
+                manifest = json.loads(kit.read(archive.stem + '/shin-kit.json'))
+                assert report['version'] == manifest['version']
+                payload = {p.name: p for p in stage.iterdir() if p.suffix in ('.exe', '.dll')}
+                expected = {'updater.exe': 'bin/shin-windows-updater.exe'}
+                expected.update({Path(row['path']).name: row['path'] for row in manifest['files']
+                                 if row['path'].startswith('bin/') and row['path'].endswith('.dll')})
+                assert set(payload) == set(expected) and report['libraries'] == len(expected) - 1
+                for name, relative in expected.items():
+                    assert payload[name].read_bytes() == kit.read(archive.stem + '/' + relative), relative
+        proof = dict(identity, unelevated=True, msi_root_verified=True, helper_staged=True,
+                     version=manifest['version'], core_version=manifest['core_version'])
     else:
-        metadata = json.loads((output / 'package.json').read_text())
-        runtime = json.loads((output / 'runtime.json').read_text())
-        assert all(metadata.get(k) == v and runtime.get(k) == v for k, v in identity.items())
-        assert runtime.get('unelevated') is True
-        assert runtime.get('render_scope') == 'headless'
-        assert metadata['version'] == (ROOT / 'observer/VERSION').read_text().strip()
-        assert metadata['core_version'] == (ROOT / 'VERSION').read_text().strip()
-        receipt = dict(schema_version='shin.windows-qualification.v1', **metadata, render_scope='headless',
-                       checks=['msi-metadata', 'msi-payload', 'archive-inventory', 'unelevated-runtime'])
+        receipt = qualification_receipt(output, identity)
+        assert assets == hashes(archive, msi), 'Package changed during qualification'
         (archive.parent / 'windows-qualification.json').write_text(json.dumps(receipt, indent=2) + '\n')
         print('Windows ZIP/MSI qualified; installed interactive-session lifecycle is a separate gate.')
         return

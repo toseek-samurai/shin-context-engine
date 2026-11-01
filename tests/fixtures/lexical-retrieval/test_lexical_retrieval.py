@@ -630,6 +630,28 @@ class LexicalRetrievalTests(unittest.TestCase):
         self.assertFalse(result["query_diagnostics"]["fallback_used"])
         self.assertEqual([row["path"] for row in result["ranked_paths"]], ["docs/manual.md"])
 
+    def test_incidental_heading_supplement_requires_a_better_leading_owner(self):
+        query = "alpha beta gamma delta epsilon zeta eta"
+        self.document("manual.md", "# Alpha reference\n\n" + "ordinary filler " * 100 + query + ".\n")
+        for index in range(6):
+            self.document(f"related-{index}.md", "# Related reference\n\n" +
+                          "ordinary filler " * 100 + "beta gamma delta epsilon.\n")
+        self.invoke("build")
+        for limit in (1, 4, 8):
+            result = self.invoke("brief", query, "--limit", str(limit), "--per-doc", "1")
+            self.assertFalse(result["query_diagnostics"]["fallback_used"])
+            self.assertEqual([row["path"] for row in result["ranked_paths"]], ["docs/manual.md"])
+        request = {
+            "schema_version": "shin.task-request.v1", "request_id": "focused-pack",
+            "task": {"objective": "Read the current owner.", "must": [{"id": "owner", "query": query}]},
+            "budget": {"max_evidence_bytes": 16000, "max_records": 8,
+                       "per_query_records": 8, "per_document_records": 1},
+        }
+        request_path = self.base / "request.json"
+        request_path.write_text(json.dumps(request))
+        packed = self.invoke("pack", "--input", str(request_path))
+        self.assertEqual([row["path"] for row in packed["verification_paths"]], ["docs/manual.md"])
+
     def test_sparse_prose_expansion_rejects_high_score_minority_matches(self):
         query = "alpha beta gamma delta epsilon zeta eta"
         self.document("broad.md", "# Overview\n\n" + query + ".\n")

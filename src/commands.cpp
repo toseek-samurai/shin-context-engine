@@ -24,6 +24,8 @@ static void emit_retrieval_document(std::ostream& out, const Json& document) {
 
 static BriefExecution make_brief_execution(const QueryRequest& request,
                                             BriefResult retrieval);
+static const std::string& brief_evidence_path(const BriefSelection& selection,
+                                            const BriefEvidenceRef& reference);
 
 struct BriefCommandRequest {
     BriefProjection projection = BriefProjection::full;
@@ -724,9 +726,12 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
     result.identifier_probe_rows = identifier_probe_rows;
     const bool has_results = brief_returned_count(result, request) > 0;
     const int groups = strict_required_group_matches(request);
+    const bool indexed_body_only = has_results && groups >= 4 &&
+        groups < kCompoundQueryCoverageThreshold &&
+        brief_has_only_indexed_body_matches(result, request);
     if (has_results && groups >= 4 && groups < kCompoundQueryCoverageThreshold &&
         brief_distinct_path_count(result) < 2 &&
-        (brief_has_only_indexed_body_matches(result, request) ||
+        (indexed_body_only ||
          brief_has_only_diffuse_deep_body_matches(result, request))) {
         // Supplement an existing full match with majority coverage, not two-word noise.
         const int required = std::max(relaxed_required_group_matches(request), (groups + 1) / 2);
@@ -740,7 +745,16 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
             candidates.discovered_row_count <= kMaxIndexedCandidateRows) {
             auto expanded = SHIN_STAGE_AWAIT SHIN_STAGE_COLLECT(options, request, candidates, required, true);
             expanded.identifier_probe_rows = identifier_probe_rows;
-            SHIN_STAGE_RETURN expanded;
+            if (indexed_body_only) SHIN_STAGE_RETURN expanded;
+            const auto before = select_brief_evidence(result, 1, 1, request.allowed_evidence_types);
+            const auto after = select_brief_evidence(expanded, 1, 1, request.allowed_evidence_types);
+            // Incidental primary words justify replacing a missed leading owner,
+            // not padding an already leading full match with partial context.
+            if (!before.ordered.empty() && !after.ordered.empty() &&
+                brief_evidence_path(before, before.ordered.front()) !=
+                    brief_evidence_path(after, after.ordered.front())) {
+                SHIN_STAGE_RETURN expanded;
+            }
         }
     }
     if ((has_results && !should_expand_query_coverage(request, brief_distinct_path_count(result))) ||

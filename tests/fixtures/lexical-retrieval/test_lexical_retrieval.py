@@ -568,6 +568,68 @@ class LexicalRetrievalTests(unittest.TestCase):
             self.assertEqual(row["matched_group_indices"], [0, 1, 2, 3])
         self.assertEqual(admitted, [2, 2, 2])
 
+    def test_incidental_heading_or_filename_does_not_focus_a_deep_body_match(self):
+        query = "alpha beta gamma delta epsilon zeta"
+        for name, heading in (("manual.md", "Alpha reference"), ("alpha-manual.md", "Overview")):
+            with self.subTest(name=name):
+                for path in (self.root / "docs").iterdir():
+                    path.unlink()
+                self.document(name, "# " + heading + "\n\n" + "ordinary filler " * 100 + query + ".\n")
+                self.document("focused.md", "# Alpha beta gamma delta epsilon\n\nPrimary decision.\n")
+                self.document("minority.md", "# Alpha beta\n\nUnrelated material.\n")
+                self.invoke("build")
+                for limit in (1, 4, 8):
+                    result = self.invoke("brief", query, "--limit", str(limit), "--per-doc", "1")
+                    self.assertEqual(result["ranked_paths"][0]["path"], "docs/focused.md")
+                    self.assertNotIn("docs/minority.md", [row["path"] for row in result["ranked_paths"]])
+                    self.assertLessEqual(result["evidence_budget"]["returned_records"], limit)
+                    focused = next(row for row in result["sections"] if row["path"] == "docs/focused.md")
+                    self.assertEqual(focused["matched_group_indices"], list(range(5)))
+                    if limit == 1:
+                        self.assertNotIn("docs/focused.md",
+                                         result["query_coverage"]["groups"][5]["returned_evidence_paths"])
+
+    def test_deep_body_supplement_restores_eval_variants_and_pack(self):
+        query = "alpha beta gamma delta epsilon zeta"
+        self.document("manual.md", "# Alpha reference\n\n" + "ordinary filler " * 100 + query + ".\n")
+        self.document("focused.md", "# Alpha beta gamma delta epsilon\n\nPrimary decision.\n")
+        profile_path = self.profiles / "lexical.json"
+        profile = json.loads(profile_path.read_text())
+        profile["evalCases"] = [{
+            "id": "primary-decision", "query": "focused.md", "queryVariants": [query],
+            "mustPaths": ["docs/focused.md"], "mustTopPaths": ["docs/focused.md"],
+            "mustTopN": 2, "limit": 4, "perDocLimit": 1,
+        }]
+        request = {
+            "schema_version": "shin.task-request.v1", "request_id": "deep-body-evidence",
+            "task": {"objective": "Read the primary decision.", "must": [{"id": "decision", "query": query}]},
+            "budget": {"max_evidence_bytes": 6000, "max_records": 4,
+                       "per_query_records": 4, "per_document_records": 1},
+        }
+        profile["packEvalCases"] = [{
+            "id": "primary-decision-pack", "expectedComplete": True,
+            "mustPaths": ["docs/focused.md"], "request": request,
+        }]
+        profile_path.write_text(json.dumps(profile))
+        self.invoke("build")
+        self.assertTrue(self.invoke("eval", "--strict")["ok"])
+        self.assertTrue(self.invoke("pack-eval", "--strict")["ok"])
+        request_path = self.base / "request.json"
+        request_path.write_text(json.dumps(request))
+        packed = self.invoke("pack", "--input", str(request_path))
+        self.assertIn("docs/focused.md", [row["path"] for row in packed["verification_paths"]])
+        self.assertLessEqual(packed["budget"]["returned_records"], 4)
+        self.assertLessEqual(packed["budget"]["evidence_bytes"], 6000)
+
+    def test_deep_body_match_with_a_focused_heading_keeps_strict_retrieval(self):
+        query = "alpha beta gamma delta epsilon zeta"
+        self.document("manual.md", "# Alpha beta gamma\n\n" + "ordinary filler " * 100 + query + ".\n")
+        self.document("partial.md", "# Alpha beta gamma delta epsilon\n\nPartial evidence.\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--limit", "8", "--per-doc", "1")
+        self.assertFalse(result["query_diagnostics"]["fallback_used"])
+        self.assertEqual([row["path"] for row in result["ranked_paths"]], ["docs/manual.md"])
+
     def test_sparse_prose_expansion_rejects_high_score_minority_matches(self):
         query = "alpha beta gamma delta epsilon zeta eta"
         self.document("broad.md", "# Overview\n\n" + query + ".\n")

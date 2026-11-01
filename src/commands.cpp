@@ -606,6 +606,27 @@ static bool brief_has_only_diffuse_body_matches(const BriefResult& result,
     return true;
 }
 
+static bool brief_has_only_diffuse_deep_body_matches(const BriefResult& result,
+                                                    const QueryRequest& request) {
+    if (!brief_has_only_diffuse_body_matches(result, request)) return false;
+    for (const auto& [path, hits] : result.section_hits_by_doc) {
+        (void)path;
+        for (const auto& hit : hits) {
+            // An incidental heading/path word must not focus a full-text hit.
+            // Keep compact full matches and majority primary-field matches focused.
+            auto compact = hit.section;
+            compact.indexed_text.clear();
+            if (score_section_match(compact, request.prepared_term_groups,
+                                    strict_required_group_matches(request)).total > 0) return false;
+            // Status, authority and record-type qualifiers are explicit intent,
+            // even when a higher-weight body match wins their score diagnostics.
+            compact.heading.clear();
+            if (section_has_non_body_query_match(compact, request.prepared_term_groups, false)) return false;
+        }
+    }
+    return true;
+}
+
 #ifdef SHIN_EXPERIMENT_EVAL_BATCH
 #define SHIN_PROBE_ROUTE(route, ...) experiment::probe_route(experiment::ProbeRoute::route, [&] { return __VA_ARGS__; })
 #else
@@ -704,13 +725,15 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
     const bool has_results = brief_returned_count(result, request) > 0;
     const int groups = strict_required_group_matches(request);
     if (has_results && groups >= 4 && groups < kCompoundQueryCoverageThreshold &&
-        brief_distinct_path_count(result) < 2 && brief_has_only_indexed_body_matches(result, request)) {
+        brief_distinct_path_count(result) < 2 &&
+        (brief_has_only_indexed_body_matches(result, request) ||
+         brief_has_only_diffuse_deep_body_matches(result, request))) {
         // Supplement an existing full match with majority coverage, not two-word noise.
         const int required = std::max(relaxed_required_group_matches(request), (groups + 1) / 2);
         const auto candidates = load_generated_query_candidates(
             options, request.prepared_term_groups, required);
         result.candidate_rows = std::max(result.candidate_rows, candidates.discovered_row_count);
-        // A prose-only match in one document must not suppress other primary evidence.
+        // A diffuse body match in one document must not suppress other primary evidence.
         // With no facts, the section map retains all matching paths before global selection.
         // This supplemental pass is indexed and bounded, never a generated-row scan.
         if (candidates.from_terms_index && candidates.term_index_coverage_complete &&

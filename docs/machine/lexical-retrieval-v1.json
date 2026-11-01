@@ -25,6 +25,11 @@
     "scope": "Ordinary generated-index and source-scan Brief, including document-planner evidence; explicit owner and first-term scope routes keep their existing policies.",
     "boundary": "Explicit lifecycle/authority penalties prevent this priority. Field scores, candidate admission, row provenance, type diversity, per-document limits and output budgets remain unchanged. Additional partial evidence remains eligible; a full match is lexical support, not proof of a complete answer."
   },
+  "sparseBriefSupplement": {
+    "activation": "For ordinary indexed Brief queries with four to seven term groups and one strict document, bounded majority-coverage supplementation also applies when the full match depends on indexed_text beyond the compact preview and fewer than half the query groups match primary non-body fields. An incidental heading or filename word alone does not focus that full-text match.",
+    "boundary": "Compact full matches with non-body support, majority primary-field matches, explicit status/authority/record-type qualifiers, independent facts, multiple strict owners and explicit owner/identifier routes keep their existing behavior. Candidate completeness, the existing indexed-row cap, scoring, provenance, per-document and output limits remain unchanged. Supplementary rows retain their actual matched groups, without borrowing missing terms.",
+    "verification": "tests/fixtures/lexical-retrieval/test_lexical_retrieval.py covers heading/filename distractors, focused and minority controls, strict eval variants, Pack evidence and output bounds."
+  },
   "jsonKeyPolicy": {
     "scanner": "JsonKeySpan is an O(n), line-oriented lexical-balanced scanner. A key span includes its own scalar value line or balanced container subtree and ends on the matching close line; subsequent sibling lines are not appended.",
     "strings": "Quoted braces and escaped quotes are ignored while balancing delimiters, so braces inside JSON strings cannot close a container early.",

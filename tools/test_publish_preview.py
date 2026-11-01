@@ -425,6 +425,22 @@ class Publication(unittest.TestCase):
         self.assertEqual(sum(c[:3] == ('gh','release','upload') for c in github.calls), 1)
         self.assertFalse(any(c[:3] == ('gh','release','edit') for c in github.calls))
 
+    def test_failed_creation_reports_api_error_without_retry_or_upload(self):
+        github = GitHubFixture()
+        original = github.command
+        def denied(*args):
+            if args[:3] == ('gh', 'release', 'create'):
+                github.calls.append(args)
+                raise subprocess.CalledProcessError(1, args,
+                    stderr='HTTP 403: Resource not accessible by integration')
+            return original(*args)
+        with patch.object(publisher, 'command', denied), patch.object(publisher.subprocess, 'run', github.receipt):
+            with self.assertRaisesRegex(ValueError, 'Draft creation.*HTTP 403: Resource not accessible'):
+                publisher.publish(REPO, SHA, TAG, 123, 1)
+        self.assertIsNone(github.state)
+        self.assertEqual(sum(c[:3] == ('gh', 'release', 'create') for c in github.calls), 1)
+        self.assertFalse(any(c[:3] == ('gh', 'release', 'upload') for c in github.calls))
+
     def test_changed_existing_release_is_never_overwritten(self):
         github = GitHubFixture()
         github.state = dict(isDraft=True, isPrerelease=True, targetCommitish=SHA,

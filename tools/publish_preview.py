@@ -200,6 +200,19 @@ def command(*args):
     return result.stdout
 
 
+def mutation(*args):
+    """Attempt once; callers must confirm the outcome with a separate read."""
+    try:
+        command(*args)
+    except subprocess.SubprocessError as error:
+        detail = getattr(error, 'stderr', None) or str(error)
+        if isinstance(detail, bytes):
+            detail = detail.decode('utf-8', errors='replace')
+        # Preserve CLI/API failures without terminal escapes or unbounded logs.
+        return ''.join(c for c in detail[-4096:] if c.isprintable() or c == '\n').strip()
+    return ''
+
+
 def platform_assets(platform, version):
     if platform == 'macos':
         name = f'shin-local-{version}-macos-arm64.zip'
@@ -366,28 +379,23 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
             body = directory / 'notes.md'
             body.write_text(notes)
             gate(platform, run_id, attempt)
-            try:
-                command('gh', 'release', 'create', tag, '--repo', repo, '--target', sha, '--draft', '--prerelease',
-                        '--title', f'Shin {version} preview', '--notes-file', str(body), '--verify-tag')
-            except subprocess.SubprocessError:
-                pass  # Read back uncertain creation; never blindly create again.
+            failure = mutation('gh', 'release', 'create', tag, '--repo', repo, '--target', sha, '--draft', '--prerelease',
+                               '--title', f'Shin {version} preview', '--notes-file', str(body), '--verify-tag')
             current = receipt()
-            require(current is not None and current['isDraft'] and current['isPrerelease'], 'Draft creation did not confirm completion')
+            require(current is not None and current['isDraft'] and current['isPrerelease'],
+                    f'Draft creation did not confirm completion: {failure or "CLI returned success"}')
         release_matches(current, sha, allowed, complete=False)
         uploaded = {a['name'] for a in current['assets']}
         for name in upload_order(set(own), platform, version):
             if name in uploaded:
                 continue
             gate(platform, run_id, attempt)
-            try:
-                command('gh', 'release', 'upload', tag, '--repo', repo, str(destination / name))
-            except subprocess.SubprocessError:
-                pass
+            failure = mutation('gh', 'release', 'upload', tag, '--repo', repo, str(destination / name))
             current = receipt()
             require(current is not None and current['isPrerelease'], 'Release disappeared during upload')
             release_matches(current, sha, allowed, complete=False)
             uploaded = {a['name'] for a in current['assets']}
-            require(name in uploaded, 'Upload did not confirm completion')
+            require(name in uploaded, f'Upload did not confirm completion: {failure or "CLI returned success"}')
         gate(platform, run_id, attempt)
         current = receipt()
         release_matches(current, sha, allowed, complete=False)
@@ -403,13 +411,11 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
         if not current['isDraft'] and current.get('body') == notes:
             return current['url']
         gate(platform, run_id, attempt)
-        try:
-            command('gh', 'release', 'edit', tag, '--repo', repo, '--notes-file', str(body), '--draft=false', '--prerelease')
-        except subprocess.SubprocessError:
-            pass
+        failure = mutation('gh', 'release', 'edit', tag, '--repo', repo, '--notes-file', str(body), '--draft=false', '--prerelease')
         current = receipt()
-        require(current is not None and not current['isDraft'] and current['isPrerelease'], 'Publication did not confirm completion')
-        require(current.get('body') == notes, 'Release notes update did not confirm completion')
+        require(current is not None and not current['isDraft'] and current['isPrerelease'],
+                f'Publication did not confirm completion: {failure or "CLI returned success"}')
+        require(current.get('body') == notes, f'Release notes update did not confirm completion: {failure or "CLI returned success"}')
         release_matches(current, sha, allowed, complete=False)
         require(set(own) <= {a['name'] for a in current['assets']}, 'Published platform assets are incomplete')
         return current['url']

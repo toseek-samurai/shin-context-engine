@@ -125,17 +125,21 @@ stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-The desktop panel groups tasks under **Overview**, **Projects**, **Activity**
-and **Settings**.
+Current development source gives the desktop panel a Light Sand interface with
+**Overview**, **Projects**, **History** and **Settings**. This redesign is not yet
+included in a published preview; published Monitor previews retain the dark Sand
+appearance and **Activity** as their third section.
 Overview summarizes current project readiness and leads to a project needing
-review. Project explanations expose a labeled next action, with search-check
-details inside the panel and technical reports available separately. Activity
-groups request timing, agent token history and the session journal; agent token
-totals are distinct from calls to Shin. Timing explicitly selects this service
+review. Projects groups folder and agent connections with their current context
+status. Project explanations expose a labeled next action, with search-check
+details inside the panel and technical reports disclosed separately. History
+opens with the session journal; request timing and agent token history remain
+available as secondary views. Agent token totals are distinct from calls to Shin. Timing explicitly selects this service
 run or retained history, independently of the overview chart's period. Settings
-provides language, connection, storage and update entry points. Agent setup keeps
-custom configuration paths under **Advanced agent settings**. The TUI uses the
-same four sections, with platform-specific setup and update capabilities.
+provides language, storage and update entry points. Controls use readable labels
+and compact buttons; status labels remain passive. Agent setup keeps custom
+configuration paths under **Advanced agent settings**. The TUI retains its
+existing navigation and appearance, with platform-specific setup and update capabilities.
 
 The installed native-kit Monitor registers itself with macOS Login Items
 on its first launch. Use **Launch Monitor at login** in its app or
@@ -146,10 +150,10 @@ register themselves. Login launches stay in the background; an explicit open
 shows the dashboard. Uninstall removes the registration owned by that bundle.
 The background service has a separate login-startup setting.
 
-Add more projects with the folder picker or
+Add more projects from **Projects** with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
 
-For the Sand terminal dashboard with line charts, run `shin-ce stats`.
+For the dark Sand terminal dashboard with line charts, run `shin-ce stats`.
 The TUI groups its screens under Overview, Projects, Activity and
 Settings (`1`–`4`, Tab / Shift-Tab). Left/Right or `[` / `]` switches pages within
 Activity and Settings. Activity includes request timing, agents and the session
@@ -159,8 +163,10 @@ installation, `y` confirms and `n` or Esc cancels. Its progress and saved result
 use the same native updater as Monitor. Automatic release download is macOS-only.
 Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
-service. Model counters are collected automatically
-for enrolled projects and shown by default in both Monitor and the TUI. The first
+service. Model counters are collected automatically for enrolled projects.
+The desktop redesign shows them under **History → Agents**; the TUI and published
+Monitor previews keep **Activity → Agents**. Both use the automatic snapshot by
+default. The first
 pass starts in the background; enrollment changes are checked within five seconds,
 and counters refresh every five minutes. Missing or unreadable client history is
 reported as incomplete, not as proof of zero usage. Storage inspection happens on demand;
@@ -246,7 +252,7 @@ recollects the group without summing cumulative counters twice. The collector re
 its existing bounds, including 24 usage groups; exhausted capacity is reported and
 requires review rather than silently deleting old groups.
 
-An explicit `--usage-file` or Monitor's **Settings → Choose agent history…** selection overrides
+An explicit `--usage-file` or Monitor's agent-history source chooser in **Settings** overrides
 the automatic snapshot. For an existing custom collector, stop it before migrating
 and preserve its files. Before the first automatic collection, import its group
 names, root aliases and source locations once:
@@ -303,8 +309,10 @@ recorded data home and service preference.
 
 ## Update an existing kit
 
-Monitor displays its installed version beneath the panel title, including while
-offline. An available newer version appears separately in the update offer.
+Monitor always displays its installed version, including while offline. The
+Light Sand development UI keeps it in the fixed footer; published previews show
+it beneath the panel title. An available newer version appears separately in
+the update offer.
 
 Download and verify the new complete kit, then extract it outside the installed
 folder. Close Monitor and run the **new kit's** executable:
@@ -591,6 +599,11 @@ still-open result window to the foreground; a closed or minimized window stays
 dismissed. A manual request during a background check
 shows that check's result instead of discarding the request. After selecting
 **Download and install**, the window shows the helper handoff before Monitor exits.
+
+The Light Sand redesign in current development source gives these update
+windows the same light surfaces, Sand frame and readable, compact actions as the
+dashboard. It retains the independent Updater handoff, saved results and recovery
+checks described below.
 
 A preview installation receives newer complete preview or stable kits; a stable
 installation receives stable releases only. Drafts, incomplete uploads, releases

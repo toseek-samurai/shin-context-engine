@@ -45,21 +45,29 @@ optional model usage. The macOS kit includes a menu bar app; the Windows preview
 includes its native desktop host. On macOS and Linux, `shin-ce stats` opens the
 Sand terminal monitor with the same project states and timing calculations.
 
+The desktop screenshots below show the **Light Sand redesign in current
+development source**. This design is not yet included in a published preview.
+
 <p>
-  <img src="docs/images/monitor-overview.png" width="400" alt="Overview explains project readiness, offers a review action and keeps the memory line graph">
-  <img src="docs/images/monitor-projects.png" width="400" alt="Projects distinguishes ready, preparing, partial, blocked and on-demand states">
+  <img src="docs/images/monitor-overview.png" width="400" alt="Light Sand Overview with project availability, a labeled warning action and a line graph">
+  <img src="docs/images/monitor-projects.png" width="400" alt="Light Sand Projects distinguishes available, preparing, partial and blocked context with readable labels">
 </p>
 <p>
-  <img src="docs/images/monitor-timing.png" width="400" alt="Activity separates search time from total service time and reader preparation">
-  <img src="docs/images/monitor-settings.png" width="400" alt="Settings groups language, connections, storage and updates under labeled actions">
+  <img src="docs/images/monitor-timing.png" width="400" alt="History timing details separate search time from total service time and reader preparation">
+  <img src="docs/images/monitor-settings.png" width="400" alt="Light Sand Settings groups language, storage and updates with compact labeled controls">
 </p>
 
-The four-section Sand interface shown here is included in preview dev.66 and
-later. These macOS Monitor renders use synthetic sample data. Windows shares the
-dashboard, but its setup and update controls differ; see the
+Monitor uses **Overview**, **Projects**, **History** and **Settings**. Overview
+shows availability and recent activity; Projects connects folders and coding
+agents. History opens with recorded calls, with timing and optional model usage
+available separately. Technical reports stay in expandable details rather than
+competing with everyday actions.
+
+These native macOS Monitor renders use synthetic sample data. Windows shares the
+Light Sand dashboard, but its setup and update controls differ; see the
 [capability matrix](docs/README.md#capabilities-by-platform).
-Monitor supports
-English and Russian; these examples use English. Names, counts, and timings above are examples, not benchmark results.
+Monitor supports English and Russian; these examples use English. Names, counts,
+and timings above are examples, not benchmark results.
 [Screenshot sources and reproduction](docs/images/README.md).
 
 - **See freshness and failures.** Monitor distinguishes current, preparing,
@@ -69,29 +77,32 @@ English and Russian; these examples use English. Names, counts, and timings abov
 - **Keep state outside your repository.** The native kit stores indexes and
   history in a separate private data directory. Adding a project does not add
   configuration files to its source tree.
-- **Use the same local service from UI and CLI.** Desktop and TUI share Overview, Projects, Activity and Settings in preview dev.66
-  and later; timing, agents and the journal live in Activity. Text and JSON status remain available. See the
+- **Use the same local service from UI and CLI.** Desktop and TUI use the same
+  project states and timing calculations. The desktop redesign calls its activity
+  section History; the terminal keeps Activity. Text and JSON status remain available. See the
   [UI-to-CLI map](docs/cli.md#monitor-and-cli).
 
 ## Follow agent sessions
 
-<img src="docs/images/monitor-sessions.png" width="360" alt="Activity Journal displays timestamps, session IDs, vector icons and colored outcomes, with an explicit 48-event display limit">
+<img src="docs/images/monitor-sessions.png" width="360" alt="Light Sand History displays recorded calls, timestamps and colored outcomes, with an explicit 48-event display limit">
 
-**Activity → Journal** shows recent MCP calls and
+In the desktop redesign, **History** opens with recent MCP calls and
 explicit client events, session counters and expandable details. Up to eight
 sessions and six events per session keep the view bounded; this display limit
 does not reduce stored history or analysis totals. The screenshot uses synthetic
-data. See [Sessions and recording boundaries](docs/cli.md#sessions-and-optional-recovery-notes-dev45)
+data. Published previews and the terminal keep this journal under
+**Activity → Journal**. See [Sessions and recording boundaries](docs/cli.md#sessions-and-optional-recovery-notes-dev45)
 and the [Russian screenshot](docs/images/monitor-sessions-ru.png).
 
 ## Also in your terminal
 
 <img src="docs/images/tui-overview.svg" width="864" alt="Shin Sand TUI with a memory line graph, metrics and five example projects showing distinct search and coverage states">
 
-`shin-ce stats` uses the same Sand palette as Monitor. This native FTXUI render
-uses synthetic example data; fonts and color support follow your terminal.
+`shin-ce stats` keeps its dark Sand palette. This native FTXUI render uses
+synthetic example data; fonts and color support follow your terminal.
 Sand TUI is included in preview dev.39 and later. The four-section layout shown
-here is included in preview dev.66 and later.
+here is included in preview dev.66 and later. The desktop Light Sand redesign
+does not change the terminal's appearance or keyboard controls.
 
 <p>
   <img src="docs/images/tui-project.svg" width="428" alt="Terminal project details explain partial coverage and name the excluded example file">

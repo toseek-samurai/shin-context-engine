@@ -75,6 +75,7 @@ private:
     std::jthread worker;
 };
 std::unique_ptr<WindowsReleaseCheck> release_check;
+bool windows_update_details_open = false;
 
 void open_updates(bool check) {
     updates_page = true; management_page = false;
@@ -85,7 +86,10 @@ void open_updates(bool check) {
 
 bool update_button(const char* label, int id, bool enabled = true) {
     ImGui::PushID(id); ImGui::BeginDisabled(!enabled);
-    const bool pressed = ImGui::Button(label, {ImGui::GetContentRegionAvail().x, 28});
+    const float available = std::max(1.0f, ImGui::GetContentRegionAvail().x);
+    const float width = std::min(available, ImGui::CalcTextSize(label).x + 24);
+    const float height = ImGui::GetIO().DisplaySize.y < 600 ? 30.0f : 36.0f;
+    const bool pressed = ImGui::Button(label, {width, height});
     if (ImGui::IsItemVisible()) {
         const auto lo = ImGui::GetItemRectMin(), hi = ImGui::GetItemRectMax();
         const auto clip = ImGui::GetWindowDrawList()->GetClipRectMax();
@@ -247,26 +251,36 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
     ImGui::SetNextWindowPos({0, 0}); ImGui::SetNextWindowSize(ImGui::GetIO().DisplaySize);
     ImGui::Begin("Shin updates", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoMove |
         ImGuiWindowFlags_NoSavedSettings | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
-    ImGui::PushFont(nullptr,14);
+    const auto size = ImGui::GetIO().DisplaySize;
+    const bool compact_view = size.y < 600 || size.x < 400;
+    ImGui::PushFont(nullptr, compact_view ? 14.0f : 17.0f);
+    ImGui::GetWindowDrawList()->AddRect({.5f, .5f}, {size.x - .5f, size.y - .5f}, ImGui::GetColorU32(sand), 9);
     const auto origin = ImGui::GetCursorScreenPos();
     draw_brand({origin.x, origin.y + 3}, 32);
     ImGui::Dummy({32, 40}); ImGui::SameLine(); ImGui::BeginGroup();
-    ImGui::PushFont(nullptr, ImGui::GetIO().DisplaySize.x < 400 ? 17.0f : 22.0f);
+    ImGui::PushFont(nullptr, size.x < 400 ? 17.0f : 24.0f);
     ImGui::TextUnformatted(tr("Shin updates")); ImGui::PopFont();
-    ImGui::PushFont(nullptr, 11);
+    ImGui::PushFont(nullptr, 13);
     ImGui::TextColored(muted, "%s · v%s", tr("Current version"), SHIN_OBSERVER_VERSION);
     ImGui::PopFont(); ImGui::EndGroup();
     ImGui::Spacing(); ImGui::Separator(); ImGui::Spacing();
     bool automatic=settings.value("automatic_update_checks",true);
     if(ImGui::Checkbox(tr("Automatically check for updates"),&automatic) && !test_mode) { settings["automatic_update_checks"]=automatic;save_settings(); }
-    const float footer = ImGui::GetWindowHeight() - 42;
-    ImGui::BeginChild("update-content", {0, std::max(1.0f, footer - ImGui::GetCursorPosY() - 6)});
+    const float back_width = ImGui::CalcTextSize(tr("Back to Monitor")).x + 24;
+    const float check_width = ImGui::CalcTextSize(tr("Check again")).x + 24;
+    const bool wrap_footer = back_width + check_width + ImGui::GetStyle().ItemSpacing.x > ImGui::GetContentRegionAvail().x;
+    const float button_height = size.y < 600 ? 30.0f : 36.0f;
+    const float footer_height = wrap_footer ? 2 * button_height + ImGui::GetStyle().ItemSpacing.y + 2 : button_height + 2;
+    const float footer = ImGui::GetWindowHeight() - ImGui::GetStyle().WindowPadding.y - footer_height;
+    ImGui::PushStyleColor(ImGuiCol_ChildBg, raised);
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 9);
+    ImGui::BeginChild("update-content", {0, std::max(1.0f, footer - ImGui::GetCursorPosY() - 9)}, ImGuiChildFlags_Borders);
     const bool busy = state.state == WindowsUpdateState::checking;
     const bool offer = state.state == WindowsUpdateState::offer;
     const char* title = busy ? tr("Checking for updates…") : offer ? tr("A Shin update is available") :
         state.state == WindowsUpdateState::current ? tr("Shin is up to date") :
         state.state == WindowsUpdateState::failed ? tr("Could not check for updates") : tr("Check for updates…");
-    ImGui::PushTextWrapPos(); ImGui::TextColored(offer ? sand : ink, "%s", title); ImGui::PopTextWrapPos();
+    ImGui::PushTextWrapPos(); ImGui::TextColored(offer ? blue : ink, "%s", title); ImGui::PopTextWrapPos();
     ImGui::Spacing();
     if(!windows_update_launch_error.empty()) {
         ImGui::TextWrapped("%s",tr("Could not start the update. Monitor is still running."));
@@ -275,18 +289,21 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
             platform_copy(Json{{"command","update-launch"},{"ok",false},{"error_code",windows_update_launch_error}}.dump(2));
     }
     if (offer) {
-        ImGui::TextColored(sand, "v%s  ->  v%s", SHIN_OBSERVER_VERSION, state.offer.at("version").get_ref<const std::string&>().c_str());
+        ImGui::TextColored(blue, "v%s  ->  v%s", SHIN_OBSERVER_VERSION, state.offer.at("version").get_ref<const std::string&>().c_str());
         ImGui::TextWrapped("%s", tr("Shin downloads and verifies the MSI, then opens Windows Installer. Confirm UAC to install. The installer owns progress and rollback; projects, settings and history stay in place."));
         ImGui::Spacing();
-        ImGui::PushStyleColor(ImGuiCol_Button, sand); ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ink);
-        ImGui::PushStyleColor(ImGuiCol_ButtonActive, muted); ImGui::PushStyleColor(ImGuiCol_Text, background);
+        ImGui::PushStyleColor(ImGuiCol_Button, blue);
+        ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{blue.x * .86f, blue.y * .86f, blue.z * .86f, 1});
+        ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{blue.x * .72f, blue.y * .72f, blue.z * .72f, 1});
+        ImGui::PushStyleColor(ImGuiCol_Text, ImVec4{1, 1, 1, 1});
         poll_windows_installation();
         const auto phase=windows_update_result.value("phase","");
         const bool download = update_button(tr("Download and install"), 202,!windows_update_review.valid() && (phase.empty() || phase=="completed" || phase=="acknowledged"));
         ImGui::PopStyleColor(4);
         if (download) run_windows_update_action([&] {install_windows_update(state.offer);});
-        if (update_button(tr("Download checksum"), 203)) open_update_link(state.offer, "checksum_url");
         if (update_button(tr("Release notes"), 204)) open_update_link(state.offer, "release_url");
+        if (update_button(tr("Technical details"), 209)) windows_update_details_open = !windows_update_details_open;
+        if (windows_update_details_open && update_button(tr("Download checksum"), 203)) open_update_link(state.offer, "checksum_url");
     } else {
         ImGui::TextWrapped("%s", busy ? tr("Shin continues to work while the release is checked. You can leave this window open or close it.") :
             state.state == WindowsUpdateState::failed ? tr("GitHub is unavailable or no complete release feed could be read. Shin continues to work offline. Try again later.") :
@@ -326,11 +343,12 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
         if(windows_update_review.valid()) ImGui::TextWrapped("%s",tr("Operation in progress…"));
         if(!windows_update_review_error.empty()) ImGui::TextWrapped("%s",windows_update_review_error.c_str());
     }
-    ImGui::Spacing();
-    if (update_button(tr("Check again"), 205, !busy) && !test_mode) release_check->check();
     ImGui::EndChild();
+    ImGui::PopStyleVar(); ImGui::PopStyleColor();
     ImGui::SetCursorPosY(footer);
     if (update_button(tr("Back to Monitor"), 201)) { updates_page = false; if (!test_mode) show_panel(); }
+    if (!wrap_footer) ImGui::SameLine();
+    if (update_button(tr("Check again"), 205, !busy) && !test_mode) release_check->check();
     ImGui::PopFont();
     ImGui::End();
 }

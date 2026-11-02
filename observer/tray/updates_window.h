@@ -3,19 +3,21 @@
 // a failed explicit installation returns the still-open review to the foreground.
 - (void)ensureUpdateWindow {
     if (self.updateWindow) return;
-    NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 560, 300)
+    NSWindow* window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 620, 360)
         styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskClosable | NSWindowStyleMaskMiniaturizable
         backing:NSBackingStoreBuffered defer:NO];
     window.releasedWhenClosed = NO; window.restorable = NO;
     window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
     live_text(window, @"title", "Shin updates");
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-    window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    window.backgroundColor = [NSColor colorWithCalibratedRed:.969 green:.973 blue:.980 alpha:1];
     window.contentView.wantsLayer = YES;
     window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
+    window.contentView.layer.borderWidth = 1;
+    window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.773 green:.678 blue:.533 alpha:1].CGColor;
     NSStackView* stack = [NSStackView new];
     stack.orientation = NSUserInterfaceLayoutOrientationVertical;
-    stack.alignment = NSLayoutAttributeLeading; stack.spacing = 12;
+    stack.alignment = NSLayoutAttributeLeading; stack.spacing = 10;
     stack.distribution = NSStackViewDistributionFill; stack.detachesHiddenViews = YES;
     self.updateLayout = stack;
     stack.translatesAutoresizingMaskIntoConstraints = NO;
@@ -25,7 +27,10 @@
         [stack.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-24],
         [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:22],
         [stack.bottomAnchor constraintLessThanOrEqualToAnchor:window.contentView.bottomAnchor constant:-22]]];
-    NSColor* sand = [NSColor colorWithCalibratedRed:.84 green:.74 blue:.57 alpha:1];
+    NSColor* sand = [NSColor colorWithCalibratedRed:.58 green:.46 blue:.30 alpha:1];
+    NSColor* ink = [NSColor colorWithCalibratedRed:.145 green:.192 blue:.251 alpha:1];
+    NSColor* blue = [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1];
+    NSColor* muted = [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1];
     NSImageView* icon = [NSImageView new];
     NSImage* logo = [NSBundle.mainBundle imageForResource:@"shin-logo"];
     icon.image = logo ? logo : [NSImage imageWithSystemSymbolName:@"arrow.down.circle.fill" accessibilityDescription:nil];
@@ -33,21 +38,21 @@
     [icon.widthAnchor constraintEqualToConstant:30].active = YES;
     [icon.heightAnchor constraintEqualToConstant:30].active = YES;
     NSTextField* brand = [NSTextField labelWithString:@"SHIN"];
-    brand.font = [NSFont systemFontOfSize:11 weight:NSFontWeightSemibold]; brand.textColor = sand;
+    brand.font = [NSFont systemFontOfSize:16 weight:NSFontWeightMedium]; brand.textColor = ink;
     NSTextField* channel = [NSTextField labelWithString:@""]; live_text(channel, @"stringValue", "Preview channel");
-    channel.font = [NSFont systemFontOfSize:11]; channel.textColor = NSColor.secondaryLabelColor;
+    channel.font = [NSFont systemFontOfSize:13]; channel.textColor = muted;
     NSStackView* identity = [NSStackView stackViewWithViews:@[brand, channel]];
     identity.orientation = NSUserInterfaceLayoutOrientationVertical; identity.alignment = NSLayoutAttributeLeading; identity.spacing = 2;
     NSStackView* header = [NSStackView stackViewWithViews:@[icon, identity]]; header.spacing = 10;
     self.updateTitle = [NSTextField wrappingLabelWithString:@""];
-    self.updateTitle.font = [NSFont systemFontOfSize:20 weight:NSFontWeightSemibold];
-    self.updateTitle.textColor = [NSColor colorWithCalibratedRed:.914 green:.914 blue:.867 alpha:1];
+    self.updateTitle.font = [NSFont systemFontOfSize:24 weight:NSFontWeightMedium];
+    self.updateTitle.textColor = ink;
     self.updateVersion = [NSTextField wrappingLabelWithString:@""];
-    self.updateVersion.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightMedium];
-    self.updateVersion.textColor = sand;
+    self.updateVersion.font = [NSFont monospacedDigitSystemFontOfSize:15 weight:NSFontWeightMedium];
+    self.updateVersion.textColor = blue;
     self.updateDetail = [NSTextField wrappingLabelWithString:@""];
-    self.updateDetail.font = [NSFont systemFontOfSize:13]; self.updateDetail.selectable = YES;
-    self.updateDetail.textColor = [NSColor colorWithCalibratedRed:.76 green:.78 blue:.72 alpha:1];
+    self.updateDetail.font = [NSFont systemFontOfSize:16]; self.updateDetail.selectable = YES;
+    self.updateDetail.textColor = muted;
     // Diagnostics may be long. Keep them selectable and scrollable without pushing
     // the actions outside the window (full JSON remains available via Copy).
     NSScrollView* details = [NSScrollView new]; details.drawsBackground = NO;
@@ -66,23 +71,31 @@
     self.updateCopyButton = live_button("Copy diagnostic report", self, @selector(copyUpdateResult:));
     self.updateAcknowledgeButton = live_button("Acknowledge verified result", self, @selector(acknowledgeUpdateResult:));
     self.updateReviewButton = live_button("Review previous update", self, @selector(showLastUpdateResult:));
+    for (NSButton* button in @[self.updateCheckButton, self.updateInstallButton, self.updateNotesButton,
+            self.updateCopyButton, self.updateAcknowledgeButton, self.updateReviewButton]) {
+        button.font = [NSFont systemFontOfSize:15];
+        [button setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+    }
     for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton]) {
-        button.bezelColor = sand; button.contentTintColor = [NSColor colorWithCalibratedRed:.16 green:.17 blue:.14 alpha:1];
-        button.font = [NSFont systemFontOfSize:13 weight:NSFontWeightSemibold];
+        button.bezelColor = blue; button.contentTintColor = NSColor.whiteColor;
+        button.font = [NSFont systemFontOfSize:15 weight:NSFontWeightMedium];
     }
     for (NSButton* button in @[self.updateNotesButton, self.updateCopyButton]) {
-        button.bordered = NO; button.bezelStyle = NSBezelStyleInline; button.contentTintColor = sand;
-        button.font = [NSFont systemFontOfSize:12];
+        button.bordered = NO; button.bezelStyle = NSBezelStyleInline; button.contentTintColor = blue;
+        button.font = [NSFont systemFontOfSize:14];
     }
-    NSView* spacer = [NSView new]; [spacer.widthAnchor constraintGreaterThanOrEqualToConstant:8].active = YES;
-    [spacer setContentHuggingPriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
-    NSStackView* actions = [NSStackView stackViewWithViews:@[self.updateNotesButton, self.updateCopyButton, spacer, self.updateCheckButton, self.updateInstallButton]];
+    NSStackView* links = [NSStackView stackViewWithViews:@[self.updateNotesButton, self.updateCopyButton]];
+    links.spacing = 12; links.detachesHiddenViews = YES;
+    NSStackView* actions = [NSStackView stackViewWithViews:@[self.updateCheckButton, self.updateInstallButton]];
     actions.spacing = 10; actions.distribution = NSStackViewDistributionFill; actions.detachesHiddenViews = YES;
     NSBox* separator = [NSBox new]; separator.boxType = NSBoxSeparator;
-    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, self.updateReviewButton, separator, actions])
+    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, self.updateReviewButton, separator, links, actions])
         [stack addArrangedSubview:view];
-    for (NSView* view in @[self.updateTitle, self.updateVersion, details, self.updateSpinner, separator, actions])
+    for (NSView* view in @[self.updateTitle, self.updateVersion, details, self.updateSpinner, separator])
         [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+    for (NSView* view in @[links, actions])
+        [view.widthAnchor constraintLessThanOrEqualToAnchor:stack.widthAnchor].active = YES;
     // Installing is deliberate; Return must never start it just by opening review.
     self.updateCheckButton.keyEquivalent = @"";
     self.updateWindow = window;
@@ -117,7 +130,7 @@
     self.updateCheckButton.title = ui_text(offer || self.updateScreen == UpdateScreen::startFailed ? "Check again" : "Check for updates…");
     for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton])
         button.attributedTitle = [[NSAttributedString alloc] initWithString:button.title attributes:@{
-            NSFontAttributeName:button.font, NSForegroundColorAttributeName:[NSColor colorWithCalibratedRed:.16 green:.17 blue:.14 alpha:1]}];
+            NSFontAttributeName:button.font, NSForegroundColorAttributeName:NSColor.whiteColor}];
     self.updateSpinner.hidden = !(checking || starting || loading || acknowledging);
     if (self.updateSpinner.hidden) [self.updateSpinner stopAnimation:nil];
     else [self.updateSpinner startAnimation:nil];
@@ -178,11 +191,16 @@
     const CGFloat width = self.updateWindow.contentView.bounds.size.width - 48;
     const auto textBounds = [self.updateDetail.attributedStringValue boundingRectWithSize:NSMakeSize(width, CGFLOAT_MAX)
         options:NSStringDrawingUsesLineFragmentOrigin | NSStringDrawingUsesFontLeading];
-    self.updateDetailHeight.constant = std::clamp(std::ceil(textBounds.size.height) + 6.0, 22.0, 112.0);
+    self.updateDetailHeight.constant = std::clamp(std::ceil(textBounds.size.height) + 6.0, 24.0, 128.0);
     [self.updateWindow.contentView layoutSubtreeIfNeeded];
-    const CGFloat height = std::clamp(std::ceil(self.updateLayout.fittingSize.height) + 44.0, 210.0, 440.0);
+    const CGFloat desired = std::ceil(self.updateLayout.fittingSize.height) + 44.0;
+    if (desired > 460 && !self.updateDetails.hidden) {
+        self.updateDetailHeight.constant = std::max(24.0, self.updateDetailHeight.constant - (desired - 460));
+        [self.updateWindow.contentView layoutSubtreeIfNeeded];
+    }
+    const CGFloat height = std::clamp(std::ceil(self.updateLayout.fittingSize.height) + 44.0, 240.0, 460.0);
     const NSRect before = self.updateWindow.frame;
-    NSRect frame = [self.updateWindow frameRectForContentRect:NSMakeRect(0, 0, 560, height)];
+    NSRect frame = [self.updateWindow frameRectForContentRect:NSMakeRect(0, 0, 620, height)];
     frame.origin = NSMakePoint(before.origin.x, NSMaxY(before) - frame.size.height);
     [self.updateWindow setFrame:frame display:self.updateWindow.visible];
     [self.updateWindow.contentView layoutSubtreeIfNeeded];

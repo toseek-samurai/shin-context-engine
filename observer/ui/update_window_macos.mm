@@ -8,13 +8,22 @@
 #include <thread>
 #include <unistd.h>
 
+@interface ShinUpdateProgressContent : NSView
+@end
+@implementation ShinUpdateProgressContent
+- (BOOL)isFlipped { return YES; }
+@end
+
 namespace shin::observer {
 namespace {
 NSString* ui_text(const char* value) { return [NSString stringWithUTF8String:shin::ui::tr(value)]; }
 NSString* stage_text(ReleaseUpdateStep step) { return ui_text(update_stage_key(step)); }
-NSColor* sand_ink() { return [NSColor colorWithCalibratedRed:.914 green:.914 blue:.867 alpha:1]; }
-NSColor* sand_muted() { return [NSColor colorWithCalibratedRed:.627 green:.647 blue:.584 alpha:1]; }
-NSColor* sand_accent() { return [NSColor colorWithCalibratedRed:.839 green:.776 blue:.635 alpha:1]; }
+NSColor* sand_ink() { return [NSColor colorWithCalibratedRed:.145 green:.192 blue:.251 alpha:1]; }
+NSColor* sand_muted() { return [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1]; }
+NSColor* sand_accent() { return [NSColor colorWithCalibratedRed:.773 green:.678 blue:.533 alpha:1]; }
+NSColor* update_blue() { return [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1]; }
+NSColor* update_green() { return [NSColor colorWithCalibratedRed:.176 green:.439 blue:.306 alpha:1]; }
+NSColor* update_red() { return [NSColor colorWithCalibratedRed:.710 green:.243 blue:.220 alpha:1]; }
 
 }
 
@@ -61,56 +70,84 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
     NSTextField* stage = nil;
     NSTextField* detail = nil;
     NSProgressIndicator* bar = nil;
+    NSView* document = nil;
+    NSStackView* stack = nil;
     NSMutableArray<NSTextField*>* rows = [NSMutableArray new];
     @try {
         app = [NSApplication sharedApplication];
         if (!NSScreen.screens.count) @throw [NSException exceptionWithName:@"ShinNoScreen" reason:nil userInfo:nil];
         [app setActivationPolicy:NSApplicationActivationPolicyAccessory];
         [app finishLaunching];
-        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, 580, 526)
+        const auto available = NSScreen.mainScreen.visibleFrame.size;
+        const auto width = std::min(620.0, std::max(320.0, available.width - 48));
+        const auto height = std::min(680.0, std::max(320.0, available.height - 80));
+        window = [[NSWindow alloc] initWithContentRect:NSMakeRect(0, 0, width, height)
             styleMask:NSWindowStyleMaskTitled | NSWindowStyleMaskMiniaturizable
             backing:NSBackingStoreBuffered defer:NO];
         window.releasedWhenClosed = NO;
         window.restorable = NO;
         window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
         window.title = ui_text("Updating Shin");
-        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
-        window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        window.backgroundColor = [NSColor colorWithCalibratedRed:.969 green:.973 blue:.980 alpha:1];
         window.contentView.wantsLayer = YES;
         window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
-        NSStackView* stack = [NSStackView new];
+        window.contentView.layer.borderColor = sand_accent().CGColor;
+        window.contentView.layer.borderWidth = 1;
+        // All observed stages stay readable on smaller displays. This scroll
+        // surface presents the same operation; it has no update authority.
+        NSScrollView* scroll = [NSScrollView new];
+        scroll.translatesAutoresizingMaskIntoConstraints = NO;
+        scroll.drawsBackground = YES; scroll.backgroundColor = window.backgroundColor;
+        scroll.hasVerticalScroller = YES; scroll.autohidesScrollers = YES;
+        document = [[ShinUpdateProgressContent alloc] initWithFrame:NSMakeRect(0, 0, width - 2, 676)];
+        document.autoresizingMask = NSViewWidthSizable;
+        scroll.documentView = document;
+        [window.contentView addSubview:scroll];
+        [NSLayoutConstraint activateConstraints:@[
+            [scroll.leadingAnchor constraintEqualToAnchor:window.contentView.leadingAnchor constant:1],
+            [scroll.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-1],
+            [scroll.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:1],
+            [scroll.bottomAnchor constraintEqualToAnchor:window.contentView.bottomAnchor constant:-1]]];
+        stack = [NSStackView new];
         stack.orientation = NSUserInterfaceLayoutOrientationVertical;
         stack.alignment = NSLayoutAttributeLeading; stack.spacing = 14;
         stack.translatesAutoresizingMaskIntoConstraints = NO;
-        [window.contentView addSubview:stack];
+        [document addSubview:stack];
         [NSLayoutConstraint activateConstraints:@[
-            [stack.leadingAnchor constraintEqualToAnchor:window.contentView.leadingAnchor constant:24],
-            [stack.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-24],
-            [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:24]]];
-        NSTextField* title = [NSTextField labelWithString:version.empty() ? ui_text("Updating Shin") :
+            [stack.leadingAnchor constraintEqualToAnchor:document.leadingAnchor constant:24],
+            [stack.trailingAnchor constraintEqualToAnchor:document.trailingAnchor constant:-24],
+            [stack.topAnchor constraintEqualToAnchor:document.topAnchor constant:24]]];
+        NSTextField* title = [NSTextField wrappingLabelWithString:version.empty() ? ui_text("Updating Shin") :
             [NSString stringWithFormat:ui_text("Updating Shin to %@"), [NSString stringWithUTF8String:version.c_str()]]];
         title.textColor = sand_ink();
-        title.font = [NSFont systemFontOfSize:18 weight:NSFontWeightSemibold];
-        stage = [NSTextField labelWithString:stage_text(ReleaseUpdateStep::preparing)];
-        stage.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium]; stage.textColor = sand_accent();
+        title.font = [NSFont systemFontOfSize:23 weight:NSFontWeightMedium];
+        stage = [NSTextField wrappingLabelWithString:stage_text(ReleaseUpdateStep::preparing)];
+        stage.font = [NSFont systemFontOfSize:17 weight:NSFontWeightMedium]; stage.textColor = update_blue();
         bar = [NSProgressIndicator new]; bar.style = NSProgressIndicatorStyleBar;
         bar.indeterminate = YES; bar.displayedWhenStopped = YES; bar.usesThreadedAnimation = YES; bar.minValue = 0; bar.maxValue = 100;
         bar.accessibilityLabel = ui_text("Update progress");
-        [bar.heightAnchor constraintEqualToConstant:14].active = YES;
-        detail = [NSTextField labelWithString:@""]; detail.textColor = sand_muted();
-        detail.font = [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightRegular];
+        [bar.heightAnchor constraintEqualToConstant:12].active = YES;
+        detail = [NSTextField wrappingLabelWithString:@""]; detail.textColor = sand_muted();
+        detail.font = [NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightRegular];
         NSTextField* footer = [NSTextField wrappingLabelWithString:ui_text("Shin Monitor will reopen when the update finishes.")];
-        footer.font = [NSFont systemFontOfSize:12]; footer.textColor = sand_muted();
+        footer.font = [NSFont systemFontOfSize:14]; footer.textColor = sand_muted();
         for (NSView* view in @[title, stage, bar, detail]) [stack addArrangedSubview:view];
         NSStackView* steps = [NSStackView new]; steps.orientation = NSUserInterfaceLayoutOrientationVertical;
         steps.alignment = NSLayoutAttributeLeading; steps.spacing = 7;
         for (const auto step : update_steps) {
-            NSTextField* row = [NSTextField labelWithString:[@"○  " stringByAppendingString:stage_text(step)]];
-            row.font = [NSFont systemFontOfSize:12]; row.textColor = sand_muted();
+            NSTextField* row = [NSTextField wrappingLabelWithString:[@"○  " stringByAppendingString:stage_text(step)]];
+            row.font = [NSFont systemFontOfSize:15]; row.textColor = sand_muted();
             [rows addObject:row]; [steps addArrangedSubview:row];
+            [row.widthAnchor constraintEqualToAnchor:steps.widthAnchor].active = YES;
         }
         [stack addArrangedSubview:steps]; [stack addArrangedSubview:footer];
-        [bar.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+        for (NSView* view in @[title, stage, bar, detail, steps, footer])
+            [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
+        [window.contentView layoutSubtreeIfNeeded];
+        document.frame = NSMakeRect(0, 0, scroll.contentSize.width,
+            std::max(height - 2, stack.fittingSize.height + 48));
+        [document layoutSubtreeIfNeeded];
         [window center]; [app activate]; [window makeKeyAndOrderFront:nil];
         [bar startAnimation:nil]; [window displayIfNeeded];
     } @catch (NSException* error) {
@@ -134,6 +171,8 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
             if (!drawing) return;
             @try {
                 stage.stringValue = stage_text(current.step);
+                stage.textColor = current.step == ReleaseUpdateStep::failed ? update_red() :
+                    current.step == ReleaseUpdateStep::completed ? update_green() : update_blue();
                 auto percent = release_download_percent(current);
                 if (current.step == ReleaseUpdateStep::staging && current.total)
                     percent = static_cast<double>(std::min(100.0L, 100.0L * current.received / current.total));
@@ -159,10 +198,13 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
                     NSString* marker = active && failed ? @"×  " : active && recovery ? @"↶  " :
                         timeline.done[i] ? @"✓  " : active ? @"●  " : current.step == ReleaseUpdateStep::completed ? @"—  " : @"○  ";
                     rows[i].stringValue = [marker stringByAppendingString:stage_text(update_steps[i])];
-                    rows[i].textColor = active && failed ? [NSColor colorWithCalibratedRed:.863 green:.635 blue:.596 alpha:1] :
-                        active ? sand_accent() : timeline.done[i] ? sand_ink() : sand_muted();
-                    rows[i].font = [NSFont systemFontOfSize:12 weight:active ? NSFontWeightSemibold : NSFontWeightRegular];
+                    rows[i].textColor = active && failed ? update_red() :
+                        active ? update_blue() : timeline.done[i] ? update_green() : sand_muted();
+                    rows[i].font = [NSFont systemFontOfSize:15 weight:active ? NSFontWeightMedium : NSFontWeightRegular];
                 }
+                [document layoutSubtreeIfNeeded];
+                document.frame = NSMakeRect(0, 0, document.frame.size.width,
+                    std::max(window.contentView.bounds.size.height - 2, stack.fittingSize.height + 48));
             } @catch (NSException*) { drawing = NO; }
         }];
         [NSRunLoop.mainRunLoop addTimer:timer forMode:NSRunLoopCommonModes];

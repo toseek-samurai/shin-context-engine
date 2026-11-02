@@ -1,22 +1,28 @@
 # UI screenshots
 
-These PNGs are rendered by the actual macOS ImGui/Metal Monitor UI using the
+The desktop PNGs show the **Light Sand redesign in current development source**,
+not a design already included in a published preview. The terminal captures below
+retain the shipped dark Sand appearance.
+
+## macOS Monitor
+
+The macOS PNGs are rendered by the actual ImGui/Metal Monitor UI using the
 synthetic scenarios in [layout_test.inc](../../observer/tray/layout_test.inc).
 No live service, enrolled project, client usage history, or saved user preference
 is read. Displayed metrics are fixture values, not performance measurements.
-These are macOS captures, not Windows screenshots. Windows uses the shared
-dashboard with different system fonts, icons, scaling and available actions;
+The Windows captures below use the shared dashboard with their native system
+fonts, icons, scaling and available actions;
 see the [platform matrix](../README.md#capabilities-by-platform).
 
 | README asset | Native fixture output |
 | --- | --- |
-| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-warning-448x620.png` (EN / RU) |
-| `monitor-settings.png` / `monitor-settings-ru.png` | `settings-448x620.png` (EN / RU) |
-| `monitor-projects.png` | `project-states-448x620.png` |
-| `monitor-project.png` | `search-warning-opened-448x620.png` |
-| `monitor-timing.png` | `timing-retained-448x620.png` |
-| `monitor-sessions.png` | `sessions-448x620.png` (EN) |
-| `monitor-sessions-ru.png` | `sessions-448x620.png` (RU) |
+| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-warning-620x810.png` (EN / RU) |
+| `monitor-settings.png` / `monitor-settings-ru.png` | `settings-620x810.png` (EN / RU) |
+| `monitor-projects.png` | `project-states-620x810.png` |
+| `monitor-project.png` | `search-warning-620x810.png` |
+| `monitor-timing.png` | `timing-retained-620x810.png` |
+| `monitor-sessions.png` | `sessions-620x810.png` (EN) |
+| `monitor-sessions-ru.png` | `sessions-620x810.png` (RU) |
 
 After building the macOS kit with testing enabled, render again:
 
@@ -27,16 +33,20 @@ After building the macOS kit with testing enabled, render again:
 
 Metal must be available; a skipped render is not a new screenshot. Inspect the
 outputs visually, then copy only the selected PNGs here without modifying
-their pixels. Each image is rendered at 2x resolution. The screenshots use English; pass `ru` instead of `en` to render Russian.
+their pixels. The screenshots use English; pass `ru` instead of `en` to render Russian.
 Both languages use the same native views and synthetic scenarios.
-These images show Overview, Projects, Activity and Settings, the navigation
-introduced in preview dev.66. The
-journal is inside Activity; its 48-event display ceiling, monospace text,
-outcome colors and vector icons remain bounded. All images use the standard
-448×620 panel size. EN and RU are generated into separate output directories.
+These images show Overview, Projects, History and Settings. History opens with
+the journal; timing and optional model usage remain available separately. Its
+48-event display ceiling, monospace text, outcome colors and vector icons remain
+bounded. These macOS images use the standard 620×810 logical panel size, rendered
+at 2× resolution (1240×1620 pixels). EN and RU are
+generated into separate output directories.
 The Overview warning is actionable inside the panel; the project-detail image
-shows its search-check explanation and expected document. Settings exposes
-language and labeled connection/storage/update actions. Russian Overview and
+shows its search-check explanation and next action. Expected documents are
+revealed by the explicit search-check review. Light surfaces, Sand
+framing, larger type and compact labeled buttons distinguish actions from status
+labels. Project connections belong with their projects, and technical reports
+are disclosed separately. Settings groups language, storage and updates. Russian Overview and
 Settings are available as `monitor-overview-ru.png` and `monitor-settings-ru.png`.
 The project list deliberately mixes ready, preparing, partial, blocked, on-demand,
 waiting and recovering states to demonstrate their distinct colors and symbols.
@@ -45,9 +55,52 @@ compact layout remains available. Memory curves retain observation gaps and
 service-run boundaries.
 
 <p>
-  <img src="monitor-sessions.png" width="340" alt="English Sessions journal rendered with synthetic MCP events">
-  <img src="monitor-sessions-ru.png" width="340" alt="Russian Sessions journal with the same synthetic MCP events">
+  <img src="monitor-sessions.png" width="340" alt="English Light Sand History journal rendered with synthetic MCP events">
+  <img src="monitor-sessions-ru.png" width="340" alt="Russian Light Sand History journal with the same synthetic MCP events">
 </p>
+
+## Windows Monitor
+
+The `monitor-windows-*` PNGs come from the native Win32/DX11 Monitor, using WARP
+software rendering and the synthetic `documentation_main_views` fixture in
+[windows_main.cpp](../../observer/tray/windows_main.cpp). They were captured in
+a signed-in Windows desktop session through `--render-test`, not produced from
+the macOS images or a browser mockup. No live service, enrolled project or client
+history supplies their displayed data. These captures show source UI rendering;
+they do not establish an installed MSI lifecycle or live-project readiness.
+
+Each Windows PNG is 620×810 physical pixels at 100% display scaling (1×), copied
+without resizing or pixel edits. The macOS PNGs above retain their native 2×
+resolution. Different system fonts and platform controls remain visible.
+
+| Documentation asset | Native fixture output, relative to the capture directory |
+| --- | --- |
+| `monitor-windows-overview.png` / `monitor-windows-overview-ru.png` | `monitor-overview-en.png` / `monitor-overview-ru.png` |
+| `monitor-windows-projects.png` / `monitor-windows-projects-ru.png` | `monitor-projects-en.png` / `monitor-projects-ru.png` |
+| `monitor-windows-settings.png` / `monitor-windows-settings-ru.png` | `monitor-settings-en.png` / `monitor-settings-ru.png` |
+
+From the matching Windows desktop build directory containing `shin-tray.exe`,
+run in an unelevated, signed-in Windows desktop session at 100% scaling:
+
+```powershell
+.\shin-tray.exe --render-test C:\path\to\disposable-captures
+```
+
+The test writes both languages directly into the supplied capture directory,
+alongside its other render checks and `result.json`. Inspect the output and copy
+only the selected PNGs here, preserving their original bytes. Headless CI
+rendering has a separate scope; see the
+[Windows verification boundaries](../windows-desktop.md#package-publication-and-remaining-gates).
+
+<p>
+  <img src="monitor-windows-overview.png" width="360" alt="Native Windows Light Sand Overview with synthetic project readiness and a line graph">
+  <img src="monitor-windows-projects.png" width="360" alt="Native Windows Light Sand Projects with labeled context states and compact actions">
+</p>
+
+[Windows Settings](monitor-windows-settings.png) ·
+[Russian Overview](monitor-windows-overview-ru.png) ·
+[Russian Projects](monitor-windows-projects-ru.png) ·
+[Russian Settings](monitor-windows-settings-ru.png).
 
 ## Terminal views
 

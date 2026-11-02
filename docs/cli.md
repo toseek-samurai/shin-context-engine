@@ -16,7 +16,7 @@ see the [capability matrix](README.md#capabilities-by-platform).
 
 ## Interactive terminal monitor
 
-On macOS and Linux, open the Sand terminal dashboard:
+On macOS and Linux, open the dark Sand terminal dashboard:
 
 ```sh
 shin-ce stats
@@ -162,15 +162,23 @@ The table maps Monitor to CLI/TUI actions. Windows dev.74 includes project
 onboarding and storage management in Monitor; its terminal dashboard remains
 unimplemented. See [Windows scope](windows-desktop.md#monitor-setup-and-updates).
 
+Current development source gives desktop Monitor a Light Sand interface with
+**Overview**, **Projects**, **History** and **Settings**. This redesign is not yet
+included in a published preview. History opens with the recorded-call journal;
+timing and agent token usage remain secondary views. Technical reports are
+disclosed from project details. Published previews and the dark Sand TUI keep
+**Activity** as their third section, with the journal under **Activity → Journal**.
+
 | In Monitor | In the CLI today |
 | --- | --- |
-| Project readiness and partial coverage | `shin-ce status --text` |
+| Overview / Projects: readiness and partial coverage | `shin-ce status --text` |
 | All projects, service health, recent RAM and request counts | `shin-ce service-status --text` |
-| Detailed request telemetry and retained history summaries | TUI Timing with recent/history and traffic filters; `shin-ce service-status` JSON |
-| Add a project from a folder | `shin-ce project-add --root /absolute/path/to/project` |
+| History / Response time: detailed request telemetry and retained history summaries | TUI Activity / Response time with recent/history and traffic filters; `shin-ce service-status` JSON |
+| History: recorded calls and session details | TUI Activity / Journal; `shin-ce service-status` JSON |
+| Projects: add a folder and connect coding agents | `shin-ce project-add --root /absolute/path/to/project`; follow the reviewed client setup procedure for agent connections |
 | Storage inventory and cleanup plan | TUI Storage or `shin-ce storage-status` JSON; cleanup remains a separate command requiring the reported revision |
 | Profile changes requiring review | `shin-ce profile-review`; acceptance is a separate explicit action |
-| Model usage | TUI Activity / Agents reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
+| History / Agents: model usage | TUI Activity / Agents reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
 
 The TUI shares Monitor's project-state and request-timing calculations. It uses
 native service status for observations and the existing read-only storage
@@ -235,8 +243,10 @@ Catalog/help calls handled inside the MCP adapter and service monitoring polls a
 excluded from these **service-run** counters; client token counters are a different
 measurement. No historical status or missing session information is fabricated.
 
-**MCP calls · history** is available in Monitor Timing,
-the terminal Timing view and `service-status` JSON (`telemetry.mcp_activity`). This
+**MCP calls · history** is available in Monitor's request-timing view,
+the terminal Activity / Response time view and `service-status` JSON
+(`telemetry.mcp_activity`). The desktop redesign places timing under
+**History → Response time**. This
 separate journal includes status, catalog/help, unknown tools, argument errors and
 connection failures, even while the service is unavailable. Initial and terminal
 observations count as one invocation. A service request ID links the layers;
@@ -290,7 +300,9 @@ an old snapshot usable again.
 
 ### Sessions and optional recovery notes (dev.45)
 
-Monitor presents these observations as a Sand journal with UTC
+The unreleased desktop redesign opens these observations from **History** in
+its Light Sand journal. Published previews retain **Activity → Journal**.
+The journal uses UTC
 timestamps, short opaque session IDs, a monospace font and vector icons. Success,
 error, unfinished and explicit host events have distinct colors and text labels.
 Session counters and details remain available below the journal; **What is
@@ -311,8 +323,9 @@ require omitting session rows; the UI then reports that omission rather than an
 empty history. The response ceiling remains 60 KiB, independently of the
 48-event desktop display limit.
 
-Open **Activity → Journal** in Monitor or `shin-ce stats`. In the TUI, press `3`,
-then Left/Right or `[` / `]` to select Journal. The latest eight correlated sessions show context calls, errors,
+Open **History** in the desktop development UI, or **Activity → Journal** in
+published Monitor previews and `shin-ce stats`. In the TUI, press `3`, then
+Left/Right or `[` / `]` to select Journal. The latest eight correlated sessions show context calls, errors,
 caller task labels, recovery requests and recent invocation outcomes. Calls can
 supply `task_key` and `intent` (`explore`, `follow-up`, `context-recovery`); labels
 are optional and do not impose quotas or create inferred tasks.

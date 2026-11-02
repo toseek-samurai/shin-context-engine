@@ -102,6 +102,9 @@ int check_language() try {
     const auto detailed = project_table_layout(296, 16, 44);
     assert(detailed.page_size == 5 && detailed.pages == 4);
     assert(detailed.table_height + ProjectTableLayout::controls_height <= 296);
+    const auto comfortable = project_table_layout(600, 16, 68);
+    assert(comfortable.page_size * 68 + ProjectTableLayout::header_height + ProjectTableLayout::controls_height <= 600);
+    assert(comfortable.pages > 1);
     assert(project_table_layout(std::numeric_limits<float>::quiet_NaN(), 16).page_size == 1);
     assert(centered_item_y(24, 17) == 3);
     assert(centered_item_y(24, 13) == 5);

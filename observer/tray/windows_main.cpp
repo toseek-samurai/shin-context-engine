@@ -25,6 +25,7 @@ constexpr UINT reopen_message = WM_APP + 2;
 constexpr UINT language_message = WM_APP + 3;
 constexpr wchar_t window_class[] = L"ShinMonitorWindow";
 HWND panel = nullptr, report = nullptr, report_edit = nullptr;
+HFONT report_font = nullptr;
 std::unique_ptr<Monitor> monitor;
 std::unique_ptr<StateStore> preferences;
 Json settings = Json::object();
@@ -248,8 +249,8 @@ void show_panel() {
     POINT point{}; GetCursorPos(&point); MONITORINFO info{sizeof(info)};
     GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&info);
     const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST));
-    const int width=std::min(static_cast<int>((management_page?620:compact?360:448)*scale),static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
-    const int height=std::min(static_cast<int>((management_page?660:updates_page || compact?440:620)*scale),static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
+    const int width=std::min(static_cast<int>((management_page || updates_page?620:compact?400:620)*scale),static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
+    const int height=std::min(static_cast<int>((management_page?720:updates_page?640:compact?560:810)*scale),static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
     const int x=std::clamp(static_cast<int>(point.x)-width/2,static_cast<int>(info.rcWork.left)+12,static_cast<int>(info.rcWork.right)-width-12);
     const int y=std::clamp(static_cast<int>(point.y)-height,static_cast<int>(info.rcWork.top)+12,static_cast<int>(info.rcWork.bottom)-height-12);
     SetWindowPos(panel,management_page || updates_page ? HWND_NOTOPMOST : HWND_TOPMOST,x,y,width,height,SWP_SHOWWINDOW); SetForegroundWindow(panel);
@@ -282,10 +283,14 @@ LRESULT CALLBACK report_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
     if(message==WM_CREATE) {
         report_edit=CreateWindowExW(WS_EX_CLIENTEDGE,L"EDIT",L"",WS_CHILD|WS_VISIBLE|WS_VSCROLL|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL,
             0,0,1,1,window,nullptr,GetModuleHandleW(nullptr),nullptr);
-        SendMessageW(report_edit,WM_SETFONT,reinterpret_cast<WPARAM>(GetStockObject(DEFAULT_GUI_FONT)),TRUE); return 0;
+        const auto dpi=GetDpiForWindow(window);
+        report_font=CreateFontW(-MulDiv(17,static_cast<int>(dpi?dpi:96),96),0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,
+            DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_NATURAL_QUALITY,DEFAULT_PITCH,L"Segoe UI");
+        SendMessageW(report_edit,WM_SETFONT,reinterpret_cast<WPARAM>(report_font?report_font:GetStockObject(DEFAULT_GUI_FONT)),TRUE); return 0;
     }
     if(message==WM_SIZE) { MoveWindow(report_edit,0,0,LOWORD(lparam),HIWORD(lparam),TRUE);return 0; }
     if(message==WM_CLOSE) { ShowWindow(window,SW_HIDE);return 0; }
+    if(message==WM_DESTROY) {if(report_font)DeleteObject(report_font);report_font=nullptr;report_edit=nullptr;report=nullptr;return 0;}
     return DefWindowProcW(window,message,wparam,lparam);
 }
 LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
@@ -298,6 +303,13 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         if(ImGui::GetCurrentContext() && ImGui_ImplWin32_WndProcHandler(window,message,wparam,lparam)) return 1;
         if(taskbar_created && message==taskbar_created) { register_icon();return 0; }
         switch(message) {
+        case WM_ERASEBKGND: {
+            RECT client{}; GetClientRect(window,&client);
+            const auto dc=reinterpret_cast<HDC>(wparam);
+            const auto previous=SetDCBrushColor(dc,RGB(static_cast<BYTE>(background.x*255),static_cast<BYTE>(background.y*255),static_cast<BYTE>(background.z*255)));
+            FillRect(dc,&client,reinterpret_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
+            SetDCBrushColor(dc,previous); return 1;
+        }
         case WM_APP+4: DestroyWindow(window); return 0;
         case reopen_message: show_panel(); return 0;
         case WM_SIZE:
@@ -352,12 +364,14 @@ void save_frame(const fs::path& path) {
     context->CopyResource(copy.Get(),source.Get());
     D3D11_MAPPED_SUBRESOURCE mapped{};checked(context->Map(copy.Get(),0,D3D11_MAP_READ,0,&mapped),"Cannot map frame.");
     struct Unmap { ID3D11DeviceContext* context; ID3D11Resource* resource; ~Unmap(){context->Unmap(resource,0);} } unmap{context.Get(),copy.Get()};
-    std::size_t bright=0;
+    std::size_t bright=0, ink_pixels=0;
     for(UINT y=0;y<description.Height;++y) for(UINT x=0;x<description.Width;++x) {
         const auto* p=static_cast<BYTE*>(mapped.pData)+y*mapped.RowPitch+x*4;
         if(p[0]>110||p[1]>110||p[2]>110) ++bright;
+        if(p[0]<190 && p[1]<190 && p[2]<190) ++ink_pixels;
     }
-    if(bright<400) throw std::runtime_error("Blank Monitor render.");
+    if(bright<400 || ink_pixels<400) throw std::runtime_error("Blank Monitor render: "+path.filename().string()+
+        " bright="+std::to_string(bright)+" ink="+std::to_string(ink_pixels));
     ComPtr<IWICImagingFactory> factory;checked(CoCreateInstance(CLSID_WICImagingFactory,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&factory)),"Cannot encode frame.");
     ComPtr<IWICStream> stream;checked(factory->CreateStream(&stream),"Cannot create PNG stream.");
     checked(stream->InitializeFromFilename(path.c_str(),GENERIC_WRITE),"Cannot open PNG output.");
@@ -390,6 +404,26 @@ void check_action_ids() {
             throw std::runtime_error("Monitor has conflicting ImGui IDs: " + action.label);
     }
     if (seen.empty()) throw std::runtime_error("Monitor actions did not expose their actual ImGui IDs.");
+}
+
+std::set<int> reachable_settings_actions(const ViewState& state, ImVec2 size) {
+    std::set<int> reachable;
+    const auto collect = [&] {
+        check_action_bounds(size);check_action_ids();
+        for(const auto& action:ui_actions) if(!action.informational) reachable.insert(action.chart);
+    };
+    SendMessageW(panel,WM_SETFOCUS,0,0);
+    SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(static_cast<int>(size.x/2),static_cast<int>(size.y/2)));
+    collect();
+    for(int frame=0;frame<9;++frame) {
+        SendMessageW(panel,WM_MOUSEWHEEL,MAKEWPARAM(0,static_cast<SHORT>(-2*WHEEL_DELTA)),0);
+        render_frame(state);collect();
+    }
+    for(int frame=0;frame<3;++frame) {
+        SendMessageW(panel,WM_MOUSEWHEEL,MAKEWPARAM(0,static_cast<SHORT>(20*WHEEL_DELTA)),0);
+        render_frame(state);collect();
+    }
+    return reachable;
 }
 
 unsigned documentation_warning_render(ViewState state, const fs::path& output, ImVec2 size) {
@@ -428,27 +462,57 @@ unsigned updates_render(const fs::path& output, ImVec2 size) {
         for (const auto phase : {WindowsUpdateState::idle, WindowsUpdateState::checking, WindowsUpdateState::current,
                 WindowsUpdateState::offer, WindowsUpdateState::failed}) {
             const WindowsUpdateSnapshot state{phase, {{"version", "2.0.5-dev.999"}}};
-            for (int frame = 0; frame < 3; ++frame) {
+            windows_update_details_open=false;
+            const auto paint = [&] {
                 ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame(); ImGui::NewFrame();
                 render_windows_updates(state); ImGui::Render();
                 constexpr float clear[]{background.x,background.y,background.z,1};
                 context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr); context->ClearRenderTargetView(target.Get(),clear);
                 ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-            }
+            };
+            for (int frame = 0; frame < 3; ++frame) paint();
             check_action_bounds(size); check_action_ids();
             const auto find = [](int id) { return std::find_if(ui_actions.begin(), ui_actions.end(), [=](const auto& action) { return action.chart == id; }); };
             if (find(201) == ui_actions.end()) throw std::runtime_error("Updates has no visible return action.");
             if (size.y >= 440) {
                 if (find(205) == ui_actions.end() || find(205)->enabled == (phase == WindowsUpdateState::checking))
                     throw std::runtime_error("Update check is hidden or incorrectly enabled.");
-                if (phase == WindowsUpdateState::offer && (find(202) == ui_actions.end() || find(203) == ui_actions.end() || find(204) == ui_actions.end()))
+                if (phase == WindowsUpdateState::offer && (find(202) == ui_actions.end() || find(204) == ui_actions.end() || find(209) == ui_actions.end()))
                     throw std::runtime_error("Reviewed Windows download actions are hidden.");
+                if (find(203) != ui_actions.end()) throw std::runtime_error("Technical checksum action leaked into the default update view.");
                 if (phase != WindowsUpdateState::offer && find(202) != ui_actions.end())
                     throw std::runtime_error("Unreviewed MSI download is visible.");
             }
             save_frame(output/(std::string("updates-")+(language==shin::ui::Language::ru?"ru-":"en-")+
                 std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+"-"+std::to_string(static_cast<int>(phase))+".png"));
             ++frames;
+            if(phase==WindowsUpdateState::offer && size.y>=440) {
+                windows_update_details_open=true;
+                // Move into this newly displayed child as a user would. An
+                // unchanged pointer can retain ImGui's previous wheel owner.
+                SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(2,2));
+                for(int frame=0;frame<3;++frame) paint();
+                SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(static_cast<int>(size.x/2),static_cast<int>(size.y/2)));
+                for(int attempt=0;attempt<8;++attempt) {
+                    if(attempt) SendMessageW(panel,WM_MOUSEWHEEL,MAKEWPARAM(0,static_cast<SHORT>(-3*WHEEL_DELTA)),0);
+                    for(int frame=0;frame<3;++frame) paint();
+                    if(find(203)!=ui_actions.end()) break;
+                }
+                if(find(203)==ui_actions.end()) {
+                    save_frame(output/"unreachable-update-details.png");
+                    const auto mouse=ImGui::GetIO().MousePos;
+                    throw std::runtime_error("Expanded checksum action cannot be reached by scrolling: "+
+                        std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+
+                        " mouse="+std::to_string(mouse.x)+","+std::to_string(mouse.y));
+                }
+                check_action_bounds(size);check_action_ids();
+                save_frame(output/(std::string("updates-details-")+(language==shin::ui::Language::ru?"ru-":"en-")+
+                    std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+".png"));
+                ++frames;
+                windows_update_details_open=false;
+                SendMessageW(panel,WM_MOUSEWHEEL,MAKEWPARAM(0,static_cast<SHORT>(20*WHEEL_DELTA)),0);
+                for(int frame=0;frame<3;++frame) paint();
+            }
         }
         run_windows_update_action([] {throw Error("unsafe-directory","Synthetic launch refusal");});
         const WindowsUpdateSnapshot retry{WindowsUpdateState::offer,{{"available",true},{"version","2.0.5-dev.999"}}};
@@ -534,9 +598,9 @@ unsigned check_update_launch_errors() {
 void management_and_dpi_test(const fs::path& output,const ViewState& state) {
     for(float scale:{1.0f,1.5f,2.0f}) {
         test_dpi_scale=scale;dashboard_view=0;management_page=false;updates_page=false;
-        SetWindowPos(panel,nullptr,0,0,static_cast<int>(448*scale),static_cast<int>(620*scale),SWP_NOZORDER|SWP_NOACTIVATE);
+        SetWindowPos(panel,nullptr,0,0,static_cast<int>(620*scale),static_cast<int>(810*scale),SWP_NOZORDER|SWP_NOACTIVATE);
         for(int frame=0;frame<3;++frame) render_frame(state);
-        check_action_bounds({448,620});
+        check_action_bounds({620,810});
         auto tab=std::find_if(ui_actions.begin(),ui_actions.end(),[](const auto& action){return action.chart==13;});
         if(tab==ui_actions.end()) throw std::runtime_error("DPI Settings tab missing.");
         const auto x=static_cast<int>((tab->origin.x+tab->size.x/2)*scale),y=static_cast<int>((tab->origin.y+tab->size.y/2)*scale);
@@ -553,7 +617,7 @@ void management_and_dpi_test(const fs::path& output,const ViewState& state) {
     management.agents={{{{"client","codex"},{"label","Codex"},{"config","C:\\Users\\Example\\.codex\\config.toml"},{"detected",true}},false,Json()}};
     for(const auto selected_language:{shin::ui::Language::en,shin::ui::Language::ru}) {
         shin::ui::set_language(selected_language);
-        for(const auto size:{ImVec2{620,660},ImVec2{360,440},ImVec2{280,240}}) {
+        for(const auto size:{ImVec2{620,720},ImVec2{620,660},ImVec2{400,560},ImVec2{360,440},ImVec2{280,240}}) {
             SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
             for(const auto page:{WindowsManagement::Page::setup,WindowsManagement::Page::storage,WindowsManagement::Page::project,WindowsManagement::Page::login}) {
                 management.page=page;management_page=true;
@@ -565,6 +629,53 @@ void management_and_dpi_test(const fs::path& output,const ViewState& state) {
         }
     }
     management_page=false;management.root.clear();shin::ui::set_language(language);dashboard_view=0;
+}
+
+void documentation_main_views(ViewState state,const fs::path& output) {
+    const auto previous_language=shin::ui::language();
+    const int previous_preference=language_preference;
+    state.connected=true;state.received=Clock::now();
+    auto& telemetry=state.data["telemetry"];
+    const auto base_project=telemetry["project_states"][0];
+    telemetry["project_states"]=Json::array();
+    const std::array names{"Atlas","Ledger","Beacon"};
+    const std::array ids{"shin","ledger","beacon"};
+    for(std::size_t i=0;i<names.size();++i) {
+        auto project=base_project;
+        project.update({{"id",ids[i]},{"name",names[i]},{"root",std::string("C:\\Projects\\")+names[i]},
+            {"activity_age_ms",120000+i*60000},{"last_check_age_ms",14000},{"last_success_age_ms",14000}});
+        telemetry["project_states"].push_back(project);
+    }
+    auto& history=telemetry["history"];
+    constexpr std::int64_t captured=1792756800000;
+    history["captured_at_ms"]=captured;history["oldest_at_ms"]=captured-3600000;
+    history["minute_timeline"]=Json::array();history["rows"]=14000;
+    history["projects"]=Json::array({{{"id","shin"},{"requests",120},{"errors",0},{"unobserved",0}},
+        {{"id","ledger"},{"requests",41},{"errors",0},{"unobserved",0}},
+        {{"id","beacon"},{"requests",25},{"errors",0},{"unobserved",0}}});
+    for(int minute=0;minute<=60;++minute) {
+        const double rss=(174+minute*.7+(minute>35?17:0)+(minute%7<3?2:0))*1048576;
+        const bool missing=minute>=24 && minute<=27;
+        const double latency=26+(minute%9)*1.4+(minute==36?24:0);
+        history["minute_timeline"].push_back(Json::array({captured-(60-minute)*60000,
+            3+(minute<60 && minute%20==0?1:0),0,0,latency*10,10,
+            missing?Json(nullptr):Json(rss),missing?Json(nullptr):Json(rss),missing?0:30,1,
+            minute<45?"run-a":"run-b"}));
+    }
+    SetWindowPos(panel,nullptr,0,0,620,810,SWP_NOZORDER|SWP_NOACTIVATE);
+    const std::pair<int,const char*> views[]{{0,"overview"},{1,"projects"},{3,"settings"}};
+    for(const auto language:{shin::ui::Language::en,shin::ui::Language::ru}) {
+        apply_language_preference(language==shin::ui::Language::ru?2:1);history_hours=1;graph_mode=2;selected.clear();project_page=0;
+        for(const auto& [view,name]:views) {
+            dashboard_view=view;monitor_motion=MonitorMotion{};
+            SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(-100,-100));
+            for(int frame=0;frame<3;++frame) render_frame(state);
+            if(view==3) (void)reachable_settings_actions(state,{620,810});
+            check_action_bounds({620,810});check_action_ids();
+            save_frame(output/(std::string("monitor-")+name+(language==shin::ui::Language::ru?"-ru.png":"-en.png")));
+        }
+    }
+    apply_language_preference(previous_preference);shin::ui::set_language(previous_language);selected.clear();dashboard_view=0;
 }
 
 int render_test(const fs::path& output, bool shell) {
@@ -581,7 +692,7 @@ int render_test(const fs::path& output, bool shell) {
     unsigned documentation_frames=0;
     unsigned update_frames=0;
     const std::pair<int,int> views[]{{0,0},{1,0},{2,0},{2,1},{2,2},{3,0}};
-    for(const auto size: {ImVec2{448,620},ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
+    for(const auto size: {ImVec2{620,810},ImVec2{400,560},ImVec2{448,620},ImVec2{432,460},ImVec2{360,440},ImVec2{280,340},ImVec2{280,240}}) {
         SetWindowPos(panel,nullptr,0,0,static_cast<int>(size.x),static_cast<int>(size.y),SWP_NOZORDER|SWP_NOACTIVATE);
         // No successful reply has ever arrived: different from a disconnected
         // monitor that still holds its last good snapshot.
@@ -595,8 +706,11 @@ int render_test(const fs::path& output, bool shell) {
             for(int frame=0;frame<3;++frame) render_frame(state);
             check_action_bounds(size);
             check_action_ids();
-            if (view == 3 && std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) { return action.chart == 110; }) && size.y >= 440)
-                throw std::runtime_error("Settings has no visible update check.");
+            if(view==3 && size.y>=440) {
+                const auto reachable=reachable_settings_actions(state,size);
+                for(const int id:{83,85,110,111,112,113,114,115}) if(!reachable.contains(id))
+                    throw std::runtime_error("Settings action is unreachable: "+std::to_string(id));
+            }
             save_frame(output/(std::to_string(++frames)+".png"));
         }
         documentation_frames+=documentation_warning_render(state,output,size);
@@ -606,6 +720,7 @@ int render_test(const fs::path& output, bool shell) {
         update_frames+=updates_render(output,size);
     }
     management_and_dpi_test(output,state);
+    documentation_main_views(state,output);
     const auto icon=logo();DestroyIcon(icon);
     {
         struct Restore { ~Restore(){test_mode=true;} } restore;
@@ -697,7 +812,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         WNDCLASSEXW wc{sizeof(wc)};wc.lpfnWndProc=window_proc;wc.hInstance=instance;wc.lpszClassName=window_class;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);
         if(!RegisterClassExW(&wc)) throw std::runtime_error(shin::ui::tr("Cannot register Monitor window."));
         wc.lpfnWndProc=report_proc;wc.lpszClassName=L"ShinMonitorReport";RegisterClassExW(&wc);
-        panel=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST,window_class,caption.c_str(),WS_POPUP,0,0,432,460,nullptr,nullptr,instance,nullptr);
+        panel=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST,window_class,caption.c_str(),WS_POPUP,0,0,620,810,nullptr,nullptr,instance,nullptr);
         if(!panel) throw std::runtime_error(shin::ui::tr("Cannot create Monitor window."));
         DXGI_SWAP_CHAIN_DESC desc{};desc.BufferCount=2;desc.BufferDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;desc.OutputWindow=panel;desc.SampleDesc.Count=1;desc.Windowed=TRUE;desc.SwapEffect=DXGI_SWAP_EFFECT_DISCARD;
@@ -706,8 +821,13 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         if(FAILED(result) && !test_mode) result=D3D11CreateDeviceAndSwapChain(nullptr,D3D_DRIVER_TYPE_WARP,nullptr,0,nullptr,0,D3D11_SDK_VERSION,&desc,&swap_chain,&device,nullptr,&context);
         checked(result,shin::ui::tr("Direct3D 11 is unavailable."));make_target();load_brand();
         configure_imgui();
-        ImFontConfig fallback;fallback.MergeMode=true;
-        ImGui::GetIO().Fonts->AddFontFromFileTTF((known_folder(FOLDERID_Fonts)/"seguisym.ttf").string().c_str(),13,&fallback);
+        const auto symbol_path=(known_folder(FOLDERID_Fonts)/"seguisym.ttf").string();
+        ImFontConfig fallback;fallback.MergeMode=true;fallback.DstFont=ImGui::GetIO().FontDefault;
+        ImGui::GetIO().Fonts->AddFontFromFileTTF(symbol_path.c_str(),17,&fallback);
+        if(console_font!=ImGui::GetIO().FontDefault) {
+            ImFontConfig console_fallback;console_fallback.MergeMode=true;console_fallback.DstFont=console_font;
+            ImGui::GetIO().Fonts->AddFontFromFileTTF(symbol_path.c_str(),14,&console_fallback);
+        }
         symbols=ImGui::GetIO().Fonts->AddFontFromFileTTF((known_folder(FOLDERID_Fonts)/"segmdl2.ttf").string().c_str(),17);
         if(!symbols) throw std::runtime_error(shin::ui::tr("Windows icon font is unavailable."));
         ImGui_ImplWin32_Init(panel);ImGui_ImplDX11_Init(device.Get(),context.Get());

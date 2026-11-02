@@ -1,7 +1,8 @@
 # Sand terminal monitor
 
-`shin-ce stats` brings Monitor's Sand palette, project states and timing
-calculations to an interactive terminal. The Sand TUI is included in preview
+`shin-ce stats` brings project states and timing calculations to an interactive
+terminal with the original dark Sand palette. The desktop development UI uses
+Light Sand; the terminal appearance stays independent. The Sand TUI is included in preview
 dev.39 and later; use the [preview kit](local-kit.md#download-a-preview-release)
 on macOS or [build from source](building.md) on Linux.
 Homebrew also includes the complete TUI. Native Windows does not implement

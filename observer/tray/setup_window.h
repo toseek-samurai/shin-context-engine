@@ -8,9 +8,17 @@
             backing:NSBackingStoreBuffered defer:NO];
         live_text(window, @"title", "Set up Shin"); window.releasedWhenClosed = NO;
         window.contentMinSize = NSMakeSize(660, 620);
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+        window.backgroundColor = [NSColor colorWithCalibratedRed:.969 green:.973 blue:.980 alpha:1];
+        window.contentView.wantsLayer = YES;
+        window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
+        window.contentView.layer.borderWidth = 1;
+        window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.773 green:.678 blue:.533 alpha:1].CGColor;
+        NSColor* actionBlue = [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1];
+        NSColor* secondaryInk = [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1];
         NSStackView* stack = [[NSStackView alloc] init];
         stack.orientation = NSUserInterfaceLayoutOrientationVertical;
-        stack.alignment = NSLayoutAttributeLeading; stack.spacing = 12;
+        stack.alignment = NSLayoutAttributeLeading; stack.spacing = 10;
         stack.translatesAutoresizingMaskIntoConstraints = NO;
         [window.contentView addSubview:stack];
         [NSLayoutConstraint activateConstraints:@[
@@ -19,18 +27,26 @@
             [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:24],
             [stack.bottomAnchor constraintEqualToAnchor:window.contentView.bottomAnchor constant:-24]]];
         NSTextField* intro = live_label("Choose a project, then select the agents that may use its context. Shin keeps your existing projects and settings.");
+        intro.font = [NSFont systemFontOfSize:16];
         [stack addArrangedSubview:intro];
         self.setupProject = live_label("1. Add your first project folder");
+        self.setupProject.font = [NSFont systemFontOfSize:16 weight:NSFontWeightMedium];
         self.setupProject.selectable = YES; self.setupProject.maximumNumberOfLines = 2;
         self.setupProject.lineBreakMode = NSLineBreakByTruncatingMiddle;
         [stack addArrangedSubview:self.setupProject];
         self.setupChoose = live_button("Choose project folder…", self, @selector(beginSetupProject:));
         [stack addArrangedSubview:self.setupChoose];
-        [stack addArrangedSubview:live_label("2. Select coding agents and profiles", false)];
+        NSTextField* agentsHeading = live_label("2. Select coding agents and profiles", false);
+        agentsHeading.font = [NSFont systemFontOfSize:16 weight:NSFontWeightMedium];
+        [stack addArrangedSubview:agentsHeading];
         self.setupAdvanced = live_button("Advanced agent settings", self, @selector(toggleSetupAdvanced:), true);
         [stack addArrangedSubview:self.setupAdvanced];
         NSScrollView* scroll = [[NSScrollView alloc] init];
-        scroll.hasVerticalScroller = YES; scroll.borderType = NSBezelBorder;
+        scroll.hasVerticalScroller = YES; scroll.autohidesScrollers = YES; scroll.borderType = NSNoBorder;
+        scroll.drawsBackground = YES; scroll.backgroundColor = NSColor.whiteColor;
+        scroll.wantsLayer = YES; scroll.layer.cornerRadius = 10;
+        scroll.layer.borderWidth = 1;
+        scroll.layer.borderColor = [NSColor colorWithCalibratedRed:.847 green:.863 blue:.886 alpha:1].CGColor;
         self.setupAgents = [[NSStackView alloc] init];
         self.setupAgents.orientation = NSUserInterfaceLayoutOrientationVertical;
         self.setupAgents.alignment = NSLayoutAttributeLeading; self.setupAgents.spacing = 12;
@@ -38,6 +54,9 @@
         self.setupAgents.translatesAutoresizingMaskIntoConstraints = NO;
         scroll.documentView = self.setupAgents;
         [self.setupAgents.widthAnchor constraintEqualToAnchor:scroll.contentView.widthAnchor].active = YES;
+        // A short, unflipped document otherwise sits at the bottom of its clip
+        // view. Fill the viewport at minimum; longer agent lists still grow.
+        [self.setupAgents.heightAnchor constraintGreaterThanOrEqualToAnchor:scroll.contentView.heightAnchor].active = YES;
         [stack addArrangedSubview:scroll];
         [scroll.heightAnchor constraintGreaterThanOrEqualToConstant:200].active = YES;
         NSStackView* actions = [NSStackView stackViewWithViews:@[]]; actions.spacing = 12;
@@ -46,12 +65,21 @@
         [actions addArrangedSubview:self.setupConnect]; [actions addArrangedSubview:self.setupCheck];
         [stack addArrangedSubview:actions];
         self.setupStatus = live_label("Select a folder to begin.");
+        self.setupStatus.font = [NSFont systemFontOfSize:15];
         self.setupStatus.selectable = YES; self.setupStatus.maximumNumberOfLines = 8;
         [stack addArrangedSubview:self.setupStatus];
         NSTextField* note = live_label("Only checked agents are changed. A private backup is kept for existing files. Restart those agents after connecting; project-specific settings may override user settings.");
+        note.font = [NSFont systemFontOfSize:14]; note.textColor = secondaryInk;
         [stack addArrangedSubview:note];
         self.setupLogin = live_button("Enable background service at login", self, @selector(enableSetupLogin:));
         [stack addArrangedSubview:self.setupLogin];
+        for (NSButton* button in @[self.setupChoose, self.setupAdvanced, self.setupConnect, self.setupCheck, self.setupLogin]) {
+            button.font = [NSFont systemFontOfSize:15];
+            [button setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+            [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+        }
+        self.setupConnect.bezelColor = actionBlue; self.setupConnect.contentTintColor = NSColor.whiteColor;
+        self.setupConnect.font = [NSFont systemFontOfSize:15 weight:NSFontWeightMedium];
         for (NSView* view in @[intro, self.setupProject, scroll, self.setupStatus, note])
             [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
         self.setupWindow = window; [window center];
@@ -85,7 +113,10 @@
     self.setupAdvancedViews = [NSMutableArray array];
     self.setupTargets = [NSMutableArray array]; self.setupTargetButtons = [NSMutableArray array]; self.setupFileButtons = [NSMutableArray array];
     if (!self.setupRoot.length) {
-        [self.setupAgents addArrangedSubview:live_label("Available agents and profiles will appear after you choose a project.")];
+        NSTextField* empty = live_label("Available agents and profiles will appear after you choose a project.");
+        empty.font = [NSFont systemFontOfSize:15];
+        [self.setupAgents addView:empty inGravity:NSStackViewGravityTop];
+        [empty.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
         return;
     }
     live_text(self.setupStatus, @"stringValue", "Finding agents and profiles…");
@@ -104,13 +135,21 @@
             NSStackView* controls = [NSStackView stackViewWithViews:@[]]; controls.spacing = 12;
             NSString* title = detected ? label : [NSString stringWithFormat:ui_text("%@ — not detected"), label];
             NSButton* check = [NSButton checkboxWithTitle:title target:self action:@selector(selectSetupTarget:)]; check.tag = index;
+            check.font = [NSFont systemFontOfSize:15];
             live_caption(check, @"title", ^{ return detected ? label : [NSString stringWithFormat:ui_text("%@ — not detected"), label]; });
             NSButton* file = live_button("Choose settings file…", self, @selector(chooseSetupConfig:)); file.tag = index;
+            file.font = [NSFont systemFontOfSize:14]; file.bordered = NO; file.bezelStyle = NSBezelStyleInline;
+            file.contentTintColor = [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1];
+            for (NSButton* button in @[check, file]) {
+                [button setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+                [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
+            }
             [controls addArrangedSubview:check]; [controls addArrangedSubview:file];
             NSTextField* location = [NSTextField labelWithString:path.length ? path : ui_text("Choose a settings file for this custom installation.")]; location.selectable = YES; location.lineBreakMode = NSLineBreakByTruncatingMiddle;
             if (!path.length) live_text(location, @"stringValue", "Choose a settings file for this custom installation.");
-            location.font = [NSFont systemFontOfSize:11]; location.toolTip = path;
-            [group addArrangedSubview:controls]; [group addArrangedSubview:location]; [self.setupAgents addArrangedSubview:group];
+            location.font = [NSFont systemFontOfSize:13]; location.toolTip = path;
+            location.textColor = [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1];
+            [group addArrangedSubview:controls]; [group addArrangedSubview:location]; [self.setupAgents addView:group inGravity:NSStackViewGravityTop];
             [group.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
             [location.widthAnchor constraintEqualToAnchor:group.widthAnchor].active = YES;
             target[@"pathLabel"] = location;

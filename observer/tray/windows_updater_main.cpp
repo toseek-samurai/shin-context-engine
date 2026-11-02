@@ -13,13 +13,18 @@
 #include <mutex>
 #include <vector>
 #include <array>
+#include <algorithm>
 #include <fstream>
 #include <exception>
+#include <limits>
 
 using namespace shin::observer;
 namespace {
-HWND window=nullptr,label=nullptr,bar=nullptr;
-HBRUSH background=CreateSolidBrush(RGB(38,42,39));
+HWND window=nullptr,heading=nullptr,label=nullptr,current_status=nullptr,bar=nullptr;
+constexpr COLORREF background_color=RGB(247,248,250),ink_color=RGB(37,49,64),sand_color=RGB(197,173,136);
+HBRUSH background=CreateSolidBrush(background_color);
+COLORREF status_color=RGB(40,93,188);
+std::wstring displayed_plan,displayed_status;
 std::vector<const char*> steps{"Checking reviewed release…","Downloading update…","Verifying download…","Waiting for Monitor to close…","Windows Installer is installing the update. Confirm UAC to continue.","Preparing projects…"};
 std::size_t active_step=0;
 bool success=false;
@@ -29,6 +34,56 @@ unsigned percent=0;
 bool terminal=false;
 fs::path monitor_path;
 std::wstring wide(const std::string& value) { return windows_update::wide_url(value); }
+void present_plan(const std::wstring& next) {
+    if(!label || next==displayed_plan || next.size()>static_cast<std::size_t>(std::numeric_limits<int>::max())) return;
+    DWORD selection_start=0,selection_end=0;
+    SendMessageW(label,EM_GETSEL,reinterpret_cast<WPARAM>(&selection_start),reinterpret_cast<LPARAM>(&selection_end));
+    const auto first_visible=SendMessageW(label,EM_GETFIRSTVISIBLELINE,0,0);
+    SendMessageW(label,WM_SETREDRAW,FALSE,0);
+    if(SetWindowTextW(label,next.c_str())) {
+        const auto bound=static_cast<DWORD>(next.size());
+        SendMessageW(label,EM_SETSEL,static_cast<WPARAM>(std::min(selection_start,bound)),
+            static_cast<LPARAM>(std::min(selection_end,bound)));
+        const auto lines=SendMessageW(label,EM_GETLINECOUNT,0,0);
+        const auto logical_lines=static_cast<std::size_t>(std::count(next.begin(),next.end(),L'\n'))+1;
+        // EDIT counts soft-wrapped display lines, not just newline-separated
+        // rows. Bound against both so a narrow/high-DPI journal keeps its place.
+        if(lines>0 && static_cast<std::size_t>(lines)>=logical_lines &&
+            static_cast<std::size_t>(lines)<=next.size()+1) {
+            const auto restored=std::clamp<LRESULT>(first_visible,0,lines-1);
+            const auto visible=SendMessageW(label,EM_GETFIRSTVISIBLELINE,0,0);
+            if(visible>=0 && visible<lines) SendMessageW(label,EM_LINESCROLL,0,restored-visible);
+        }
+        displayed_plan=next;
+    }
+    SendMessageW(label,WM_SETREDRAW,TRUE,0);
+    InvalidateRect(label,nullptr,TRUE);
+}
+void layout_update_window(HWND target) {
+    if(!heading || !label || !current_status || !bar) return;
+    RECT bounds{};GetClientRect(target,&bounds);
+    const int height=static_cast<int>(bounds.bottom);
+    const bool compact_layout=height<320;
+    const int margin=compact_layout?12:24;
+    const int width=std::max(1,static_cast<int>(bounds.right)-2*margin);
+    const int heading_height=compact_layout?28:36,button_height=compact_layout?30:34;
+    const int progress_height=compact_layout?8:10,status_height=compact_layout?52:56;
+    const int button_y=height-margin-button_height,progress_y=button_y-8-progress_height;
+    const int status_y=progress_y-8-status_height,label_y=margin+heading_height+8;
+    MoveWindow(heading,margin,margin,width,heading_height,TRUE);
+    MoveWindow(label,margin,label_y,width,std::max(1,status_y-label_y-8),TRUE);
+    MoveWindow(current_status,margin,status_y,width,status_height,TRUE);
+    MoveWindow(bar,margin,progress_y,width,progress_height,TRUE);
+    const auto button=GetDlgItem(target,1);
+    if(button) {
+        const auto text=wide(shin::ui::tr("Open panel"));
+        HDC dc=GetDC(button);SIZE measured{};
+        const auto previous=SelectObject(dc,reinterpret_cast<HGDIOBJ>(SendMessageW(button,WM_GETFONT,0,0)));
+        GetTextExtentPoint32W(dc,text.c_str(),static_cast<int>(text.size()),&measured);
+        SelectObject(dc,previous);ReleaseDC(button,dc);
+        MoveWindow(button,margin,button_y,std::min(width,static_cast<int>(measured.cx)+28),button_height,TRUE);
+    }
+}
 #include "windows_command.h"
 Json prepare_projects(const fs::path& prefix,const fs::path& home,const Json& manifest) {
     shin::windows::ReadFile cli(prefix/"bin/shin-ce.exe");cli.require_machine_owned();
@@ -217,10 +272,20 @@ LRESULT CALLBACK procedure(HWND target,UINT message,WPARAM key,LPARAM data) {
     case WM_APP: {
         std::lock_guard lock(mutex);
         const bool downloading=std::string_view(steps.at(active_step))=="Downloading update…";
-        std::string plan="SHIN\n\n";
-        for(std::size_t i=0;i<steps.size();++i) plan+=(success||i<active_step?"[+] ":i==active_step?"[>] ":"[ ] ")+std::string(shin::ui::tr(steps[i]))+"\n\n";
-        plan+=description;if(downloading&&!terminal) plan+=" · "+std::to_string(percent)+"%";
-        SetWindowTextW(label,wide(plan).c_str());
+        std::string plan;
+        for(std::size_t i=0;i<steps.size();++i) plan+=(success||i<active_step?"✓  ":i==active_step?(terminal?"×  ":"●  "):"○  ")+std::string(shin::ui::tr(steps[i]))+"\r\n";
+        plan+="\r\n";
+        // Keep full recovery details selectable. EDIT expects CRLF line ends;
+        // status/error producers may supply LF without the carriage return.
+        for(const char character:description) {
+            if(character=='\n' && plan.back()!='\r') plan+='\r';
+            plan+=character;
+        }
+        present_plan(wide(plan));
+        auto status=description;if(downloading&&!terminal) status+=" · "+std::to_string(percent)+"%";
+        const auto next_status=wide(status);
+        status_color=terminal?(success?RGB(45,112,78):RGB(181,62,56)):RGB(40,93,188);
+        if(next_status!=displayed_status && SetWindowTextW(current_status,next_status.c_str())) displayed_status=next_status;
         const bool marquee=!terminal && !downloading;
         const auto style=GetWindowLongPtrW(bar,GWL_STYLE);
         SetWindowLongPtrW(bar,GWL_STYLE,marquee?style|PBS_MARQUEE:style&~static_cast<LONG_PTR>(PBS_MARQUEE));
@@ -233,8 +298,17 @@ LRESULT CALLBACK procedure(HWND target,UINT message,WPARAM key,LPARAM data) {
         return 0;
     }
     case WM_CTLCOLORSTATIC:
-        SetTextColor(reinterpret_cast<HDC>(key),RGB(236,237,224));SetBkColor(reinterpret_cast<HDC>(key),RGB(38,42,39));
+        SetTextColor(reinterpret_cast<HDC>(key),reinterpret_cast<HWND>(data)==current_status?status_color:ink_color);
+        SetBkColor(reinterpret_cast<HDC>(key),background_color);
         return reinterpret_cast<LRESULT>(background);
+    case WM_SIZE: layout_update_window(target);return 0;
+    case WM_PAINT: {
+        PAINTSTRUCT paint{};HDC dc=BeginPaint(target,&paint);RECT bounds{};GetClientRect(target,&bounds);
+        HPEN pen=CreatePen(PS_SOLID,1,sand_color);
+        const auto previous_pen=SelectObject(dc,pen),previous_brush=SelectObject(dc,GetStockObject(NULL_BRUSH));
+        Rectangle(dc,0,0,bounds.right,bounds.bottom);
+        SelectObject(dc,previous_brush);SelectObject(dc,previous_pen);DeleteObject(pen);EndPaint(target,&paint);return 0;
+    }
     case WM_COMMAND:
         if(LOWORD(key)==1) {
             fs::path selected;{std::lock_guard lock(mutex);selected=monitor_path;}
@@ -271,18 +345,31 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         WNDCLASSW type{};type.hInstance=instance;type.lpfnWndProc=procedure;type.lpszClassName=L"ShinWindowsUpdater";
         type.hCursor=LoadCursorW(nullptr,IDC_ARROW);type.hbrBackground=background;
         if(!RegisterClassW(&type)) return 2;
-        window=CreateWindowW(type.lpszClassName,L"Shin updates",WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
-            CW_USEDEFAULT,CW_USEDEFAULT,640,580,nullptr,nullptr,instance,nullptr);
+        MONITORINFO monitor{sizeof(monitor)};GetMonitorInfoW(MonitorFromPoint({0,0},MONITOR_DEFAULTTOPRIMARY),&monitor);
+        const int width=monitor.rcWork.right>monitor.rcWork.left?std::min(640,static_cast<int>(monitor.rcWork.right-monitor.rcWork.left)-48):640;
+        const int height=monitor.rcWork.bottom>monitor.rcWork.top?std::min(640,static_cast<int>(monitor.rcWork.bottom-monitor.rcWork.top)-48):640;
+        window=CreateWindowW(type.lpszClassName,wide(shin::ui::tr("Shin updates")).c_str(),WS_OVERLAPPED|WS_CAPTION|WS_SYSMENU|WS_MINIMIZEBOX,
+            CW_USEDEFAULT,CW_USEDEFAULT,width,height,nullptr,nullptr,instance,nullptr);
         if(!window) return 2;
-        label=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE,24,28,580,410,window,nullptr,instance,nullptr);
-        bar=CreateWindowW(PROGRESS_CLASSW,L"",WS_CHILD|WS_VISIBLE|PBS_MARQUEE,24,450,580,20,window,nullptr,instance,nullptr);
+        heading=CreateWindowW(L"STATIC",wide(shin::ui::tr("Shin updates")).c_str(),WS_CHILD|WS_VISIBLE,24,22,580,36,window,nullptr,instance,nullptr);
+        label=CreateWindowW(L"EDIT",L"",WS_CHILD|WS_VISIBLE|WS_VSCROLL|WS_TABSTOP|ES_MULTILINE|ES_READONLY|ES_AUTOVSCROLL,
+            24,76,580,410,window,nullptr,instance,nullptr);
+        current_status=CreateWindowW(L"STATIC",L"",WS_CHILD|WS_VISIBLE|SS_NOPREFIX,24,446,580,56,window,nullptr,instance,nullptr);
+        bar=CreateWindowW(PROGRESS_CLASSW,L"",WS_CHILD|WS_VISIBLE|PBS_MARQUEE,24,510,580,10,window,nullptr,instance,nullptr);
         const auto button=CreateWindowW(L"BUTTON",wide(shin::ui::tr("Open panel")).c_str(),WS_CHILD|WS_VISIBLE|WS_TABSTOP,
-            24,490,260,32,window,reinterpret_cast<HMENU>(1),instance,nullptr);EnableWindow(button,FALSE);
-        HFONT font=CreateFontW(-16,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
-        SendMessageW(label,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);SendMessageW(button,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
+            24,550,160,34,window,reinterpret_cast<HMENU>(1),instance,nullptr);EnableWindow(button,FALSE);
+        RECT client{};GetClientRect(window,&client);
+        HFONT font=CreateFontW(client.bottom<320?-14:-17,0,0,0,FW_NORMAL,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
+        HFONT title_font=CreateFontW(-24,0,0,0,FW_MEDIUM,FALSE,FALSE,FALSE,DEFAULT_CHARSET,OUT_DEFAULT_PRECIS,CLIP_DEFAULT_PRECIS,CLEARTYPE_QUALITY,DEFAULT_PITCH,L"Segoe UI");
+        SendMessageW(heading,WM_SETFONT,reinterpret_cast<WPARAM>(title_font),TRUE);
+        SendMessageW(label,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
+        SendMessageW(current_status,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
+        SendMessageW(button,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
+        SendMessageW(bar,PBM_SETBARCOLOR,0,RGB(40,93,188));SendMessageW(bar,PBM_SETBKCOLOR,0,RGB(227,232,239));
+        layout_update_window(window);
         ShowWindow(window,SW_SHOW);SetForegroundWindow(window);
         auto worker=std::async(std::launch::async,[folder,completion]{if(completion) finish_setup();else install(folder);});
         MSG message{};while(GetMessageW(&message,nullptr,0,0)>0) {TranslateMessage(&message);DispatchMessageW(&message);}
-        worker.get();DeleteObject(font);DeleteObject(background);return 0;
+        worker.get();DeleteObject(title_font);DeleteObject(font);DeleteObject(background);return 0;
     } catch(...) {return 2;}
 }

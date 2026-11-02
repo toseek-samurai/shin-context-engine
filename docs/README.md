@@ -2,8 +2,12 @@
 
 ## Current preview
 
-The current published preview is [dev.77](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77).
-It contains Core **2.0.5-dev.13** and Observer/CLI/MCP/Monitor **2.0.5-dev.77**.
+The current published preview is [dev.82](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.82).
+It contains Core **2.0.5-dev.15** and Observer/CLI/MCP/Monitor **2.0.5-dev.82**.
+Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
+passed their platform's guarded publication checks. Each download group has a
+`shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
+CI run, attempt and SHA-256 values.
 Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
@@ -15,12 +19,22 @@ still belong to an earlier kit: reconnect persistent MCP clients after updating,
 including clients hosted inside an IDE. Restarting another desktop client does
 not restart those IDE sessions.
 
+## Desktop redesign in development
+
+Current source includes a Light Sand desktop redesign shared by macOS and Windows:
+**Overview**, **Projects**, **History** and **Settings**, with readable text,
+compact labeled actions and technical details disclosed separately. History opens
+with recorded calls; timing and optional agent usage remain secondary views.
+This redesign is **not yet released** and is not included in the dev.82 downloads.
+The [desktop screenshots](images/README.md) show this development UI using
+synthetic data. The terminal keeps its dark Sand appearance and Activity section.
+
 ## Capabilities by platform
 
-This table describes the published platform routes and the Linux source route. A shared engine or
+This table describes the published platform routes, including Linux terminal tools. A shared engine or
 dashboard does not imply that every platform has the same setup and update tools.
 
-| Capability | macOS native kit | macOS Homebrew | Linux / WSL2 source build | Windows x64 ZIP / MSI |
+| Capability | macOS native kit | macOS Homebrew | Linux / WSL2 terminal tools | Windows x64 ZIP / MSI |
 | --- | --- | --- | --- | --- |
 | Core, local Observer, CLI and MCP | Yes | Yes | Yes | Yes |
 | Desktop Monitor: Overview, Projects, Activity, Settings; Sand; EN/RU | Yes | Yes | No native desktop host | Yes |
@@ -30,7 +44,7 @@ dashboard does not imply that every platform has the same setup and update tools
 | Automatic agent token-history collection | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes | Codex, OpenCode, Hermes |
 | Storage management | Monitor and CLI | Monitor and CLI | CLI; TUI inspection | Monitor and CLI |
 | Release checks | Automatic or manual | Homebrew commands | No automatic release download | Automatic or manual in Monitor |
-| Update installation | Independent Updater, Monitor or CLI/TUI | `brew upgrade` | Rebuild and replace source-built tools | Reviewed MSI installation with UAC |
+| Update installation | Independent Updater, Monitor or CLI/TUI | `brew upgrade` | Replace the terminal archive or rebuild source tools | Reviewed MSI installation with UAC |
 | Background startup at login | Opt-in native service registration | `brew services` | No built-in OS service registration | MSI machine host supervises unelevated user runtimes |
 
 Token totals from agent history are separate from MCP request statistics.
@@ -40,10 +54,12 @@ and the session journal remain available independently of agent token history.
 The native binary kit targets **macOS 15+ on Apple Silicon**. Homebrew builds the
 complete application from source and has passed its installation checks on Apple
 Silicon; Intel installation qualification is incomplete. Linux/WSL2 currently
-uses source builds. Source CI can also prepare an independently qualified Ubuntu
-24.04 x86_64 terminal archive; use it only when that release includes the asset.
-This packaging route is prepared for the next preview and does not add a Linux
-desktop host or automatic updater. Windows targets **x64 on local NTFS**; WSL tests exercise the
+offers the published Ubuntu 24.04 x86_64 terminal archive or source builds. The
+archive includes Core, Observer, CLI, MCP, usage collection and the EN/RU TUI; it
+requires glibc 2.39+, libstdc++6, OpenSSL 3 and SQLite system packages. It includes
+no Linux desktop host, OS service installer or automatic updater. See
+[Linux and WSL2 tools](building.md#linux-and-wsl2-terminal-tools).
+Windows targets **x64 on local NTFS**; WSL tests exercise the
 Linux implementation, not the native Windows application.
 
 The macOS preview is ad-hoc signed, without Developer ID or notarization.

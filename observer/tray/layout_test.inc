@@ -1,4 +1,5 @@
 // Test-only entry point: real ImGui/Metal rendering, no IPC or user preferences.
+#import <QuartzCore/CATransaction.h>
 #include <iostream>
 #include "updates_window_test.inc"
 
@@ -131,6 +132,13 @@ int main(int argc, char** argv) {
                 NSView* body = setupApp.setupWindow.contentView;
                 [body layoutSubtreeIfNeeded];
                 [setupApp.setupWindow displayIfNeeded];
+                [setupApp.setupAgents displayIfNeeded];
+                [CATransaction flush];
+                // Let AppKit finish the scroll document's native presentation
+                // cycle before caching it; model frames settle before its layers.
+                [NSRunLoop.currentRunLoop runUntilDate:[NSDate dateWithTimeIntervalSinceNow:.25]];
+                [body layoutSubtreeIfNeeded];
+                [setupApp.setupWindow displayIfNeeded];
                 for (NSView* control : @[setupApp.setupChoose, setupApp.setupConnect, setupApp.setupCheck, setupApp.setupLogin, setupApp.setupStatus, setupApp.setupAdvanced]) {
                     const auto rect = [control convertRect:control.bounds toView:body];
                     if (!NSContainsRect(body.bounds, rect) || rect.size.height < 10)
@@ -192,7 +200,7 @@ int main(int argc, char** argv) {
                 {"publications", 12}, {"preparations", 12}, {"recoveries", 0}, {"last_tick_ms", 42},
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
-            for (const auto size : {ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
+            for (const auto size : {ImVec2{620, 810}, ImVec2{400, 560}, ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 for (const auto* scenario : {"first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "overview-warning", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
@@ -407,7 +415,8 @@ int main(int argc, char** argv) {
                     auto texture = [device newTextureWithDescriptor:descriptor];
                     auto* retained_context = ImGui::GetCurrentContext();
                     const int live_preference = kind == "language-live-en" ? 1 : kind == "language-live-ru" ? 2 : 0;
-                    for (int frame = 0; frame < 3; ++frame) {
+                    std::set<int> reachable_settings;
+                    for (int frame = 0; frame < (kind == "settings" ? 18 : 3); ++frame) {
                         if (kind == "search-warning-opened" && frame == 1) activate(120);
                         if (kind.starts_with("language-live-")) {
                             if (frame == 0) shin::ui::set_language(live_preference == 2 ? shin::ui::Language::en : shin::ui::Language::ru);
@@ -419,16 +428,22 @@ int main(int argc, char** argv) {
                         pass.colorAttachments[0].storeAction = MTLStoreActionStore;
                         pass.colorAttachments[0].clearColor = MTLClearColorMake(.09, .10, .11, 1);
                         auto& io = ImGui::GetIO(); io.DisplaySize = size; io.DisplayFramebufferScale = {2, 2}; io.DeltaTime = 1.0f / 20;
-                        if (kind == "models-details" && frame > 0) {
+                        if (kind == "settings") {
+                            io.AddMousePosEvent(size.x / 2, size.y - 65);
+                            if (frame >= 3 && frame < 14) io.AddMouseWheelEvent(0, -1);
+                            if (frame == 14) io.AddMouseWheelEvent(0, 1000);
+                        } else if (kind == "models-details" && frame > 0) {
                             const auto badge = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) { return item.chart == 52; });
                             if (badge != ui_actions.end()) io.AddMousePosEvent(badge->origin.x + 2, badge->origin.y + 2);
                         } else if (kind == "sessions-full-end") {
-                            io.AddMousePosEvent(size.x/2,size.y-60);
+                            io.AddMousePosEvent(size.x/2,size.y/2);
                             if (frame > 0) io.AddMouseWheelEvent(0,-1000);
                         } else io.AddMousePosEvent(-100, -100);
                         ImGui_ImplMetal_NewFrame(pass);
                         ImGui::NewFrame();
                         try { render(view); } catch (const std::exception& e) { throw std::runtime_error(kind + " " + std::to_string(static_cast<int>(size.x)) + ": " + e.what()); }
+                        if (kind == "settings") for (const auto& action : ui_actions)
+                            if (action.enabled && !action.informational) reachable_settings.insert(action.chart);
                         ImGui::Render();
                         auto command = [queue commandBuffer];
                         auto encoder = [command renderCommandEncoderWithDescriptor:pass];
@@ -510,15 +525,25 @@ int main(int argc, char** argv) {
                             if (!has(limit)) throw std::runtime_error("full journal does not disclose its bound: " + context);
                         }
                         if (kind == "sessions-full-end" && size.y >= 620 && !has("What is recorded?"))
-                            throw std::runtime_error("full journal cannot scroll to its final controls: " + context);
+                            {
+                            std::string visible;
+                            for (const auto& action : ui_actions) if (action.chart >= 90 && action.chart < 100)
+                                visible += " [" + std::to_string(action.chart) + " " + action.label + "@" + std::to_string(action.origin.y) + "]";
+                            throw std::runtime_error("full journal cannot scroll to its final controls: " + context + visible);
+                        }
                     }
                     if (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
                         return action.chart == 87 && action.informational && action.label == "v" SHIN_OBSERVER_VERSION;
                     })) throw std::runtime_error("installed version is not visible and accessible: " + context);
                     for (const auto& action : ui_actions) {
-                        if (action.chart == 50 && std::abs(action.origin.x + action.size.x -
-                            (size.x - ImGui::GetStyle().WindowPadding.x)) > .5f)
-                            throw std::runtime_error("service status is not right-aligned: " + context);
+                        if (action.chart == 50) {
+                            const auto updates = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) {
+                                return item.chart == 86 || (item.chart == 110 && item.label == shin::ui::tr("Updates"));
+                            });
+                            if (updates == ui_actions.end() || std::abs(action.origin.x + action.size.x -
+                                (updates->origin.x + updates->size.x)) > .5f)
+                                throw std::runtime_error("service status is not aligned with the footer: " + context);
+                        }
                         if (action.origin.x < 0 || action.origin.y < 0 || action.origin.x + action.size.x > size.x + 1 ||
                             action.origin.y + action.size.y > size.y + 1)
                             throw std::runtime_error("out-of-bounds control: " + context + " " + action.label);
@@ -526,7 +551,7 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("diagnostic text overlaps footer: " + context + " " + action.label);
                         if (timing_open && action.chart >= 60 && action.chart <= 69 && action.origin.y + action.size.y > size.y - 34)
                             throw std::runtime_error("timing content overlaps footer: " + context + " " + action.label);
-                        if (action.chart >= 90 && action.origin.y + action.size.y > size.y - 39 + .5f)
+                        if (action.chart >= 90 && !(action.chart == 110 && action.label == shin::ui::tr("Updates")) && action.origin.y + action.size.y > size.y - 39 + .5f)
                             throw std::runtime_error("session content overlaps footer: " + context + " " + action.label);
                     }
                     if (kind == "projects") {
@@ -549,7 +574,7 @@ int main(int argc, char** argv) {
                     }
                     if (kind == "settings" && size.y >= 440) {
                         for (const int id : {83, 85, 110, 111, 112, 113, 114, 115})
-                            if (std::none_of(ui_actions.begin(), ui_actions.end(), [id](const auto& a) { return a.chart == id && !a.informational; }))
+                            if (!reachable_settings.contains(id))
                                 throw std::runtime_error("settings action unreachable: " + context + " " + std::to_string(id));
                     }
                     if (kind == "overview-warning" && size.y >= 440) {
@@ -587,9 +612,12 @@ int main(int argc, char** argv) {
                     const auto width = texture.width, height = texture.height;
                     std::vector<unsigned char> pixels(width * height * 4);
                     [texture getBytes:pixels.data() bytesPerRow:width * 4 fromRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0];
-                    std::size_t bright = 0;
-                    for (std::size_t i = 0; i < pixels.size(); i += 4) if (pixels[i] > 100 && pixels[i + 1] > 100) ++bright;
-                    if (bright < 1000) throw std::runtime_error("blank rendering: " + context);
+                    std::size_t bright = 0, dark = 0;
+                    for (std::size_t i = 0; i < pixels.size(); i += 4) {
+                        if (pixels[i] > 210 && pixels[i + 1] > 210 && pixels[i + 2] > 210) ++bright;
+                        if (pixels[i] < 110 && pixels[i + 1] < 140 && pixels[i + 2] < 180) ++dark;
+                    }
+                    if (bright < 1000 || dark < 300) throw std::runtime_error("blank rendering: " + context);
                     const auto filename = output / (kind + "-" + std::to_string(static_cast<int>(size.x)) + "x" + std::to_string(static_cast<int>(size.y)) + ".png");
                     auto color = CGColorSpaceCreateDeviceRGB();
                     auto provider = CGDataProviderCreateWithData(nullptr, pixels.data(), pixels.size(), nullptr);

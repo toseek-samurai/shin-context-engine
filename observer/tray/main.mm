@@ -347,7 +347,7 @@ static std::unique_ptr<Monitor> monitor;
     }
     load_icons(self.device);
     self.queue = [self.device newCommandQueue];
-    MTKView* view = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 432, 620) device:self.device];
+    MTKView* view = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 620, 810) device:self.device];
     view.delegate = self;
     view.preferredFramesPerSecond = 20;
     view.paused = YES;
@@ -848,14 +848,14 @@ static std::unique_ptr<Monitor> monitor;
         backing:NSBackingStoreBuffered defer:NO];
     live_text(window, @"title", "Shin storage"); window.releasedWhenClosed = NO; window.delegate = self;
     window.contentMinSize = NSMakeSize(720, 500);
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     NSTextField* text = live_label("Reading storage inventory…");
-    text.font = [NSFont systemFontOfSize:13]; text.translatesAutoresizingMaskIntoConstraints = NO;
+    text.font = [NSFont systemFontOfSize:15]; text.translatesAutoresizingMaskIntoConstraints = NO;
     NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0,0,716,200)];
     scroll.translatesAutoresizingMaskIntoConstraints = NO; scroll.hasVerticalScroller = YES;
     scroll.borderType = NSBezelBorder;
     NSTableView* table = [[NSTableView alloc] initWithFrame:NSMakeRect(0,0,716,200)];
-    table.delegate = self; table.dataSource = self; table.rowHeight = 38;
+    table.delegate = self; table.dataSource = self; table.rowHeight = 44;
     table.usesAlternatingRowBackgroundColors = YES; table.autoresizingMask = NSViewWidthSizable;
     table.style = NSTableViewStyleFullWidth; table.intercellSpacing = NSMakeSize(6,0);
     table.columnAutoresizingStyle = NSTableViewFirstColumnOnlyAutoresizingStyle;
@@ -871,7 +871,7 @@ static std::unique_ptr<Monitor> monitor;
     }
     scroll.documentView = table;
     NSTextField* note = live_label("File sizes outside projects. Data may change during updates; choose Refresh for a new inventory. Manual builds and diagnostics are excluded. Cleanup preserves sources, indexes and history.");
-    note.translatesAutoresizingMaskIntoConstraints = NO; note.font = [NSFont systemFontOfSize:12];
+    note.translatesAutoresizingMaskIntoConstraints = NO; note.font = [NSFont systemFontOfSize:14];
     note.textColor = NSColor.secondaryLabelColor;
     NSButton* policy = live_button("Automatically clean search caches of disconnected projects", self, @selector(toggleStorageAutoClean:), true);
     policy.translatesAutoresizingMaskIntoConstraints = NO;
@@ -920,7 +920,7 @@ static std::unique_ptr<Monitor> monitor;
     if (!cell) {
         cell = [[NSTableCellView alloc] init]; cell.identifier = column.identifier;
         NSTextField* text = [NSTextField labelWithString:@""]; text.translatesAutoresizingMaskIntoConstraints = NO;
-        text.font = project ? [NSFont systemFontOfSize:12] : [NSFont monospacedDigitSystemFontOfSize:12 weight:NSFontWeightRegular];
+        text.font = project ? [NSFont systemFontOfSize:14] : [NSFont monospacedDigitSystemFontOfSize:14 weight:NSFontWeightRegular];
         text.alignment = project ? NSTextAlignmentLeft : NSTextAlignmentRight;
         text.lineBreakMode = NSLineBreakByTruncatingMiddle;
         [cell addSubview:text]; cell.textField = text;
@@ -928,7 +928,7 @@ static std::unique_ptr<Monitor> monitor;
             [text.trailingAnchor constraintEqualToAnchor:cell.trailingAnchor constant:-5]]];
         if (project) {
             NSTextField* path = [NSTextField labelWithString:@""]; path.tag=1;
-            path.translatesAutoresizingMaskIntoConstraints = NO; path.font=[NSFont systemFontOfSize:10];
+            path.translatesAutoresizingMaskIntoConstraints = NO; path.font=[NSFont systemFontOfSize:12];
             path.textColor=NSColor.secondaryLabelColor; path.lineBreakMode=NSLineBreakByTruncatingMiddle;
             [cell addSubview:path];
             [NSLayoutConstraint activateConstraints:@[[text.topAnchor constraintEqualToAnchor:cell.topAnchor constant:3],
@@ -1064,7 +1064,7 @@ static std::unique_ptr<Monitor> monitor;
         backing:NSBackingStoreBuffered defer:NO];
     live_text(window, @"title", "Project report · Shin");
     window.releasedWhenClosed = NO;
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     window.minSize = NSMakeSize(360, 320);
     NSScrollView* scroll = [[NSScrollView alloc] init];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1080,7 +1080,7 @@ static std::unique_ptr<Monitor> monitor;
     text.textContainer.widthTracksTextView = YES;
     text.textContainer.containerSize = NSMakeSize(text.frame.size.width, CGFLOAT_MAX);
     text.textContainerInset = NSMakeSize(20, 18);
-    text.font = [NSFont systemFontOfSize:14];
+    text.font = [NSFont systemFontOfSize:16];
     text.textColor = NSColor.labelColor;
     text.backgroundColor = NSColor.windowBackgroundColor;
     text.string = diagnostic_text_content(diagnostic_report_text);
@@ -1089,17 +1089,17 @@ static std::unique_ptr<Monitor> monitor;
     paragraphs.lineBreakMode = NSLineBreakByWordWrapping;
     [text.textStorage addAttribute:NSParagraphStyleAttributeName value:paragraphs range:NSMakeRange(0, text.string.length)];
     const NSRange firstLine = [text.string lineRangeForRange:NSMakeRange(0, 0)];
-    [text.textStorage addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:20 weight:NSFontWeightSemibold] range:firstLine];
+    [text.textStorage addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:24 weight:NSFontWeightSemibold] range:firstLine];
     for (NSString* heading : @[ui_text("Next step"), ui_text("History"), ui_text("Technical details of the last observation")]) {
         const auto range = [text.string rangeOfString:[@"\n\n" stringByAppendingString:[heading stringByAppendingString:@"\n"]]];
         if (range.location != NSNotFound)
-            [text.textStorage addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:14 weight:NSFontWeightSemibold]
+            [text.textStorage addAttribute:NSFontAttributeName value:[NSFont systemFontOfSize:16 weight:NSFontWeightSemibold]
                 range:NSMakeRange(range.location + 2, range.length - 3)];
     }
     const auto technical = [text.string rangeOfString:@"\n{"];
     if (technical.location != NSNotFound) {
         const auto range = NSMakeRange(technical.location, text.string.length - technical.location);
-        [text.textStorage addAttribute:NSFontAttributeName value:[NSFont monospacedSystemFontOfSize:12 weight:NSFontWeightRegular] range:range];
+        [text.textStorage addAttribute:NSFontAttributeName value:[NSFont monospacedSystemFontOfSize:13 weight:NSFontWeightRegular] range:range];
         NSMutableParagraphStyle* codeStyle = [paragraphs mutableCopy];
         codeStyle.lineBreakMode = NSLineBreakByCharWrapping;
         [text.textStorage addAttribute:NSParagraphStyleAttributeName value:codeStyle range:range];
@@ -1112,7 +1112,7 @@ static std::unique_ptr<Monitor> monitor;
     copy.translatesAutoresizingMaskIntoConstraints = NO;
     NSTextField* note = live_label("Last received observation", false);
     note.textColor = NSColor.secondaryLabelColor;
-    note.font = [NSFont systemFontOfSize:12];
+    note.font = [NSFont systemFontOfSize:14];
     note.lineBreakMode = NSLineBreakByTruncatingTail;
     [note setContentCompressionResistancePriority:NSLayoutPriorityDefaultLow forOrientation:NSLayoutConstraintOrientationHorizontal];
     note.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1142,6 +1142,7 @@ static std::unique_ptr<Monitor> monitor;
 }
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
+    NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: launched");
     const bool loginLaunch = launched_as_login_item(NSAppleEventManager.sharedAppleEventManager.currentAppleEvent);
     NSString* home = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinHome"];
@@ -1199,7 +1200,7 @@ static std::unique_ptr<Monitor> monitor;
     // asynchronous activation handoff from another app.
     self.popover.behavior = NSPopoverBehaviorApplicationDefined;
     self.popover.animates = NO;
-    self.popover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    self.popover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
     self.popover.delegate = self;
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(activatedApplication:)
         name:NSWorkspaceDidActivateApplicationNotification object:nil];
@@ -1300,8 +1301,8 @@ static std::unique_ptr<Monitor> monitor;
     if (!screen) screen = NSScreen.mainScreen;
     const NSSize available = screen ? screen.visibleFrame.size : NSMakeSize(800, 600);
     const bool compact = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"];
-    self.popover.contentSize = NSMakeSize(std::min(compact ? 360.0 : 448.0, std::max(280.0, available.width - 24)),
-        std::min(compact ? 440.0 : 620.0, std::max(240.0, available.height - 40)));
+    self.popover.contentSize = NSMakeSize(std::min(compact ? 400.0 : 620.0, std::max(280.0, available.width - 24)),
+        std::min(compact ? 560.0 : 810.0, std::max(240.0, available.height - 40)));
 }
 - (void)closePanel:(id)sender {
     (void)sender;
@@ -1556,7 +1557,7 @@ int main(int argc, char** argv) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* item = [[NSMenuItem alloc] init];
         NSMenu* application = [[NSMenu alloc] init];
-        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Activity"), ui_text("Settings"),
+        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("History"), ui_text("Settings"),
             ui_text("Now"), ui_text("24 hours"), ui_text("7 days")];
         for (NSUInteger i = 0; i < titles.count; ++i) {
             NSMenuItem* choice = [application addItemWithTitle:titles[i] action:@selector(selectView:) keyEquivalent:@""];

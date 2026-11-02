@@ -71,6 +71,11 @@ void save_update_window(UpdateWindowHarness* app, const fs::path& output, const 
         if (control.hiddenOrHasHiddenAncestor) continue;
         const auto rect = [control convertRect:control.bounds toView:body];
         update_require(NSContainsRect(body.bounds, rect) && rect.size.height >= 10, "update control clipped outside window");
+        if ([control isKindOfClass:NSButton.class]) {
+            const auto intrinsic = control.intrinsicContentSize;
+            update_require(intrinsic.width > 0 && rect.size.width + .5 >= intrinsic.width,
+                           "update button compressed below its readable width");
+        }
     }
     update_require(app.updateDetail.frame.size.height > 0 && app.updateDetail.frame.size.width > 100,
                    "update explanation has no readable layout");
@@ -173,7 +178,7 @@ int native_update_tests(int argc, char** argv) {
             [app showUpdateWindow];
             await_update_ui([&] { return update_window_foreground(window); }, "existing review did not regain focus");
             save_update_window(app, output, "available");
-            update_require(window.contentView.bounds.size.height <= 360 &&
+            update_require(window.contentView.bounds.size.height <= 460 &&
                 [app.updateVersion.stringValue containsString:@"2.0.5-dev.98"] &&
                 [app.updateVersion.stringValue containsString:@"2.0.5-dev.99"] &&
                 !app.updateCheckButton.keyEquivalent.length && !app.updateInstallButton.keyEquivalent.length,

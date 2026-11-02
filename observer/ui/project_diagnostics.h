@@ -65,6 +65,7 @@ enum class ProjectState { offline, checking, pending, recovering, blocked, curre
 
 struct ProjectTableLayout {
     static constexpr float row_height = 26;
+    static constexpr float max_row_height = 68;
     static constexpr float header_height = 24;
     static constexpr float controls_height = 38;
     int page_size, pages;
@@ -75,7 +76,7 @@ inline ProjectTableLayout project_table_layout(float available_height, int count
         float row_height = ProjectTableLayout::row_height) {
     const auto height = std::isfinite(available_height) ? std::clamp(available_height, 0.0f, 1000.0f) : 0.0f;
     if (!std::isfinite(row_height)) row_height = ProjectTableLayout::row_height;
-    row_height = std::clamp(row_height, ProjectTableLayout::row_height, 44.0f);
+    row_height = std::clamp(row_height, ProjectTableLayout::row_height, ProjectTableLayout::max_row_height);
     const int capacity = std::clamp(static_cast<int>(std::floor(std::max(0.0f,
         height - ProjectTableLayout::header_height - ProjectTableLayout::controls_height) /
         row_height)), 1, 16);

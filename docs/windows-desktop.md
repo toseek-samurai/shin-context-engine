@@ -19,8 +19,8 @@ Download the Windows files from [preview dev.77](https://github.com/toseek-samur
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
 Installation and new-project connection are separate steps. The MSI Finish action
-prepares already enrolled projects and opens Monitor; use **Settings → Connect
-projects and agents…** to add a new project. See [MCP client setup](native-client-setup.md)
+prepares already enrolled projects and opens Monitor. In published previews, use
+**Settings → Connect projects and agents…** to add a new project. See [MCP client setup](native-client-setup.md)
 for connection review and manual integrations.
 
 ## Current scope
@@ -41,6 +41,35 @@ Python and the native compiler are development/test dependencies. WSL builds
 exercise Linux and do not substitute for native Windows tests. Mixed-monitor
 moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
+
+### Light Sand desktop redesign
+
+Current development source uses the shared Light Sand interface with
+**Overview**, **Projects**, **History** and **Settings**. It puts folder and agent
+connections under Projects, opens History with the recorded-call journal, and
+keeps timing, optional model usage and technical reports available as details.
+Larger text, light content surfaces and compact labeled buttons separate actions
+from passive status labels. Setup and update screens follow the same visual style.
+
+This redesign is **not yet released**; dev.82 packages retain the published Sand
+dashboard and its Activity section. The desktop redesign does not change the
+reviewed client-configuration flow, native project authority, MSI installation
+with UAC, or the updater's saved-result and recovery checks. The Linux/macOS
+terminal interface remains dark Sand and is not a Windows TUI implementation.
+
+<p>
+  <img src="images/monitor-windows-overview.png" width="400" alt="Windows Light Sand Overview rendered by the native Win32/DX11 Monitor with synthetic data">
+  <img src="images/monitor-windows-projects.png" width="400" alt="Windows Light Sand Projects with readable state labels and compact controls">
+</p>
+
+These current-source captures come from the native Windows render test at 100%
+display scaling; their data is synthetic. They are source-render evidence, not an
+installed MSI or live-project test. See
+[Windows Settings](images/monitor-windows-settings.png),
+[Russian Overview](images/monitor-windows-overview-ru.png),
+[Russian Projects](images/monitor-windows-projects-ru.png),
+[Russian Settings](images/monitor-windows-settings-ru.png), and
+[capture sources and reproduction](images/README.md#windows-monitor).
 
 ### Windows Monitor update screen
 
@@ -67,7 +96,7 @@ Installer, then complete project setup and open Monitor. Uninstalling the
 existing kit is unnecessary. Restart persistent MCP clients after the update.
 The path error itself does not require an operating-system restart.
 
-The unreleased dev.78 source accepts the MSI directory spelling while retaining
+The published dev.82 kit accepts the MSI directory spelling while retaining
 native identity, alias and reparse checks. Launch failures remain in Monitor
 with a diagnostic action. After installer handoff, the helper reopens Monitor
 only after verifying a complete known old or new kit; it retains Installer logs and
@@ -101,8 +130,7 @@ after installation, with `--home DIR` for a custom data home. `--check` only che
 the saved completion against the current kit, enrollment and live readiness.
 No project data is changed by SYSTEM during the MSI transaction.
 
-- **Settings → Connect projects and agents…**, and the empty-state setup action,
-  select and add a project, discover supported agent configuration locations and
+- The project setup and empty-state actions select and add a folder, discover supported agent configuration locations and
   let the user choose which configurations to change. **Review connections**
   precedes **Connect selected agents**. Codex, OpenCode, Command Code and Hermes
   reuse the shared lossless parsers, exact revision checks, private backups and
@@ -248,14 +276,17 @@ Keep the WiX bitmap canvases at 493 x 58 and 493 x 312 pixels.
 
 ## Package publication and remaining gates
 
-The [unified CI](../.github/workflows/ci.yml) requires both
-Windows source jobs and all four Linux/macOS jobs before publishing either
-platform. The Windows desktop job builds ZIP/MSI with pinned CPack 4.3.5 and WiX
+The [unified CI](../.github/workflows/ci.yml) requires both Windows source jobs and
+the exact Windows package proof before publishing Windows downloads. Linux,
+macOS and Windows qualify independently; another platform's pending runner does
+not block a qualified platform. The Windows desktop job builds ZIP/MSI with pinned CPack 4.3.5 and WiX
 4.0.6. Qualification checks the compiled MSI identity, UI, upgrade bounds and
 SCM actions, compares its extracted payload byte-for-byte with the ZIP, and runs
 native Monitor rendering plus init/query/stop from the relocated ZIP under a
 standard user. A receipt binds these checks to the commit, run attempt and exact
-asset hashes. Failed or missing Windows proof prevents publication of the release.
+asset hashes. Failed or missing Windows proof prevents publication of Windows
+downloads. Its `shin-preview-windows.json` receipt preserves that provenance when
+another platform's qualified assets are added to the same preview.
 
 `qualify_windows.ps1` creates a temporary standard account only on disposable
 GitHub-hosted VMs, then removes the account/profile. It does not change

@@ -9,12 +9,12 @@
     window.releasedWhenClosed = NO; window.restorable = NO;
     window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
     live_text(window, @"title", "Shin updates");
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-    window.backgroundColor = [NSColor colorWithCalibratedRed:.969 green:.973 blue:.980 alpha:1];
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+    window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
     window.contentView.wantsLayer = YES;
     window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
     window.contentView.layer.borderWidth = 1;
-    window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.773 green:.678 blue:.533 alpha:1].CGColor;
+    window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1].CGColor;
     NSStackView* stack = [NSStackView new];
     stack.orientation = NSUserInterfaceLayoutOrientationVertical;
     stack.alignment = NSLayoutAttributeLeading; stack.spacing = 10;
@@ -27,10 +27,10 @@
         [stack.trailingAnchor constraintEqualToAnchor:window.contentView.trailingAnchor constant:-24],
         [stack.topAnchor constraintEqualToAnchor:window.contentView.topAnchor constant:22],
         [stack.bottomAnchor constraintLessThanOrEqualToAnchor:window.contentView.bottomAnchor constant:-22]]];
-    NSColor* sand = [NSColor colorWithCalibratedRed:.58 green:.46 blue:.30 alpha:1];
-    NSColor* ink = [NSColor colorWithCalibratedRed:.145 green:.192 blue:.251 alpha:1];
-    NSColor* blue = [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1];
-    NSColor* muted = [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1];
+    NSColor* sand = [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1];
+    NSColor* ink = [NSColor colorWithCalibratedRed:.941 green:.937 blue:.890 alpha:1];
+    NSColor* blue = [NSColor colorWithCalibratedRed:.510 green:.753 blue:.941 alpha:1];
+    NSColor* muted = [NSColor colorWithCalibratedRed:.690 green:.710 blue:.651 alpha:1];
     NSImageView* icon = [NSImageView new];
     NSImage* logo = [NSBundle.mainBundle imageForResource:@"shin-logo"];
     icon.image = logo ? logo : [NSImage imageWithSystemSymbolName:@"arrow.down.circle.fill" accessibilityDescription:nil];
@@ -78,7 +78,7 @@
         [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
     }
     for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton]) {
-        button.bezelColor = blue; button.contentTintColor = NSColor.whiteColor;
+        button.bezelColor = sand; button.contentTintColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
         button.font = [NSFont systemFontOfSize:15 weight:NSFontWeightMedium];
     }
     for (NSButton* button in @[self.updateNotesButton, self.updateCopyButton]) {
@@ -130,7 +130,7 @@
     self.updateCheckButton.title = ui_text(offer || self.updateScreen == UpdateScreen::startFailed ? "Check again" : "Check for updates…");
     for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton])
         button.attributedTitle = [[NSAttributedString alloc] initWithString:button.title attributes:@{
-            NSFontAttributeName:button.font, NSForegroundColorAttributeName:NSColor.whiteColor}];
+            NSFontAttributeName:button.font, NSForegroundColorAttributeName:[NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1]}];
     self.updateSpinner.hidden = !(checking || starting || loading || acknowledging);
     if (self.updateSpinner.hidden) [self.updateSpinner stopAnimation:nil];
     else [self.updateSpinner startAnimation:nil];

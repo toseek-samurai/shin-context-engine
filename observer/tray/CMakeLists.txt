@@ -52,6 +52,11 @@ if(BUILD_TESTING)
     add_test(NAME shin-tray-layout-en COMMAND shin-tray-layout-tests "${CMAKE_CURRENT_BINARY_DIR}/layout-check-en"
         -ShinHome /shin-monitor-test-home en)
     set_tests_properties(shin-tray-layout-en PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
+    foreach(language IN ITEMS en ru)
+        add_test(NAME shin-tray-layout-fit-${language} COMMAND shin-tray-layout-tests "${CMAKE_CURRENT_BINARY_DIR}/layout-fit-${language}"
+            -ShinHome /shin-monitor-test-home ${language} fit)
+        set_tests_properties(shin-tray-layout-fit-${language} PROPERTIES TIMEOUT 60 SKIP_RETURN_CODE 77 RESOURCE_LOCK shin-tray-render)
+    endforeach()
     add_executable(shin-tray-update-window-tests MACOSX_BUNDLE main.mm)
     set_target_properties(shin-tray-update-window-tests PROPERTIES
         MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/test_info.plist.in")

@@ -333,6 +333,7 @@ enum class UpdateScreen { idle, checking, offer, current, checkFailed, starting,
 @end
 
 static std::unique_ptr<Monitor> monitor;
+static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 
 @implementation ShinView
 - (void)cancelOperation:(id)sender {
@@ -347,7 +348,7 @@ static std::unique_ptr<Monitor> monitor;
     }
     load_icons(self.device);
     self.queue = [self.device newCommandQueue];
-    MTKView* view = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 620, 810) device:self.device];
+    MTKView* view = [[MTKView alloc] initWithFrame:NSMakeRect(0, 0, 520, 680) device:self.device];
     view.delegate = self;
     view.preferredFramesPerSecond = 20;
     view.paused = YES;
@@ -373,7 +374,8 @@ static std::unique_ptr<Monitor> monitor;
     ImGui_ImplMetal_NewFrame(pass);
     ImGui_ImplOSX_NewFrame(view);
     ImGui::NewFrame();
-    try { render(snapshot); } catch (...) { ImGui::EndFrame(); return; }
+    float fitted_height = 0;
+    try { fitted_height = render(snapshot, monitor_panel_height_limit); } catch (...) { ImGui::EndFrame(); return; }
     const NSInteger frame_rate = monitor_motion.active ? 60 : 20;
     if (view.preferredFramesPerSecond != frame_rate) view.preferredFramesPerSecond = frame_rate;
     NSMutableArray* accessible = [NSMutableArray array];
@@ -416,6 +418,14 @@ static std::unique_ptr<Monitor> monitor;
     [encoder endEncoding];
     [command presentDrawable:drawable];
     [command commit];
+    // Resize the retained popover after rendering, never its Metal target during
+    // an in-flight frame. AppKit keeps the existing status-item anchor and focus.
+    if (std::abs(fitted_height - view.bounds.size.height) > 1) {
+        dispatch_async(dispatch_get_main_queue(), ^{
+            if (view.window.visible)
+                [NSApp sendAction:@selector(fitPanelToContent:) to:NSApp.delegate from:@(fitted_height)];
+        });
+    }
 }
 - (void)mtkView:(MTKView*)view drawableSizeWillChange:(CGSize)size { (void)view; (void)size; }
 @end
@@ -848,7 +858,7 @@ static std::unique_ptr<Monitor> monitor;
         backing:NSBackingStoreBuffered defer:NO];
     live_text(window, @"title", "Shin storage"); window.releasedWhenClosed = NO; window.delegate = self;
     window.contentMinSize = NSMakeSize(720, 500);
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     NSTextField* text = live_label("Reading storage inventory…");
     text.font = [NSFont systemFontOfSize:15]; text.translatesAutoresizingMaskIntoConstraints = NO;
     NSScrollView* scroll = [[NSScrollView alloc] initWithFrame:NSMakeRect(0,0,716,200)];
@@ -1064,7 +1074,7 @@ static std::unique_ptr<Monitor> monitor;
         backing:NSBackingStoreBuffered defer:NO];
     live_text(window, @"title", "Project report · Shin");
     window.releasedWhenClosed = NO;
-    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     window.minSize = NSMakeSize(360, 320);
     NSScrollView* scroll = [[NSScrollView alloc] init];
     scroll.translatesAutoresizingMaskIntoConstraints = NO;
@@ -1142,7 +1152,7 @@ static std::unique_ptr<Monitor> monitor;
 }
 - (void)applicationDidFinishLaunching:(NSNotification*)notification {
     (void)notification;
-    NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    NSApp.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     os_log(OS_LOG_DEFAULT, "ShinMonitor lifecycle: launched");
     const bool loginLaunch = launched_as_login_item(NSAppleEventManager.sharedAppleEventManager.currentAppleEvent);
     NSString* home = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinHome"];
@@ -1200,7 +1210,7 @@ static std::unique_ptr<Monitor> monitor;
     // asynchronous activation handoff from another app.
     self.popover.behavior = NSPopoverBehaviorApplicationDefined;
     self.popover.animates = NO;
-    self.popover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
+    self.popover.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
     self.popover.delegate = self;
     [NSWorkspace.sharedWorkspace.notificationCenter addObserver:self selector:@selector(activatedApplication:)
         name:NSWorkspaceDidActivateApplicationNotification object:nil];
@@ -1301,8 +1311,18 @@ static std::unique_ptr<Monitor> monitor;
     if (!screen) screen = NSScreen.mainScreen;
     const NSSize available = screen ? screen.visibleFrame.size : NSMakeSize(800, 600);
     const bool compact = [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"];
-    self.popover.contentSize = NSMakeSize(std::min(compact ? 400.0 : 620.0, std::max(280.0, available.width - 24)),
-        std::min(compact ? 560.0 : 810.0, std::max(240.0, available.height - 40)));
+    const auto width = std::min(compact ? 400.0 : 520.0, std::max(280.0, available.width - 24));
+    monitor_panel_height_limit = static_cast<float>(std::min(compact ? 560.0 : 680.0, std::max(240.0, available.height - 40)));
+    if (std::abs(self.popover.contentSize.width - width) > 1) monitor_panel_fitted_height = 0;
+    self.popover.contentSize = NSMakeSize(width, monitor_panel_fitted_height > 0 ?
+        std::min(monitor_panel_fitted_height, monitor_panel_height_limit) : monitor_panel_height_limit);
+}
+- (void)fitPanelToContent:(NSNumber*)height {
+    if (!self.popover.shown || !std::isfinite(height.floatValue)) return;
+    const float target = std::clamp(height.floatValue, std::min(280.0f, monitor_panel_height_limit), monitor_panel_height_limit);
+    monitor_panel_fitted_height = target;
+    if (std::abs(self.popover.contentSize.height - target) > 1)
+        self.popover.contentSize = NSMakeSize(self.popover.contentSize.width, target);
 }
 - (void)closePanel:(id)sender {
     (void)sender;

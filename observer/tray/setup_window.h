@@ -8,14 +8,14 @@
             backing:NSBackingStoreBuffered defer:NO];
         live_text(window, @"title", "Set up Shin"); window.releasedWhenClosed = NO;
         window.contentMinSize = NSMakeSize(660, 620);
-        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-        window.backgroundColor = [NSColor colorWithCalibratedRed:.969 green:.973 blue:.980 alpha:1];
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
         window.contentView.wantsLayer = YES;
         window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
         window.contentView.layer.borderWidth = 1;
-        window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.773 green:.678 blue:.533 alpha:1].CGColor;
-        NSColor* actionBlue = [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1];
-        NSColor* secondaryInk = [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1];
+        window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1].CGColor;
+        NSColor* actionBlue = [NSColor colorWithCalibratedRed:.510 green:.753 blue:.941 alpha:1];
+        NSColor* secondaryInk = [NSColor colorWithCalibratedRed:.690 green:.710 blue:.651 alpha:1];
         NSStackView* stack = [[NSStackView alloc] init];
         stack.orientation = NSUserInterfaceLayoutOrientationVertical;
         stack.alignment = NSLayoutAttributeLeading; stack.spacing = 10;
@@ -43,10 +43,10 @@
         [stack addArrangedSubview:self.setupAdvanced];
         NSScrollView* scroll = [[NSScrollView alloc] init];
         scroll.hasVerticalScroller = YES; scroll.autohidesScrollers = YES; scroll.borderType = NSNoBorder;
-        scroll.drawsBackground = YES; scroll.backgroundColor = NSColor.whiteColor;
+        scroll.drawsBackground = YES; scroll.backgroundColor = [NSColor colorWithCalibratedRed:.145 green:.157 blue:.137 alpha:1];
         scroll.wantsLayer = YES; scroll.layer.cornerRadius = 10;
         scroll.layer.borderWidth = 1;
-        scroll.layer.borderColor = [NSColor colorWithCalibratedRed:.847 green:.863 blue:.886 alpha:1].CGColor;
+        scroll.layer.borderColor = [NSColor colorWithCalibratedRed:.267 green:.286 blue:.235 alpha:1].CGColor;
         self.setupAgents = [[NSStackView alloc] init];
         self.setupAgents.orientation = NSUserInterfaceLayoutOrientationVertical;
         self.setupAgents.alignment = NSLayoutAttributeLeading; self.setupAgents.spacing = 12;
@@ -78,7 +78,7 @@
             [button setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
             [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
         }
-        self.setupConnect.bezelColor = actionBlue; self.setupConnect.contentTintColor = NSColor.whiteColor;
+        self.setupConnect.bezelColor = [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1]; self.setupConnect.contentTintColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
         self.setupConnect.font = [NSFont systemFontOfSize:15 weight:NSFontWeightMedium];
         for (NSView* view in @[intro, self.setupProject, scroll, self.setupStatus, note])
             [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
@@ -139,7 +139,7 @@
             live_caption(check, @"title", ^{ return detected ? label : [NSString stringWithFormat:ui_text("%@ — not detected"), label]; });
             NSButton* file = live_button("Choose settings file…", self, @selector(chooseSetupConfig:)); file.tag = index;
             file.font = [NSFont systemFontOfSize:14]; file.bordered = NO; file.bezelStyle = NSBezelStyleInline;
-            file.contentTintColor = [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1];
+            file.contentTintColor = [NSColor colorWithCalibratedRed:.510 green:.753 blue:.941 alpha:1];
             for (NSButton* button in @[check, file]) {
                 [button setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
                 [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -148,7 +148,7 @@
             NSTextField* location = [NSTextField labelWithString:path.length ? path : ui_text("Choose a settings file for this custom installation.")]; location.selectable = YES; location.lineBreakMode = NSLineBreakByTruncatingMiddle;
             if (!path.length) live_text(location, @"stringValue", "Choose a settings file for this custom installation.");
             location.font = [NSFont systemFontOfSize:13]; location.toolTip = path;
-            location.textColor = [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1];
+            location.textColor = [NSColor colorWithCalibratedRed:.690 green:.710 blue:.651 alpha:1];
             [group addArrangedSubview:controls]; [group addArrangedSubview:location]; [self.setupAgents addView:group inGravity:NSStackViewGravityTop];
             [group.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
             [location.widthAnchor constraintEqualToAnchor:group.widthAnchor].active = YES;

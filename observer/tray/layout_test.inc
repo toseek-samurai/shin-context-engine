@@ -6,8 +6,10 @@
 int main(int argc, char** argv) {
     @autoreleasepool {
         try {
-            if ((argc != 4 && argc != 5) || std::string(argv[2]) != "-ShinHome") throw std::runtime_error("output directory and test home required");
-            const auto initial_language = shin::ui::language_for(argc == 5 ? argv[4] : "ru");
+            if ((argc != 4 && argc != 5 && argc != 6) || std::string(argv[2]) != "-ShinHome") throw std::runtime_error("output directory and test home required");
+            const bool fit_test = argc == 6 && std::string_view(argv[5]) == "fit";
+            if (argc == 6 && !fit_test) throw std::runtime_error("unknown render sizing mode");
+            const auto initial_language = shin::ui::language_for(argc >= 5 ? argv[4] : "ru");
             shin::ui::set_language(initial_language);
             check_update_offer_actions();
             NSDictionary* arguments = [[NSUserDefaults standardUserDefaults] volatileDomainForName:NSArgumentDomain];
@@ -200,13 +202,20 @@ int main(int argc, char** argv) {
                 {"publications", 12}, {"preparations", 12}, {"recoveries", 0}, {"last_tick_ms", 42},
                 {"authority", "local-canonical"}, {"query_ready", true}};
             unsigned rendered = 0;
-            for (const auto size : {ImVec2{620, 810}, ImVec2{400, 560}, ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
+            for (const auto maximum_size : {ImVec2{520, 680}, ImVec2{620, 810}, ImVec2{400, 560}, ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
+                if (fit_test && maximum_size.x != 520) continue;
                 for (const auto* scenario : {"first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "overview-warning", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "overview-warning", "overview-warning-short", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
-                    Json project = base;
                     const std::string kind = scenario;
+                    if (!fit_test && kind == "overview-warning-short") continue;
+                    auto limit = maximum_size;
+                    if (kind == "overview-warning-short") limit.y = 420;
+                    auto size = limit;
+                    if (kind == "overview-warning-short") size.y = 280;
+                    if (fit_test && kind == "overview") size.y = 280;
+                    Json project = base;
                     if (kind == "documentation-warning") project["documentation_warnings"] = 1;
                     release_update_version=kind=="update" ? "2.0.5-dev.18" : "";
                     apply_language_preference(initial_language == shin::ui::Language::ru ? 2 : 1);
@@ -217,7 +226,7 @@ int main(int argc, char** argv) {
                     dashboard_view = kind.starts_with("overview") ? 0 : timing_open || kind.starts_with("models") || kind.starts_with("sessions") ? 2 : kind == "settings" ? 3 : 1;
                     activity_view = kind.starts_with("models") ? 1 : kind.starts_with("sessions") ? 2 : 0;
                     diagnostic_details_open = kind == "search-warning-details" || kind == "search-warning-invalid"; diagnostic_focus = 0;
-                    if (kind.starts_with("search-warning") || kind == "overview-warning") project["quality_warning"] = {
+                    if (kind.starts_with("search-warning") || kind.starts_with("overview-warning")) project["quality_warning"] = {
                         {"state", "degraded"}, {"diagnostic", {{"schema_version", "shin.validation-diagnostic.v1"}, {"gates", Json::array({
                             {{"id", "eval"}, {"cases", Json::array({{{"id", "fixture-discovery"},
                                 {"expected_paths", Json::array({"docs/access.md"})}, {"reasons", Json::array({"missing-required-path"})}}})}}
@@ -416,7 +425,15 @@ int main(int argc, char** argv) {
                     auto* retained_context = ImGui::GetCurrentContext();
                     const int live_preference = kind == "language-live-en" ? 1 : kind == "language-live-ru" ? 2 : 0;
                     std::set<int> reachable_settings;
-                    for (int frame = 0; frame < (kind == "settings" ? 18 : 3); ++frame) {
+                    const int frames = kind == "settings" ? 18 : kind == "overview-warning-short" ? 12 : fit_test ? 8 : 3;
+                    for (int frame = 0; frame < frames; ++frame) {
+                        // Begin on the real short first-run page, then deliver
+                        // a project with a warning under a smaller screen cap.
+                        if (kind == "overview-warning-short" && frame == 3) {
+                            size.y = 280;
+                            descriptor.height = 560;
+                            texture = [device newTextureWithDescriptor:descriptor];
+                        }
                         if (kind == "search-warning-opened" && frame == 1) activate(120);
                         if (kind.starts_with("language-live-")) {
                             if (frame == 0) shin::ui::set_language(live_preference == 2 ? shin::ui::Language::en : shin::ui::Language::ru);
@@ -441,7 +458,13 @@ int main(int argc, char** argv) {
                         } else io.AddMousePosEvent(-100, -100);
                         ImGui_ImplMetal_NewFrame(pass);
                         ImGui::NewFrame();
-                        try { render(view); } catch (const std::exception& e) { throw std::runtime_error(kind + " " + std::to_string(static_cast<int>(size.x)) + ": " + e.what()); }
+                        float preferred = size.y;
+                        auto frame_view = view;
+                        if (kind == "overview-warning-short" && frame < 3)
+                            frame_view.data["telemetry"]["project_states"] = Json::array();
+                        try { preferred = render(frame_view, fit_test ? limit.y : 0); } catch (const std::exception& e) { throw std::runtime_error(kind + " " + std::to_string(static_cast<int>(size.x)) + ": " + e.what()); }
+                        if (kind == "overview-warning-short" && frame == 2 && preferred >= 400)
+                            throw std::runtime_error("warning regression fixture did not establish a short baseline");
                         if (kind == "settings") for (const auto& action : ui_actions)
                             if (action.enabled && !action.informational) reachable_settings.insert(action.chart);
                         ImGui::Render();
@@ -450,6 +473,12 @@ int main(int argc, char** argv) {
                         ImGui_ImplMetal_RenderDrawData(ImGui::GetDrawData(), command, encoder);
                         [encoder endEncoding]; [command commit]; [command waitUntilCompleted];
                         if (command.status == MTLCommandBufferStatusError) throw std::runtime_error("Metal render failed");
+                        if (fit_test && std::abs(preferred - size.y) > 1) {
+                            if (frame + 1 == frames) throw std::runtime_error("automatic panel height did not settle: " + kind);
+                            size.y = preferred;
+                            descriptor.height = static_cast<NSUInteger>(size.y * 2);
+                            texture = [device newTextureWithDescriptor:descriptor];
+                        }
                     }
                     if (kind.starts_with("language-live-")) {
                         const auto expected = shin::ui::resolve_language(live_preference == 1 ? "en" : live_preference == 2 ? "ru" : "auto", platform_system_language());
@@ -459,6 +488,13 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("live switch lost ImGui state or retained an old accessibility label");
                     }
                     const auto context = kind + " " + std::to_string(static_cast<int>(size.x)) + "x" + std::to_string(static_cast<int>(size.y));
+                    if (fit_test && kind == "overview" && (size.y <= 400 ||
+                        std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                            return action.label == shin::ui::tr("View history");
+                        }))) throw std::runtime_error("overview did not grow from a short page: " + context);
+                    if (kind == "overview-warning-short" &&
+                        (size.y > 420 || std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) { return action.chart == 121; })))
+                        throw std::runtime_error("fitting hid the warning after a short page: " + context);
                     if (kind == "secret-blocked") {
                         const auto visible = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
                             return action.chart == 54 && action.label == shin::ui::tr("Possible secret in sources");
@@ -612,13 +648,19 @@ int main(int argc, char** argv) {
                     const auto width = texture.width, height = texture.height;
                     std::vector<unsigned char> pixels(width * height * 4);
                     [texture getBytes:pixels.data() bytesPerRow:width * 4 fromRegion:MTLRegionMake2D(0, 0, width, height) mipmapLevel:0];
-                    std::size_t bright = 0, dark = 0;
+                    std::size_t surface_pixels = 0, text_pixels = 0;
+                    const auto near_color = [](const unsigned char* pixel, ImVec4 color) {
+                        return std::abs(pixel[0] - color.x * 255) < 20 &&
+                            std::abs(pixel[1] - color.y * 255) < 20 &&
+                            std::abs(pixel[2] - color.z * 255) < 20;
+                    };
                     for (std::size_t i = 0; i < pixels.size(); i += 4) {
-                        if (pixels[i] > 210 && pixels[i + 1] > 210 && pixels[i + 2] > 210) ++bright;
-                        if (pixels[i] < 110 && pixels[i + 1] < 140 && pixels[i + 2] < 180) ++dark;
+                        if (near_color(&pixels[i], background) || near_color(&pixels[i], raised)) ++surface_pixels;
+                        if (near_color(&pixels[i], ink) || near_color(&pixels[i], muted)) ++text_pixels;
                     }
-                    if (bright < 1000 || dark < 300) throw std::runtime_error("blank rendering: " + context);
-                    const auto filename = output / (kind + "-" + std::to_string(static_cast<int>(size.x)) + "x" + std::to_string(static_cast<int>(size.y)) + ".png");
+                    if (surface_pixels < 1000 || text_pixels < 300) throw std::runtime_error("blank rendering: " + context +
+                        " surfaces=" + std::to_string(surface_pixels) + " text=" + std::to_string(text_pixels));
+                    const auto filename = output / (kind + "-" + std::to_string(static_cast<int>(limit.x)) + "x" + std::to_string(static_cast<int>(limit.y)) + (fit_test ? "-fit.png" : ".png"));
                     auto color = CGColorSpaceCreateDeviceRGB();
                     auto provider = CGDataProviderCreateWithData(nullptr, pixels.data(), pixels.size(), nullptr);
                     auto image = CGImageCreate(width, height, 8, 32, width * 4, color,

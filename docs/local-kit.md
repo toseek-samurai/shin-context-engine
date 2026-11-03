@@ -125,10 +125,13 @@ stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-Current development source gives the desktop panel a Light Sand interface with
-**Overview**, **Projects**, **History** and **Settings**. This redesign is not yet
-included in a published preview; published Monitor previews retain the dark Sand
-appearance and **Activity** as their third section.
+Current development source restores the original dark Sand palette with
+**Overview**, **Projects**, **History** and **Settings**. The compact panel is
+520 px wide, with 14 px body text and content-dependent height up to 680 px.
+Short pages no longer reserve a full-height empty area; long views retain their
+height limit and scrolling. These refinements are not yet released. Published
+dev.85 uses Light Sand with the same navigation. Earlier desktop previews use
+**Activity** as their third section.
 Overview summarizes current project readiness and leads to a project needing
 review. Projects groups folder and agent connections with their current context
 status. Project explanations expose a labeled next action, with search-check
@@ -164,7 +167,7 @@ use the same native updater as Monitor. Automatic release download is macOS-only
 Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
 service. Model counters are collected automatically for enrolled projects.
-The desktop redesign shows them under **History → Agents**; the TUI and published
+The desktop redesign shows them under **History → Agents**; the TUI and earlier dark
 Monitor previews keep **Activity → Agents**. Both use the automatic snapshot by
 default. The first
 pass starts in the background; enrollment changes are checked within five seconds,
@@ -309,9 +312,9 @@ recorded data home and service preference.
 
 ## Update an existing kit
 
-Monitor always displays its installed version, including while offline. The
-Light Sand development UI keeps it in the fixed footer; published previews show
-it beneath the panel title. An available newer version appears separately in
+Monitor always displays its installed version, including while offline.
+The current layout keeps it in the fixed footer; previews before the new
+navigation show it beneath the panel title. An available newer version appears separately in
 the update offer.
 
 Download and verify the new complete kit, then extract it outside the installed
@@ -600,9 +603,8 @@ dismissed. A manual request during a background check
 shows that check's result instead of discarding the request. After selecting
 **Download and install**, the window shows the helper handoff before Monitor exits.
 
-The Light Sand redesign in current development source gives these update
-windows the same light surfaces, Sand frame and readable, compact actions as the
-dashboard. It retains the independent Updater handoff, saved results and recovery
+Current development source gives these update windows the same dark Sand
+surfaces and readable, compact actions as the dashboard. It retains the independent Updater handoff, saved results and recovery
 checks described below.
 
 A preview installation receives newer complete preview or stable kits; a stable

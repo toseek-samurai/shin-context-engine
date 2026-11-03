@@ -18,12 +18,12 @@ namespace shin::observer {
 namespace {
 NSString* ui_text(const char* value) { return [NSString stringWithUTF8String:shin::ui::tr(value)]; }
 NSString* stage_text(ReleaseUpdateStep step) { return ui_text(update_stage_key(step)); }
-NSColor* sand_ink() { return [NSColor colorWithCalibratedRed:.145 green:.192 blue:.251 alpha:1]; }
-NSColor* sand_muted() { return [NSColor colorWithCalibratedRed:.380 green:.427 blue:.486 alpha:1]; }
-NSColor* sand_accent() { return [NSColor colorWithCalibratedRed:.773 green:.678 blue:.533 alpha:1]; }
-NSColor* update_blue() { return [NSColor colorWithCalibratedRed:.157 green:.365 blue:.737 alpha:1]; }
-NSColor* update_green() { return [NSColor colorWithCalibratedRed:.176 green:.439 blue:.306 alpha:1]; }
-NSColor* update_red() { return [NSColor colorWithCalibratedRed:.710 green:.243 blue:.220 alpha:1]; }
+NSColor* sand_ink() { return [NSColor colorWithCalibratedRed:.941 green:.937 blue:.890 alpha:1]; }
+NSColor* sand_muted() { return [NSColor colorWithCalibratedRed:.690 green:.710 blue:.651 alpha:1]; }
+NSColor* sand_accent() { return [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1]; }
+NSColor* update_blue() { return [NSColor colorWithCalibratedRed:.510 green:.753 blue:.941 alpha:1]; }
+NSColor* update_green() { return [NSColor colorWithCalibratedRed:.510 green:.831 blue:.608 alpha:1]; }
+NSColor* update_red() { return [NSColor colorWithCalibratedRed:.961 green:.549 blue:.514 alpha:1]; }
 
 }
 
@@ -88,8 +88,8 @@ Json run_release_update_window(const std::string& version, shin::ui::Language la
         window.restorable = NO;
         window.collectionBehavior = NSWindowCollectionBehaviorMoveToActiveSpace | NSWindowCollectionBehaviorFullScreenAuxiliary;
         window.title = ui_text("Updating Shin");
-        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameAqua];
-        window.backgroundColor = [NSColor colorWithCalibratedRed:.969 green:.973 blue:.980 alpha:1];
+        window.appearance = [NSAppearance appearanceNamed:NSAppearanceNameDarkAqua];
+        window.backgroundColor = [NSColor colorWithCalibratedRed:.114 green:.122 blue:.110 alpha:1];
         window.contentView.wantsLayer = YES;
         window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
         window.contentView.layer.borderColor = sand_accent().CGColor;

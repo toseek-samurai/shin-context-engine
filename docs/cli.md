@@ -162,11 +162,12 @@ The table maps Monitor to CLI/TUI actions. Windows dev.74 includes project
 onboarding and storage management in Monitor; its terminal dashboard remains
 unimplemented. See [Windows scope](windows-desktop.md#monitor-setup-and-updates).
 
-Current development source gives desktop Monitor a Light Sand interface with
-**Overview**, **Projects**, **History** and **Settings**. This redesign is not yet
-included in a published preview. History opens with the recorded-call journal;
+Desktop Monitor uses **Overview**, **Projects**, **History** and **Settings**.
+Published dev.85 uses Light Sand; current development source restores the dark
+Sand palette, compact spacing and content-dependent panel height. Those visual
+refinements are not yet released. History opens with the recorded-call journal;
 timing and agent token usage remain secondary views. Technical reports are
-disclosed from project details. Published previews and the dark Sand TUI keep
+disclosed from project details. Earlier desktop previews and the TUI keep
 **Activity** as their third section, with the journal under **Activity → Journal**.
 
 | In Monitor | In the CLI today |
@@ -300,8 +301,8 @@ an old snapshot usable again.
 
 ### Sessions and optional recovery notes (dev.45)
 
-The unreleased desktop redesign opens these observations from **History** in
-its Light Sand journal. Published previews retain **Activity → Journal**.
+Monitor opens these observations from **History** in its session journal.
+Earlier dark desktop previews retain **Activity → Journal**.
 The journal uses UTC
 timestamps, short opaque session IDs, a monospace font and vector icons. Success,
 error, unfinished and explicit host events have distinct colors and text labels.
@@ -323,8 +324,8 @@ require omitting session rows; the UI then reports that omission rather than an
 empty history. The response ceiling remains 60 KiB, independently of the
 48-event desktop display limit.
 
-Open **History** in the desktop development UI, or **Activity → Journal** in
-published Monitor previews and `shin-ce stats`. In the TUI, press `3`, then
+Open **History** in the current desktop Monitor, or **Activity → Journal** in
+earlier dark Monitor previews and `shin-ce stats`. In the TUI, press `3`, then
 Left/Right or `[` / `]` to select Journal. The latest eight correlated sessions show context calls, errors,
 caller task labels, recovery requests and recent invocation outcomes. Calls can
 supply `task_key` and `intent` (`explore`, `follow-up`, `context-recovery`); labels

@@ -238,11 +238,11 @@ def main():
         assert (kit / 'share/shin-observer/licenses/imgui/LICENSE.txt').is_file()
         run([kit / 'bin/shin-tray.exe', '--render-headless-test' if args.headless_render else '--render-test', base / 'renders'])
         rendered = json.loads((base / 'renders/result.json').read_text())
-        # Seven sizes: six views, online/offline, and EN/RU warning list/details.
-        # Updates also cover expanded details at each of the five taller sizes.
-        assert rendered['frames'] == 84 and rendered['cold_frames'] == 42, rendered
-        assert rendered['documentation_frames'] == 28, rendered
-        assert rendered['update_frames'] == 108 and rendered['update_launch_attempts'] == 3, rendered
+        # Eight sizes: six views, online/offline, and EN/RU warning list/details.
+        # Updates also cover expanded details at each of the six taller sizes.
+        assert rendered['frames'] == 96 and rendered['cold_frames'] == 48, rendered
+        assert rendered['documentation_frames'] == 32, rendered
+        assert rendered['update_frames'] == 124 and rendered['update_launch_attempts'] == 3, rendered
         assert rendered['shell_integration'] is (not args.headless_render)
         assert rendered['taskbar_recreated_event'] is (None if args.headless_render else True)
         assert rendered['focus_dismissal'] and rendered['escape']

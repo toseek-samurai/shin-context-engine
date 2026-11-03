@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.82](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.82).
-It contains Core **2.0.5-dev.15** and Observer/CLI/MCP/Monitor **2.0.5-dev.82**.
+The current published preview is [dev.85](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.85).
+It contains Core **2.0.5-dev.15** and Observer/CLI/MCP/Monitor **2.0.5-dev.85**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -19,15 +19,20 @@ still belong to an earlier kit: reconnect persistent MCP clients after updating,
 including clients hosted inside an IDE. Restarting another desktop client does
 not restart those IDE sessions.
 
-## Desktop redesign in development
+## Desktop layout
 
-Current source includes a Light Sand desktop redesign shared by macOS and Windows:
-**Overview**, **Projects**, **History** and **Settings**, with readable text,
-compact labeled actions and technical details disclosed separately. History opens
-with recorded calls; timing and optional agent usage remain secondary views.
-This redesign is **not yet released** and is not included in the dev.82 downloads.
-The [desktop screenshots](images/README.md) show this development UI using
-synthetic data. The terminal keeps its dark Sand appearance and Activity section.
+Monitor groups tasks under **Overview**, **Projects**, **History** and
+**Settings**, with labeled actions and technical details disclosed separately.
+History opens with recorded calls; timing and optional agent usage remain
+secondary views. Published dev.85 introduced this navigation with Light Sand.
+
+Current development source restores the original dark Sand palette while
+keeping the new layout, 14 px body text and 520 px standard width. Short Overview,
+Projects and Settings pages fit their contents up to a 680 px ceiling; long
+history and detail views retain bounded height and scrolling. These refinements
+are **not yet released**. The [native screenshots](images/README.md) identify the
+source and capture boundaries. The terminal keeps its existing Sand appearance
+and Activity navigation.
 
 ## Capabilities by platform
 
@@ -37,7 +42,7 @@ dashboard does not imply that every platform has the same setup and update tools
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 terminal tools | Windows x64 ZIP / MSI |
 | --- | --- | --- | --- | --- |
 | Core, local Observer, CLI and MCP | Yes | Yes | Yes | Yes |
-| Desktop Monitor: Overview, Projects, Activity, Settings; Sand; EN/RU | Yes | Yes | No native desktop host | Yes |
+| Desktop Monitor: Overview, Projects, History, Settings; Light Sand; EN/RU | Yes | Yes | No native desktop host | Yes |
 | TUI `shin-ce stats`, line charts and EN/RU | Yes | Yes | Yes | Not implemented |
 | Add a project from Monitor | Yes | Yes | Use CLI | Yes |
 | Automatic MCP client configuration | Reviewed CLI / Monitor setup | Reviewed CLI / Monitor setup | Reviewed CLI setup | Reviewed CLI / Monitor setup |

@@ -45,16 +45,18 @@ optional model usage. The macOS kit includes a menu bar app; the Windows preview
 includes its native desktop host. On macOS and Linux, `shin-ce stats` opens the
 Sand terminal monitor with the same project states and timing calculations.
 
-The desktop screenshots below show the **Light Sand redesign in current
-development source**. This design is not yet included in a published preview.
+The screenshots below show the **current development UI**: the original dark
+Sand palette with compact navigation, readable 14 px body text and a panel that
+fits short pages instead of leaving empty space below them. These refinements
+are not yet included in a published preview; dev.85 uses Light Sand.
 
 <p>
-  <img src="docs/images/monitor-overview.png" width="400" alt="Light Sand Overview with project availability, a labeled warning action and a line graph">
-  <img src="docs/images/monitor-projects.png" width="400" alt="Light Sand Projects distinguishes available, preparing, partial and blocked context with readable labels">
+  <img src="docs/images/monitor-overview.png" width="400" alt="Sand Overview with project availability, a labeled warning action and a line graph">
+  <img src="docs/images/monitor-projects.png" width="400" alt="Sand Projects distinguishes available, preparing, partial and blocked context with readable labels">
 </p>
 <p>
   <img src="docs/images/monitor-timing.png" width="400" alt="History timing details separate search time from total service time and reader preparation">
-  <img src="docs/images/monitor-settings.png" width="400" alt="Light Sand Settings groups language, storage and updates with compact labeled controls">
+  <img src="docs/images/monitor-settings.png" width="400" alt="Sand Settings groups language, storage and updates with compact labeled controls">
 </p>
 
 Monitor uses **Overview**, **Projects**, **History** and **Settings**. Overview
@@ -63,8 +65,8 @@ agents. History opens with recorded calls, with timing and optional model usage
 available separately. Technical reports stay in expandable details rather than
 competing with everyday actions.
 
-These native macOS Monitor renders use synthetic sample data. Windows shares the
-Light Sand dashboard, but its setup and update controls differ; see the
+These native macOS Monitor renders use synthetic sample data. Windows uses the
+same dashboard, but its setup and update controls differ; see the
 [capability matrix](docs/README.md#capabilities-by-platform).
 Monitor supports English and Russian; these examples use English. Names, counts,
 and timings above are examples, not benchmark results.
@@ -84,13 +86,13 @@ and timings above are examples, not benchmark results.
 
 ## Follow agent sessions
 
-<img src="docs/images/monitor-sessions.png" width="360" alt="Light Sand History displays recorded calls, timestamps and colored outcomes, with an explicit 48-event display limit">
+<img src="docs/images/monitor-sessions.png" width="360" alt="Sand History displays recorded calls, timestamps and colored outcomes, with an explicit 48-event display limit">
 
 In the desktop redesign, **History** opens with recent MCP calls and
 explicit client events, session counters and expandable details. Up to eight
 sessions and six events per session keep the view bounded; this display limit
 does not reduce stored history or analysis totals. The screenshot uses synthetic
-data. Published previews and the terminal keep this journal under
+data. Earlier dark desktop previews and the terminal keep this journal under
 **Activity → Journal**. See [Sessions and recording boundaries](docs/cli.md#sessions-and-optional-recovery-notes-dev45)
 and the [Russian screenshot](docs/images/monitor-sessions-ru.png).
 

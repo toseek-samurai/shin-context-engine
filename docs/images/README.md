@@ -1,8 +1,9 @@
 # UI screenshots
 
-The desktop PNGs show the **Light Sand redesign in current development source**,
-not a design already included in a published preview. The terminal captures below
-retain the shipped dark Sand appearance.
+The macOS PNGs show **current development source**: the original dark Sand
+palette with compact navigation and content-dependent height. These refinements
+are not yet released. The terminal captures retain the shipped Sand appearance.
+Windows capture provenance is described separately below.
 
 ## macOS Monitor
 
@@ -16,19 +17,19 @@ see the [platform matrix](../README.md#capabilities-by-platform).
 
 | README asset | Native fixture output |
 | --- | --- |
-| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-warning-620x810.png` (EN / RU) |
-| `monitor-settings.png` / `monitor-settings-ru.png` | `settings-620x810.png` (EN / RU) |
-| `monitor-projects.png` | `project-states-620x810.png` |
-| `monitor-project.png` | `search-warning-620x810.png` |
-| `monitor-timing.png` | `timing-retained-620x810.png` |
-| `monitor-sessions.png` | `sessions-620x810.png` (EN) |
-| `monitor-sessions-ru.png` | `sessions-620x810.png` (RU) |
+| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-520x680-fit.png` (EN / RU) |
+| `monitor-settings.png` / `monitor-settings-ru.png` | `settings-520x680-fit.png` (EN / RU) |
+| `monitor-projects.png` | `project-states-520x680-fit.png` |
+| `monitor-project.png` | `search-warning-520x680-fit.png` |
+| `monitor-timing.png` | `timing-retained-520x680-fit.png` |
+| `monitor-sessions.png` | `sessions-520x680-fit.png` (EN) |
+| `monitor-sessions-ru.png` | `sessions-520x680-fit.png` (RU) |
 
 After building the macOS kit with testing enabled, render again:
 
 ```sh
 /tmp/shin-observer-kit/tray/shin-tray-layout-tests \
-  /tmp/shin-monitor-screenshots -ShinHome /shin-monitor-test-home en
+  /tmp/shin-monitor-screenshots -ShinHome /shin-monitor-test-home en fit
 ```
 
 Metal must be available; a skipped render is not a new screenshot. Inspect the
@@ -38,13 +39,15 @@ Both languages use the same native views and synthetic scenarios.
 These images show Overview, Projects, History and Settings. History opens with
 the journal; timing and optional model usage remain available separately. Its
 48-event display ceiling, monospace text, outcome colors and vector icons remain
-bounded. These macOS images use the standard 620×810 logical panel size, rendered
-at 2× resolution (1240×1620 pixels). EN and RU are
+bounded. These macOS images use a 520 px logical width and fit their height to
+the page within a 680 px ceiling. Retina captures have a 1040 px pixel width;
+height varies with content and language. EN and RU are
 generated into separate output directories.
-The Overview warning is actionable inside the panel; the project-detail image
-shows its search-check explanation and next action. Expected documents are
-revealed by the explicit search-check review. Light surfaces, Sand
-framing, larger type and compact labeled buttons distinguish actions from status
+The project-detail image
+shows its search-check explanation and next action. Overview shows healthy
+context with its memory line graph and recent activity. Expected documents are
+revealed by the explicit search-check review. Dark Sand surfaces,
+compact type and labeled buttons distinguish actions from status
 labels. Project connections belong with their projects, and technical reports
 are disclosed separately. Settings groups language, storage and updates. Russian Overview and
 Settings are available as `monitor-overview-ru.png` and `monitor-settings-ru.png`.
@@ -55,8 +58,8 @@ compact layout remains available. Memory curves retain observation gaps and
 service-run boundaries.
 
 <p>
-  <img src="monitor-sessions.png" width="340" alt="English Light Sand History journal rendered with synthetic MCP events">
-  <img src="monitor-sessions-ru.png" width="340" alt="Russian Light Sand History journal with the same synthetic MCP events">
+  <img src="monitor-sessions.png" width="340" alt="English Sand History journal rendered with synthetic MCP events">
+  <img src="monitor-sessions-ru.png" width="340" alt="Russian Sand History journal with the same synthetic MCP events">
 </p>
 
 ## Windows Monitor
@@ -69,9 +72,12 @@ the macOS images or a browser mockup. No live service, enrolled project or clien
 history supplies their displayed data. These captures show source UI rendering;
 they do not establish an installed MSI lifecycle or live-project readiness.
 
-Each Windows PNG is 620×810 physical pixels at 100% display scaling (1×), copied
-without resizing or pixel edits. The macOS PNGs above retain their native 2×
-resolution. Different system fonts and platform controls remain visible.
+Each Windows PNG uses a 520 px logical/physical width at 100% display scaling
+(1×). Height fits the content: Overview is 540 px, the three-project list 429 px,
+and Settings 621 px in both languages. Original PNG bytes are preserved. The
+macOS captures above retain their native 2× resolution. The source render and
+adaptive-height checks passed on native Windows; installed MSI update lifecycle
+is a separate proof boundary.
 
 | Documentation asset | Native fixture output, relative to the capture directory |
 | --- | --- |
@@ -93,8 +99,8 @@ rendering has a separate scope; see the
 [Windows verification boundaries](../windows-desktop.md#package-publication-and-remaining-gates).
 
 <p>
-  <img src="monitor-windows-overview.png" width="360" alt="Native Windows Light Sand Overview with synthetic project readiness and a line graph">
-  <img src="monitor-windows-projects.png" width="360" alt="Native Windows Light Sand Projects with labeled context states and compact actions">
+  <img src="monitor-windows-overview.png" width="360" alt="Native Windows Sand Overview with synthetic project readiness and a line graph">
+  <img src="monitor-windows-projects.png" width="360" alt="Native Windows Sand Projects with labeled context states and compact actions">
 </p>
 
 [Windows Settings](monitor-windows-settings.png) ·

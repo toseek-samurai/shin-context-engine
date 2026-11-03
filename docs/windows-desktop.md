@@ -42,24 +42,27 @@ exercise Linux and do not substitute for native Windows tests. Mixed-monitor
 moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
 
-### Light Sand desktop redesign
+### Desktop layout in development
 
-Current development source uses the shared Light Sand interface with
-**Overview**, **Projects**, **History** and **Settings**. It puts folder and agent
-connections under Projects, opens History with the recorded-call journal, and
-keeps timing, optional model usage and technical reports available as details.
-Larger text, light content surfaces and compact labeled buttons separate actions
-from passive status labels. Setup and update screens follow the same visual style.
+Current source restores the original dark Sand palette while retaining the
+**Overview**, **Projects**, **History** and **Settings** navigation. Project
+connections remain under Projects, the journal opens first in History, and
+technical reports stay in details. Body text is 14 px, with compact labeled
+buttons and inset content.
 
-This redesign is **not yet released**; dev.82 packages retain the published Sand
-dashboard and its Activity section. The desktop redesign does not change the
-reviewed client-configuration flow, native project authority, MSI installation
-with UAC, or the updater's saved-result and recovery checks. The Linux/macOS
-terminal interface remains dark Sand and is not a Windows TUI implementation.
+The standard panel is 520 px wide. Short Overview, Projects and Settings pages
+fit their contents up to a 680 px ceiling; long views retain their height limit
+and scrolling. Resizing preserves the popup's bottom anchor and focus, follows
+the current monitor's bounds and supports 100/150/200% DPI. Management, update
+and modal screens retain their own sizes.
+
+These refinements are **not yet released**; published dev.85 uses Light Sand.
+The source build and native render checks below do not change or qualify the
+reviewed client setup, MSI/UAC installation, saved-result or recovery flows.
 
 <p>
-  <img src="images/monitor-windows-overview.png" width="400" alt="Windows Light Sand Overview rendered by the native Win32/DX11 Monitor with synthetic data">
-  <img src="images/monitor-windows-projects.png" width="400" alt="Windows Light Sand Projects with readable state labels and compact controls">
+  <img src="images/monitor-windows-overview.png" width="400" alt="Windows Sand Overview rendered by the native Win32/DX11 Monitor with synthetic data">
+  <img src="images/monitor-windows-projects.png" width="400" alt="Windows Sand Projects with readable state labels and compact controls">
 </p>
 
 These current-source captures come from the native Windows render test at 100%

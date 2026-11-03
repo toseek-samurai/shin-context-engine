@@ -278,13 +278,19 @@ bool platform_reduce_motion();
 void draw_brand(ImVec2 origin, float size);
 
 // Sand frames the product. Blue identifies interaction, not project health.
-constexpr ImVec4 background{.969f, .973f, .980f, 1}, raised{1, 1, 1, 1};
-constexpr ImVec4 outer_frame{.933f, .910f, .867f, 1}, header_surface{.988f, .980f, .965f, 1};
-constexpr ImVec4 hover_surface{.925f, .945f, .980f, 1}, rule{.847f, .863f, .886f, 1};
-constexpr ImVec4 sand{.773f, .678f, .533f, 1}, ink{.145f, .192f, .251f, 1}, muted{.380f, .427f, .486f, 1};
-constexpr ImVec4 green{.176f, .439f, .306f, 1}, amber{.537f, .357f, .094f, 1};
-constexpr ImVec4 red{.710f, .243f, .220f, 1}, blue{.157f, .365f, .737f, 1};
-constexpr ImVec4 idle_ink{.380f, .427f, .486f, 1};
+constexpr ImVec4 background{.114f, .122f, .110f, 1}, raised{.145f, .157f, .137f, 1};
+constexpr ImVec4 outer_frame = background, header_surface = raised;
+constexpr ImVec4 hover_surface{.188f, .204f, .169f, 1}, rule{.267f, .286f, .235f, 1};
+constexpr ImVec4 sand{.894f, .800f, .635f, 1}, ink{.941f, .937f, .890f, 1}, muted{.690f, .710f, .651f, 1};
+constexpr ImVec4 green{.510f, .831f, .608f, 1}, amber{.957f, .753f, .384f, 1};
+constexpr ImVec4 red{.961f, .549f, .514f, 1}, blue{.510f, .753f, .941f, 1};
+constexpr ImVec4 idle_ink{.647f, .718f, .792f, 1};
+
+// Native hosts may fit short pages while retaining a fixed layout budget.
+// A smaller popup must not itself trigger denser typography or fewer rows.
+bool panel_automatic_layout = false, panel_fit_active = false;
+float panel_layout_height = 0, panel_body_budget = 0;
+float layout_height() { return panel_automatic_layout ? panel_layout_height : ImGui::GetIO().DisplaySize.y; }
 
 ImU32 alpha_color(ImVec4 color, float alpha) {
     color.w *= alpha;
@@ -367,12 +373,12 @@ std::string clipped(std::string text, float width) {
 }
 
 void heading(const char* text) {
-    ImGui::PushFont(nullptr, 16);
+    ImGui::PushFont(nullptr, 14);
     ImGui::TextColored(muted, "%s", text);
     ImGui::PopFont();
 }
 
-void metric(const char* label, const std::string& value, ImVec4 color = ink, float size = 27) {
+void metric(const char* label, const std::string& value, ImVec4 color = ink, float size = 23) {
     if (value == "—") color = muted;
     ImGui::PushFont(nullptr, 14);
     ImGui::TextColored(muted, "%s", clipped(label, ImGui::GetContentRegionAvail().x).c_str());
@@ -594,10 +600,10 @@ void action_button(const std::string& label, int code, float width = 0, bool ena
 }
 
 void primary_button(const std::string& label, int code, bool enabled = true) {
-    ImGui::PushStyleColor(ImGuiCol_Button, blue);
-    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{.125f, .306f, .624f, 1});
-    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{.102f, .267f, .557f, 1});
-    ImGui::PushStyleColor(ImGuiCol_Text, raised);
+    ImGui::PushStyleColor(ImGuiCol_Button, sand);
+    ImGui::PushStyleColor(ImGuiCol_ButtonHovered, ImVec4{.84f, .74f, .57f, 1});
+    ImGui::PushStyleColor(ImGuiCol_ButtonActive, ImVec4{.77f, .67f, .51f, 1});
+    ImGui::PushStyleColor(ImGuiCol_Text, background);
     action_button(label, code, 0, enabled);
     ImGui::PopStyleColor(4);
 }
@@ -605,8 +611,8 @@ void primary_button(const std::string& label, int code, bool enabled = true) {
 void begin_surface(const char* id, ImVec4 surface = raised) {
     ImGui::PushStyleColor(ImGuiCol_ChildBg, surface);
     ImGui::PushStyleColor(ImGuiCol_Border, rule);
-    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 10);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{14, 13});
+    ImGui::PushStyleVar(ImGuiStyleVar_ChildRounding, 7);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{10, 9});
     ImGui::BeginChild(id, {0, 0}, ImGuiChildFlags_Borders | ImGuiChildFlags_AutoResizeY |
         ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_NoScrollbar);
 }
@@ -618,14 +624,14 @@ void end_surface() {
 }
 
 void page_title(const char* title) {
-    ImGui::PushFont(nullptr, ImGui::GetIO().DisplaySize.y < 400 ? 18.0f : 25.0f);
+    ImGui::PushFont(nullptr, layout_height() < 400 ? 17.0f : 20.0f);
     ImGui::TextWrapped("%s", title);
     ImGui::PopFont();
 }
 
 void metric_choice(const char* label, const std::string& value, int, ImVec4 color, float width) {
     ImGui::BeginGroup();
-    metric(label, value, color, 24);
+    metric(label, value, color, 21);
     ImGui::Dummy({width, 0});
     ImGui::EndGroup();
 }
@@ -643,14 +649,14 @@ void view_tab(const char* label, int code, bool active, float width) {
         alpha_color(hover_surface, fade), 4);
     if (!navigation) {
         draw->AddRectFilled(origin, {origin.x + width, origin.y + height}, ImGui::GetColorU32(active ? hover_surface : raised), 5);
-        draw->AddRect(origin, {origin.x + width, origin.y + height}, ImGui::GetColorU32(active ? blue : rule), 5);
+        draw->AddRect(origin, {origin.x + width, origin.y + height}, ImGui::GetColorU32(active ? sand : rule), 5);
     }
     if (navigation && active) draw->AddRectFilled(origin, {origin.x + width, origin.y + height},
         ImGui::GetColorU32(hover_surface), 5);
     const auto shown = clipped(label,width-8);
     const auto text_size = ImGui::CalcTextSize(shown.c_str());
     draw->AddText({origin.x + (width - text_size.x) / 2, origin.y + (height - text_size.y) / 2},
-        ImGui::GetColorU32(active ? blue : hovered ? ink : muted), shown.c_str());
+        ImGui::GetColorU32(active ? sand : hovered ? ink : muted), shown.c_str());
     if (hovered && shown != label) ImGui::SetTooltip("%s",label);
     if (navigation && active) {
         const float left = monitor_motion.nav_left.step(origin.x, monitor_motion.delta,
@@ -658,7 +664,7 @@ void view_tab(const char* label, int code, bool active, float width) {
         const float line_width = monitor_motion.nav_width.step(width, monitor_motion.delta,
             monitor_motion.reduced || !monitor_motion.initialized);
         monitor_motion.active = monitor_motion.active || monitor_motion.nav_left.moving() || monitor_motion.nav_width.moving();
-        draw->AddLineH(left + 8, left + line_width - 8, origin.y + height - 1, ImGui::GetColorU32(blue), 2);
+        draw->AddLineH(left + 8, left + line_width - 8, origin.y + height - 1, ImGui::GetColorU32(sand), 2);
     }
     if (ImGui::IsItemFocused() && ImGui::GetIO().NavVisible) draw->AddRect(origin, {origin.x + width, origin.y + height}, ImGui::GetColorU32(sand), 4);
     if (ImGui::IsItemVisible()) {
@@ -776,8 +782,8 @@ void render_overview(const ViewState& view, const Json& telemetry, const Json& h
         duration_count += row.at(5).get<double>();
         if (row.at(7).is_number()) { rss_sum += row.at(7).get<double>() * row.at(8).get<double>(); rss_count += row.at(8).get<double>(); }
     }
-    const bool compact = ImGui::GetIO().DisplaySize.y < 440;
-    const bool tiny = ImGui::GetContentRegionAvail().y < 110;
+    const bool compact = layout_height() < 440;
+    const bool tiny = !panel_fit_active && ImGui::GetContentRegionAvail().y < 110;
     const bool retained = history.value("status", "") == "ready";
     const bool known = view.connected && (history_hours ? retained : !metrics.empty());
     const auto samples = telemetry.value("samples", Json::array());
@@ -815,11 +821,11 @@ void render_overview(const ViewState& view, const Json& telemetry, const Json& h
             if (i) ImGui::SameLine();
             view_tab(labels[i], codes[i], graph_mode == codes[i], std::min((width - 16) / 3, ImGui::CalcTextSize(labels[i]).x + 20));
         }
-        if (history_hours) history_chart(history, history_hours, view.connected, graph_mode, compact ? 74.0f : 130.0f);
-        else graph(graph_mode == 2 ? metrics.value("recent", Json::array()) : samples, graph_mode, view.connected, compact ? 74.0f : 130.0f);
+        if (history_hours) history_chart(history, history_hours, view.connected, graph_mode, compact ? 74.0f : 110.0f);
+        else graph(graph_mode == 2 ? metrics.value("recent", Json::array()) : samples, graph_mode, view.connected, compact ? 74.0f : 110.0f);
         end_surface();
     }
-    if (!compact && ImGui::GetContentRegionAvail().y > 48) {
+    if (!compact && (panel_fit_active || ImGui::GetContentRegionAvail().y > 48)) {
         ImGui::Spacing();
         const auto activity = shin::ui::session_activity(telemetry, *view.usage);
         const shin::ui::SessionActivityEvent* latest = nullptr;
@@ -1331,7 +1337,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
                 ui_actions.push_back({value, selected, start, {end.x - start.x, end.y - start.y}, id, true, true});
         }
     };
-    if (!tiny) { ImGui::PushFont(nullptr, compact ? 18.0f : 25.0f); text(name, ink, 58); ImGui::PopFont(); }
+    if (!tiny) { ImGui::PushFont(nullptr, compact ? 17.0f : 20.0f); text(name, ink, 58); ImGui::PopFont(); }
     if (!diagnostic_history_first) {
         const auto color = !view.connected ? muted : state == ProjectState::blocked ? red :
             quality_warning(project) || count(project, "documentation_warnings") || partial_coverage ? amber : project_color(state, project);
@@ -1421,8 +1427,8 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         ImGui::TextWrapped("%s", shin::ui::tr("The project is missing from the latest service response. Its current state is unknown."));
         return;
     }
-    const bool compact = ImGui::GetIO().DisplaySize.y < 440;
-    const bool tiny = ImGui::GetIO().DisplaySize.y < 300;
+    const bool compact = layout_height() < 440;
+    const bool tiny = layout_height() < 300;
     const float width = ImGui::GetContentRegionAvail().x;
     if (!tiny) page_title(shin::ui::tr("Your projects"));
     const bool connection_problem = view.connected && view.data.is_object() &&
@@ -1435,8 +1441,8 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
 #if defined(__APPLE__) || defined(_WIN32)
     primary_button(shin::ui::tr(project_management_busy.load() ? "Operation in progress…" : "Add project…"), 80, !project_management_busy.load());
 #endif
-    const float row_height = tiny ? 30.0f : compact ? 48.0f : 68.0f;
-    const float available = ImGui::GetContentRegionAvail().y;
+    const float row_height = tiny ? 30.0f : compact ? 44.0f : 54.0f;
+    const float available = panel_fit_active ? std::max(1.0f, panel_body_budget - ImGui::GetCursorPosY()) : ImGui::GetContentRegionAvail().y;
     const auto layout = shin::ui::project_table_layout(std::max(1.0f, available - 23), static_cast<int>(projects.size()), row_height);
     project_page = std::clamp(project_page, 0, layout.pages - 1);
     char range[128];
@@ -1450,7 +1456,10 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     const bool history_known = history.value("status", "") == "ready";
     ImGui::PushStyleColor(ImGuiCol_ChildBg, raised);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{tiny ? 4.0f : 10.0f, 4});
-    const float table_height = std::max(1.0f, ImGui::GetContentRegionAvail().y - (tiny ? 21 : 28));
+    const int visible_rows = std::min(layout.page_size, std::max(0, static_cast<int>(projects.size()) - project_page * layout.page_size));
+    const float table_available = panel_fit_active ? panel_body_budget - ImGui::GetCursorPosY() : ImGui::GetContentRegionAvail().y;
+    const float table_height = std::min(std::max(1.0f, table_available - (tiny ? 21 : 28)),
+        std::max(1, visible_rows) * row_height + 8);
     ImGui::BeginChild("projects-table-region", {0, table_height}, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     int index = 0;
@@ -1482,7 +1491,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         const bool hovered = ImGui::IsItemHovered();
         auto* draw = ImGui::GetWindowDrawList();
         if (hovered) draw->AddRectFilled(origin, {origin.x + row_width, origin.y + row_height - 4}, ImGui::GetColorU32(hover_surface), 5);
-        const bool side_status = row_width >= 460;
+        const bool side_status = row_width >= 400;
         const float status_width = std::min(row_width * .58f, ImGui::CalcTextSize(state_label.c_str()).x + 24);
         const float name_width = side_status ? row_width - status_width - 22 : row_width - 22;
         draw->AddText(origin, ImGui::GetColorU32(hovered ? blue : ink), clipped(name, name_width).c_str());
@@ -1495,7 +1504,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             else draw_icon(partial || warning ? Icon::blocked : state_icon(state), status_at, 15, color);
             draw->AddText({status_at.x + 19, status_at.y}, ImGui::GetColorU32(color),
                 clipped(state_label, side_status ? status_width - 15 : row_width - 24).c_str());
-            if (side_status) draw->AddText({origin.x, origin.y + 29}, ImGui::GetColorU32(muted), clipped(age, row_width - 24).c_str());
+            if (side_status) draw->AddText({origin.x, origin.y + 23}, ImGui::GetColorU32(muted), clipped(age, row_width - 24).c_str());
         }
         ImGui::PopFont();
         draw->AddText({origin.x + row_width - 12, origin.y + (tiny ? 0 : 5)}, ImGui::GetColorU32(muted), "›");
@@ -1535,20 +1544,20 @@ void configure_imgui() {
     io.IniFilename = nullptr;
     io.LogFilename = nullptr;
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
-    if (auto* font = io.Fonts->AddFontFromFileTTF(platform_font().c_str(), 17)) io.FontDefault = font;
+    if (auto* font = io.Fonts->AddFontFromFileTTF(platform_font().c_str(), 14)) io.FontDefault = font;
     const auto console_path = platform_console_font();
-    console_font = fs::is_regular_file(console_path) ? io.Fonts->AddFontFromFileTTF(console_path.c_str(),14) : io.FontDefault;
-    ImGui::StyleColorsLight();
+    console_font = fs::is_regular_file(console_path) ? io.Fonts->AddFontFromFileTTF(console_path.c_str(),13) : io.FontDefault;
+    ImGui::StyleColorsDark();
     auto& style = ImGui::GetStyle();
-    style.WindowPadding = {24, 18};
+    style.WindowPadding = {16, 12};
     style.WindowRounding = 0;
     style.FrameRounding = 6;
     style.FrameBorderSize = 1;
     style.PopupRounding = 7;
     style.ChildRounding = 5;
     style.ScrollbarRounding = 4;
-    style.FramePadding = {12, 7};
-    style.ItemSpacing = {8, 10};
+    style.FramePadding = {10, 5};
+    style.ItemSpacing = {8, 8};
     style.Colors[ImGuiCol_WindowBg] = background;
     style.Colors[ImGuiCol_ChildBg] = background;
     style.Colors[ImGuiCol_PopupBg] = raised;
@@ -1556,7 +1565,7 @@ void configure_imgui() {
     style.Colors[ImGuiCol_TextDisabled] = muted;
     style.Colors[ImGuiCol_Border] = rule;
     style.Colors[ImGuiCol_Separator] = rule;
-    style.Colors[ImGuiCol_CheckMark] = blue;
+    style.Colors[ImGuiCol_CheckMark] = sand;
     style.Colors[ImGuiCol_FrameBg] = raised;
     style.Colors[ImGuiCol_FrameBgHovered] = hover_surface;
     style.Colors[ImGuiCol_FrameBgActive] = hover_surface;
@@ -1571,14 +1580,14 @@ void configure_imgui() {
     style.Colors[ImGuiCol_TableRowBgAlt] = {0, 0, 0, 0};
     style.Colors[ImGuiCol_TableBorderLight] = rule;
     style.Colors[ImGuiCol_TableBorderStrong] = rule;
-    style.Colors[ImGuiCol_NavCursor] = blue;
-    style.Colors[ImGuiCol_SliderGrab] = blue;
-    style.Colors[ImGuiCol_SliderGrabActive] = blue;
+    style.Colors[ImGuiCol_NavCursor] = sand;
+    style.Colors[ImGuiCol_SliderGrab] = sand;
+    style.Colors[ImGuiCol_SliderGrabActive] = ink;
     style.Colors[ImGuiCol_ScrollbarBg] = background;
     style.Colors[ImGuiCol_ScrollbarGrab] = rule;
     style.Colors[ImGuiCol_ScrollbarGrabHovered] = muted;
     style.Colors[ImGuiCol_ScrollbarGrabActive] = sand;
-    style.Colors[ImGuiCol_TextSelectedBg] = {blue.x, blue.y, blue.z, .18f};
+    style.Colors[ImGuiCol_TextSelectedBg] = {sand.x, sand.y, sand.z, .22f};
 }
 
 // Only expose visible content through accessibility; scrolled text must not
@@ -1591,7 +1600,7 @@ void session_accessible(const std::string& label, const std::string& key, int ac
         ui_actions.push_back({label, key, origin, {end.x-origin.x,end.y-origin.y}, action, true, action == 99});
 }
 
-void session_text(const std::string& text, const std::string& key, float size = 16, ImVec4 color = ink, ImFont* font = nullptr) {
+void session_text(const std::string& text, const std::string& key, float size = 14, ImVec4 color = ink, ImFont* font = nullptr) {
     ImGui::PushFont(font,size);
     ImGui::PushStyleColor(ImGuiCol_Text,color);
     ImGui::TextWrapped("%s",text.c_str());
@@ -1806,8 +1815,8 @@ void render_readiness(const ViewState& view, const Json& projects) {
     ImGui::PopFont();
     if (!view.connected) {
         ImGui::TextWrapped("%s", shin::ui::tr("Current project readiness is unknown"));
-    } else if (review && ImGui::GetIO().DisplaySize.y >= 400) {
-        begin_surface("overview-attention", attention_blocked ? ImVec4{1, .941f, .929f, 1} : ImVec4{1, .965f, .898f, 1});
+    } else if (review && layout_height() >= 400) {
+        begin_surface("overview-attention", attention_blocked ? ImVec4{.247f, .157f, .145f, 1} : ImVec4{.231f, .184f, .110f, 1});
         const auto tint = attention_blocked ? red : amber;
         ImGui::TextColored(tint, "%s", clipped(attention_name, ImGui::GetContentRegionAvail().x).c_str());
         ImGui::PushFont(nullptr, 14);
@@ -1821,7 +1830,10 @@ void render_readiness(const ViewState& view, const Json& projects) {
     }
 }
 
-void render(const ViewState& view) {
+float render(const ViewState& view, float height_limit = 0) {
+    struct ResetSizing { ~ResetSizing() { panel_fit_active = panel_automatic_layout = false; } } reset_sizing;
+    panel_automatic_layout = height_limit > 0;
+    panel_layout_height = height_limit;
     ui_actions.clear();
     monitor_motion.begin(std::to_string(dashboard_view) + ":" + std::to_string(activity_view) + ":" + selected + ":" + model_project +
         (timing_open ? ":timing" : "") + (profile_review_open ? ":review" : ""));
@@ -1838,15 +1850,15 @@ void render(const ViewState& view) {
         for (const auto& p : projects) if (p.at("id") == row.at("id")) history_project = p.at("id");
     if (history_project.empty()) for (const auto& p : projects) if (shin::ui::count(p, "failures")) { history_project = p.at("id"); break; }
     const auto size = ImGui::GetIO().DisplaySize;
-    const bool compact = size.x < 400 || size.y < 440;
-    const bool tiny = size.y < 300;
+    const bool compact = size.x < 400 || layout_height() < 440;
+    const bool tiny = layout_height() < 300;
     ImGui::SetNextWindowPos({0, 0});
     ImGui::SetNextWindowSize(size);
     ImGui::SetNextWindowScroll({0, 0});
-    ImGui::PushFont(nullptr, compact ? 14.0f : 17.0f);
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{compact ? 12.0f : 24.0f, tiny ? 9.0f : 18.0f});
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{8, tiny ? 4.0f : 10.0f});
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{compact ? 8.0f : 12.0f, tiny ? 4.0f : 7.0f});
+    ImGui::PushFont(nullptr, compact ? 13.0f : 14.0f);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{compact ? 12.0f : 16.0f, tiny ? 9.0f : 12.0f});
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{8, tiny ? 4.0f : 8.0f});
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{compact ? 8.0f : 10.0f, tiny ? 4.0f : 5.0f});
     ImGui::PushStyleColor(ImGuiCol_WindowBg, outer_frame);
     ImGui::Begin("Shin", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
@@ -1855,18 +1867,18 @@ void render(const ViewState& view) {
     draw->AddRectFilled({edge, edge}, {size.x - edge, size.y - edge}, ImGui::GetColorU32(raised), 12);
     draw->AddRect({edge, edge}, {size.x - edge, size.y - edge}, alpha_color(sand, .7f), 12);
     const auto title_origin = ImGui::GetCursorScreenPos();
-    const float title_height = tiny ? 28.0f : compact ? 36.0f : 48.0f;
+    const float title_height = tiny ? 28.0f : 38.0f;
     draw->AddRectFilled({edge + 1, edge + 1}, {size.x - edge - 1, title_origin.y + title_height + 8},
         ImGui::GetColorU32(header_surface), 11, ImDrawFlags_RoundTop);
-    const float mark_size = tiny ? 22.0f : 30.0f;
+    const float mark_size = tiny ? 22.0f : 26.0f;
     draw_brand({title_origin.x, title_origin.y + (title_height - mark_size) / 2}, mark_size);
     const float title_x = title_origin.x + mark_size + 10;
-    ImGui::PushFont(nullptr, tiny ? 20.0f : 27.0f);
+    ImGui::PushFont(nullptr, tiny ? 19.0f : 22.0f);
     draw->AddText({title_x, title_origin.y - 2}, ImGui::GetColorU32(ink), "Shin");
     ImGui::PopFont();
     if (!tiny) {
-        ImGui::PushFont(nullptr, 13);
-        draw->AddText({title_x, title_origin.y + 28}, ImGui::GetColorU32(muted), "Context Engine");
+        ImGui::PushFont(nullptr, 12);
+        draw->AddText({title_x, title_origin.y + 23}, ImGui::GetColorU32(muted), "Context Engine");
         ImGui::PopFont();
     }
     const auto service_label = view.connected ? shin::ui::tr("Running") : shin::ui::tr("No connection");
@@ -1894,10 +1906,13 @@ void render(const ViewState& view) {
         }
     }
     const float content_top = ImGui::GetCursorPosY();
-    const float footer_y = size.y - (tiny ? 33 : 42);
+    const float footer_y = size.y - (tiny ? 33 : 36);
+    panel_fit_active = panel_automatic_layout && !profile_review_open &&
+        (dashboard_view == 0 || dashboard_view == 3 || (dashboard_view == 1 && (selected.empty() || projects.empty())));
+    panel_body_budget = height_limit - content_top - (tiny ? 33 : 36) - 7;
     draw->AddLineH(edge, size.x - edge, content_top - 3, alpha_color(sand, .6f));
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, monitor_motion.reveal.value());
-    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{compact ? 0.0f : 2.0f, tiny ? 2.0f : 12.0f});
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{compact ? 0.0f : 2.0f, tiny ? 2.0f : 8.0f});
     ImGui::PushStyleColor(ImGuiCol_ChildBg, background);
     ImGui::BeginChild("view-content", {0, std::max(1.0f, footer_y - content_top - 7)},
         ImGuiChildFlags_AlwaysUseWindowPadding, ImGuiWindowFlags_None);
@@ -1913,6 +1928,10 @@ void render(const ViewState& view) {
     else if (dashboard_view == 1) render_projects(view, telemetry, history);
     else if (dashboard_view == 2) render_activity(view, telemetry, history);
     else render_settings(view, telemetry, history);
+    const float natural_body_height = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
+    const float preferred_height = panel_fit_active ? std::clamp(std::ceil(content_top + natural_body_height +
+        (tiny ? 33 : 36) + 7), std::min(280.0f, height_limit), height_limit) :
+        (panel_automatic_layout ? height_limit : size.y);
     ImGui::EndChild();
     ImGui::PopStyleColor();
     ImGui::PopStyleVar(2);
@@ -1920,7 +1939,7 @@ void render(const ViewState& view) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{8, 0});
     ImGui::PushStyleColor(ImGuiCol_ChildBg, raised);
-    ImGui::BeginChild("fixed-footer", {0, tiny ? 27.0f : 34.0f}, ImGuiChildFlags_None,
+    ImGui::BeginChild("fixed-footer", {0, tiny ? 27.0f : 30.0f}, ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::Separator();
     ImGui::PushFont(nullptr, compact ? 11.0f : 13.0f);
@@ -1942,6 +1961,7 @@ void render(const ViewState& view) {
     ImGui::PopStyleVar(3);
     ImGui::PopFont();
     monitor_motion.initialized = true;
+    return preferred_height;
 }
 
 } // namespace

@@ -21,9 +21,9 @@
 using namespace shin::observer;
 namespace {
 HWND window=nullptr,heading=nullptr,label=nullptr,current_status=nullptr,bar=nullptr;
-constexpr COLORREF background_color=RGB(247,248,250),ink_color=RGB(37,49,64),sand_color=RGB(197,173,136);
+constexpr COLORREF background_color=RGB(38,42,39),ink_color=RGB(236,237,224),sand_color=RGB(228,204,162);
 HBRUSH background=CreateSolidBrush(background_color);
-COLORREF status_color=RGB(40,93,188);
+COLORREF status_color=RGB(130,192,240);
 std::wstring displayed_plan,displayed_status;
 std::vector<const char*> steps{"Checking reviewed release…","Downloading update…","Verifying download…","Waiting for Monitor to close…","Windows Installer is installing the update. Confirm UAC to continue.","Preparing projects…"};
 std::size_t active_step=0;
@@ -284,7 +284,7 @@ LRESULT CALLBACK procedure(HWND target,UINT message,WPARAM key,LPARAM data) {
         present_plan(wide(plan));
         auto status=description;if(downloading&&!terminal) status+=" · "+std::to_string(percent)+"%";
         const auto next_status=wide(status);
-        status_color=terminal?(success?RGB(45,112,78):RGB(181,62,56)):RGB(40,93,188);
+        status_color=terminal?(success?RGB(130,212,155):RGB(245,140,131)):RGB(130,192,240);
         if(next_status!=displayed_status && SetWindowTextW(current_status,next_status.c_str())) displayed_status=next_status;
         const bool marquee=!terminal && !downloading;
         const auto style=GetWindowLongPtrW(bar,GWL_STYLE);
@@ -365,7 +365,7 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         SendMessageW(label,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
         SendMessageW(current_status,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
         SendMessageW(button,WM_SETFONT,reinterpret_cast<WPARAM>(font),TRUE);
-        SendMessageW(bar,PBM_SETBARCOLOR,0,RGB(40,93,188));SendMessageW(bar,PBM_SETBKCOLOR,0,RGB(227,232,239));
+        SendMessageW(bar,PBM_SETBARCOLOR,0,RGB(130,192,240));SendMessageW(bar,PBM_SETBKCOLOR,0,RGB(68,73,60));
         layout_update_window(window);
         ShowWindow(window,SW_SHOW);SetForegroundWindow(window);
         auto worker=std::async(std::launch::async,[folder,completion]{if(completion) finish_setup();else install(folder);});

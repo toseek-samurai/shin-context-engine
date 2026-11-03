@@ -907,7 +907,9 @@ class LocalServiceTests(unittest.TestCase):
         replacement=self.connect();replacement.sendall((json.dumps(self.frame('query',query='readLimit',request_id='replacement-peer'))+'\n').encode())
         self.wait_service_state(lambda state:state['waiting_requests']==1)
         os.kill(pid,signal.SIGCONT)
-        self.assertTrue(self.receive(first)['ok']);self.assertTrue(self.receive(replacement)['ok'])
+        active_result=self.receive(first);replacement_result=self.receive(replacement)
+        self.assertTrue(active_result['ok'],active_result)
+        self.assertTrue(replacement_result['ok'],replacement_result)
         rows=self.raw('service-status')['result']['telemetry']['request_metrics']['recent']
         cancelled=next(row for row in rows if row['request_id']==hashlib.sha256(b'cancelled-peer').hexdigest())
         self.assertEqual(cancelled['stage'],'admission');self.assertEqual(cancelled['error_code'],'client-disconnected')
@@ -1164,7 +1166,8 @@ if __name__ == '__main__':
         at=sys.argv.index('--group');group=sys.argv[at+1];del sys.argv[at:at+2]
         dedicated={'refresh-deadline':{'test_updating_wait_is_bounded_and_disconnect_releases_capacity'},
                    'fifo':{'test_project_queue_is_fifo_bounded_and_resolves_each_frame_once',
-                           'test_short_same_project_collision_waits_and_preserves_execution_capacity'}}
+                           'test_short_same_project_collision_waits_and_preserves_execution_capacity',
+                           'test_cancelled_waiter_releases_only_its_queue_slot'}}
         names=set(unittest.defaultTestLoader.getTestCaseNames(LocalServiceTests))
         assert set.union(*dedicated.values()) <= names
         groups={**dedicated,'ordinary':names-set.union(*dedicated.values())}

@@ -292,9 +292,16 @@ class LocalResidentTests(unittest.TestCase):
 
         self.wait_for(metadata_checked, 'background metadata check', 10)
         before_artifact = self.ready_request('query', first, query='readLimit')
+        # Fence both readers after the setup/root-metadata events. The ignored
+        # artifact case must compare both against the same immediate baseline,
+        # not project B's preparation from before those independent events.
+        other_before_artifact = self.ready_request('status', second)
+        self.assert_contract(other_before_artifact, second, selected=False)
         baseline = self.service_status()
         artifact_preparation = self.resident(baseline, first)['preparation']
+        other_artifact_preparation = self.resident(baseline, second)['preparation']
         self.assertEqual(artifact_preparation['snapshot_id'], preparation['snapshot_id'])
+        self.assertEqual(other_artifact_preparation['snapshot_id'], other_preparation['snapshot_id'])
         ticks = next(row['ticks'] for row in baseline['telemetry']['project_states'] if row['root'] == str(first))
         (first / 'build/generated.js').write_text('export function buildOnly() { return 42424; }\n')
         artifact = first / 'build/transient.js'
@@ -303,10 +310,10 @@ class LocalResidentTests(unittest.TestCase):
 
         def artifact_observed():
             current = self.service_status()
-            for root, expected in [(first, artifact_preparation), (second, other_preparation)]:
+            for root, expected in [(first, artifact_preparation), (second, other_artifact_preparation)]:
                 worker = self.resident(current, root)
                 self.assertIsNotNone(worker, 'ignored artifact evicted ready resident')
-                self.assertEqual(worker['preparation'], expected, 'ignored artifact replaced preparation')
+                self.assertEqual(worker['preparation'], expected, f'{root}: ignored artifact replaced preparation')
             row = next(row for row in current['telemetry']['project_states'] if row['root'] == str(first))
             # Two completions ensure at least one maintenance pass started after
             # the edit, even if the baseline sampled an already-running pass.
@@ -341,7 +348,7 @@ class LocalResidentTests(unittest.TestCase):
             current = self.service_status()
             untouched = self.resident(current, second)
             self.assertIsNotNone(untouched, 'project A refresh evicted project B')
-            self.assertEqual(untouched['preparation'], other_preparation)
+            self.assertEqual(untouched['preparation'], other_artifact_preparation)
             ready = self.resident(current, first)
             return ready if ready and ready['preparation']['snapshot_id'] == updated['snapshot_id'] else None
 
@@ -356,7 +363,7 @@ class LocalResidentTests(unittest.TestCase):
         self.assert_body(untouched, 'return 9909;', 'return 7717;')
         self.assertEqual(untouched['snapshot_id'], other['snapshot_id'])
         self.assertEqual(untouched['work_performed']['request_sequence'],
-                         other_read['work_performed']['request_sequence'] + 1)
+                         other_before_artifact['work_performed']['request_sequence'] + 1)
         stopped = self.rpc('service-stop')
         self.assertTrue(stopped['ok'], stopped)
         self.assertTrue(stopped['result']['stop_requested'])

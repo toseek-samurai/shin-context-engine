@@ -23,9 +23,20 @@ add_executable(shin-tray MACOSX_BUNDLE main.mm ../ui/update_window_macos.mm)
 target_compile_definitions(shin-tray PRIVATE IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
 target_sources(shin-tray PRIVATE assets/ShinTrayTemplate.png)
 set_source_files_properties(assets/ShinTrayTemplate.png PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
-set(SHIN_MONITOR_LOGO "${CMAKE_CURRENT_SOURCE_DIR}/../../docs/images/shin-logo.png")
+set(SHIN_MONITOR_LOGO_SOURCE "${CMAKE_CURRENT_SOURCE_DIR}/../../docs/images/shin-logo.png")
+set(SHIN_MONITOR_LOGO "${CMAKE_CURRENT_BINARY_DIR}/shin-logo.png")
+# AppKit caches full-size representations of the application icon.
+add_custom_command(OUTPUT "${SHIN_MONITOR_LOGO}"
+    COMMAND /usr/bin/sips -Z 128 "${SHIN_MONITOR_LOGO_SOURCE}" --out "${SHIN_MONITOR_LOGO}"
+    DEPENDS "${SHIN_MONITOR_LOGO_SOURCE}"
+    VERBATIM)
+add_custom_target(shin-monitor-logo DEPENDS "${SHIN_MONITOR_LOGO}")
+add_dependencies(shin-tray shin-monitor-logo)
 target_sources(shin-tray PRIVATE "${SHIN_MONITOR_LOGO}")
 set_source_files_properties("${SHIN_MONITOR_LOGO}" PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+# Relink and sign the bundle when its generated icon changes.
+set_property(TARGET shin-tray APPEND PROPERTY LINK_DEPENDS
+    "$<TARGET_BUNDLE_CONTENT_DIR:shin-tray>/Resources/shin-logo.png")
 target_link_libraries(shin-tray PRIVATE "-framework ImageIO")
 target_sources(shin-tray PRIVATE ${shin_imgui_SOURCE_DIR}/LICENSE.txt)
 set_source_files_properties(${shin_imgui_SOURCE_DIR}/LICENSE.txt PROPERTIES MACOSX_PACKAGE_LOCATION Resources/licenses)
@@ -42,6 +53,7 @@ if(BUILD_TESTING)
     target_link_libraries(shin-tray-request-timing-tests PRIVATE shin-observer-native)
     add_test(NAME shin-tray-request-timing COMMAND shin-tray-request-timing-tests)
     add_executable(shin-tray-layout-tests main.mm)
+    add_dependencies(shin-tray-layout-tests shin-monitor-logo)
     target_compile_definitions(shin-tray-layout-tests PRIVATE SHIN_TRAY_LAYOUT_TEST=1 IMGUI_DISABLE_OBSOLETE_FUNCTIONS)
     target_compile_definitions(shin-tray-layout-tests PRIVATE SHIN_TRAY_TEST_LOGO="${SHIN_MONITOR_LOGO}")
     target_compile_options(shin-tray-layout-tests PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)

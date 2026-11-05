@@ -363,7 +363,7 @@ void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
         const auto number = value.get<double>();
         return std::isfinite(number) && number >= 0.0 && number <= max_refresh_ms ? value : Json(nullptr);
     };
-    static const std::array<const char*, 29> work_fields{{"source_files", "source_bytes", "source_chunks",
+    static const std::array<const char*, 30> work_fields{{"source_files", "source_bytes", "source_chunks",
         "source_cache_builds", "source_read_scan_ms", "source_chunking_ms", "source_index_ms", "source_persist_ms",
         "qualification_reused_output_bytes", "qualification_reused_output_files",
         "qualification_snapshot_ms", "qualification_generation_ms", "qualification_profile_ms",
@@ -371,7 +371,8 @@ void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
         "validation_profile-check_ms", "validation_check_ms", "validation_doctor_ms", "validation_vacuum_ms",
         "validation_eval_ms", "validation_pack-eval_ms", "validation_adoption-check_ms",
         "source_transfer_ms", "source_transfer_verify_ms", "source_transfer_snapshot_ms",
-        "validation_generation_runs", "validation_reuses", "validation_verified_source_files", "validation_verified_source_bytes"}};
+        "validation_generation_runs", "validation_reuses", "validation_verified_source_files", "validation_verified_source_bytes",
+        "metadata_reconciliation_ms"}};
     Json work = Json::object();
     const auto supplied_work = report.value("work", Json());
     if (supplied_work.is_object()) {
@@ -381,6 +382,14 @@ void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
             const auto number = value.get<double>();
             if (std::isfinite(number) && number >= 0.0 && number <= 1.0e15) work[key] = value;
         }
+        const auto hit = supplied_work.value("idle_checkpoint_hit", Json());
+        if (hit.is_boolean()) work["idle_checkpoint_hit"] = hit;
+        static const std::set<std::string> miss_reasons{"not-eligible", "no-checkpoint", "binding-changed",
+            "observation-unavailable", "descriptor-budget", "filesystem-event", "reconciliation-failed", "response-budget"};
+        const auto miss = diagnostic_code(supplied_work.value("idle_checkpoint_miss", Json()));
+        if (miss_reasons.contains(miss)) work["idle_checkpoint_miss"] = miss;
+        const auto dropped = diagnostic_code(supplied_work.value("idle_checkpoint_dropped", Json()));
+        if (dropped == "descriptor-budget" || dropped == "metadata-budget") work["idle_checkpoint_dropped"] = dropped;
     }
     const auto phase = report.value("phase", "unknown");
     Json row{{"project_id", project}, {"outcome", outcome}, {"phase", phases_allowed.contains(phase) ? phase : "unknown"},

@@ -166,22 +166,34 @@ Json LocalRefreshWorker::execute(const Json& payload, const std::function<bool()
             [](const auto& a, const auto& b) { return a.second.used < b.second.used; });
         sessions_.erase(oldest);
     };
-    // Metadata weights do not account for native watch handles. Free optional
-    // checkpoints before work, reserving room for both a monitor and Core IO.
-    while (!sessions_.empty() && !local_refresh_descriptor_headroom(2 * kRefreshActiveDescriptorReserve))
+    // Keep the Core IO reserve available. The larger reserve for opening a new
+    // monitor is checked separately when trying to admit an optional checkpoint.
+    while (!sessions_.empty() && !local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve))
         evict_oldest();
     auto& entry = sessions_[key];
     entry.used = ++sequence_;
     auto result = execute_local_worker_refresh(payload, stopped, progress, &entry.session);
+    const auto* miss = entry.session ? entry.session->take_miss_reason() : "not-eligible";
     if (!result.value("ok", false) || result.value("phase", "") != "current") entry.session.reset();
-    // Bound retained metadata, not source membership or qualification. Eviction
-    // merely restores the original full path for the next visit to that scope.
-    for (;;) {
+    const char* dropped = nullptr;
+    if (entry.session) {
         std::size_t weight = 0;
         for (const auto& [scope, value] : sessions_) { (void)scope; if (value.session) weight += value.session->weight(); }
-        if (sessions_.empty() || (sessions_.size() <= kLocalServiceProjectLimit && weight <= 8192 &&
-            local_refresh_descriptor_headroom(2 * kRefreshActiveDescriptorReserve))) break;
-        evict_oldest();
+        if (!local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) dropped = "descriptor-budget";
+        else if (weight > 8192) dropped = "metadata-budget";
+        // A sequential sweep larger than the cache would otherwise evict every
+        // checkpoint before its next use. Keep the admitted working set and
+        // discard this visit's optional checkpoint when it does not fit.
+        if (dropped) entry.session.reset();
+    }
+    while (sessions_.size() > kLocalServiceProjectLimit) evict_oldest();
+    const bool hit = result.value("refresh_work", Json::object()).value("idle_checkpoint_hit", false);
+    // Optional diagnostics leave room inside the existing bounded refresh view.
+    if (result.value("ok", false) && (!hit || dropped) && result.dump(2).size() + 192 <= 65536) {
+        auto& work = result["refresh_work"];
+        work["idle_checkpoint_hit"] = hit;
+        if (!hit) work["idle_checkpoint_miss"] = miss;
+        if (dropped) work["idle_checkpoint_dropped"] = dropped;
     }
     return result;
 }

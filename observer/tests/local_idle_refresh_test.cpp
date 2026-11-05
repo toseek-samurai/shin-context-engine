@@ -89,13 +89,25 @@ void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
         ~Limit() { (void)::setrlimit(RLIMIT_NOFILE, &saved); }
     } limit;
     LocalRefreshWorker worker;
+    unsigned reused = 0, dropped = 0;
     for (unsigned round = 0; round < 3; ++round) {
         for (const auto& request : projects) {
             const auto result = current(worker, request);
             check(result.at("observation").at("snapshot_current") == true,
                   "descriptor pressure bypassed source qualification");
+            const auto work = result.value("refresh_work", Json::object());
+            if (round > 0 && hit(result)) ++reused;
+            if (work.value("idle_checkpoint_dropped", "") == "descriptor-budget" ||
+                work.value("idle_checkpoint_miss", "") == "descriptor-budget") {
+                ++dropped;
+                check(!hit(result) && work.contains("idle_checkpoint_miss"), "descriptor refusal lost its miss reason");
+            }
         }
     }
+    std::cout << "checkpoint reuse under descriptor pressure: " << reused << "/18 warm visits, "
+              << dropped << " retention refusals\n";
+    check(reused > 0, "round-robin refresh evicted every unchanged checkpoint");
+    check(dropped > 0, "descriptor pressure was not recorded");
     // Evicted optimization state must requalify real edits, not retain old proof.
     write(projects.front().root / "quota.cpp", "int quotaLimit() { return 909; }\n");
     const auto changed = worker.execute(payload(projects.front()), [] { return false; });

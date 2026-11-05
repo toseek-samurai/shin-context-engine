@@ -418,6 +418,7 @@ int telemetry_scenario() {
             const Json repeated{{"outcome", "error"}, {"phase", "blocked"}, {"duration_ms", 173.0},
                 {"error_code", "refresh-validation-failed"}, {"last_stage", "candidate-validation"},
                 {"active_ms", -1.0}, {"sleep_ms", std::numeric_limits<double>::infinity()},
+                {"work", {{"idle_checkpoint_miss", "unknown-reason"}, {"idle_checkpoint_dropped", "/private/secret"}}},
                 {"phases", {{"admission", 2.0}, {"candidate-validation", 121.0}, {"untrusted-stage", 99.0},
                     {"candidate-source-cache", 13.0}, {"source-cache-transfer", 17.0}}}};
             diagnostics.refresh_result("/private/project", repeated);
@@ -441,6 +442,8 @@ int telemetry_scenario() {
                     {"validation_check_ms", 2.123456789}, {"validation_doctor_ms", 1.123456789},
                     {"validation_vacuum_ms", 8.123456789}, {"validation_eval_ms", 7.123456789},
                     {"validation_pack-eval_ms", 6.123456789}, {"validation_adoption-check_ms", 5.123456789},
+                    {"idle_checkpoint_hit", false}, {"idle_checkpoint_miss", "no-checkpoint"},
+                    {"idle_checkpoint_dropped", "descriptor-budget"},
                     {"raw_path", "/private/secret"},
                     {"negative", -1.0}, {"infinite", std::numeric_limits<double>::infinity()}}},
                 {"error_code", ""}, {"last_stage", "qualification"},
@@ -458,7 +461,9 @@ int telemetry_scenario() {
                 current[0]["phase"] != "blocked" || current[2]["phase"] != "unknown" || current[3]["phase"] != "coalescing" ||
                 !current[0]["active_ms"].is_null() || !current[0]["sleep_ms"].is_null() ||
                 current[3]["active_ms"] != 90.0 || current[3]["sleep_ms"] != 60000.0 ||
-                current[3]["work"].size() != 29 || current[3]["work"].dump().size() <= 512 || current[3]["work"].contains("raw_path") ||
+                !current[0]["work"].empty() || current[3]["work"].size() != 32 || current[3]["work"].dump().size() <= 512 ||
+                current[3]["work"]["idle_checkpoint_hit"] != false || current[3]["work"]["idle_checkpoint_miss"] != "no-checkpoint" ||
+                current[3]["work"]["idle_checkpoint_dropped"] != "descriptor-budget" || current[3]["work"].contains("raw_path") ||
                 current.dump().find("/private/project") != std::string::npos ||
                 current.dump().find("untrusted-stage") != std::string::npos ||
                 current.dump().find("/private/secret") != std::string::npos) {
@@ -476,8 +481,7 @@ int telemetry_scenario() {
                 persisted["refresh_diagnostics"][0]["phase"] != "coalescing" ||
                 persisted["refresh_diagnostics"][0]["active_ms"] != 90.0 ||
                 persisted["refresh_diagnostics"][0]["sleep_ms"] != 60000.0 ||
-                persisted["refresh_diagnostics"][0]["work"].size() != 29 ||
-                persisted["refresh_diagnostics"][0]["work"].contains("raw_path") ||
+                persisted["refresh_diagnostics"][0]["work"] != current[3]["work"] ||
                 persisted["refresh_diagnostics"][1]["error_code"] != "refresh-timeout" ||
                 persisted["refresh_diagnostics"][1]["last_stage"] != "candidate-validation" ||
                 persisted["refresh_diagnostics"][2]["error_code"] != persisted["refresh_diagnostics"][3]["error_code"]) return 45;

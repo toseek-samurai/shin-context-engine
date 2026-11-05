@@ -4,6 +4,7 @@
 #include "generated_io.h"
 #include "local_source_relevance.h"
 #include "local_refresh_resources.h"
+#include <utility>
 
 namespace shin::observer {
 // Ephemeral process-owned continuation of a full background qualification. It is
@@ -13,10 +14,19 @@ public:
     bool reuse(shin::context::RuntimeOptions& options, const fs::path& workspace, const std::string& key, Json& result) {
         namespace core = shin::context;
         const auto start = std::chrono::steady_clock::now();
+        miss_reason_ = "no-checkpoint";
+        const auto miss = [&](const char* reason) {
+            miss_reason_ = reason;
+            return false;
+        };
         if (!changes_ || key_ != key || !changes_->healthy()) {
+            if (changes_ && !changes_->healthy()) miss_reason_ = "observation-unavailable";
+            else if (admission_ && key_ != key) miss_reason_ = "binding-changed";
             admission_.reset(); result_ = Json(); weight_ = 0; key_ = key;
             changes_.reset();
-            if (!local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) return false;
+            // Reserve for opening a new monitor as well as the full Core pass.
+            // Existing monitors do not need the extra allocation reserve.
+            if (!local_refresh_descriptor_headroom(2 * kRefreshActiveDescriptorReserve)) return miss("descriptor-budget");
             core::RuntimeOptions watched;
             watched.root = options.root; watched.out_root = options.out_root;
             watched.profile = options.profile;
@@ -38,14 +48,20 @@ public:
                 });
             // WatchRoot can pin every ancestor of several roots. A failed or
             // expensive monitor must release those handles before full Core IO.
-            if (!changes_->healthy() || !local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) {
+            if (!changes_->healthy()) {
                 changes_.reset();
-                return false;
+                return miss("observation-unavailable");
+            }
+            if (!local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) {
+                changes_.reset();
+                return miss("descriptor-budget");
             }
         }
         changes_->flush();
         attempt_epoch_ = changes_->sequence();
         if (!admission_ || !changes_->healthy() || attempt_epoch_ != qualified_epoch_) {
+            if (!changes_->healthy()) miss_reason_ = "observation-unavailable";
+            else if (admission_) miss_reason_ = "filesystem-event";
             admission_.reset(); weight_ = 0; return false;
         }
         try {
@@ -53,7 +69,8 @@ public:
             (void)admission_->assess(options); // full membership, metadata, dependency and output-layout fence
             changes_->flush();
             if (!changes_->healthy() || changes_->sequence() != qualified_epoch_) {
-                admission_.reset(); weight_ = 0; return false;
+                admission_.reset(); weight_ = 0;
+                return miss(changes_->healthy() ? "filesystem-event" : "observation-unavailable");
             }
             options.generation_admission = admission_;
             result = result_;
@@ -71,13 +88,13 @@ public:
             result["refresh_work"] = {{"idle_checkpoint_hit", true}, {"metadata_reconciliation_ms", elapsed},
                 {"source_content_reverified", false}, {"generated_content_reverified", false}};
             if (result.dump(2).size() + 1 > 65536) {
-                admission_.reset(); weight_ = 0; return false;
+                admission_.reset(); weight_ = 0; return miss("response-budget");
             }
             return true;
         } catch (const std::exception&) {
             // The ordinary full path owns recovery and the exact refusal. A
             // metadata mismatch is never permission to accept changed content.
-            admission_.reset(); weight_ = 0; return false;
+            admission_.reset(); weight_ = 0; return miss("reconciliation-failed");
         }
     }
 
@@ -96,6 +113,7 @@ public:
         qualified_epoch_ = attempt_epoch_;
     }
     std::size_t weight() const { return weight_; }
+    const char* take_miss_reason() { return std::exchange(miss_reason_, "not-eligible"); }
 private:
     std::unique_ptr<LocalChanges> changes_;
     std::shared_ptr<const shin::context::GenerationAdmission> admission_;
@@ -103,5 +121,6 @@ private:
     std::string key_;
     std::uint64_t attempt_epoch_ = 0, qualified_epoch_ = 0;
     std::size_t weight_ = 0;
+    const char* miss_reason_ = "not-eligible";
 };
 }

@@ -37,7 +37,7 @@ int updater_main(int argc,char** argv) {
         if(manifest.at("version")!=SHIN_OBSERVER_VERSION)throw Error("update-bootstrap-protocol","Updater executable and envelope versions differ.");
         const auto stage=bundle.parent_path().parent_path();
         const std::string command=argv[1];
-        const bool applying=command=="update-install" || command=="update-download" || command=="update-acknowledge";
+        const bool applying=command=="update-install" || command=="update-resume" || command=="update-download" || command=="update-acknowledge";
         if(applying && stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-updater."))temporary=stage;
         std::string account;
         for(auto** item=environ;item && *item;++item)if(std::string_view(*item).starts_with("HOME="))account=*item+5;

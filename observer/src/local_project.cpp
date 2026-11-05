@@ -422,10 +422,12 @@ std::optional<Json> load_qualification(const fs::path& workspace) {
 Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::string>& args,
                          const Config& config, const fs::path& workspace, const Json& binding,
                          const std::string& key,
-                         const std::optional<RefreshQualification>& candidate = {}, RefreshMeasurements* metrics = nullptr) {
+                         const std::optional<RefreshQualification>& candidate = {}, RefreshMeasurements* metrics = nullptr,
+                         std::optional<core::VerifiedSnapshot>* reader_snapshot = nullptr) {
     RefreshMeasurements local;
     auto& m = metrics ? *metrics : local;
     options.generation_admission.reset();
+    if (reader_snapshot) reader_snapshot->reset();
     std::optional<Json> saved;
     std::optional<core::VerifiedSnapshot> observed;
     bool invalid = false;
@@ -477,7 +479,8 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                 checks.push_back({{"id", "adoption-check"}, {"ok", aligned}});
                 ok = aligned && ok;
             }
-            if (ok) return {{"schema_version", "shin.local-qualified-readiness.v1"}, {"ok", saved->at("quality_warning").is_null()}, {"ready", saved->at("quality_warning").is_null()},
+            if (ok) {
+                Json result{{"schema_version", "shin.local-qualified-readiness.v1"}, {"ok", saved->at("quality_warning").is_null()}, {"ready", saved->at("quality_warning").is_null()},
                 {"retrieval_ready", true}, {"quality_warning", saved->at("quality_warning")},
                 {"freshness", core::index_freshness_json(options.generation_admission->assess(options))},
                 {"snapshot_id", snapshot.snapshot_id}, {"diagnostic_ids", Json::array()}, {"live_checks", checks},
@@ -487,6 +490,9 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                 {"documentation_warnings", documentation_warnings},
                 {"summary", {{"attempted", checks.size()}, {"passed", checks.size()}, {"failed", 0},
                     {"validation_passed", saved->at("quality_warning").is_null()}, {"worktree_current", true}}}};
+                if (reader_snapshot) *reader_snapshot = std::move(observed);
+                return result;
+            }
           }
         }
     }
@@ -976,8 +982,10 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     const auto admission_started = core::SteadyClock::now();
     refresh_stage(request, "qualification");
     RefreshMeasurements qualification_metrics;
+    std::optional<core::VerifiedSnapshot> reader_snapshot;
     if (refresh && grant.active()) options.validation_checkpoint = verify_refresh_source;
-    auto readiness = qualified_readiness(options, args, config, workspace, quality_binding, quality_key, published_qualification, &qualification_metrics);
+    auto readiness = qualified_readiness(options, args, config, workspace, quality_binding, quality_key,
+        published_qualification, &qualification_metrics, request.query_session ? &reader_snapshot : nullptr);
     options.validation_checkpoint = {};
     const double admission_ms = core::elapsed_ms_since(admission_started);
     const auto observer = observer_status(config);
@@ -1094,7 +1102,9 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
                 throw Error("binding-changed", "Canonical authority or route changed.");
             guard_ancestor_bindings(root, home);
         };
-        *request.query_session = std::make_shared<LocalQuerySession>(config, workspace, workspace / "source-cache", result, authority);
+        const LocalReaderQualification qualification{reader_snapshot ? &*reader_snapshot : nullptr, options.generation_admission.get()};
+        *request.query_session = std::make_shared<LocalQuerySession>(config, workspace, workspace / "source-cache",
+            result, authority, nullptr, qualification);
     }
     refresh_stage(request, "final-verification");
     if (options.generation_admission) options.generation_admission->verify_content(options);
@@ -1395,9 +1405,11 @@ static Json local_project_impl(const LocalProjectRequest& input) {
                                 binding.at("generator_version") != core::kGeneratorVersion;
     const auto quality_key = qualification_key(binding, options.profile.config_hash, std::nullopt,
                                                refresh && request.refresh_session);
+    std::optional<core::VerifiedSnapshot> reader_snapshot;
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
-        return qualified_readiness(options, {}, config, workspace, binding, quality_key);
+        return qualified_readiness(options, {}, config, workspace, binding, quality_key,
+            {}, nullptr, request.query_session ? &reader_snapshot : nullptr);
     };
     const auto qualify = [&](const Json& readiness) {
         if (readiness.at("ok") == true && readiness.at("quality_reuse").at("reused") == false)
@@ -1588,7 +1600,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
                 directory_identity(config.state_dir, true) != config.binding.at("state_identity").get<std::string>())
                 throw Error("binding-changed", "Private authority or route changed.");
         };
-        *request.query_session = std::make_shared<LocalQuerySession>(config, workspace, config.state_dir / "source-cache", result, authority);
+        const LocalReaderQualification qualification{reader_snapshot ? &*reader_snapshot : nullptr, options.generation_admission.get()};
+        *request.query_session = std::make_shared<LocalQuerySession>(config, workspace, config.state_dir / "source-cache",
+            result, authority, nullptr, qualification);
     }
     // Native-only observation also lets reader races be tested at this boundary.
     refresh_progress(request.maintenance_progress, "final-verification");

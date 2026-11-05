@@ -2,6 +2,11 @@
 #include "worktree_state.h"
 
 #include <chrono>
+#ifndef _WIN32
+#include <fcntl.h>
+#include <sys/resource.h>
+#include <unistd.h>
+#endif
 
 namespace shin::context {
 namespace {
@@ -147,6 +152,71 @@ void disappeared_selected_source_is_changed(const fs::path& parent) {
     throw std::runtime_error("source-observation: expected selected source refusal");
 }
 
+void exhausted_resource_is_identified() {
+    for (const auto& [condition, resource] : {
+        std::pair{std::errc::too_many_files_open, "process-file-descriptors"},
+        std::pair{std::errc::too_many_files_open_in_system, "system-file-descriptors"},
+        std::pair{std::errc::not_enough_memory, "memory"}}) {
+        const auto native = std::make_error_code(condition);
+        try { throw_source_observation_error("read-source-content", native); }
+        catch (const CliError& error) {
+            expect(error.code() == "resource-exhausted", "resource error remains typed");
+            expect(error.diagnostic().at("resource") == resource, "identify the exhausted resource");
+            expect(error.diagnostic().at("native_error") == native.value(), "preserve numeric OS error");
+#ifndef _WIN32
+            if (condition == std::errc::too_many_files_open)
+                expect(error.diagnostic().contains("descriptor_soft_limit"), "report actual process limit");
+#endif
+            continue;
+        }
+        throw std::runtime_error("resource refusal was not thrown");
+    }
+}
+
+void actual_descriptor_exhaustion_is_safe(const fs::path& parent) {
+#ifndef _WIN32
+    Fixture fixture(parent);
+    const auto source = fixture.root / "README.md";
+    std::ofstream(source) << "# Quota\n";
+    struct Pressure {
+        rlimit saved{};
+        std::vector<int> held;
+        Pressure() {
+            expect(::getrlimit(RLIMIT_NOFILE, &saved) == 0, "read fixture descriptor limit");
+            auto limit = saved; limit.rlim_cur = std::min<rlim_t>(saved.rlim_cur, 128);
+            expect(::setrlimit(RLIMIT_NOFILE, &limit) == 0, "set fixture descriptor limit");
+            for (;;) {
+                const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+                if (fd < 0) break;
+                held.push_back(fd);
+            }
+        }
+        ~Pressure() {
+            for (const auto fd : held) ::close(fd);
+            (void)::setrlimit(RLIMIT_NOFILE, &saved);
+        }
+    };
+    {
+        Pressure pressure;
+        bool refused = false;
+        try { (void)source_fingerprint_file(source, "read-source-content"); }
+        catch (const CliError& error) {
+            refused = true;
+            expect(error.code() == "resource-exhausted", "actual exhausted descriptor refusal");
+            expect(error.diagnostic().at("resource") == "process-file-descriptors", "actual EMFILE resource");
+            expect(error.diagnostic().at("native_error") == EMFILE, "actual numeric EMFILE");
+            expect(error.diagnostic().at("descriptor_soft_limit") <= 128, "actual process limit");
+            expect(std::string(error.what()).find(source.string()) == std::string::npos, "no private path in resource refusal");
+        }
+        expect(refused, "exhausted source read was unexpectedly admitted");
+    }
+    expect(source_fingerprint_file(source, "read-source-content").metadata.byte_count > 0,
+           "source read recovers when descriptors are freed");
+#else
+    (void)parent;
+#endif
+}
+
 void changed_default_budgets_invalidate_unchanged_profile(const fs::path& parent) {
     Fixture fixture(parent);
     RuntimeOptions options;
@@ -181,6 +251,8 @@ int main(int argc, char** argv) {
         shin::context::explicit_document_aliases_preserve_selection(argv[1]);
         shin::context::explicit_document_inventory_at_scale(argv[1]);
         shin::context::errors_are_typed_and_safe();
+        shin::context::exhausted_resource_is_identified();
+        shin::context::actual_descriptor_exhaustion_is_safe(argv[1]);
         shin::context::disappeared_selected_source_is_changed(argv[1]);
         shin::context::changed_default_budgets_invalidate_unchanged_profile(argv[1]);
         std::cout << "source-observation: lexical inventory and typed errors passed\n";

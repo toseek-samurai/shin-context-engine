@@ -4,11 +4,16 @@
 namespace shin::context {
 // Retain raw text/identifiers and append CamelCase components for lexical recall.
 std::string source_search_projection(std::string_view text);
+// The same normalized vocabulary and expansion budget used by source search.
+void validate_source_discovery_query_budget(const std::string& query);
 // One private, generation-bound index. Concurrent requests fail busy rather
 // than queue; the owner must keep this object alive until callers finish.
 class SourceDiscoveryIndex {
 public:
-    explicit SourceDiscoveryIndex(RuntimeOptions options, const fs::path& cache_directory = {});
+    // A resident can borrow its current preparation admission. The caller
+    // owns the publication lock and still verifies the complete content.
+    explicit SourceDiscoveryIndex(RuntimeOptions options, const fs::path& cache_directory = {},
+                                  const GenerationAdmission* preparation_admission = nullptr);
     ~SourceDiscoveryIndex();
     SourceDiscoveryIndex(const SourceDiscoveryIndex&) = delete;
     SourceDiscoveryIndex& operator=(const SourceDiscoveryIndex&) = delete;

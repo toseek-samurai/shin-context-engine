@@ -51,6 +51,9 @@ Json response_for_version(const Json& response, const std::string& id, const std
 Json project_response(const Json& response, const std::string& id) {
     return response_for_version(response, id, SHIN_OBSERVER_VERSION, SHIN_VERSION, true);
 }
+Json mcp_response(const Json& response, const std::string& id, const VerifiedMcpRuntime& runtime) {
+    return response_for_version(response,id,runtime.observer_version(),runtime.core_version(),true);
+}
 Json control_response(const Json& response, const std::string& id, const std::string& observer_version, const std::string& core_version) {
     if (validation_identifier(observer_version).empty() || validation_identifier(core_version).empty())
         throw Error("service-version-mismatch", "A verified kit version is required for installation control.");
@@ -69,7 +72,7 @@ std::string string_field(const Json& value, const char* key, std::size_t limit) 
 void validate_request(const Json& value) {
     const std::set<std::string> allowed{"schema_version", "request_id", "observer_version", "core_version",
                                         "command", "root", "query", "path", "record", "snapshot"};
-    const std::set<std::string> optional{"diagnostic", "session_id", "parent_request_id", "model_id", "wait_for_ready", "readiness_wait_ms", "session"};
+    const std::set<std::string> optional{"diagnostic", "session_id", "parent_request_id", "model_id", "wait_for_ready", "readiness_wait_ms", "session", "mcp_runtime"};
     if (!value.is_object())
         throw Error("service-request-invalid", "Unexpected local request fields.");
     for (const auto& key : allowed)
@@ -93,6 +96,15 @@ void validate_request(const Json& value) {
     if (string_field(value, "request_id", 96).empty())
         throw Error("service-request-invalid", "A request identity is required.");
     const auto command = string_field(value, "command", 32);
+    if (value.contains("mcp_runtime")) {
+        const auto& runtime = value.at("mcp_runtime");
+        if (!runtime.is_object() || runtime.size() != 2 || runtime.value("protocol",Json()) != "shin.mcp-service.v1" ||
+            !runtime.contains("runtime_sha256") || !runtime.at("runtime_sha256").is_string() ||
+            runtime.at("runtime_sha256").get_ref<const std::string&>().size() != 64 ||
+            runtime.at("runtime_sha256").get_ref<const std::string&>().find_first_not_of("0123456789abcdef") != std::string::npos ||
+            command == "service-status" || command == "service-stop")
+            throw Error("service-request-invalid", "The MCP runtime identity is invalid or cannot control the service.");
+    }
     if (value.contains("readiness_wait_ms") && (command != "query" ||
         !value.at("readiness_wait_ms").is_number_integer() || value.at("readiness_wait_ms") < 5000 ||
         value.at("readiness_wait_ms") > 20000))

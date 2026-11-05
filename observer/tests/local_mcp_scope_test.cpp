@@ -50,6 +50,13 @@ int main() {
         const auto busy = local_mcp_recovery("service-busy",admission,"status");
         check(busy.at("diagnostic") == admission && !busy.contains("failure_reason"),"admission metadata must not become project validation evidence");
         check(busy.at("retry_after_ms") == 0 && busy.at("next_action") == "query-once-with-bounded-readiness-wait","busy status must stay nonblocking");
+        auto connection_busy = admission; connection_busy["reason"] = "connection-capacity";
+        check(local_mcp_recovery("service-busy", connection_busy).at("diagnostic") == connection_busy,
+              "connection overload lost bounded recovery");
+        const Json backlog{{"schema_version", "shin.local-transport-admission.v1"},
+            {"reason", "connection-backlog"}, {"execution_started", false}};
+        check(local_mcp_recovery("service-busy", backlog).at("diagnostic") == backlog,
+              "backlog pressure lost bounded recovery");
         auto query_wait = admission; query_wait["wait_limit_ms"] = 20000;
         check(local_mcp_recovery("project-updating",query_wait,"query").at("diagnostic") == query_wait,
             "query readiness deadline must survive bounded diagnostics");

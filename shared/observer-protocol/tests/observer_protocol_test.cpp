@@ -178,6 +178,18 @@ int main() {
         diagnostic_observation["diagnostic"] = {{"schema_version", "shin.source-observation-diagnostic.v1"},
             {"stage", "source-inventory"}, {"operation", "read-source-content"}, {"category", "access-denied"}};
         shin::observer_protocol::verify_observation(diagnostic_observation);
+        auto resource_observation = diagnostic_observation;
+        resource_observation["diagnostic"].update({{"category", "resource-exhausted"},
+            {"resource", "process-file-descriptors"}, {"native_error", 24},
+            {"descriptor_soft_limit", std::uint64_t{256}}});
+        shin::observer_protocol::verify_observation(resource_observation);
+        for (const auto& change : Json::array({{{"resource", "/private/path"}},
+            {{"native_error", "EMFILE"}}, {{"native_error", -1}}, {{"descriptor_soft_limit", "256"}},
+            {{"extra", "arbitrary"}}, {{"category", "access-denied"}}, {{"resource", "memory"}}})) {
+            auto unsafe = resource_observation.at("diagnostic"); unsafe.update(change);
+            if (!shin::observer_protocol::bounded_observation_diagnostic(unsafe).is_null())
+                throw std::runtime_error("unbounded resource diagnostic accepted");
+        }
         for (const auto* key : {"stage", "operation", "category", "extra"}) {
             auto unsafe = diagnostic_observation;
             unsafe["diagnostic"][key] = "/private/source/token";

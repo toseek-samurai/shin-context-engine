@@ -129,7 +129,7 @@ inline nlohmann::json bounded_admission_diagnostic(const nlohmann::json& input) 
         input.value("execution_started",J()) != false) return nullptr;
     const auto reason = input.value("reason",J());
     if (reason != "reader-preparing" && reason != "project-executing" &&
-        reason != "execution-capacity" && reason != "waiting-capacity") return nullptr;
+        reason != "execution-capacity" && reason != "waiting-capacity" && reason != "connection-capacity") return nullptr;
     const auto count = [&](const char* key, unsigned maximum) {
         const auto n = input.value(key,J());
         return n.is_number_integer() && n >= 0 && n <= maximum;
@@ -145,6 +145,10 @@ inline nlohmann::json bounded_admission_diagnostic(const nlohmann::json& input) 
 }
 
 inline nlohmann::json bounded_failure_diagnostic(const nlohmann::json& input) {
+    if (input.is_object() && input.size() == 3 &&
+        input.value("schema_version", nlohmann::json()) == "shin.local-transport-admission.v1" &&
+        input.value("reason", nlohmann::json()) == "connection-backlog" &&
+        input.value("execution_started", nlohmann::json()) == false) return input;
     const auto admission = bounded_admission_diagnostic(input);
     if (!admission.is_null()) return admission;
     const auto observation = shin::observer_protocol::bounded_observation_diagnostic(input);

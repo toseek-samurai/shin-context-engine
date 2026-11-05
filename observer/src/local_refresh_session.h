@@ -3,6 +3,7 @@
 #include "generation_admission.h"
 #include "generated_io.h"
 #include "local_source_relevance.h"
+#include "local_refresh_resources.h"
 
 namespace shin::observer {
 // Ephemeral process-owned continuation of a full background qualification. It is
@@ -14,6 +15,8 @@ public:
         const auto start = std::chrono::steady_clock::now();
         if (!changes_ || key_ != key || !changes_->healthy()) {
             admission_.reset(); result_ = Json(); weight_ = 0; key_ = key;
+            changes_.reset();
+            if (!local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) return false;
             core::RuntimeOptions watched;
             watched.root = options.root; watched.out_root = options.out_root;
             watched.profile = options.profile;
@@ -33,6 +36,12 @@ public:
                     if (path == workspace / "state.json") return true;
                     return local_source_relevant(watched, path, directory);
                 });
+            // WatchRoot can pin every ancestor of several roots. A failed or
+            // expensive monitor must release those handles before full Core IO.
+            if (!changes_->healthy() || !local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) {
+                changes_.reset();
+                return false;
+            }
         }
         changes_->flush();
         attempt_epoch_ = changes_->sequence();

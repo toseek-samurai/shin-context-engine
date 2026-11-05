@@ -162,7 +162,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         out.push_back({shin::ui::tr("Updates"), Tone::heading});
         if (homebrew_managed()) {
             out.push_back({shin::ui::tr("Update with Homebrew"), Tone::heading});
-            out.push_back({shin::ui::tr("Homebrew manages this installation. Quit Monitor and TUI before upgrading, then restart the background service and persistent MCP clients.")});
+            out.push_back({shin::ui::tr("Homebrew manages this installation. Quit Monitor and TUI before upgrading, then restart the background service. Compatible MCP connections resume automatically; older integrations may need one reconnection.")});
             out.push_back({"brew upgrade toseek-samurai/tap/shin-context-engine"});
             return out;
         }
@@ -186,7 +186,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 out.push_back({});
                 out.push_back({shin::ui::tr("Install the reviewed release? y confirms; n or Esc cancels."), Tone::warning});
             }
-            out.push_back({shin::ui::tr("Projects, settings and history are preserved. Reconnect persistent MCP clients afterwards.")});
+            out.push_back({shin::ui::tr("Projects, settings and history are preserved. Compatible MCP connections resume automatically; older integrations may need one reconnection.")});
         } else if (update.phase == UpdatePhase::installing) {
             const auto& timeline = update.timeline;
             out.push_back({shin::ui::tr(update_stage_key(timeline.current.step)), Tone::heading});
@@ -201,17 +201,31 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         } else if (update.phase == UpdatePhase::acknowledging) out.push_back({shin::ui::tr("Verifying update result…"), Tone::info});
         else {
             const auto& result = update.result;
-            const auto phase = field(result, "phase");
-            const bool installed = phase == "installed" && field(result, "ok") == true;
+            const auto phase = field(result, "outcome").is_string() ? field(result, "outcome") : field(result, "phase");
+            const bool installed = field(result, "outcome") == "installed" || (phase == "installed" && field(result, "ok") == true);
             out.push_back({installed ? shin::ui::tr("Shin was updated") : phase == "idle" || phase == "reviewed" ?
                 shin::ui::tr("No pending update result") : shin::ui::tr("Update needs review"), installed ? Tone::good : Tone::warning});
-            if (installed) out.push_back({shin::ui::tr("Restart this terminal dashboard and reconnect MCP clients to use the installed version.")});
+            if (installed) out.push_back({shin::ui::tr("Restart this terminal dashboard to load the new version. Compatible MCP connections resume automatically; older integrations may need one reconnection.")});
             else if (!update.error.empty()) out.push_back({update.error, Tone::error});
-            const auto& error = field(result, "error");
+            if (installed && field(result, "projects_pending").is_number() && field(result, "projects_pending").get<int>() > 0)
+                out.push_back({shin::ui::tr("Shin is installed. Some projects are still preparing or need attention; inspect Projects for details."), Tone::warning});
+            const auto& error = field(result, "error").is_object() ? field(result, "error") : field(field(result, "result"), "error");
             if (field(error, "message").is_string()) out.push_back({text(field(error, "message")), Tone::warning});
+            const auto& affected = field(result, "affected_projects");
+            if (affected.is_array()) {
+                std::size_t shown = 0;
+                for (const auto& project : affected) {
+                    if (!field(project, "name").is_string() || !field(project, "reason").is_string()) continue;
+                    if (shown == 16) break;
+                    if (shown++ == 0) out.push_back({shin::ui::tr("Affected projects"), Tone::heading});
+                    out.push_back({text(field(project, "name")) + " — " + text(field(project, "reason")), Tone::warning});
+                }
+            }
             if (field(result, "candidate").is_string()) out.push_back({text(field(result, "candidate")), Tone::muted});
             if (phase != "idle" && phase != "reviewed" && !installed) {
-                out.push_back({shin::ui::tr("Review shin-ce update-status before retrying an unconfirmed installation.")});
+                out.push_back({shin::ui::tr(field(result, "can_retry") == true ? "Retry update" :
+                    field(result, "can_resume") == true ? "Continue update" :
+                    "Review shin-ce update-status before retrying an unconfirmed installation.")});
             }
         }
         if (update.installing()) out.push_back({shin::ui::tr("Update in progress. Keep this terminal open; quitting is available after it finishes."), Tone::warning});

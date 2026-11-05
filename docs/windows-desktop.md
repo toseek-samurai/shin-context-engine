@@ -351,3 +351,12 @@ Packaging retains CPack's installed WiX 4 template and disables its default
 same-version replacement. If the expected template fragment changes, packaging
 fails for review. Normal maintenance of the same ProductCode remains separate
 from replacing one version with another.
+
+### Installation and project readiness
+
+Current development source records a successful, independently verified MSI
+installation separately from project preparation. If preparation reports pending
+projects, Monitor shows the installed version and those diagnostics, and offers
+**Retry project preparation** without requiring another MSI download or UAC.
+Project policy, ownership and retrieval checks remain in force. This behavior is
+source-only until the updated Windows package is qualified and published.

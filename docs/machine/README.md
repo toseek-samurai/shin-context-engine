@@ -11,6 +11,7 @@ the [current documentation](../README.md).
 - [observer/VERSION](../../observer/VERSION) identifies Observer, CLI, MCP and Monitor source.
 - [shin-development-v1.json](shin-development-v1.json) records their independent development identities.
 - [lexical-retrieval-v1.json](lexical-retrieval-v1.json) declares the current index reader/writer policy.
+- [mcp-service-v1.json](mcp-service-v1.json) defines update-aware MCP transport, exact runtime identity and reconnect boundaries.
 - [shin-context-engine.manifest.json](shin-context-engine.manifest.json) describes the product and command inventory.
 
 The current generator is `shin-generator-v24-objective-cpp`. Retrieval requires

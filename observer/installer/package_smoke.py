@@ -17,7 +17,7 @@ parser.add_argument('--test-results', type=Path, required=True)
 args = parser.parse_args()
 source = Path(__file__).resolve().parents[1]
 completed = 0
-stage_count = 8
+stage_count = 9
 
 
 @contextmanager
@@ -63,6 +63,11 @@ with stage('Previous generator update and rollback'):
     subprocess.run([sys.executable, '-B', str(source / 'installer/previous_generator_test.py'),
                     '--cmake', args.cmake, '--candidate-archive', str(args.archive.resolve()),
                     '--proof', str(args.build / 'proof')], check=True, timeout=600)
+with stage('Previous published release, changing projects and interrupted recovery'):
+    subprocess.run([sys.executable, '-B', str(source / 'installer/previous_release_test.py'),
+                    '--cmake', args.cmake, '--candidate-archive', str(args.archive.resolve()),
+                    '--proof', str(args.build / 'proof'),
+                    '--helper', str(args.build / 'shin-update-recovery-tests')], check=True, timeout=900)
 with stage('Independent updater envelope'):
     updater = args.archive.parent / 'shin-updater-v1-macos-arm64.zip'
     subprocess.run([str(args.build / 'shin-updater-bundle-tests'), 'archive', str(updater)], check=True, timeout=15)

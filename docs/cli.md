@@ -90,7 +90,11 @@ time, real download/staging bytes and project counts. There is no estimated
 overall percentage. Completion comes from the native receipt, independently of
 progress. `v` reads retained outcomes; a recoverable result exposes `a` only when
 the native status permits acknowledgement. After a successful swap, restart
-Monitor, `shin-ce stats` and persistent MCP clients to load the new binaries.
+Monitor and `shin-ce stats` to load the new binaries. Current development source
+adds an update-aware MCP bridge: reconnect an older adapter once to load it;
+compatible subsequent macOS updates preserve that MCP connection. A changed MCP
+contract still requires reconnecting the integration. This does not qualify
+continuous stdio across a Windows MSI replacement.
 Homebrew builds show `brew upgrade` instead of invoking the native Updater.
 Linux has no release installer: rebuild its source tools and restart them.
 The generic Updates message links to Releases but does not provide a Linux package.
@@ -417,6 +421,15 @@ outcome without networking. `update-download --revision HASH` verifies and stage
 a kit without applying it. These commands use the recorded data home, preserve
 client configuration and never change project authority. See the
 [local kit guide](local-kit.md) for Monitor checks and recovery boundaries.
+
+Current development source adds `update-resume --revision REVIEW_HASH`. Read
+`update-status` first: `can_retry` permits another attempt after a verified
+no-change refusal, and `can_resume` permits recovery of the recorded native
+transaction. The revision is bound to both saved state and installation identity.
+A verified retained candidate works offline; if it is missing, recovery fetches
+only its exact recorded release and verifies the target against the native journal.
+A successful update may report `projects_pending`; each project's existing
+retrieval checks remain enforced while the service prepares it.
 
 `update-acknowledge --revision REVIEW_HASH` explicitly acknowledges a saved result
 only after the installed payload is verified and its native recovery journal is

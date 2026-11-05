@@ -12,6 +12,7 @@ import subprocess
 import sys
 import time
 import threading
+import shutil
 import unittest
 from contextlib import closing
 
@@ -293,8 +294,8 @@ class McpTests(unittest.TestCase):
             self.assertEqual(cancelled['error']['code'], 'service-request-cancelled')
             self.wait_service_state(lambda s: s['waiting_requests'] == 0)
 
-    def adapter(self, root=None, roots=None):
-        argv = [str(MCP), '--home', str(self.home)]
+    def adapter(self, root=None, roots=None, executable=MCP):
+        argv = [str(executable), '--home', str(self.home)]
         for selected in roots or [root or self.root]:
             argv += ['--root', str(selected)]
         child = subprocess.Popen(argv,
@@ -322,6 +323,106 @@ class McpTests(unittest.TestCase):
         child.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
         child.stdin.flush()
         return child
+
+    def runtime_kit(self, prefix, version=None, marker='original'):
+        """A disposable code cohort, never an installed consumer kit."""
+        (prefix/'bin').mkdir(parents=True)
+        shutil.copy2(MCP, prefix/'bin/shin-mcp')
+        shutil.copy2(service.fixtures.TOOL, prefix/'bin/shin-ce')
+        for library in MCP.parent.glob('*.dylib'):
+            shutil.copy2(library, prefix/'bin'/library.name)
+        for name in ('shin-observer', 'shin-context'):
+            (prefix/'bin'/name).write_text(marker)
+        for component, value in [('shin-context',self.identity['core_version']),
+                                 ('shin-observer',version or self.identity['version'])]:
+            folder=prefix/'share'/component
+            folder.mkdir(parents=True)
+            (folder/'VERSION').write_text(value+'\n')
+        return self.runtime_manifest(prefix,version)
+
+    def runtime_manifest(self, prefix, version=None, protocol='shin.mcp-service.v1'):
+        paths=sorted((prefix/'bin').rglob('*'))+[prefix/'share/shin-context/VERSION',prefix/'share/shin-observer/VERSION']
+        value={'schema_version':protocol,'adapter_contract_sha256':self.identity['mcp_adapter_contract'],'observer_version':version or self.identity['version'],
+               'core_version':self.identity['core_version'],'files':[
+                   {'path':p.relative_to(prefix).as_posix(),'size':p.stat().st_size,
+                    'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths if p.is_file()]}
+        path=prefix/'share/shin-context/mcp-runtime.json'
+        path.write_text(json.dumps(value)+'\n')
+        return {'protocol':protocol,'runtime_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
+
+    def bridge_reply(self, child, listener, expected, response_version=None, before_reply=None):
+        request_id, connection=self.pending_query(child,listener)
+        request=child.last_service_request
+        self.assertEqual(request['mcp_runtime'],expected)
+        if before_reply:before_reply()
+        with connection:
+            response={'schema_version':'shin.local-rpc.v1','request_id':request['request_id'],
+                      'observer_version':response_version or request['observer_version'],
+                      'core_version':request['core_version'],'ok':True,
+                      'result':{'ok':True,'root':str(self.root),'version':request['observer_version']}}
+            connection.sendall((json.dumps(response)+'\n').encode())
+        return json.loads(self.response(child,request_id)['result']['content'][0]['text'])
+
+    def test_bridge_changes_versions_without_reinitializing_stdio_and_refuses_mixed_runtime(self):
+        listener=self.delayed_service()
+        prefix=self.base/'kit'
+        first=self.runtime_kit(prefix)
+        child=self.adapter(executable=prefix/'bin/shin-mcp')
+        pid=child.pid
+        self.assertTrue(self.bridge_reply(child,listener,first)['ok'])
+        stage=self.base/'stage'
+        newer='2.0.5-dev.999'
+        second=self.runtime_kit(stage,newer,'replacement')
+        prefix.rename(self.base/'previous')
+        stage.rename(prefix)
+        self.assertEqual(self.bridge_reply(child,listener,second)['version'],newer)
+        self.assertEqual(child.pid,pid)
+        mixed=self.bridge_reply(child,listener,second,self.identity['version'])
+        self.assertEqual(mixed['error']['code'],'service-response-invalid')
+        file=prefix/'bin/shin-context'
+        saved=file.read_bytes(); metadata=file.stat()
+        file.write_bytes(b'x'*len(saved))
+        os.utime(file,ns=(metadata.st_atime_ns,metadata.st_mtime_ns))
+        denied=self.tool(child,'shin_query',{'query':'readLimit'})
+        self.assertEqual(denied['error']['code'],'mcp-runtime-invalid')
+        file.write_bytes(saved)
+        self.assertTrue(self.bridge_reply(child,listener,second)['ok'])
+        # A response from the old generation must not escape an in-flight swap.
+        def change():
+            file.write_text('next generation')
+            self.runtime_manifest(prefix,newer)
+        raced=self.bridge_reply(child,listener,second,before_reply=change)
+        self.assertEqual(raced['error']['code'],'mcp-runtime-changed')
+        contract_path=prefix/'share/shin-context/mcp-runtime.json'
+        manifest=json.loads(contract_path.read_text());manifest['adapter_contract_sha256']='0'*64
+        contract_path.write_text(json.dumps(manifest)+'\n')
+        incompatible=self.tool(child,'shin_query',{'query':'readLimit'})
+        self.assertEqual(incompatible['error']['code'],'mcp-protocol-changed')
+        self.runtime_manifest(prefix,newer,protocol='shin.mcp-service.v2')
+        incompatible=self.tool(child,'shin_query',{'query':'readLimit'})
+        self.assertEqual(incompatible['error']['code'],'mcp-protocol-changed')
+
+    def test_bridge_survives_real_service_and_payload_replacement(self):
+        prefix=self.base/'kit'
+        first=self.runtime_kit(prefix)
+        serving=self.start(tool=prefix/'bin/shin-ce')
+        child=self.adapter(executable=prefix/'bin/shin-mcp')
+        initial=self.tool(child,'shin_query',{'query':'readLimit','diagnostic':True})
+        self.assertTrue(initial['ok'],initial)
+        wrong=self.raw('query',query='readLimit',mcp_runtime={**first,'runtime_sha256':'0'*64})
+        self.assertEqual(wrong['error']['code'],'mcp-service-runtime-mismatch')
+        serving.terminate();serving.communicate(timeout=10)
+        self.endpoint.unlink(missing_ok=True)
+        stage=self.base/'stage'
+        second=self.runtime_kit(stage,marker='replacement generation')
+        self.assertNotEqual(first,second)
+        prefix.rename(self.base/'previous');stage.rename(prefix)
+        self.start(tool=prefix/'bin/shin-ce')
+        latest=self.tool(child,'shin_query',{'query':'readLimit','diagnostic':True})
+        self.assertTrue(latest['ok'],latest)
+        read=self.tool(child,'shin_read',{'path':'limits.js','snapshot':latest['snapshot_id']})
+        self.assertTrue(read['ok'],read)
+        self.assertIsNone(child.poll())
 
     def rpc(self, child, method, params, timeout=15):
         request_id = self.send(child, method, params)
@@ -596,6 +697,20 @@ class McpTests(unittest.TestCase):
             description=catalog['shin_resume']['description']
             for field in ('ok','continuation_ready','review_required','ready_without_review'):
                 self.assertIn(field,description)
+            arguments = {}
+            if roots:
+                projects = self.tool(child, 'shin_projects', {})['projects']
+                arguments['project'] = next(p['project'] for p in projects if p['root'] == str(self.root))
+            refused = self.tool(child, 'shin_query', {
+                **arguments, 'query': ' '.join(f'термин{i}' for i in range(65)),
+            })
+            self.assertEqual(refused['error']['code'], 'source-discovery-token-limit')
+            self.assertIn('64 distinct', refused['error']['message'])
+            recovery = refused['recovery']
+            self.assertEqual(recovery['kind'], 'request-correction')
+            self.assertFalse(recovery['retry_same_request'])
+            self.assertIn(recovery['next_tool'], catalog)
+            self.assertTrue(self.tool(child, 'shin_query', {**arguments, 'query': 'readLimit'})['ok'])
             self.finish_adapter(child)
 
     def test_handoff_survives_mcp_restart_without_project_file_changes(self):
@@ -1453,4 +1568,12 @@ class McpTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
+    # Keep upgrade proof separately scheduled without duplicating it in the
+    # longer native-MCP suite. Direct invocation still runs every case.
+    if '--bridge-only' in sys.argv or '--without-bridge' in sys.argv:
+        only='--bridge-only' in sys.argv
+        sys.argv.remove('--bridge-only' if only else '--without-bridge')
+        def load_tests(loader, tests, pattern):
+            return unittest.TestSuite(McpTests(name) for name in loader.getTestCaseNames(McpTests)
+                                      if name.startswith('test_bridge_') == only)
     unittest.main()

@@ -31,6 +31,7 @@ public:
     bool check();
     bool review();
     bool install(const std::string& revision);
+    bool resume(const std::string& revision);
     bool acknowledge(const std::string& revision);
 private:
     bool queue(const std::string& command, const std::string& revision = {});

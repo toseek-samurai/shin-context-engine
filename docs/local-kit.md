@@ -334,12 +334,18 @@ Terminal updates show each stage and elapsed time on stderr, with real byte coun
 for copying and completed/total project counts for qualification. stdout retains
 the JSON receipt. Redirected commands stay quiet by default; add `--progress` to
 include readable stages in a log. No desktop window opens for a terminal command.
-Restart Monitor after completion. Restart persistent MCP connections in your coding
-agent as well: already-running adapters retain the old version and cannot query
-the new service until relaunched. Client configuration paths stay the same.
-Shin diagnoses this as `service-version-mismatch`, includes client
-and service versions and asks for client reconnection. Successful responses still
-require matching versions; the current service can keep serving other clients.
+Restart Monitor after completion. Current development source adds an update-aware
+MCP bridge on macOS: once a client has loaded this bridge, compatible kit updates
+do not require restarting its MCP connection or coding application. Older adapters
+need one reconnection to load it. Published kits without the new runtime manifest
+retain their existing reconnect requirement. Client configuration paths stay the same.
+The bridge verifies the current code inventory, exact Observer/Core versions and
+runtime digest; the service must belong to that exact cohort. It never accepts a
+foreign-version success. An automatically checked adapter-code fingerprint also
+prevents retaining stale tools, session framing or journal logic. A changed MCP tools/transport contract explicitly requires
+reconnecting the Shin integration. A service outage during installation remains a
+temporary refusal, not permission to run a second service or re-enroll projects.
+Windows MSI process replacement retains its separate reconnect instructions.
 
 An interrupted operation is resumed by repeating the same command from the same
 extracted kit. Failed activation restores the previous payload and service; the
@@ -618,7 +624,8 @@ the archive over HTTPS and verifies its byte count, GitHub SHA-256 digest, check
 file, archive paths and complete native manifest before invoking the new kit's
 existing updater. That updater retains installation ownership, compatibility,
 project qualification, data preservation and rollback checks. The helper records
-an outcome and reopens Monitor. Persistent MCP clients still need to reconnect.
+an outcome and reopens Monitor. Clients that have loaded the update-aware MCP
+bridge resume compatible connections; older adapters need one reconnection.
 The helper's own progress window remains visible while Monitor is closed. It
 opens before the reviewed release is rechecked. It shows the complete list of
 steps, the current step and its elapsed time, and marks observed completed steps.
@@ -645,26 +652,30 @@ shin-ce update-install --revision HASH_FROM_CHECK
 shin-ce update-status
 ```
 
-An update failure or missing acknowledgement is retained for review, including the
-candidate path when installation may have started. Monitor offers to copy the
-result; it does not silently retry. `update-status` reads the durable outcome. Use
-the native `installation` command and the saved candidate's `update` command to
-review/reconcile its journal before trying another installation. Project refresh
-under heavy machine load may still delay or refuse update activation.
+Current development source separates installation from project readiness. A verified
+kit and healthy service can complete an update while individual projects refresh
+or retain a search/validation diagnostic. Those projects keep their normal
+freshness, policy and quality gates; installation does not approve new profiles,
+raise limits or make withheld context readable.
 
-**Last update result…** remains available in the tray menu. After resolving a
-native recovery, **Acknowledge verified result** verifies the installed payload
-and completed journal before clearing the review gate and cleaning its identified
-private staging folder. A stale review or unfinished native operation is refused.
+The saved result distinguishes a retryable refusal before replacement, an
+interrupted native transaction requiring recovery, and a confirmed installation.
+Monitor and terminal stats show the original failure and offer **Retry update** or
+**Continue update** when independent installation readback permits that action.
+These actions use the exact saved result revision; another operation or a changed
+installation invalidates the review. The CLI entry is:
 
-A blocked installation also offers **Review previous update**
-directly in its error window. Offline review uses the verified installed Updater
-if the earlier temporary Updater has disappeared. Confirmation is bound to the
-current verified installation receipt, so a directly repaired kit can settle an
-older failed attempt. Missing temporary candidate folders are accepted during
-that explicit confirmation; substituted folders or symlinks are preserved and
-refused. Installation changes and unfinished native recovery still prevent
-confirmation.
+```sh
+shin-ce update-status
+shin-ce update-resume --revision HASH_FROM_STATUS
+```
+
+A still-valid saved candidate is verified again before reuse. Recovery belongs to
+the recorded target, never an unrelated newer release. Missing or replaced state,
+changed ownership and unverified payloads remain refusals. **Last update result…**
+and **Copy diagnostic report** preserve the original failure for diagnosis;
+acknowledgement is separate from repair and never confirms an unfinished native
+transaction.
 
 ### Independent Updater (dev.49 and later)
 

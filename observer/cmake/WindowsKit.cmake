@@ -21,6 +21,7 @@ endforeach()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/../docs/windows-desktop.md" DESTINATION share/shin-observer)
 install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/../integrations/mcp/skills/shin-context"
     DESTINATION share/shin-context/mcp/skills)
+shin_install_mcp_runtime()
 file(STRINGS "${CMAKE_CURRENT_SOURCE_DIR}/../VERSION" SHIN_KIT_CORE_VERSION LIMIT_COUNT 1)
 configure_file("${CMAKE_CURRENT_LIST_DIR}/ManifestLocalKit.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/ManifestWindowsKit.cmake" @ONLY)

@@ -38,7 +38,7 @@
   },
   "load": {
     "locking": "Hold an existing shared publication lock only while verifying and capturing one complete generation. Release it before returning the immutable owner.",
-    "validation": "Require matching profile id/config fingerprint and generator, exact manifest/output integrity and safe generated layout. Validate byte budgets before hashing each artifact, then hash the captured bytes against the same manifest.",
+    "validation": "Require matching profile id/config fingerprint and generator, exact manifest/output integrity and safe generated layout. Validate byte budgets before hashing each artifact, then hash the captured bytes against the same manifest. A local reader may borrow the verified observation from the same locked qualification. It checks layout and hashes the copied bytes, and the caller still verifies the entire admitted generation before making the reader ready.",
     "limits": {
       "defaultPayloadBytes": 268435456,
       "defaultFileBytes": 67108864,

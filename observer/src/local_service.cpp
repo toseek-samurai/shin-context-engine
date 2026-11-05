@@ -1,4 +1,5 @@
 #include "shin/observer/local_service.h"
+#include "shin/observer/local_mcp_bridge.h"
 #include "local_sessions.h"
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_service_platform.h"
@@ -10,6 +11,7 @@
 #include "shin/observer/local_telemetry.h"
 #include "shin/observer/resident_retention.h"
 #include "local_startup.h"
+#include "source_discovery.h"
 #include <algorithm>
 #include <cmath>
 #include <map>
@@ -26,6 +28,7 @@ using local_rpc::project_response;
 using local_rpc::validate_request;
 using local_rpc::string_field;
 constexpr std::size_t request_limit = 8192, response_limit = 128 * 1024, connection_limit = 8, worker_limit = 2;
+constexpr std::size_t refusal_limit = 8;
 constexpr std::size_t resident_limit = kLocalResidentProjectLimit;
 constexpr std::size_t waiting_limit = 4;
 constexpr auto admission_wait_limit = std::chrono::seconds(5);
@@ -59,6 +62,7 @@ public:
     bool executed = false;
     fs::path root;
     bool metric_recorded = false, done = false, stop_reply = false, reply_sent = false;
+    bool capacity_refusal = false;
     bool resident_pending = false, admission_pending = false, waited_for_resident = false, diagnostic = false;
     Clock::time_point deadline = Clock::now() + std::chrono::seconds(2), received{}, next_admission{};
 };
@@ -83,6 +87,7 @@ public:
         : home(fs::absolute(input.home).lexically_normal()), directory(local_service_directory(home)), executable(fs::canonical(binary)),
           registry_mode(registered), supervised(managed) {
         executable_id = service_executable_identity(executable);
+        mcp_runtime = local_mcp_runtime_binding(executable);
         ensure_private_directory(directory);
         owner = std::make_unique<StateStore>(directory, true);
         for (const auto& root : roots) {
@@ -115,13 +120,17 @@ public:
         telemetry.sample(active_workers(), rss);
         endpoint->verify();
         for (std::size_t count = 0; count < connection_limit; ++count) {
+            // Separate bounded framing slots deliver correlated refusals. Once
+            // these fill, leave peers in the bounded native backlog, not a
+            // silently accepted-and-closed connection.
+            if (connections.size() >= connection_limit + refusal_limit) break;
             auto channel = endpoint->accept();
             if (!channel) break;
-            if (connections.size() == connection_limit) {
-                telemetry.request_result({}, "unknown", {{"stage", "admission"}, {"error_code", "service-connection-capacity"}});
-                continue;
-            }
-            connections.push_back(std::make_unique<Connection>(std::move(channel)));
+            const auto admitted = std::count_if(connections.begin(), connections.end(),
+                [](const auto& client) { return !client->done && !client->capacity_refusal; });
+            auto client = std::make_unique<Connection>(std::move(channel));
+            client->capacity_refusal = static_cast<std::size_t>(admitted) >= connection_limit;
+            connections.push_back(std::move(client));
         }
         for (auto& client : connections) process(*client);
         std::erase_if(connections, [](const auto& client) { return client->done; });
@@ -549,6 +558,14 @@ private:
 
     void dispatch(Connection& client, const Json& request) {
         validate_request(request);
+        if (request.contains("mcp_runtime") && request.at("mcp_runtime") != mcp_runtime)
+            throw Error("mcp-service-runtime-mismatch", "The service does not belong to the verified installed MCP runtime. Complete the kit update; do not reconnect or re-enroll projects to bypass it.");
+        if (client.capacity_refusal) {
+            client.request_id = request.at("request_id");
+            client.method = request.at("command");
+            throw Error("service-busy", "The local service connection capacity is full. Try a useful query later.",
+                        admission_diagnostic("connection-capacity"));
+        }
         const auto id = request.at("request_id").get<std::string>();
         const auto command = request.at("command").get<std::string>();
         client.request_id = id;
@@ -568,7 +585,7 @@ private:
                 {"waiting_requests", waiting_requests()}, {"max_waiting_requests", waiting_limit},
                 {"admission_wait_limit_ms", std::chrono::duration_cast<std::chrono::milliseconds>(admission_wait_limit).count()},
                 {"execution_wait_limit_ms",execution_wait_limit.count()},
-                {"max_connections", connection_limit}, {"projects", Json::array()},
+                {"max_connections", connection_limit}, {"max_refusal_connections", refusal_limit}, {"projects", Json::array()},
                 {"resident_projects", Json::array()}, {"max_resident_projects", resident_limit},
                 {"max_registered_projects", kLocalServiceProjectLimit}, {"qualified_projects", Json::array()},
                 {"resident_evictions", resident_evictions}, {"resident_warm_requests", resident_warm_requests},
@@ -634,6 +651,13 @@ private:
         if (found == bindings.end()) throw Error("service-project-denied", "Project was not enrolled in this service.");
         client.root = found->first; // Attribute only a validated, enrolled root.
         require_local_project_active(home / "projects" / digest(found->first));
+        if (command == "query" && !client.admission_pending) {
+            try {
+                shin::context::validate_source_discovery_query_budget(request.at("query").get_ref<const std::string&>());
+            } catch (const shin::context::CliError& error) {
+                throw Error(error.code(), std::string(error.what()) + " " + error.remediation());
+            }
+        }
         if (service_executable_identity(executable) != executable_id)
             throw Error("service-executable-changed", "Restart the service after replacing the native executable.");
         if (const auto error = enrollment_errors.find(found->first); error != enrollment_errors.end())
@@ -801,6 +825,7 @@ private:
     }
 
     fs::path home, directory, executable;
+    Json mcp_runtime = nullptr;
     std::string executable_id;
     std::unique_ptr<ServiceEndpoint> endpoint;
     std::unique_ptr<StateStore> owner;
@@ -1131,50 +1156,4 @@ Json detach_local_service(const LocalProjectRequest& input) {
     }
 }
 
-namespace {
-Json exchange_local_request(const LocalProjectRequest& request, const std::function<bool()>& cancelled,
-                            const std::string& observer_version, const std::string& core_version) {
-    const auto started = Clock::now();
-    require_not_cancelled(cancelled);
-    const auto deadline = Clock::now() + std::chrono::seconds(35);
-    auto channel = connect_service(request.home, deadline, cancelled);
-    const auto id = digest(std::to_string(service_process_id()) + ":" + std::to_string(Clock::now().time_since_epoch().count()));
-    if (request.observe_request_id) request.observe_request_id(digest(id));
-    auto input = reply(id);
-    const bool control = request.command == "service-status" || request.command == "service-stop";
-    if (!control && (observer_version != SHIN_OBSERVER_VERSION || core_version != SHIN_VERSION))
-        throw Error("service-method-denied", "Version-pinned installation traffic cannot read project context.");
-    input["observer_version"] = observer_version;
-    input["core_version"] = core_version;
-    input.update({{"command", request.command}, {"root", control ? "" : fs::canonical(request.root).string()},
-        {"query", request.query}, {"path", request.path}, {"record", request.record}, {"snapshot", request.snapshot}});
-    if (request.diagnostic) input["diagnostic"] = true;
-    if (request.command == "status" && !request.wait_for_ready) input["wait_for_ready"] = false;
-    if (request.readiness_wait_ms) input["readiness_wait_ms"] = request.readiness_wait_ms;
-    if (!request.session_id.empty()) input["session_id"] = request.session_id;
-    if (!request.model_id.empty()) input["model_id"] = request.model_id;
-    if (!request.parent_request_id.empty()) input["parent_request_id"] = request.parent_request_id;
-    if (request.command == "checkpoint" || request.command == "resume") input["session"] = local_session_payload(request);
-    const auto frame = input.dump() + '\n';
-    if (frame.size() > request_limit) throw Error("service-frame-too-large", "Local request exceeds its byte limit.");
-    service_write(*channel, frame, deadline, cancelled);
-    const auto response = parse_json(service_read(*channel, response_limit, deadline, cancelled));
-    require_not_cancelled(cancelled);
-    auto result = control ? local_rpc::control_response(response, id, observer_version, core_version) : project_response(response, id);
-    if (!control) result["request_trace"] = {{"request_id", digest(id)},
-        {"session_correlated", !request.session_id.empty()}, {"model_id", request.model_id},
-        {"model_attribution", request.model_id.empty() ? "unknown" : "caller-reported"}, {"task_outcome", "not-observed"}};
-    result["transport"] = service_transport();
-    result["transport_duration_ms"] = std::chrono::duration<double, std::milli>(Clock::now() - started).count();
-    if (request.command == "service-status") bound_local_service_status(result);
-    return result;
-}
-} // namespace
-Json request_local_service(const LocalProjectRequest& request, const std::function<bool()>& cancelled) {
-    return exchange_local_request(request, cancelled, SHIN_OBSERVER_VERSION, SHIN_VERSION);
-}
-Json control_local_service_for_update(const fs::path& home, const std::string& observer_version, bool stop, const std::string& core_version) {
-    LocalProjectRequest request; request.home = home; request.command = stop ? "service-stop" : "service-status";
-    return exchange_local_request(request, {}, observer_version, core_version);
-}
 } // namespace shin::observer

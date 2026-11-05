@@ -1,0 +1,36 @@
+{
+  "schemaVersion": "shin.mcp-service-contract.v1",
+  "document": "mcp-service-bridge",
+  "status": "implemented-development-source",
+  "protocol": "shin.mcp-service.v1",
+  "scope": "Persistent stdio adapter to the current local service. Native macOS payload replacement is locally qualified; Windows MSI continuous-process replacement is not qualified.",
+  "runtimeInventory": {
+    "path": "share/shin-context/mcp-runtime.json",
+    "fields": ["schema_version", "adapter_contract_sha256", "observer_version", "core_version", "files"],
+    "fileFields": ["path", "sha256", "size"],
+    "coverage": "Installed bin executables/libraries and both component VERSION files, after dependency fixups. Project code, profiles, indexes and history are not code-cohort members.",
+    "bounds": "128 files, 128 MiB per file, 512 MiB total. Relative normalized paths, exact portable spelling, unique names, no links or shared writable code. Homebrew's shin-monitor launcher is not service runtime code.",
+    "ownership": "The original prefix locator and data-home identity remain pinned. Native installations also retain the same owned control directory, recorded home, complete installation state and receipt-bound outer manifest. Only the declared Homebrew opt locator can change its physical package prefix.",
+    "cache": "Successful full SHA-256 verification is cached only in process. Each request checks the manifest, runtime inventory and file identities, sizes, ownership/modes, mtime and ctime. A changed stamp triggers full verification; restoring mtime alone cannot preserve a tampered cache entry. Recheck after retrieval withholds results crossing a runtime change."
+  },
+  "request": {
+    "transport": "Existing private shin.local-rpc.v1 socket or pipe with peer/endpoint identity checks.",
+    "mcp_runtime": {"protocol": "shin.mcp-service.v1", "runtime_sha256": "SHA-256 of the verified runtime inventory"},
+    "versions": "Requests and responses must exactly match Observer and Core versions from the verified current runtime, not values supplied by a model or learned from an untrusted service refusal.",
+    "service": "At startup the service verifies its runtime inventory against its compiled versions and captures its digest. It rejects any different mcp_runtime before project execution. Normal CLI, resident workers and installer-control version fences remain unchanged.",
+    "admission": "An opaque verified-runtime object is created only by the bridge. Tool arguments cannot choose versions, runtime digests, roots or homes. The handoff path cannot stop or control the service.",
+    "replay": "No automatic replay, including checkpoints. An in-flight cohort change withholds the result; resume saved task state before retrying a checkpoint write."
+  },
+  "compatibility": {
+    "adapterFingerprint": "CMake fingerprints the code retained in a persistent adapter: MCP handlers/SDK selection, stdio, service client/envelope, session framing, scope/lifecycle admission and attempt journaling. A different adapter_contract_sha256 requires reconnecting even when the declared protocol remains v1. Core, service business logic and UI source versions are not this contract. The fingerprint is exposed by shin-ce --version for diagnostics.",
+    "adapter": "The persistent adapter owns bounded MCP framing, its initialized tool schemas, allowed-root/home/lifecycle admission, correlation framing and attempt journaling. Retrieval, freshness, readiness, policy and checkpoint/resume validation execute in the current service.",
+    "breaks": "Bump the runtime protocol for incompatible local-RPC fields, MCP tools or argument schemas, selector/snapshot framing, session-draft/correlation framing or adapter-owned journal formats. Do not label an incompatible change v1 merely to avoid a reconnect.",
+    "cutover": "Adapters released before this mechanism require one reconnect. Build-tree/unpackaged adapters without a runtime inventory keep exact compiled-version behavior. No live installation, binding or client config is migrated by an MCP read.",
+    "failure": "Unknown protocol requires reconnecting only the integration. Mixed/damaged runtimes and service identity mismatches require update review. No fallback index, profile change, compatibility parser or disabled version check is introduced."
+  },
+  "verification": [
+    "observer/tests/local_mcp_test.py: persistent stdio across atomic payload replacement and actual service restart; query/read snapshot binding",
+    "observer/tests/local_mcp_test.py: controlled cross-version service, foreign success, restored-mtime tamper, in-flight cohort change and incompatible protocol",
+    "observer/tests/local_rpc_test.cpp: ordinary request and installer-control version fences"
+  ]
+}

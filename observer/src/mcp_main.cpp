@@ -1,6 +1,7 @@
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_stdio.h"
 #include "shin/observer/local_installation.h"
+#include "shin/observer/local_mcp_bridge.h"
 #include "shin/observer/local_mcp_scope.h"
 #include "mcp_activity_tracker.h"
 #include "mcp_session_tools.h"
@@ -209,6 +210,7 @@ int run(int argc, char** argv, char** environment) {
         base.home = fs::canonical(home) / ".shin-ce";
     }
     base.home = fs::absolute(base.home).lexically_normal();
+    LocalMcpBridge bridge(current_executable_path(),base.home);
     const auto scopes = roots.size() > 1 ? std::make_unique<LocalMcpScope>(base.home, roots) : nullptr;
     const auto root_identity = scopes ? std::string() : directory_identity(base.root);
     const auto home_identity = directory_identity(base.home, true);
@@ -402,7 +404,7 @@ int run(int argc, char** argv, char** environment) {
                         }
                         return false;
                     };
-                    try { result = method == "projects" ? scopes->catalog() : request_local_service(request, cancelled); }
+                    try { result = method == "projects" ? scopes->catalog() : bridge.request(request, cancelled); }
                     catch (const Error& error) {
                         if (method != "status" || error.code != "project-updating" ||
                             !error.diagnostic.is_object() || error.diagnostic.value("reason", "") != "reader-preparing") throw;

@@ -293,6 +293,8 @@ NSString* diagnostic_text_content(std::string_view value) {
 NSString* update_failure_text(const Json& result, NSString* failure) {
     if (failure.length) return failure;
     if (result.is_object()) {
+        if (result.contains("result") && result.at("result").is_object() && result.at("result").contains("error"))
+            return update_failure_text(result.at("result"), nil);
         const auto error = result.find("error");
         if (error != result.end() && error->is_object()) {
             if (error->value("code", Json()) == "update-offer-changed")
@@ -496,6 +498,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 @property(nonatomic, strong) NSButton* updateCopyButton;
 @property(nonatomic, strong) NSButton* updateAcknowledgeButton;
 @property(nonatomic, strong) NSButton* updateReviewButton;
+@property(nonatomic, strong) NSButton* updateResumeButton;
 @property(nonatomic, strong) NSDate* lastUpdateCheck;
 @property(nonatomic, strong) NSDate* nextUpdateCheck;
 @property(nonatomic) BOOL installedApplication;
@@ -521,6 +524,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (void)openUpdateReleaseURL:(NSURL*)url;
 - (void)copyUpdateResult:(id)sender;
 - (void)acknowledgeUpdateResult:(id)sender;
+- (void)resumeUpdateResult:(id)sender;
 - (void)setUpdatePending:(BOOL)pending;
 - (void)refreshLanguage:(id)sender;
 - (void)toggle:(id)sender;
@@ -630,7 +634,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
         return;
     }
     NSArray<NSString*>* argv = [@[command, @"--home", self.shinHome] arrayByAddingObjectsFromArray:arguments];
-    const auto timeout = [command isEqualToString:@"update-install"] ? std::chrono::seconds(360) :
+    const auto timeout = ([command isEqualToString:@"update-install"] || [command isEqualToString:@"update-resume"]) ? std::chrono::seconds(360) :
         [command isEqualToString:@"update-check"] ? std::chrono::seconds(20) : [command isEqualToString:@"project-add"] ? std::chrono::seconds(120) :
         [command isEqualToString:@"storage-clean"] ? std::chrono::seconds(90) :
         [command isEqualToString:@"detach"] ? std::chrono::seconds(90) : std::chrono::seconds(15);
@@ -697,7 +701,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
                                     oversized = YES; terminate_at = std::chrono::steady_clock::now();
                                     if (task.isRunning) [task terminate];
                                 } else if (!oversized) [(i == 0 ? bytes : diagnostics) appendBytes:buffer.data() length:length];
-                                if (i == 0 && [command isEqualToString:@"update-install"] && !oversized && !handoffRequested) {
+                                if (i == 0 && ([command isEqualToString:@"update-install"] || [command isEqualToString:@"update-resume"]) && !oversized && !handoffRequested) {
                                     const std::string_view output((const char*)bytes.bytes, bytes.length);
                                     const auto end = output.find('\n');
                                     const auto ack = end == std::string_view::npos ? Json() : Json::parse(output.substr(0, end), nullptr, false);

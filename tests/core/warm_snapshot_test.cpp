@@ -4,6 +4,7 @@
 #include "generated_row_decoder.h"
 #include "generated_snapshot.h"
 #include "retrieval_session.h"
+#include "snapshot_verification.h"
 
 #include <atomic>
 #include <chrono>
@@ -407,6 +408,24 @@ void assert_load_rejections(const fs::path& parent) {
     publish_generation(options);
 
     const fs::path sections = options.out_root / kGeneratedDir / "sections.jsonl";
+    {
+        const auto lock = lock_index_for_read(options.out_root);
+        const auto observed = load_verified_snapshot(options.out_root);
+        expect(GeneratedSnapshot::load(options, {}, &observed)->id() == observed.snapshot_id,
+               "reuse the qualified snapshot's identity");
+        expect_cli_error([&] { (void)GeneratedSnapshot::load(options, too_small, &observed); },
+                         "snapshot-memory-budget-exceeded", "borrowed observation obeys the load cap");
+        const auto original = read_file(sections);
+        expect(!original.empty(), "section fixture is nonempty");
+        auto changed = original;
+        changed[0] = changed[0] == '!' ? '?' : '!';
+        const auto stamp = fs::last_write_time(sections);
+        std::ofstream(sections, std::ios::binary | std::ios::trunc) << changed;
+        fs::last_write_time(sections, stamp);
+        expect_cli_error([&] { (void)GeneratedSnapshot::load(options, {}, &observed); },
+                         "snapshot-integrity-failed", "borrowed observation cannot admit changed bytes");
+        std::ofstream(sections, std::ios::binary | std::ios::trunc) << original;
+    }
     std::ofstream corrupt(sections, std::ios::binary | std::ios::app);
     corrupt << "corrupt";
     corrupt.close();

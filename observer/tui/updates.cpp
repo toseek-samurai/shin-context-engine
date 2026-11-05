@@ -10,6 +10,7 @@ Updates UpdateController::snapshot() { std::lock_guard lock(state_->mutex); retu
 bool UpdateController::check() { return queue("update-check"); }
 bool UpdateController::review() { return queue("update-status"); }
 bool UpdateController::install(const std::string& revision) { return queue("update-install", revision); }
+bool UpdateController::resume(const std::string& revision) { return queue("update-resume", revision); }
 bool UpdateController::acknowledge(const std::string& revision) { return queue("update-acknowledge", revision); }
 bool UpdateController::queue(const std::string& command, const std::string& revision) {
     std::lock_guard lock(state_->mutex);
@@ -18,11 +19,14 @@ bool UpdateController::queue(const std::string& command, const std::string& revi
         state_->value.offer.value("revision", "") != revision)) return false;
     if (command == "update-acknowledge" && (state_->value.phase != UpdatePhase::result || revision.empty() ||
         !state_->value.result.value("can_acknowledge", false) || state_->value.result.value("review_revision", "") != revision)) return false;
+    if (command == "update-resume" && (state_->value.phase != UpdatePhase::result || revision.empty() ||
+        !(state_->value.result.value("can_retry", false) || state_->value.result.value("can_resume", false)) ||
+        state_->value.result.value("review_revision", "") != revision)) return false;
     command_ = command; revision_ = revision; state_->value.error.clear();
     ++state_->operation;
-    state_->value.phase = command == "update-install" ? UpdatePhase::installing :
+    state_->value.phase = (command == "update-install" || command == "update-resume") ? UpdatePhase::installing :
         command == "update-acknowledge" ? UpdatePhase::acknowledging : UpdatePhase::checking;
-    if (command == "update-install") { state_->value.timeline = {}; state_->value.changed = std::chrono::steady_clock::now(); }
+    if (command == "update-install" || command == "update-resume") { state_->value.timeline = {}; state_->value.changed = std::chrono::steady_clock::now(); }
     changed_.notify_all(); return true;
 }
 void UpdateController::work(std::stop_token stop) {
@@ -45,6 +49,14 @@ void UpdateController::work(std::stop_token stop) {
         try {
             auto result = operation_(command, revision, observe, stop);
             if (!result.is_object()) throw Error("update-response-invalid", "Unexpected update response.");
+            if (command == "update-check" && result.value("ok", false) && result.value("available", false)) {
+                auto saved = operation_("update-status", "", observe, stop);
+                const auto phase = saved.value("outcome", saved.value("phase", ""));
+                if (phase != "idle" && phase != "reviewed" && phase != "installed") {
+                    std::lock_guard lock(state_->mutex);
+                    state_->value.result = std::move(saved); state_->value.phase = UpdatePhase::result; continue;
+                }
+            }
             std::lock_guard lock(state_->mutex);
             if (command == "update-check" && result.value("ok", false)) {
                 state_->value.offer = std::move(result);

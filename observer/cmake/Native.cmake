@@ -23,7 +23,7 @@ else()
     set(SHIN_NATIVE_WARNINGS -Wall -Wextra -Wpedantic -Wmissing-declarations)
 endif()
 if(SHIN_OBSERVER_SOURCE_DISCOVERY)
-    list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_rpc local_registry local_profile_location
+    list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_service_client local_rpc local_mcp_bridge local_registry local_profile_location
         local_telemetry local_history local_history_files local_mcp_activity local_session_analysis local_sessions local_query local_changes local_worker local_worker_process
         local_identity local_status local_release local_mcp_scope local_client_setup local_client_connect client_config client_config_json client_config_toml client_config_yaml model_usage model_usage_collect model_usage_registered)
     if(WIN32)
@@ -35,6 +35,25 @@ endif()
 list(TRANSFORM SHIN_NATIVE_SOURCES PREPEND "${SHIN_OBSERVER_ROOT}/src/")
 list(TRANSFORM SHIN_NATIVE_SOURCES APPEND ".cpp")
 add_library(shin-observer-native STATIC ${SHIN_NATIVE_SOURCES})
+# Version-independent adapter contract. Service/Core/UI changes do not affect
+# this hash; changes to code that remains in a live MCP process require reload.
+set(mcp_contract_inputs src/mcp_main.cpp src/local_stdio.cpp src/local_service_client.cpp
+    src/local_rpc.cpp src/local_mcp_bridge.cpp src/local_mcp_scope.cpp src/local_mcp_activity.cpp
+    src/mcp_session_tools.h src/mcp_activity_tracker.h include/shin/observer/local_mcp_scope.h
+    include/shin/observer/local_mcp_activity.h include/shin/observer/local_project.h
+    include/shin/observer/local_mcp_bridge.h include/shin/observer/local_rpc.h)
+set(mcp_contract "")
+foreach(input IN LISTS mcp_contract_inputs)
+    set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHIN_OBSERVER_ROOT}/${input}")
+    file(SHA256 "${SHIN_OBSERVER_ROOT}/${input}" hash)
+    string(APPEND mcp_contract "${input}:${hash}\n")
+endforeach()
+file(SHA256 "${SHIN_OBSERVER_ROOT}/../shared/cmake/Mcp.cmake" hash)
+string(APPEND mcp_contract "sdk:${hash}\n")
+string(SHA256 SHIN_MCP_ADAPTER_CONTRACT "${mcp_contract}")
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/mcp_adapter_contract.h"
+    "#pragma once\n#define SHIN_MCP_ADAPTER_CONTRACT \"${SHIN_MCP_ADAPTER_CONTRACT}\"\n")
+target_include_directories(shin-observer-native PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_include_directories(shin-observer-native PUBLIC "${SHIN_OBSERVER_ROOT}/include")
 target_link_libraries(shin-observer-native PUBLIC shin-context-core shin-observer-protocol PRIVATE httplib::httplib)
 target_compile_definitions(shin-observer-native PUBLIC SHIN_OBSERVER_VERSION="${SHIN_OBSERVER_VERSION}"
@@ -205,6 +224,9 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
             target_link_libraries(shin-update-process-tests PRIVATE shin-observer-native "-framework Foundation")
             add_test(NAME shin-update-process COMMAND shin-update-process-tests ${Python3_EXECUTABLE})
             set_tests_properties(shin-update-process PROPERTIES TIMEOUT 15)
+            add_executable(shin-update-recovery-tests "${SHIN_OBSERVER_ROOT}/tests/update_recovery_test.mm")
+            target_compile_options(shin-update-recovery-tests PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)
+            target_link_libraries(shin-update-recovery-tests PRIVATE shin-observer-native "-framework Foundation")
             add_executable(shin-updater-bootstrap-tests "${SHIN_OBSERVER_ROOT}/tests/updater_bootstrap_test.mm")
             target_compile_options(shin-updater-bootstrap-tests PRIVATE -fobjc-arc -Wall -Wextra -Wpedantic)
             target_link_libraries(shin-updater-bootstrap-tests PRIVATE shin-observer-native "-framework Foundation")

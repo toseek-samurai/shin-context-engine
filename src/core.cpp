@@ -452,12 +452,23 @@ FileMetadata file_metadata(const fs::path& path) {
         message = "Source observation could not obtain required system resources.";
         remediation = "Free system resources, then retry.";
     }
-    const Json diagnostic = {
+    Json diagnostic = {
         {"schema_version", "shin.source-observation-diagnostic.v1"},
         {"stage", "source-inventory"},
         {"operation", safe_operation},
         {"category", category}
     };
+    if (code == "resource-exhausted") {
+        diagnostic["resource"] = condition == std::errc::too_many_files_open ? "process-file-descriptors" :
+            condition == std::errc::too_many_files_open_in_system ? "system-file-descriptors" : "memory";
+        diagnostic["native_error"] = error.value();
+#ifndef _WIN32
+        rlimit limit{};
+        if (condition == std::errc::too_many_files_open && ::getrlimit(RLIMIT_NOFILE, &limit) == 0 &&
+            limit.rlim_cur != RLIM_INFINITY)
+            diagnostic["descriptor_soft_limit"] = static_cast<std::uint64_t>(limit.rlim_cur);
+#endif
+    }
     const bool retryable = code == "file-changed-during-verification";
     throw CliError(std::move(code), "filesystem", std::move(message), 1,
                    retryable, std::move(remediation), diagnostic);

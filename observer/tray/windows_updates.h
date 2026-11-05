@@ -162,10 +162,10 @@ Json review_windows_installation(const fs::path& folder,const std::string& ident
         const auto code=saved.value("installer_exit_code",DWORD(-1));
         const auto prepared=windows_project_preparation(prefix,code!=0 && code!=3010 && code!=1641);
         saved["project_preparation"]=prepared;
-        if(!prepared.value("ok",false)) {
-            saved["phase"]="review-required";saved["error_code"]="installation-project-not-ready";
-            store.save(saved);return saved;
-        }
+        // Independently verify the installed payload even when project preparation
+        // reports pending work. Its failure remains visible below the update result.
+        windows_update::verify_installed(prefix,version);
+        saved["projects_pending"]=!prepared.value("ok",false);
         saved["phase"]="completed";saved["installed_version"]=version;saved.erase("error_code");
     } else {
         const std::set<std::string> before_install{"reviewed","checking","downloading","verifying","waiting-monitor"};
@@ -324,6 +324,8 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
         ImGui::TextWrapped("%s",setup_only?(phase=="completed"?tr("Projects ready to use"):
             phase=="preparing"?tr("Preparing projects…"):tr("Project preparation needs attention.")):
             found==phases.end()?tr("Update was not confirmed. Check the saved result before retrying."):found->second);
+        const bool projects_pending=windows_update_result.value("projects_pending",false);
+        if(projects_pending) ImGui::TextWrapped("%s",tr("Project preparation needs attention."));
         const auto code=windows_update_result.value("error_code","");
         if(!code.empty()) ImGui::TextWrapped("%s",code.c_str());
         for(const auto& project:windows_update_result.value("project_preparation",Json::object()).value("projects",Json::array())) {
@@ -333,7 +335,7 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
             if(!ok) ImGui::TextWrapped("%s",project.value("error_code","").c_str());
         }
         if(update_button(tr("Copy diagnostic report"),206)) platform_copy(windows_update_result.dump(2));
-        if(phase!="completed" && phase!="acknowledged" && update_button(setup_only?tr("Retry project preparation"):tr("Review previous update"),207,!windows_update_review.valid()) && !test_mode) {
+        if((projects_pending || (phase!="completed" && phase!="acknowledged")) && update_button((setup_only || projects_pending)?tr("Retry project preparation"):tr("Review previous update"),207,!windows_update_review.valid()) && !test_mode) {
             const auto folder=windows_update_folder,prefix=current_executable_path().parent_path().parent_path();
             const auto identity=settings.value("windows_update_identity","");windows_update_review_error.clear();
             windows_update_review=std::async(std::launch::async,[folder,identity,prefix,setup_only]{

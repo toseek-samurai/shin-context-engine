@@ -2,6 +2,7 @@
 #include "shin/observer/local_identity.h"
 #include "shin/observer/local_status.h"
 #include "shin/observer/local_service.h"
+#include "shin/observer/local_mcp_bridge.h"
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_registry.h"
@@ -73,7 +74,7 @@ int run(int argc, char** argv, char** environment) {
     if (argc == 2 && std::string_view(argv[1]) == "_resident-worker") return local_resident_worker();
     if (argc == 2 && std::string_view(argv[1]) == "--version") {
         std::cout << Json{{"tool", "shin-ce"}, {"version", SHIN_OBSERVER_VERSION},
-                         {"core_version", SHIN_VERSION}, {"offline", true}}.dump() << '\n';
+                         {"core_version", SHIN_VERSION}, {"mcp_adapter_contract", local_mcp_adapter_contract()}, {"offline", true}}.dump() << '\n';
         return 0;
     }
     if (argc == 1 || (argc == 2 && std::string_view(argv[1]) == "--help")) {
@@ -135,7 +136,7 @@ int run(int argc, char** argv, char** environment) {
     }
 #ifdef __APPLE__
     if (request.command == "update-check" || request.command == "update-download" ||
-        request.command == "update-install" || request.command == "update-status" || request.command == "update-acknowledge") {
+        request.command == "update-install" || request.command == "update-status" || request.command == "update-resume" || request.command == "update-acknowledge") {
         const char* home = user_home(environment);
         if (!home || !*home) throw Error("home-unavailable", "HOME is required for release updates.");
         auto result = local_updates(argc, argv, fs::canonical(home));

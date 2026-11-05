@@ -78,7 +78,7 @@ Json local_updates(int argc,char** argv,const fs::path& user,const ReleaseUpdate
         else {forwarded.push_back(key);forwarded.push_back(value);}
     }
     const auto home=bootstrap_home(prefix,requested);
-    const bool read_result=command=="update-status" || command=="update-acknowledge";
+    const bool read_result=command=="update-status" || command=="update-resume" || command=="update-acknowledge";
     require(command=="update-check" || command=="update-install" || command=="update-download" || read_result,"invalid-command","Unknown update command.");
     const bool monitor = seen.contains("--wait-pid");
     TerminalUpdateProgress terminal(force_progress,false,!observer && !monitor && !read_result && command!="update-check");
@@ -118,7 +118,7 @@ Json local_updates(int argc,char** argv,const fs::path& user,const ReleaseUpdate
         arguments.push_back("--revision");arguments.push_back(offer.at("revision"));
     }
     arguments.insert(arguments.end(),forwarded.begin(),forwarded.end());
-    if(observer) {cleanup.path.clear();arguments.push_back("--progress-json");return run(executable,arguments,900,nullptr,observer);}
+    if(observer) {cleanup.path.clear();arguments.push_back("--progress-json");return run(executable,arguments,0,nullptr,observer);}
     // Keep PID/parent intact for Monitor's acknowledgement and handoff. The fresh
     // updater owns all UI, receipt interpretation and recovery after this point.
     std::vector<std::string> words{executable.string()};words.insert(words.end(),arguments.begin(),arguments.end());

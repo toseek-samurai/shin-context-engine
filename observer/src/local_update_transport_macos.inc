@@ -118,7 +118,7 @@ Json run(const fs::path& exe,const std::vector<std::string>& args,int timeout,st
     bool exceeded=false;
     while(task.running) {
         drain();
-        if(std::chrono::steady_clock::now()>=until || fs::file_size(transcript)>256U*1024) {exceeded=true;[task terminate];break;}
+        if((timeout>0 && std::chrono::steady_clock::now()>=until) || fs::file_size(transcript)>256U*1024) {exceeded=true;[task terminate];break;}
         std::this_thread::sleep_for(std::chrono::milliseconds(50));
     }
     if(exceeded) {std::this_thread::sleep_for(std::chrono::milliseconds(200));if(task.running)::kill(task.processIdentifier,SIGKILL);}

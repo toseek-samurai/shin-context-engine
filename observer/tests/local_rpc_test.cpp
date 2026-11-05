@@ -52,8 +52,22 @@ int main() try {
     }
     success["observer_version"] = "2.0.5-dev.999";
     refused("service-response-invalid", [&] { local_rpc::project_response(success, "id"); });
+    success["observer_version"] = SHIN_OBSERVER_VERSION;
+    success["core_version"] = "2.0.5-dev.999";
+    refused("service-response-invalid", [&] { local_rpc::project_response(success, "id"); });
+    request["command"] = "query";
+    request["core_version"] = "2.0.5-dev.999";
+    refused("service-version-mismatch", [&] { local_rpc::validate_request(request); });
     auto same_version = local_rpc::failure("id", "service-busy", "test");
     refused("service-busy", [&] { local_rpc::project_response(same_version, "id"); });
+    const Json backlog{{"schema_version", "shin.local-transport-admission.v1"},
+        {"reason", "connection-backlog"}, {"execution_started", false}};
+    check(bounded_failure_diagnostic(backlog) == backlog);
+    for (const auto& change : Json::array({{{"reason", "unknown"}}, {{"execution_started", true}},
+        {{"extra", "arbitrary"}}, {{"execution_started", "false"}}})) {
+        auto unsafe = backlog; unsafe.update(change);
+        check(bounded_failure_diagnostic(unsafe).is_null());
+    }
     std::cout << "mismatch diagnostics preserve response identity and installer version fences\n";
     return 0;
 } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

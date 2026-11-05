@@ -278,6 +278,8 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
         else if (state.tab == 6 && !state.help && (event == Event::n || event == Event::N)) state.update_confirmation.clear();
         else if (state.tab == 6 && !state.help && event == Event::i) prepare_update();
         else if (state.tab == 6 && !state.help && event == Event::v) review_updates();
+        else if (state.tab == 6 && !state.help && event == Event::c)
+            updates.resume(snapshot.updates.result.value("review_revision", ""));
         else if (state.tab == 6 && !state.help && event == Event::a)
             updates.acknowledge(snapshot.updates.result.value("review_revision", ""));
         else if (event == Event::l || event == Event::L) toggle_language();
@@ -320,6 +322,7 @@ int run(const LocalProjectRequest& request, const fs::path& usage_file, std::str
                     if (contains(hits.update_install)) prepare_update();
                     if (contains(hits.update_confirm)) confirm_update();
                     if (contains(hits.update_cancel)) state.update_confirmation.clear();
+                    if (contains(hits.update_resume)) updates.resume(snapshot.updates.result.value("review_revision", ""));
                     if (contains(hits.update_acknowledge)) updates.acknowledge(snapshot.updates.result.value("review_revision", ""));
                 }
                 if (contains(hits.back)) { state.detail = false; state.scroll = 0; }

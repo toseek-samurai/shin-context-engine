@@ -9,6 +9,9 @@
 #include <fstream>
 #include <iostream>
 #include <thread>
+#ifndef _WIN32
+#include <sys/resource.h>
+#endif
 #ifdef _WIN32
 #include "../../tests/core/windows_private_acl.h"
 #endif
@@ -62,6 +65,45 @@ LocalProjectRequest project(const fs::path& base, const fs::path& profiles, cons
     request.profile_dir = profiles; request.profile_dir_explicit = true; request.command = "init";
     check(local_project(request).at("local_ready") == true, "initial preparation failed");
     return request;
+}
+void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
+#ifdef __APPLE__
+    // WatchRoot retains descriptors for ancestors, not just the selected roots.
+    // Exercise one long-lived worker under launchd's ordinary 256-descriptor
+    // soft limit. Tiny, deep projects reproduce pressure without a large corpus.
+    auto deep = base;
+    for (unsigned i = 0; i < 12; ++i) {
+        deep /= "nested";
+        ensure_private_directory(deep, true);
+    }
+    std::vector<LocalProjectRequest> projects;
+    for (unsigned i = 0; i < 9; ++i)
+        projects.push_back(project(deep, profiles, "scope-" + std::to_string(i), 100 + i));
+    struct Limit {
+        rlimit saved{};
+        Limit() {
+            check(::getrlimit(RLIMIT_NOFILE, &saved) == 0, "cannot read descriptor limit");
+            auto bounded = saved; bounded.rlim_cur = std::min<rlim_t>(saved.rlim_cur, 256);
+            check(::setrlimit(RLIMIT_NOFILE, &bounded) == 0, "cannot bound descriptor limit");
+        }
+        ~Limit() { (void)::setrlimit(RLIMIT_NOFILE, &saved); }
+    } limit;
+    LocalRefreshWorker worker;
+    for (unsigned round = 0; round < 3; ++round) {
+        for (const auto& request : projects) {
+            const auto result = current(worker, request);
+            check(result.at("observation").at("snapshot_current") == true,
+                  "descriptor pressure bypassed source qualification");
+        }
+    }
+    // Evicted optimization state must requalify real edits, not retain old proof.
+    write(projects.front().root / "quota.cpp", "int quotaLimit() { return 909; }\n");
+    const auto changed = worker.execute(payload(projects.front()), [] { return false; });
+    check(!hit(changed), "resource eviction accepted stale qualification");
+    (void)current(worker, projects.front());
+#else
+    (void)base; (void)profiles;
+#endif
 }
 void image_digest_is_fenced(const fs::path& base) {
     for (const bool retain : {false, true}) {
@@ -212,6 +254,12 @@ void persistent_process_and_suspend_boundary(const LocalProjectRequest& request,
     double slept = 0;
     const auto executable = base / "refresh-worker.exe";
     fs::copy_file(current_executable_path(), executable);
+#ifdef __APPLE__
+    for (const auto& entry : fs::directory_iterator(current_executable_path().parent_path())) {
+        if (entry.path().extension() == ".dylib")
+            fs::copy_file(entry.path(), base / entry.path().filename());
+    }
+#endif
 #ifdef _WIN32
     fixture_private_acl(executable);
 #endif
@@ -284,8 +332,12 @@ int main(int argc, char** argv) {
     std::string stage = "setup";
     try {
         if (argc == 2 && std::string_view(argv[1]) == "_refresh-worker") return shin::observer::local_refresh_worker();
-        if (argc != 2) return 2;
+        if (argc != 2 && argc != 3) return 2;
         Fixture fixture; const auto profiles = fs::canonical(fs::path(argv[1]));
+        if (argc == 3 && std::string_view(argv[2]) == "--descriptor-pressure") {
+            descriptor_pressure(fixture.path, profiles);
+            return 0;
+        }
         stage = "image digest";
         image_digest_is_fenced(fixture.path);
         stage = "project setup";
@@ -307,6 +359,8 @@ int main(int argc, char** argv) {
         canonical_authority(fixture.path, profiles);
         stage = "monitor and cancellation";
         lost_monitor_and_cancellation(worker, first);
+        stage = "descriptor pressure";
+        descriptor_pressure(fixture.path, profiles);
         std::cout << "idle reuse, source/membership, authority/output, monitor loss and cancellation passed\n";
     } catch (const Error& error) { std::cerr << stage << ": " << error.code << ": " << error.what() << '\n'; return 1; }
     catch (const std::exception& error) { std::cerr << stage << ": " << error.what() << '\n'; return 1; }

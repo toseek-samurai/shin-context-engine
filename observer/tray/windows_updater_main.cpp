@@ -198,8 +198,9 @@ void install(const fs::path& folder) {
         if(folder.parent_path()!=home/"updates/windows") throw Error("update-stage-changed","Update home changed.");
         save("preparing-projects");update("Preparing projects…");
         receipt["project_preparation"]=prepare_projects(*prefix,home,manifest);
-        if(!receipt.at("project_preparation").value("ok",false))
-            throw Error("installation-project-not-ready","Some projects require review. The installed kit and project policy are preserved.");
+        // MSI and the verified payload have completed. Project readiness has its
+        // own result and retry; it cannot turn a successful MSI into a failed update.
+        receipt["projects_pending"]=!receipt.at("project_preparation").value("ok",false);
         receipt["installed_version"]=manifest.at("version");save("completed");
         try {directory.remove("installer.msi",static_cast<std::size_t>(total),payload);} catch(...) { /* Verified installation remains successful; keep the staged file for review. */ }
     } catch(const std::exception& error) {
@@ -235,7 +236,12 @@ void install(const fs::path& folder) {
     // must not destroy its owner HWND while Monitor is being relaunched.
     if(failure) {
         try {std::rethrow_exception(failure);} catch(const std::exception& error) {show_failure(error);}
-    } else update("Update completed. Restart persistent MCP clients.",100,true);
+    } else {
+        update("Update completed. Restart persistent MCP clients.",100,true);
+        if(receipt.value("projects_pending",false)) {
+            std::lock_guard lock(mutex);description+="\n"+std::string(shin::ui::tr("Project preparation needs attention."));
+        }
+    }
     if(!restore_error.empty()) {
         {std::lock_guard lock(mutex);description+="\n"+restore_error;}
         if(window) PostMessageW(window,WM_APP,0,0);

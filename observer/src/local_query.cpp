@@ -66,7 +66,8 @@ struct LocalQuerySession::Impl {
     std::uint64_t requests = 0;
     std::int64_t prepared_at_ms = 0;
 
-    Impl(const Config& input, fs::path project_workspace, fs::path cache_directory, Json ready, std::function<void()> authority, const core::Profile* approved_profile)
+    Impl(const Config& input, fs::path project_workspace, fs::path cache_directory, Json ready,
+         std::function<void()> authority, const core::Profile* approved_profile, LocalReaderQualification qualification)
         : config(input), workspace(std::move(project_workspace)), cache(std::move(cache_directory)),
           status(std::move(ready)), verify_authority(std::move(authority)) {
         const auto started = core::SteadyClock::now();
@@ -80,7 +81,7 @@ struct LocalQuerySession::Impl {
         changes->flush();
         if (!changes->healthy()) throw Error("local-watcher-unavailable", "Reactive source observation could not start.");
         epoch = changes->sequence();
-        snapshot = core::GeneratedSnapshot::load(options, {config.max_snapshot_bytes, config.max_file_bytes});
+        snapshot = core::GeneratedSnapshot::load(options, {config.max_snapshot_bytes, config.max_file_bytes}, qualification.snapshot);
         options.generated_snapshot = snapshot;
         const auto coverage = source_coverage_summary(snapshot->manifest());
         if (!coverage.is_null() && !partial) status["source_coverage"] = coverage;
@@ -106,7 +107,7 @@ struct LocalQuerySession::Impl {
             if ((kind == "markdown-link" || kind == "path-reference") && (state == "ok" || state == "broken"))
                 links.emplace(row.at("resolved_path").get<std::string>(), state == "ok");
         }
-        if (!partial) discovery = std::make_unique<core::SourceDiscoveryIndex>(options, cache);
+        if (!partial) discovery = std::make_unique<core::SourceDiscoveryIndex>(options, cache, qualification.admission);
         if (fs::exists(cache)) {
             std::size_t entries = 0;
             for (const auto& entry : fs::directory_iterator(cache)) {
@@ -145,8 +146,9 @@ struct LocalQuerySession::Impl {
 };
 
 LocalQuerySession::LocalQuerySession(const Config& config, const fs::path& workspace, const fs::path& cache, const Json& status,
-                                   std::function<void()> authority, const core::Profile* approved_profile)
-    : impl_(std::make_unique<Impl>(config, workspace, cache, status, std::move(authority), approved_profile)) {}
+                                   std::function<void()> authority, const core::Profile* approved_profile,
+                                   LocalReaderQualification qualification)
+    : impl_(std::make_unique<Impl>(config, workspace, cache, status, std::move(authority), approved_profile, qualification)) {}
 LocalQuerySession::~LocalQuerySession() = default;
 
 bool LocalQuerySession::observed_unchanged() {

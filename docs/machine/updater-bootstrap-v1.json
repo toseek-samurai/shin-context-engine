@@ -3,13 +3,26 @@
   "status": "accepted",
   "platform": "macos-arm64",
   "protocol": 1,
-  "releaseAssets": ["shin-updater-v1-macos-arm64.zip", "shin-updater-v1-macos-arm64.zip.sha256"],
+  "releaseAssets": [
+    "shin-updater-v1-macos-arm64.zip",
+    "shin-updater-v1-macos-arm64.zip.sha256"
+  ],
   "envelope": {
     "root": "shin-updater-v1",
     "manifest": "shin-updater.json",
     "schema": "shin.updater.v1",
-    "fields": ["schema_version", "protocol", "version", "files"],
-    "fileFields": ["path", "sha256", "size", "executable"],
+    "fields": [
+      "schema_version",
+      "protocol",
+      "version",
+      "files"
+    ],
+    "fileFields": [
+      "path",
+      "sha256",
+      "size",
+      "executable"
+    ],
     "entrypoint": "bin/shin-updater",
     "maxArchiveBytes": 67108864,
     "maxExpandedBytes": 134217728,
@@ -30,7 +43,11 @@
   "retention": {
     "temporaryPrefix": "shin-updater.",
     "stateField": "updater",
-    "locatorFields": ["directory", "identity", "manifest_sha256"],
+    "locatorFields": [
+      "directory",
+      "identity",
+      "manifest_sha256"
+    ],
     "preserve": "Retain the immutable verified updater when the native saved outcome references it. Failed review or changed identity preserves artifacts.",
     "cleanup": "Read-only probes never delete the envelope. The applying updater removes its temporary envelope after confirmed success, verified acknowledgement or a refusal before it owns a saved outcome."
   },
@@ -42,5 +59,11 @@
     "refusals": "Preserve pending owner edits, changed grant tokens or route identities, symlinks, unsafe files, ambiguous generator fields and unknown generators for review. Never infer approval from current marker bytes alone."
   },
   "publication": "The guarded publisher requires the exact qualified kit, separate updater, both checksums and installer. Updater bytes must match the updater inventory embedded in that exact kit.",
-  "previewTrust": "GitHub HTTPS plus GitHub asset digest and SHA-256 checksum. No independent publisher signature or Developer ID/notarization is claimed."
+  "previewTrust": "GitHub HTTPS plus GitHub asset digest and SHA-256 checksum. No independent publisher signature or Developer ID/notarization is claimed.",
+  "recoveryCommands": {
+    "status": "update-status reports a verified outcome, can_retry/can_resume, and a revision binding the saved attempt to the native installation.",
+    "resume": "update-resume --revision resumes the exact recorded operation; the verified retained updater or bundled updater interprets it. Never substitute the latest offer for a journaled target.",
+    "readiness": "Installation success and project readiness are separate; pending projects retain their retrieval safety gates.",
+    "diagnostics": "Keep a bounded stage timeline and native error on the saved attempt."
+  }
 }

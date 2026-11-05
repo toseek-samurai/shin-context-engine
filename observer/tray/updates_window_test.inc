@@ -15,6 +15,7 @@
     self.lastUpdateCheck = NSDate.date;
 }
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
+    if ([command isEqualToString:@"update-status"]) { completion({{"ok", true}, {"phase", "idle"}}, nil); return; }
     if (![command isEqualToString:@"update-check"] || arguments.count || self.pendingCheck)
         throw std::runtime_error("update action launched an installer or duplicated a check");
     ++self.checks;
@@ -79,5 +80,7 @@ void check_update_offer_actions() {
     for (const auto& malformed : {Json(), Json::object(), Json{{"error", 7}}, Json{{"error", {{"message", 3}}}}})
         require([update_failure_text(malformed, nil) isEqualToString:ui_text("The release or installation could not be confirmed. Check again before retrying; the current kit is preserved.")],
                 "missing update diagnostics did not retain the safe fallback");
+    require([update_failure_text({{"result", {{"error", {{"message", "project qualification refused"}}}}}}, nil)
+        isEqualToString:@"project qualification refused"], "nested native refusal was hidden");
     release_update_version = prior_version;
 }

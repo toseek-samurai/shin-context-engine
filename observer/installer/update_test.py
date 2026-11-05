@@ -215,8 +215,21 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         (source / 'shin-kit.json').write_bytes(pristine)
         asset.write_bytes(asset_bytes)
 
-        # Real process interruption while staging. The old payload remains intact.
+        # This invariant runs on every candidate, including Core releases where
+        # no published previous kit can yet share the new Core identity.
         stop_service()
+        previous_fixture(owned=True, version='2.0.5-dev.0', core_version=manifest['core_version'])
+        before_source = (root / 'quota.cpp').read_bytes()
+        (root / 'quota.cpp').write_text('int updateQuota() { return 99; }\n')
+        ordinary = call(*update)
+        assert ordinary['changed'] and ordinary['projects_pending'] == 1
+        assert not ordinary['all_projects_ready'] and not (home / 'service/rpc.sock').exists()
+        assert (home / 'registry/state.json').read_bytes() == registry
+        assert not call('installation', '--prefix', prefix)['recovery_pending']
+        (root / 'quota.cpp').write_bytes(before_source)
+
+        # Real process interruption while staging. The old payload remains intact.
+        assert not (home / 'service/rpc.sock').exists()
         previous_fixture(owned=True, core_version='unsupported-core')
         call(*update, error='installation-core-transition-unsupported')
         # Existing format-preserving previews migrate without changing authority.
@@ -345,20 +358,20 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         with (binding_path.parent / 'observer.lock').open('r+') as lock:
             fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
             (root / 'quota.cpp').write_text('int updateQuota() { return 43; }\n')
-            rejected = call(*update, error='installation-update-rolled-back')
-            diagnostic = rejected['error']['diagnostic']
+            installed_pending = call(*update)
+            assert installed_pending['changed'] and installed_pending['projects_pending'] == 1
+            diagnostic = installed_pending['project_preparation']['diagnostic']
             assert diagnostic['schema_version'] == 'shin.validation-diagnostic.v1'
             assert any(code in json.dumps(diagnostic) for code in ['project-busy', 'writer-busy']), diagnostic
             assert str(root) not in json.dumps(diagnostic)
             restored = json.loads(state_file.read_text())
             assert 'resume_runtime' not in restored and 'update' not in restored
-            assert restored['last_rollback']['service_restored']
-            assert not restored['last_rollback']['all_projects_ready']
-            assert restored['last_rollback']['pending_projects'] == 1
+            assert not restored['project_preparation']['all_projects_ready']
+            assert restored['project_preparation']['pending_projects'] == 1
             receipt_status = call('installation', '--prefix', prefix)
             assert not receipt_status['recovery_pending']
-            assert receipt_status['last_rollback']['pending_projects'] == 1
-            assert receipt_status['last_update_diagnostic'] == diagnostic
+            assert receipt_status['project_preparation']['pending_projects'] == 1
+            assert receipt_status['project_preparation']['diagnostic'] == diagnostic
             live = call('service-status', '--home', home, executable=prefix / 'bin/shin-ce')
             assert live['service_running'] and live['enrollment_errors']
             assert (home / 'registry/state.json').read_bytes() == registry
@@ -377,7 +390,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
 
         # A hard engine/identity refusal is not a transient readiness condition.
         # Preserve the recovery journal until the test restores its own binding.
-        assert call(*update)['changed']
+        assert not call(*update)['changed']
         completed = json.loads(state_file.read_text())
         pending = {**completed, 'phase': 'activating', 'update': {
             'receipt': completed['receipt'], 'kit': completed['kit'],

@@ -62,6 +62,18 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
                 "the reviewed lifecycle or identity change requires a new connection. "
                 "Do not re-enroll or change route authority from this response."}}, diagnostic);
     }
+    if (code == "mcp-protocol-changed")
+        return {{"kind","environment-action"},{"responsible_party","operator"},
+            {"next_action","reconnect-client-with-current-kit"},
+            {"message","The installed kit changed the MCP transport/tools contract. Reconnect only the Shin MCP integration; restart its application only if it offers no integration reconnect. Preserve project bindings and history."}};
+    if (code == "mcp-runtime-changed")
+        return {{"kind","transient"},{"responsible_party","requester"},
+            {"next_action","query-current-kit-after-update"},{"retry_same_request",false},
+            {"message","Shin changed during the request; its result was withheld. After the update, make a fresh useful query and use its snapshot. Before repeating a checkpoint write, resume its saved state. No client restart or project repair is indicated."}};
+    if (code == "mcp-runtime-invalid" || code == "mcp-service-runtime-mismatch")
+        return {{"kind","environment-action"},{"responsible_party","operator"},
+            {"next_action","review-service-and-matched-kit"},
+            {"message","The installed code cohort and running service could not be matched. Complete or review the kit update; preserve project state. Reconnecting a client does not approve a damaged or mixed installation."}};
     if (code == "service-version-mismatch")
         return {{"kind", "environment-action"}, {"responsible_party", "operator"},
             {"next_action", "reconnect-client-with-current-kit"},
@@ -134,6 +146,10 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
                 "maintainers. Do not relax profiles or repair indexes."}};
         return with_diagnostic(std::move(result), diagnostic);
     }
+    if (code == "source-discovery-token-limit")
+        return {{"kind", "request-correction"}, {"responsible_party", "requester"},
+            {"next_action", "narrow-query"}, {"next_tool", "shin_query"}, {"retry_same_request", false},
+            {"message", "Split the question into smaller searches or keep the most relevant names and identifiers."}};
     if (code == "service-busy")
         return with_diagnostic({{"kind","transient"},{"responsible_party","requester"},
             {"retry_after_ms",method == "status" ? 0 : 1000},{"max_attempts_per_checkpoint",1},

@@ -216,8 +216,12 @@ if(BUILD_TESTING AND NOT WIN32)
             set_tests_properties(shin-client-setup PROPERTIES TIMEOUT 180)
             add_test(NAME shin-native-mcp
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_mcp_test.py
-                    $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
+                    $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --without-bridge)
             set_tests_properties(shin-native-mcp PROPERTIES TIMEOUT 180)
+            add_test(NAME shin-mcp-update-bridge
+                COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_mcp_test.py
+                    $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --bridge-only)
+            set_tests_properties(shin-mcp-update-bridge PROPERTIES TIMEOUT 45)
         endif()
         add_test(NAME shin-ce-local-install
             COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_install_test.py
@@ -291,9 +295,14 @@ if(BUILD_TESTING AND NOT WIN32)
     add_test(NAME shin-observer-outbox COMMAND shin-observer-outbox-tests)
 endif()
 
+include(cmake/McpRuntime.cmake)
 if(SHIN_OBSERVER_LOCAL_KIT)
     include(cmake/LocalKit.cmake)
 endif()
 if(SHIN_OBSERVER_WINDOWS_KIT)
     include(cmake/WindowsKit.cmake)
+endif()
+if(NOT SHIN_OBSERVER_LOCAL_KIT AND NOT SHIN_OBSERVER_WINDOWS_KIT AND
+        (SHIN_OBSERVER_LINUX_KIT OR SHIN_OBSERVER_HOMEBREW_PREFIX))
+    shin_install_mcp_runtime()
 endif()

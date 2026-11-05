@@ -38,6 +38,15 @@ int main() {
         require(navigation.tab == 6 && navigation.update_confirmation.empty());
         tui::move_subpage(navigation, 1); require(navigation.tab == 7);
         require(render(tui::Snapshot{}, navigation).find("Language") != std::string::npos);
+        tui::Snapshot update_snapshot;
+        update_snapshot.updates.phase = tui::UpdatePhase::result;
+        update_snapshot.updates.result = {{"phase", "retryable"}, {"affected_projects", Json::array()}};
+        for (int i = 0; i < 18; ++i) update_snapshot.updates.result["affected_projects"].push_back(
+            {{"name", "Fixture-" + std::to_string(i)}, {"reason", "worktree-not-current"}});
+        tui::State update_view; update_view.tab = 6;
+        const auto update_text = render(update_snapshot, update_view);
+        require(update_text.find("Fixture-15 — worktree-not-current") != std::string::npos &&
+            update_text.find("Fixture-16") == std::string::npos);
         tui::Snapshot snapshot;
         snapshot.connected = true; snapshot.received = tui::Clock::now(); snapshot.error.clear();
         snapshot.service = {{"command", "service-status"}, {"service_running", true},

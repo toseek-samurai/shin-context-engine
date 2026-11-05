@@ -36,7 +36,7 @@ void model_tests() {
             progress({ReleaseUpdateStep::switching_kit}); progress({ReleaseUpdateStep::rolling_back}); progress({ReleaseUpdateStep::failed});
             return {{"ok", false}, {"phase", "review-required"}, {"candidate", "/fixture/candidate"}};
         }
-        if (command == "update-status") return {{"ok", false}, {"phase", "review-required"}, {"can_acknowledge", true}, {"review_revision", "result-r1"}};
+        if (command == "update-status") return installs == 0 ? Json{{"ok", true}, {"phase", "idle"}} : Json{{"ok", false}, {"phase", "review-required"}, {"can_acknowledge", true}, {"review_revision", "result-r1"}};
         ++acknowledgements; require(revision == "result-r1", "unreviewed result acknowledged");
         return {{"ok", true}, {"phase", "reviewed"}};
     });
@@ -58,6 +58,22 @@ void model_tests() {
     require(controller.snapshot().timeline.current.step == ReleaseUpdateStep::failed,
         "late progress from an old operation overwrote the reviewed outcome");
     require(!controller.acknowledge("result-r1"), "acknowledgement repeated itself");
+    std::atomic<int> resumes{0};
+    UpdateController pending([&](const std::string& command, const std::string& revision,
+                                const ReleaseUpdateProgressSink&, std::stop_token) -> Json {
+        if (command == "update-check") return {{"ok", true}, {"available", true}, {"revision", "offer"}};
+        if (command == "update-status") return {{"ok", false}, {"phase", "retryable"}, {"can_retry", true}, {"review_revision", "retry-r1"}};
+        require(command == "update-resume" && revision == "retry-r1", "resume lost reviewed identity");
+        ++resumes; return {{"ok", true}, {"phase", "installed"}, {"projects_pending", 1}};
+    });
+    require(pending.check(), "retryable result check not queued");
+    wait_for([&] { return !pending.snapshot().busy(); });
+    require(pending.snapshot().phase == UpdatePhase::result && !pending.install("offer"),
+        "pending result offered a conflicting new installation");
+    require(!pending.resume("stale") && pending.resume("retry-r1"), "retry bypassed revision review");
+    wait_for([&] { return !pending.snapshot().busy(); });
+    require(resumes == 1 && pending.snapshot().result.at("phase") == "installed" &&
+        pending.snapshot().result.at("projects_pending") == 1, "pending projects hid installation success");
     std::promise<void> started;
     auto start = started.get_future();
     {
@@ -90,7 +106,7 @@ int main(int argc, char** argv) {
                               const ReleaseUpdateProgressSink& progress, std::stop_token) -> Json {
             if (command == "update-check") return {{"ok", true}, {"available", true}, {"current_version", "2.0.5-dev.45"},
                 {"version", "2.0.5-dev.99"}, {"revision", "reviewed-fixture"}, {"release_url", "https://github.com/example/project/releases/tag/v2.0.5-dev.99"}};
-            if (command == "update-status") return {{"ok", false}, {"phase", "review-required"}, {"can_acknowledge", true}, {"review_revision", "reviewed-result"}};
+            if (command == "update-status") return installed == 0 ? Json{{"ok", true}, {"phase", "idle"}} : Json{{"ok", false}, {"phase", "review-required"}, {"can_acknowledge", true}, {"review_revision", "reviewed-result"}};
             if (command == "update-acknowledge") {
                 require(revision == "reviewed-result", "wrong result revision"); ++acknowledged;
                 return {{"ok", true}, {"phase", "reviewed"}};

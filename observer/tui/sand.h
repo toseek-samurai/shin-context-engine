@@ -11,7 +11,7 @@ struct HitTargets {
     std::array<ftxui::Box, 16> projects;
     std::array<std::string, 16> roots;
     ftxui::Box language, back;
-    ftxui::Box update_check, update_review, update_install, update_confirm, update_cancel, update_acknowledge;
+    ftxui::Box update_check, update_review, update_install, update_confirm, update_cancel, update_acknowledge, update_resume;
     std::size_t project_count = 0;
     HitTargets();
 };

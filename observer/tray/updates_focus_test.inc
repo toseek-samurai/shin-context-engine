@@ -21,6 +21,9 @@
 - (void)applicationDidFinishLaunching:(NSNotification*)notification { (void)notification; }
 
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
+    if ([command isEqualToString:@"update-status"] && self.updateScreen == UpdateScreen::checking) {
+        completion({{"ok", true}, {"phase", "idle"}}, nil); return;
+    }
     if (self.pendingReply) throw std::runtime_error("concurrent native update commands");
     self.pendingCommand = command; self.pendingArguments = arguments; self.pendingReply = completion;
 }
@@ -67,7 +70,7 @@ void save_update_window(UpdateWindowHarness* app, const fs::path& output, const 
     [app.updateWindow.contentView layoutSubtreeIfNeeded]; [app.updateWindow displayIfNeeded];
     NSView* body = app.updateWindow.contentView;
     for (NSView* control in @[app.updateTitle, app.updateVersion, app.updateCheckButton, app.updateInstallButton,
-            app.updateNotesButton, app.updateCopyButton, app.updateAcknowledgeButton, app.updateReviewButton]) {
+            app.updateNotesButton, app.updateCopyButton, app.updateAcknowledgeButton, app.updateReviewButton, app.updateResumeButton]) {
         if (control.hiddenOrHasHiddenAncestor) continue;
         const auto rect = [control convertRect:control.bounds toView:body];
         update_require(NSContainsRect(body.bounds, rect) && rect.size.height >= 10, "update control clipped outside window");
@@ -229,6 +232,21 @@ int native_update_tests(int argc, char** argv) {
             update_require(!app.updateAcknowledgeButton.hidden && app.updateReviewButton.hidden &&
                 [app.updateVersion.stringValue containsString:@"2.0.5-dev.98"], "saved result lost the verified installed version or confirmation action");
             save_update_window(app, output, "repaired-installation-review");
+            [app showUpdateResult];
+            [app reply:{{"ok", false}, {"phase", "review-required"}, {"outcome", "retryable"}, {"can_retry", true}, {"review_revision", "retry-result"}, {"version", "2.0.5-dev.99"},
+                {"result", {{"error", {{"message", "Synthetic project changed"}}}}},
+                {"affected_projects", Json::array({{{"name", "Fixture Alpha"}, {"reason", "worktree-not-current"}}})}} failure:nil];
+            update_require(!app.updateResumeButton.hidden && app.updateInstallButton.hidden &&
+                [app.updateDetail.stringValue containsString:@"Synthetic project changed"] &&
+                [app.updateDetail.stringValue containsString:@"Fixture Alpha — worktree-not-current"], "retry lost cause or exposed a competing install");
+            [app.updateResumeButton performClick:nil];
+            update_require([app.pendingCommand isEqualToString:@"update-resume"] && [app.pendingArguments containsObject:@"retry-result"] &&
+                app.markedPending && [app.pendingArguments containsObject:@"2.0.5-dev.99"], "resume did not preserve reviewed identity or handoff");
+            [app reply:{{"ok", true}, {"phase", "installed"}, {"projects_pending", 1}} failure:nil];
+            update_require([app.updateTitle.stringValue isEqualToString:ui_text("Shin was updated")] &&
+                [app.updateDetail.stringValue containsString:ui_text("Shin is installed. Some projects are still preparing or need attention; inspect Projects for details.")],
+                "pending projects hid installed success");
+            save_update_window(app, output, "installed-projects-pending");
             [app checkForUpdates:nil]; [app reply:offer failure:nil];
             [app installReviewedUpdate:nil];
             [app reply:{{"ok", false}, {"error", {{"code", "update-monitor-open"},

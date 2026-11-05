@@ -213,7 +213,7 @@ HitTargets::HitTargets() {
     const ftxui::Box absent{1, 0, 1, 0};
     tabs.fill(absent); pages.fill(absent); metrics.fill(absent); ranges.fill(absent); projects.fill(absent);
     language = back = absent;
-    update_check = update_review = update_install = update_confirm = update_cancel = update_acknowledge = absent;
+    update_check = update_review = update_install = update_confirm = update_cancel = update_acknowledge = update_resume = absent;
 }
 ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, int height,
                          HitTargets& hits, bool ascii, bool monochrome) {
@@ -350,6 +350,8 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
                 actions.push_back(paint.label(ui::tr(" [v Result]"), Tone::heading) | reflect(hits.update_review));
                 if (update.phase == UpdatePhase::offer && state.update_confirmation.empty())
                     actions.push_back(paint.label(ui::tr(" [i Install]"), Tone::heading) | reflect(hits.update_install));
+                if (update.phase == UpdatePhase::result && (update.result.value("can_retry", false) || update.result.value("can_resume", false)))
+                    actions.push_back(paint.label(ui::tr(" [c Continue update]"), Tone::heading) | reflect(hits.update_resume));
                 if (update.phase == UpdatePhase::result && update.result.value("can_acknowledge", false))
                     actions.push_back(paint.label(ui::tr(" [a Acknowledge]"), Tone::heading) | reflect(hits.update_acknowledge));
             }

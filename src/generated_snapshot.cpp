@@ -178,7 +178,8 @@ struct GeneratedSnapshot::Backing {
 GeneratedSnapshot::GeneratedSnapshot() = default;
 GeneratedSnapshot::~GeneratedSnapshot() = default;
 
-std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions options, SnapshotLoadLimits limits) {
+std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions options, SnapshotLoadLimits limits,
+                                                                 const VerifiedSnapshot* observation) {
     if (options.force_source_scan || options.generated_snapshot || limits.maximum_file_bytes == 0 ||
         limits.maximum_payload_bytes == 0 || limits.maximum_file_bytes > limits.maximum_payload_bytes ||
         limits.maximum_payload_bytes > 1024ULL * 1024ULL * 1024ULL)
@@ -187,8 +188,21 @@ std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions 
     options.out_root = canonical_snapshot_root(options.out_root.string(), "snapshot output");
     options.force_index = true;
     auto lock = lock_index_for_read(options.out_root);
-    const VerifiedSnapshot verified = load_verified_snapshot(options.out_root, limits.maximum_payload_bytes,
-                                                             limits.maximum_file_bytes);
+    std::optional<VerifiedSnapshot> loaded;
+    if (!observation) {
+        loaded = load_verified_snapshot(options.out_root, limits.maximum_payload_bytes, limits.maximum_file_bytes);
+        observation = &*loaded;
+    } else {
+        if (observation->out_root != options.out_root)
+            throw_index_error("snapshot-route-mismatch", "Snapshot observation belongs to another output route.", false);
+        std::set<std::string> paths;
+        for (const auto& [path, fingerprint] : observation->fingerprints) {
+            (void)fingerprint;
+            paths.insert(path);
+        }
+        verify_snapshot_filesystem(options.out_root, paths);
+    }
+    const auto& verified = *observation;
     if (verified.generator_version != kGeneratorVersion || verified.profile != options.profile.id ||
         verified.profile_config_hash != profile_config_hash(options.profile))
         throw_index_error("snapshot-route-mismatch", "Snapshot generator or profile does not match the route.", false);

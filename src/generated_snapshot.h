@@ -4,6 +4,8 @@
 
 namespace shin::context {
 
+struct VerifiedSnapshot;
+
 struct SnapshotLoadLimits {
     std::uintmax_t maximum_payload_bytes = 256ULL * 1024ULL * 1024ULL;
     std::uintmax_t maximum_file_bytes = 64ULL * 1024ULL * 1024ULL;
@@ -15,8 +17,11 @@ public:
     GeneratedSnapshot(const GeneratedSnapshot&) = delete;
     GeneratedSnapshot& operator=(const GeneratedSnapshot&) = delete;
     ~GeneratedSnapshot();
+    // An observation can be reused within the same locked preparation.
+    // Materialization still checks the layout, every copied byte and the manifest.
     static std::shared_ptr<const GeneratedSnapshot> load(
-        RuntimeOptions options, SnapshotLoadLimits limits = {});
+        RuntimeOptions options, SnapshotLoadLimits limits = {},
+        const VerifiedSnapshot* observation = nullptr);
 
     const RuntimeOptions& options() const noexcept { return options_; }
     const Json& manifest() const noexcept { return manifest_; }

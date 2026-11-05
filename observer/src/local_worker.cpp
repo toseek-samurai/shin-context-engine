@@ -103,7 +103,7 @@ Json execute_local_worker_read(const Json& payload) {
         }
         response["ok"] = response.at("result").at("ok");
     } catch (const Error& error) { response = local_rpc::failure(id, error.code, error.what(), error.diagnostic); }
-    catch (const shin::context::CliError& error) { response = local_rpc::failure(id, error.code(), error.what()); }
+    catch (const shin::context::CliError& error) { response = local_rpc::failure(id, error.code(), error.what(), error.diagnostic()); }
     catch (const std::exception&) { response = local_rpc::failure(id, "service-request-failed", "Native project request failed."); }
     if (response.dump().size() + 1 > response_limit)
         response = local_rpc::failure(id, "service-frame-too-large", "Native response exceeds its byte limit.");
@@ -147,7 +147,9 @@ Json execute_local_worker_refresh(const Json& payload, const std::function<bool(
         };
         result = local_project(request);
     } catch (const Error& error) { result = {{"ok", false}, {"error", error_json(error)}}; }
-    catch (const shin::context::CliError& error) { result = {{"ok", false}, {"error", {{"code", error.code()}, {"message", error.what()}}}}; }
+    catch (const shin::context::CliError& error) {
+        result = {{"ok", false}, {"error", error_json(Error(error.code(), error.what(), error.diagnostic()))}};
+    }
     catch (const std::exception&) { result = {{"ok", false}, {"error", {{"code", "refresh-worker-failed"}, {"message", "Native refresh failed."}}}}; }
     if (result.dump().size() + 1 > response_limit)
         result = {{"ok", false}, {"error", {{"code", "refresh-worker-failed"}, {"message", "Refresh response exceeds its bound."}}}};
@@ -159,6 +161,15 @@ Json LocalRefreshWorker::execute(const Json& payload, const std::function<bool()
         !payload.contains("home") || !payload.at("home").is_string())
         return execute_local_worker_refresh(payload, stopped, progress);
     const auto key = payload.at("home").get<std::string>() + '\n' + payload.at("root").get<std::string>();
+    const auto evict_oldest = [&] {
+        const auto oldest = std::min_element(sessions_.begin(), sessions_.end(),
+            [](const auto& a, const auto& b) { return a.second.used < b.second.used; });
+        sessions_.erase(oldest);
+    };
+    // Metadata weights do not account for native watch handles. Free optional
+    // checkpoints before work, reserving room for both a monitor and Core IO.
+    while (!sessions_.empty() && !local_refresh_descriptor_headroom(2 * kRefreshActiveDescriptorReserve))
+        evict_oldest();
     auto& entry = sessions_[key];
     entry.used = ++sequence_;
     auto result = execute_local_worker_refresh(payload, stopped, progress, &entry.session);
@@ -168,9 +179,9 @@ Json LocalRefreshWorker::execute(const Json& payload, const std::function<bool()
     for (;;) {
         std::size_t weight = 0;
         for (const auto& [scope, value] : sessions_) { (void)scope; if (value.session) weight += value.session->weight(); }
-        if (sessions_.size() <= kLocalServiceProjectLimit && weight <= 8192) break;
-        const auto oldest = std::min_element(sessions_.begin(), sessions_.end(), [](const auto& a, const auto& b) { return a.second.used < b.second.used; });
-        sessions_.erase(oldest);
+        if (sessions_.empty() || (sessions_.size() <= kLocalServiceProjectLimit && weight <= 8192 &&
+            local_refresh_descriptor_headroom(2 * kRefreshActiveDescriptorReserve))) break;
+        evict_oldest();
     }
     return result;
 }
@@ -228,11 +239,11 @@ Json LocalResidentWorker::execute(const std::string& frame, Clock::time_point st
         response["result"] = session_->execute(request_);
         response["ok"] = response.at("result").at("ok");
     } catch (const Error& error) {
-        response = local_rpc::failure(id, error.code, error.what());
+        response = local_rpc::failure(id, error.code, error.what(), error.diagnostic);
         reusable = error.code == "source-snapshot-mismatch" || error.code == "service-method-denied" ||
             error.code.starts_with("session-") || error.code == "invalid-session-identity";
     } catch (const shin::context::CliError& error) {
-        response = local_rpc::failure(id, error.code(), error.what());
+        response = local_rpc::failure(id, error.code(), error.what(), error.diagnostic());
         // A rejected empty/whitespace query changes no reader or publication state.
         reusable = error.code() == "missing-query" ||
             error.code().starts_with("source-read-unknown") || error.code() == "invalid-inspect-path" ||

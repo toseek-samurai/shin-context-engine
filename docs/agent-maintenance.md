@@ -102,11 +102,27 @@ separately from invalid data or process failures, and verify the service drains
 after load. Keep consumer queries, source paths and raw responses private.
 Synthetic fixtures, rather than consumer profiles, preserve reproduced bugs.
 
+The optional background qualification cache also yields under process descriptor
+pressure. Its native watches may retain ancestor directories. Evicting that cache
+restores full qualification; it does not waive freshness or raise OS/profile
+limits. Exercise deep multi-project roots under a bounded descriptor limit and
+keep original resource kind, numeric OS error and the actual soft limit in bounded
+source-observation diagnostics. Connection overload must remain an explicit
+admission refusal with no request execution or automatic replay.
+
 Compare delivery quality at identical snapshot, profile, result and per-document
 limits. An eval request with eight records and an MCP response with four records
 are different workloads. A full record budget does not itself prove complete
 document coverage. Preserve the original expected owners and profile checks
 when investigating delivery misses; do not weaken them to match a smaller view.
+
+Exact macOS archives also exercise the pinned previous published release in
+`.github/fixtures/macos-previous-release.json`: a changed project must remain
+pending without blocking a same-Core upgrade, while a changed approved profile
+must still refuse it. Keep that pin on a published predecessor. If Core changes, this gate exercises
+its real forward transition and interrupted rollback instead; synthetic same-Core
+coverage remains in the native suite. The separate
+previous-generator suite remains mandatory for format transitions.
 
 On a generator cutover, retire its predecessor in the shared source-rebuild
 policy and update the pinned previous-generator kit fixture. Exact macOS archive

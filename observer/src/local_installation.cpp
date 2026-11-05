@@ -6,6 +6,8 @@
 #include "../ui/update_progress.h"
 #include "context_types.h"
 #include "context_internal.h"
+#include "generated_io.h"
+#include "snapshot_verification.h"
 #include "local_index_rebuild.h"
 #include <regex>
 #include <csignal>
@@ -257,37 +259,101 @@ std::array<unsigned long, 5> release_order(const std::string& version) {
     return {std::stoul(match[1]), std::stoul(match[2]), std::stoul(match[3]),
         match[4] == "dev" ? 0UL : match[4] == "rc" ? 1UL : 2UL, match[5].matched ? std::stoul(match[5]) : 0UL};
 }
-void qualify_update(const fs::path& home, const fs::path& executable,
-                    const ReleaseUpdateProgressSink& progress = {}, ReleaseUpdateStep step = ReleaseUpdateStep::qualifying_projects) {
-    if (!present(home / "registry")) return;
+// Updating binaries never approves a project or makes withheld context readable.
+// Only ordinary freshness/quality failures may remain pending; authority and
+// payload integrity failures still stop the transaction.
+bool pending_update_error(const std::string& code) {
+    return (recoverable_update_project_error(code) && code != "binding-changed") ||
+        code == "stale-index" || code == "worktree-not-current" ||
+        code == "qualification-inputs-changed" || code == "refresh-superseded";
+}
+void check_pending_readiness(const Json& value, bool retired_index = false) {
+    if (value.is_object()) {
+        if (value.contains("error") && value.at("error").is_object()) {
+            const auto code = value.at("error").value("code", "");
+            require(pending_update_error(code) || (retired_index && code == "index-generator-unsupported"), "installation-project-not-ready",
+                "Project safety or authority could not be verified; the current kit was preserved.");
+        }
+        const auto id = value.value("id", Json());
+        if (id.is_string() && (id == "profile-check" || id == "adoption-check" || id == "suggest-profile"))
+            require(value.value("status", "") != "failed" &&
+                !(value.value("status", "") != "skipped" && value.value("ok", Json(true)) == false),
+                "installation-project-not-ready", "Project policy or adoption requires review.");
+        for (const auto& item : value.items()) check_pending_readiness(item.value(), retired_index);
+    } else if (value.is_array()) for (const auto& item : value) check_pending_readiness(item, retired_index);
+}
+bool project_has_retired_index(const LocalProjectRequest& project) {
+    const auto workspace = project.home / "projects" / digest(project.root.string());
+    StateStore binding(workspace, false);
+    const auto saved = binding.load();
+    require(saved.has_value(), "binding-unavailable", "An enrolled binding is missing.");
+    if (saved->value("schema_version", "") == "shin.local-project-binding.v1")
+        require(saved->value("core_version", "") == SHIN_VERSION &&
+            saved->value("generator_version", "") == shin::context::kGeneratorVersion,
+            "refresh-engine-changed", "Project engine metadata has no approved transition.");
+    const auto index = saved->value("schema_version", "") == "shin.local-project-binding.v1" ? workspace / "index" :
+        load_config(saved->at("observer_config").get<std::string>()).out_dir;
+    auto lock = shin::context::lock_index_for_read(index);
+    const auto snapshot = shin::context::load_verified_snapshot(index, 256U * 1024U * 1024U, 128U * 1024U * 1024U);
+    require(binding.load() == saved, "binding-changed", "Project authority changed during update inspection.");
+    return retired_source_generator(snapshot.generator_version);
+}
+Json qualify_update(const fs::path& home, const fs::path& executable,
+                    const ReleaseUpdateProgressSink& progress = {}, ReleaseUpdateStep step = ReleaseUpdateStep::qualifying_projects,
+                    bool allow_pending = false) {
+    Json summary{{"all_projects_ready", true}, {"pending_projects", 0}, {"diagnostic", nullptr}};
+    if (!present(home / "registry")) return summary;
     const auto projects = registered_local_projects(home);
     std::uint64_t checked = 0;
     report_update(progress, {step, checked, projects.size()});
     for (auto project : projects) {
         project.command = "status";
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
-        for (;;) {
+        const auto pending = [&](const std::string& code, const Json& detail) {
+            summary["all_projects_ready"] = false;
+            summary["pending_projects"] = summary.at("pending_projects").get<unsigned>() + 1;
+            summary["diagnostic"] = merge_update_diagnostic(summary.at("diagnostic"),
+                merge_update_diagnostic(update_project_diagnostic(project.root.string(), code), detail));
+        };
+        try {
             Json result;
-            try {
-                result = qualify_local_project(project, executable);
-            } catch (const Error& error) {
-                if (error.code == "index-generator-unsupported")
-                    throw Error("installation-project-not-ready", "This derived index requires rebuilding with the candidate engine.",
-                        update_project_diagnostic(project.root.string(), error.code));
-                if ((error.code != "project-busy" && error.code != "binding-changed") ||
-                    std::chrono::steady_clock::now() >= deadline)
-                    throw Error(error.code, error.what(), merge_update_diagnostic(
-                        update_project_diagnostic(project.root.string(), error.code), error.diagnostic));
-                std::this_thread::sleep_for(std::chrono::milliseconds(30));
-                continue;
+            const auto retry_until = std::chrono::steady_clock::now() + std::chrono::seconds(5);
+            for (;;) {
+                try { result = qualify_local_project(project, executable); break; }
+                catch (const Error& error) {
+                    if ((error.code != "binding-changed" && error.code != "project-busy") ||
+                        std::chrono::steady_clock::now() >= retry_until) throw;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+                }
             }
-            if (!result.value("ok", false) || !result.value("local_ready", false))
-                throw Error("installation-project-not-ready", "A project is not ready under the new engine; the current kit was preserved.",
-                    update_project_diagnostic(project.root.string(), "installation-project-not-ready", result.value("readiness", Json::object())));
-            report_update(progress, {step, ++checked, projects.size()});
-            break;
+            if (!result.value("ok", false) || !result.value("local_ready", false)) {
+                const auto readiness = result.value("readiness", Json::object());
+                if (!allow_pending) throw Error("installation-project-not-ready",
+                    "A project is not ready under the new engine; the current kit was preserved.",
+                    update_project_diagnostic(project.root.string(), "installation-project-not-ready", readiness));
+                require(readiness.value("next_action", "") != "resolve-profile-route" &&
+                    readiness.value("next_action", "") != "repair-adoption-invocation",
+                    "installation-project-not-ready", "Project route or adoption requires review.");
+                check_pending_readiness(readiness, project_has_retired_index(project));
+                // A stale but intact publication is derived data. Corrupt or
+                // substituted publications are not a successful preflight.
+                const fs::path index = result.at("index").get<std::string>();
+                auto lock = shin::context::lock_index_for_read(index);
+                (void)shin::context::load_verified_snapshot(index, 256U * 1024U * 1024U, 128U * 1024U * 1024U);
+                pending("project-not-ready", update_project_diagnostic(project.root.string(), "project-not-ready", readiness));
+            }
+        } catch (const Error& error) {
+            if (allow_pending && (pending_update_error(error.code) ||
+                (error.code == "index-generator-unsupported" && project_has_retired_index(project))))
+                pending(error.code, error.diagnostic);
+            else if (error.code == "index-generator-unsupported")
+                throw Error("installation-project-not-ready", "This derived index requires rebuilding with the candidate engine.",
+                    update_project_diagnostic(project.root.string(), error.code));
+            else throw Error(error.code, error.what(), merge_update_diagnostic(
+                update_project_diagnostic(project.root.string(), error.code), error.diagnostic));
         }
+        report_update(progress, {step, ++checked, projects.size()});
     }
+    return summary;
 }
 std::string registry_digest(const fs::path& home) {
     return present(home / "registry/state.json") ? digest(read_text(home / "registry/state.json", kMaximumStateBytes, true)) : "";
@@ -323,8 +389,9 @@ void wait_update_service_stopped(const fs::path& home) {
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 }
-void resume_update_runtime(const fs::path& home, const fs::path& executable, const Json& runtime,
+Json resume_update_runtime(const fs::path& home, const fs::path& executable, const Json& runtime,
                            const ReleaseUpdateProgressSink& progress) {
+    Json projects{{"all_projects_ready", false}, {"pending_projects", 0}, {"diagnostic", nullptr}};
     if (runtime.at("running") || runtime.at("managed")) report_update(progress, {ReleaseUpdateStep::starting_service});
     LocalProjectRequest request; request.home = home;
     if (runtime.at("managed")) {
@@ -332,7 +399,7 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
         (void)configure_local_autostart(request, executable);
     }
     if (runtime.at("running") || runtime.at("managed")) {
-        request.command = "service-start";
+        request.command = "update"; // Start the runtime; project readiness is observed separately.
         Json status;
         try { status = start_local_service(request, executable); }
         catch (const Error& error) {
@@ -346,10 +413,18 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
             } catch (const Error&) { /* No status acknowledgement is not readiness. */ }
             throw Error(error.code, error.what(), diagnostic);
         }
-        if (!status.value("registry_error", std::string{}).empty() || !status.at("enrollment_errors").empty())
+        if (!status.value("service_running", false) || status.value("enrollment_mode", "") != "registry" ||
+            !status.value("registry_error", std::string{}).empty())
             throw Error("installation-service-not-ready", "Updated service could not admit its registered projects.",
                 update_service_diagnostic(status, "activation"));
-        qualify_update(home, executable, progress, ReleaseUpdateStep::checking_projects);
+        const auto enrolled = registered_local_projects(home);
+        for (const auto& item : status.at("enrollment_errors").items()) {
+            const auto project = std::find_if(enrolled.begin(), enrolled.end(), [&](const auto& p) { return p.root == item.key(); });
+            require(project != enrolled.end() && (pending_update_error(item.value().get<std::string>()) ||
+                (item.value() == "index-generator-unsupported" && project_has_retired_index(*project))),
+                "installation-service-not-ready", "Updated service refused project authority or integrity.");
+        }
+        projects = qualify_update(home, executable, progress, ReleaseUpdateStep::checking_projects, true);
         // A registered but deliberately stopped service stays stopped.
         if (!runtime.at("running").get<bool>()) {
             report_update(progress, {ReleaseUpdateStep::restoring_service_state});
@@ -357,7 +432,8 @@ void resume_update_runtime(const fs::path& home, const fs::path& executable, con
             (void)request_local_service(request);
             wait_update_service_stopped(home);
         }
-    }
+    } else projects = qualify_update(home, executable, progress, ReleaseUpdateStep::checking_projects, true);
+    return projects;
 }
 // Rollback must use the verified previous CLI's protocol and qualification rules.
 // No shell, inherited user environment, or arbitrary subcommand is involved.
@@ -464,6 +540,7 @@ bool compatible_core_patch(const std::string& from, const std::string& to) {
 }
 Json marker_generator_migrations(const fs::path& home) {
     Json records = Json::array();
+    if (!present(home / "registry")) return records;
     for (const auto& project : registered_local_projects(home)) {
         const auto record = prepare_marker_generator_transition(project);
         if (!record.is_null()) records.push_back(record);
@@ -475,6 +552,7 @@ Json marker_generator_migrations(const fs::path& home) {
 void migrate_marker_generators(const fs::path& home, const Json& records, const fs::path& previous = {}) {
     require(records.is_array() && records.size() <= 16 && records.dump().size() <= 96 * 1024,
         "installation-state-invalid", "Invalid marker transition journal.");
+    if (records.empty()) return;
     const auto projects = registered_local_projects(home);
     for (const auto& record : records) {
         const auto root = record.at("root").get<std::string>();
@@ -553,6 +631,7 @@ Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate,
 }
 void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs::path& previous = {}) {
     require(records.is_array() && records.size() <= 16, "installation-state-invalid", "Invalid bootstrap migration inventory.");
+    if (records.empty()) return;
     const auto projects = registered_local_projects(home);
     for (const auto& record : records) {
         const fs::path root = record.at("root").get<std::string>();
@@ -617,11 +696,16 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
             retire_bootstrap_update_index(*project, current, target_generator,
                 profile_revision.is_null() ? "" : profile_revision.at("to").get<std::string>());
         if (target_binding && !retired && !profile_changed) continue;
-        if (previous.empty()) {
-            auto request = *project; request.command = "init";
-            const auto result = local_project(request);
-            require(result.value("ok", false) && result.value("local_ready", false),
-                "installation-project-not-ready", "Private project did not qualify after the Core patch.");
+        if (previous.empty() || (!retired && target_generator == shin::context::kGeneratorVersion)) {
+            // The journal authorizes engine metadata only, not successful
+            // retrieval. Preserve the prepared snapshot; its actual generator
+            // and current source still gate all reads. The normal publisher
+            // observes an old-format snapshot as stale and rebuilds it.
+            StateStore store(workspace, true);
+            require(store.load() == current, "binding-identity-changed", "Bootstrap authority changed before migration.");
+            current["core_version"] = target;
+            current["generator_version"] = target_generator;
+            store.save(current);
         } else {
             (void)previous_cli(previous, home, "init", root);
         }
@@ -643,6 +727,7 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
         }
         return restored;
     }
+    const bool readiness_recorded = runtime.contains("unready_roots");
     const auto unready = runtime.value("unready_roots", Json::array());
     Json status;
     try { status = previous_cli(executable, home, "service-start"); }
@@ -662,7 +747,7 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
         const bool enrolled = std::any_of(projects.begin(), projects.end(), [&](const auto& p) { return p.root == root; });
         const bool was_unready = std::find(unready.begin(), unready.end(), Json(root)) != unready.end();
         if (!enrolled || !(transient_update_project_error(code.get<std::string>()) ||
-            ((was_unready || reviewed_degraded_baseline) && recoverable_update_project_error(code.get<std::string>()))))
+            ((readiness_recorded || was_unready || reviewed_degraded_baseline) && pending_update_error(code.get<std::string>()))))
             throw Error("installation-service-not-ready", "Previous service has an unresolved enrollment refusal.",
                 update_service_diagnostic(status, "rollback"));
     }
@@ -677,7 +762,8 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
             const auto observed = previous_cli(executable, home, "service-status");
             const auto code = observed.at("enrollment_errors").value(project.root.string(), "");
             if (!observed.value("service_running", false) || observed.value("enrollment_mode", "") != "registry" ||
-                !observed.value("registry_error", std::string{}).empty() || !transient_update_project_error(code)) throw;
+                !observed.value("registry_error", std::string{}).empty() ||
+                !(transient_update_project_error(code) || (readiness_recorded && pending_update_error(code)))) throw;
             errors[project.root.string()] = code;
             continue;
         }
@@ -686,7 +772,7 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
             const auto code = result.value("error", Json::object()).value("code", "project-not-ready");
             errors[project.root.string()] = code;
             if (!was_unready && !transient_update_project_error(code) &&
-                !(reviewed_degraded_baseline && recoverable_update_project_error(code)))
+                !((readiness_recorded || reviewed_degraded_baseline) && pending_update_error(code)))
                 throw Error("installation-project-not-ready", "A previously ready project has an unresolved rollback refusal.",
                     update_service_diagnostic({{"enrollment_errors", errors}}, "rollback"));
         }
@@ -882,7 +968,7 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         const auto registry = registry_digest(home);
         const auto marker_migrations = core_patch ? marker_generator_migrations(home) : Json::array();
         bool recover_publications = false;
-        try { qualify_update(home, source / "bin/shin-ce", progress); }
+        try { qualify_update(home, source / "bin/shin-ce", progress, ReleaseUpdateStep::qualifying_projects, !core_patch); }
         catch (const Error& error) {
             if (!core_patch || error.code != "installation-project-not-ready") throw;
             recover_publications = true;
@@ -991,26 +1077,24 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             const auto service_guard = stop_owned_service(update.at("receipt"), kit.at("version"), kit.at("core_version"));
             migrate_marker_generators(home, update.value("marker_migrations", Json::array()));
             migrate_bootstrap_patch(home, update.value("bootstrap_migrations", Json::array()));
-            LocalProjectRequest request; request.home = home; request.command = "watch";
-            std::vector<fs::path> roots;
-            for (const auto& project : registered_local_projects(home)) roots.push_back(project.root);
-            // Run only the ordinary publisher under its existing grants, after
-            // the journaled swap and before service admission. Restart repeats
-            // this idempotent bounded step; no direct index repair is permitted.
-            if (!roots.empty()) (void)watch_local_projects(request, roots, 3, [] { return false; });
-            qualify_update(home, prefix / "bin/shin-ce");
+            // Index generation is independently scheduled by the restored
+            // service. Installation never waits for every worktree to settle.
+            qualify_update(home, prefix / "bin/shin-ce", progress, ReleaseUpdateStep::checking_projects, true);
         }
-        resume_update_runtime(home, prefix / "bin/shin-ce", update.at("runtime"), progress);
+        const auto projects = resume_update_runtime(home, prefix / "bin/shin-ce", update.at("runtime"), progress);
         report_update(progress, {ReleaseUpdateStep::confirming});
         owner = std::make_unique<StateStore>(control, true);
         require(owner->load() == state && registry_digest(home) == update.at("registry_sha256").get<std::string>(),
             "installation-ownership-changed", "Installation or enrollment changed during activation.");
         state["phase"] = "installed"; state.erase("update");
         state.erase("last_update_diagnostic"); state.erase("last_rollback");
+        state["project_preparation"] = projects;
         state["previous"] = {{"receipt", update.at("old_receipt")}, {"kit", update.at("old_kit")}};
         owner->save(state);
         return {{"ok", true}, {"command", "update"}, {"phase", "installed"}, {"changed", true}, {"version", kit.at("version")},
             {"previous_version", update.at("old_kit").at("version")}, {"prefix", prefix.string()}, {"home", home.string()},
+            {"project_preparation", projects}, {"all_projects_ready", projects.at("all_projects_ready")},
+            {"projects_pending", projects.at("pending_projects")},
             {"data_preserved", true}, {"service_restored", true}, {"readiness_assessed", true}, {"previous_kit_retained", true}, {"restart_monitor", true}};
     } catch (const std::exception& error) {
         const auto* typed = dynamic_cast<const Error*>(&error);
@@ -1153,6 +1237,25 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
             return result;
         } catch (...) { report_update(progress, {ReleaseUpdateStep::failed}); throw; }
     }
+    if (command == "installation" && saved && saved->contains("update")) {
+        StateStore operation_status(control / "operation", false);
+        require(!store.writer_present() && !operation_status.writer_present(), "writer-busy", "The native installation transaction is running.");
+        const auto& pending = saved->at("update");
+        const auto current = record(prefix);
+        const bool old = current == pending.at("old_receipt");
+        require(old || current == pending.at("receipt"), "installation-ownership-changed",
+            "The installed payload does not belong to the interrupted transaction.");
+        const auto& current_kit = pending.at(old ? "old_kit" : "kit");
+        verify_update_payload(prefix, current_kit, current);
+        links(current, false, false);
+        require(store.load() == saved && !store.writer_present() && !operation_status.writer_present(), "writer-busy", "Installation changed during inspection.");
+        return {{"ok", true}, {"command", command}, {"phase", saved->at("phase")},
+            {"prefix", prefix.string()}, {"home", current.at("home")}, {"bin_dir", current.at("bin_dir")},
+            {"integrity_verified", true}, {"recovery_pending", true},
+            {"version", current_kit.at("version")}, {"core_version", current_kit.at("core_version")},
+            {"target_version", pending.at("kit").at("version")},
+            {"target_manifest_sha256", pending.at("receipt").at("manifest_sha256")}};
+    }
     require(!saved || !saved->contains("update"), "installation-incomplete", "Resume the pending update from its original extracted kit.");
     if (command != "install") {
         if (!saved) throw Error("installation-not-owned", "No owned installation exists at this prefix.");
@@ -1178,6 +1281,7 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
                 {"home", receipt.at("home")}, {"bin_dir", receipt.at("bin_dir")}, {"integrity_verified", true},
                 {"recovery_pending", state.contains("resume_runtime") || state.contains("update")},
                 {"version", state.at("kit").at("version")}, {"core_version", state.at("kit").at("core_version")}};
+            if (state.contains("project_preparation")) result["project_preparation"] = state.at("project_preparation");
             const auto diagnostic = bounded_validation_diagnostic(state.value("last_update_diagnostic", Json()));
             if (!diagnostic.is_null()) result["last_update_diagnostic"] = diagnostic;
             if (state.contains("last_rollback")) {

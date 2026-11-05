@@ -71,6 +71,13 @@ class LocalRouteTests(unittest.TestCase):
         return self.invoke(CE, command, *args, "--root", str(root or self.f.root), "--home", str(home or self.home),
                            expected=expected, one_shot=one_shot)
 
+    def copy_ce(self, name):
+        executable = self.base / name
+        shutil.copy2(CE, executable)
+        for library in CE.parent.glob("*.dylib"):
+            shutil.copy2(library, executable.parent / library.name)
+        return executable
+
     def attach(self, *args, expected=0):
         return self.ce("attach", "--observer-config", str(self.f.config), *args, expected=expected)
 
@@ -807,8 +814,7 @@ class LocalRouteTests(unittest.TestCase):
         self.managed()
         receipt = self.workspace() / 'qualification/state.json'
         receipt.unlink()
-        binary = self.base / 'qualified-ce'
-        shutil.copy2(CE, binary)
+        binary = self.copy_ce('qualified-ce')
         with (self.f.out / 'docs/kb/.shin-context.lock').open('rb') as publication:
             fcntl.flock(publication, fcntl.LOCK_EX)
             process = subprocess.Popen([str(binary), 'init', '--no-service', '--root', str(self.f.root),
@@ -2229,8 +2235,7 @@ class LocalRouteTests(unittest.TestCase):
 
     def test_mode_detection_precedes_bundle_discovery(self):
         self.attach()
-        isolated = self.base / "isolated-ce"
-        shutil.copy2(CE, isolated)
+        isolated = self.copy_ce("isolated-ce")
         before = self.canonical_files()
         result = self.invoke(isolated, "init", "--root", str(self.f.root), "--home", str(self.home))
         self.assertTrue(result['canonical_ready'])

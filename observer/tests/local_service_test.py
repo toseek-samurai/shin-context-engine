@@ -4,6 +4,7 @@ from concurrent.futures import ThreadPoolExecutor
 from contextlib import closing
 import fcntl
 import hashlib
+import errno
 import json
 import os
 from pathlib import Path
@@ -179,6 +180,78 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(before['instance_id'], after['instance_id'])
         self.assertIsNone(child.poll())
         self.assertIn('return 7;', self.raw('query', query='readLimit')['result']['source_context'])
+
+    def test_connection_overflow_returns_correlated_busy_without_execution(self):
+        child = self.start()
+        before = self.raw('service-status')['result']
+        os.kill(child.pid, signal.SIGSTOP)
+        try:
+            occupied = [self.connect() for _ in range(8)]
+        finally:
+            os.kill(child.pid, signal.SIGCONT)
+        # Retain eight partial frames; they cannot execute or free capacity yet.
+        time.sleep(.05)
+        for index in range(4):
+            response = self.raw('query', query='readLimit', request_id=f'overflow-{index}')
+            self.assertFalse(response['ok'], response)
+            self.assertEqual(response['request_id'], f'overflow-{index}')
+            self.assertEqual(response['error']['code'], 'service-busy')
+            self.assertEqual(response['error']['diagnostic']['reason'], 'connection-capacity')
+            self.assertFalse(response['error']['diagnostic']['execution_started'])
+        # Even a capacity refusal preserves version/shape validation.
+        wrong = self.raw('query', query='readLimit', observer_version='0.0.0')
+        self.assertEqual(wrong['error']['code'], 'service-version-mismatch')
+        for client in occupied:
+            client.close()
+        deadline = time.monotonic() + 2
+        while True:
+            response = self.raw('service-status')
+            if response['ok']:
+                after = response['result']
+                break
+            self.assertEqual(response['error']['code'], 'service-busy', response)
+            self.assertLess(time.monotonic(), deadline, response)
+            time.sleep(.01)
+        self.assertEqual(before['instance_id'], after['instance_id'])
+        self.assertEqual(after['query_workers'], 0)
+        self.assertEqual(after['waiting_requests'], 0)
+        self.assertTrue(self.raw('query', query='readLimit')['ok'])
+
+    def test_full_unix_backlog_is_busy_while_live_lease_is_held(self):
+        child = self.start()
+        os.kill(child.pid, signal.SIGSTOP)
+        try:
+            for _ in range(32):
+                client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+                self.addCleanup(client.close)
+                client.setblocking(False)
+                try:
+                    client.connect(str(self.endpoint))
+                except OSError as error:
+                    self.assertIn(error.errno, (errno.EAGAIN, errno.EWOULDBLOCK, errno.ECONNREFUSED))
+                    break
+            else:
+                self.fail('bounded Unix backlog never filled')
+            result = subprocess.run([str(fixtures.TOOL), 'service-status', '--home', str(self.home)],
+                                    text=True, capture_output=True, timeout=3)
+            self.assertEqual(result.returncode, 2)
+            error = json.loads(result.stderr)['error']
+            self.assertEqual(error['code'], 'service-busy', error)
+            self.assertEqual(error['diagnostic']['reason'], 'connection-backlog')
+            self.assertFalse(error['diagnostic']['execution_started'])
+        finally:
+            os.kill(child.pid, signal.SIGCONT)
+
+    def test_stale_unix_socket_without_service_lease_is_unavailable(self):
+        directory = self.endpoint.parent
+        directory.mkdir(mode=0o700)
+        with socket.socket(socket.AF_UNIX, socket.SOCK_STREAM) as stale:
+            stale.bind(str(self.endpoint))
+            self.endpoint.chmod(0o600)
+        result = subprocess.run([str(fixtures.TOOL), 'service-status', '--home', str(self.home)],
+                                text=True, capture_output=True, timeout=3)
+        self.assertEqual(result.returncode, 2)
+        self.assertEqual(json.loads(result.stderr)['error']['code'], 'service-unavailable')
 
     def connect(self):
         client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
@@ -693,13 +766,25 @@ class LocalServiceTests(unittest.TestCase):
                 break
             time.sleep(.03)
         self.assertIsNotNone(cold)
+        over_budget = ' '.join(f'термин{i}' for i in range(65))
+        refused = self.raw('query', root=cold, query=over_budget, diagnostic=True)
+        self.assertEqual(refused['error']['code'], 'source-discovery-token-limit', refused)
+        self.assertIn('64 distinct', refused['error']['message'])
+        after = self.raw('service-status')['result']
+        self.assertEqual(after['resident_evictions'], status['resident_evictions'])
+        self.assertEqual({r['root']: r['pid'] for r in after['resident_projects']},
+                         {r['root']: r['pid'] for r in status['resident_projects']})
+        self.assertEqual(after['telemetry']['request_metrics']['recent'][-1]['stage'], 'admission')
         response = self.raw('query', root=cold, query='readLimit', diagnostic=True)
         self.assertTrue(response['ok'], response)
         metric = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
         self.assertEqual(metric['reader_state'], 'cold')
         self.assertEqual(metric['purpose'], 'diagnostic')
         self.assertGreater(metric['service_duration_ms'], metric['duration_ms'])
-        self.assertTrue(self.raw('query', root=cold, query='readLimit', diagnostic=True)['ok'])
+        # This has over 64 words but only two distinct unicode61 terms.
+        repeated = self.raw('query', root=cold, query='readLimit ' + 'CAFÉ cafe ' * 70, diagnostic=True)
+        self.assertTrue(repeated['ok'], repeated)
+        self.assertEqual(repeated['result']['snapshot_id'], response['result']['snapshot_id'])
         metric = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
         self.assertEqual(metric['reader_state'], 'warm')
 
@@ -1144,6 +1229,9 @@ class LocalServiceTests(unittest.TestCase):
     def test_executable_replacement_requires_restart(self):
         tool = self.base / 'shin-ce'
         shutil.copy2(fixtures.TOOL, tool)
+        # Packaged macOS builds resolve bundled crypto next to the executable.
+        for library in fixtures.TOOL.parent.glob('*.dylib'):
+            shutil.copy2(library, self.base/library.name)
         self.start(tool)
         replacement = self.base / 'replacement'
         shutil.copy2(fixtures.TOOL, replacement)

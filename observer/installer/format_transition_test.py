@@ -36,6 +36,7 @@ new_manifest = json.loads((candidate / 'shin-kit.json').read_text())
 old_identity = json.loads(subprocess.check_output([str(old / 'bin/shin-context'), '--version'], text=True))
 new_identity = json.loads(subprocess.check_output([str(candidate / 'bin/shin-context'), '--version'], text=True))
 assert old_identity['version'] == old_manifest['core_version'] and new_identity['version'] == new_manifest['core_version']
+generator_changed = old_identity['generator_version'] != new_identity['generator_version']
 evidence = {'previous': old_manifest['version'], 'candidate': new_manifest['version'],
             'scenario': args.scenario, 'live_installation_changed': False}
 
@@ -146,13 +147,15 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
             evidence['fresh_updater'] = args.fresh_updater
         else:
-            # Progress is emitted after candidate publication and before final
-            # qualification. A real project lock triggers rollback; killing at
-            # that boundary exercises journal continuation without state edits.
+            # At metadata migration/readiness observation, interrupt the process
+            # or inject a hard engine-identity conflict. Ordinary maintenance
+            # locks now mean project pending, not a reason to roll back binaries.
             with (workspaces[1] / 'observer.lock').open('r+') as lock:
                 child = subprocess.Popen([str(candidate / 'bin/shin-ce'), 'update', '--prefix', str(prefix), '--progress-json'],
                     cwd=work, env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
                 pending = b''; injected = False; final_response = None; until = time.monotonic() + 150
+                boundary_binding = None
+                binding_file = workspaces[1] / 'state.json'
                 while child.poll() is None:
                     assert time.monotonic() < until, 'update progress timeout'
                     if not select.select([child.stderr], [], [], .1)[0]: continue
@@ -164,18 +167,18 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                         if 'error' in frame: final_response = frame
                         if frame.get('step') == 14 and not frame.get('received') and not injected:
                             os.kill(child.pid, signal.SIGSTOP)
-                            assert generators() == [new_identity['generator_version']] * 2
+                            assert json.loads((prefix / 'shin-kit.json').read_text())['version'] == new_manifest['version']
                             injected = True
                             if args.scenario == 'interrupted': child.kill(); break
-                            lock_deadline = time.monotonic() + 5
-                            while True:
-                                try: fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB); break
-                                except BlockingIOError:
-                                    assert time.monotonic() < lock_deadline
-                                    time.sleep(.005)
+                            boundary_binding = binding_file.read_bytes()
+                            invalid = json.loads(boundary_binding)
+                            invalid['core_version'] = 'unsupported-core'
+                            binding_file.write_text(json.dumps(invalid)); binding_file.chmod(0o600)
                             os.kill(child.pid, signal.SIGCONT)
                         if frame.get('step') == 16 and injected and args.scenario != 'rollback-resume':
-                            fcntl.flock(lock, fcntl.LOCK_UN)
+                            os.kill(child.pid, signal.SIGSTOP)
+                            binding_file.write_bytes(boundary_binding)
+                            os.kill(child.pid, signal.SIGCONT)
                 output, error = child.communicate(timeout=20)
                 assert injected, (output, error, pending)
                 if args.scenario in ['rollback', 'rollback-resume']:
@@ -187,7 +190,7 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                     expected_error = 'installation-update-recovery-required' if args.scenario == 'rollback-resume' else 'installation-update-rolled-back'
                     assert child.returncode == 2 and value['error']['code'] == expected_error, value
                     if args.scenario == 'rollback-resume':
-                        fcntl.flock(lock, fcntl.LOCK_UN)
+                        binding_file.write_bytes(boundary_binding)
                         evidence['resumed_rollback'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, error='installation-update-rolled-back')
                 else:
                     evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
@@ -198,7 +201,14 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
         assert installed['version'] == expected['version'] and installed['integrity_verified'] and not installed['recovery_pending'], installed
         for root in roots:
             if args.scenario == 'marker-edit-rejected' and root == f.root: continue
-            result = ce('query', 'readLimit', '--service', '--root', root)
+            ready_deadline = time.monotonic() + 60
+            while True:
+                probe = subprocess.run([str(prefix / 'bin/shin-ce'), 'query', 'readLimit', '--service', '--root', str(root), '--home', str(home)],
+                    cwd=work, env=env, capture_output=True, text=True, timeout=35)
+                if probe.returncode == 0:
+                    result = json.loads(probe.stdout); break
+                assert time.monotonic() < ready_deadline, (probe.stdout, probe.stderr)
+                time.sleep(.1)
             assert result['local_ready'] and 'readLimit' in result['source_context'] and result['transport'] == 'local-socket-v1', result
         after_generators = generators()
         assert after_generators == ([before_generators[0]] * 2 if old_preserved else [new_identity['generator_version']] * 2), after_generators
@@ -226,9 +236,9 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 k:v for k,v in after.items() if k not in rebuilt_fields}
         if marker:
             expected_marker = protected[marker]
-            if not old_preserved:
+            if generator_changed and not old_preserved:
                 expected_marker = expected_marker.replace(old_identity['generator_version'].encode(), new_identity['generator_version'].encode())
-            if args.scenario not in ('profile-policy-rejected', 'marker-edit-rejected'):
+            if generator_changed and args.scenario not in ('profile-policy-rejected', 'marker-edit-rejected'):
                 # Native approval records an explicit marker hash (v3), including
                 # when rollback restores the implicit original v2 approval.
                 grant['approved_marker_hash'] = hashlib.sha256(expected_marker).hexdigest()
@@ -236,9 +246,11 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             assert marker.read_bytes() == expected_marker
             assert stat.S_IMODE(marker.stat().st_mode) == marker_permissions
             protected[marker] = expected_marker
-            evidence['marker_transition'] = {'only_generator_pin_changed': True, 'restored': old_preserved,
-                'approved_hash': hashlib.sha256(expected_marker).hexdigest() if args.scenario != 'marker-edit-rejected' else
-                    grant.get('approved_marker_hash', grant['route']['marker_hash'])}
+            evidence['marker_transition'] = {
+                'only_generator_pin_changed': generator_changed and not old_preserved,
+                'restored': generator_changed and old_preserved,
+                'approved_hash': grant.get('approved_marker_hash', grant['route']['marker_hash']),
+            }
         after_grant = json.loads(grant_path.read_text()); after_grant.pop('last_snapshot')
         assert after_grant == grant, (after_grant, grant)
         assert all(p.read_bytes() == content for p, content in protected.items())

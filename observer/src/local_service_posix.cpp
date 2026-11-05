@@ -303,12 +303,29 @@ std::unique_ptr<ServiceChannel> connect_service(const fs::path& home, ServiceDea
     const auto endpoint_identity = socket_identity(path);
     const auto endpoint = address(path);
     auto socket = std::make_unique<PosixChannel>(::socket(AF_UNIX, SOCK_STREAM, 0));
+    const auto connect_failure = [&](int error) {
+        // Darwin reports a full AF_UNIX backlog as ECONNREFUSED; Linux uses
+        // EAGAIN. A held, identity-bound service lease distinguishes an occupied
+        // endpoint from a stale socket. No request has been sent or replayed.
+        if (error == EAGAIN || error == EWOULDBLOCK || error == ECONNREFUSED) {
+            StateStore owner(directory, false, identity, false);
+            const bool running = owner.writer_present();
+            if (directory_identity(directory, true) != identity || socket_identity(path) != endpoint_identity)
+                throw Error("service-endpoint-changed", "Private endpoint changed during connection.");
+            if (running)
+                throw Error("service-busy", "The owned local service endpoint is occupied. Try a useful query later.",
+                    {{"schema_version", "shin.local-transport-admission.v1"}, {"reason", "connection-backlog"},
+                     {"execution_started", false}});
+        }
+        throw Error("service-unavailable", "Local service is not accepting requests.");
+    };
     if (::connect(socket->fd(), reinterpret_cast<const sockaddr*>(&endpoint), sizeof(endpoint)) != 0) {
-        if (errno != EINPROGRESS) throw Error("service-unavailable", "Local service is not accepting requests.");
+        if (errno != EINPROGRESS) connect_failure(errno);
         wait_io(socket->fd(), POLLOUT, deadline, cancelled);
         int error = 0; socklen_t size = sizeof(error);
-        if (::getsockopt(socket->fd(), SOL_SOCKET, SO_ERROR, &error, &size) != 0 || error != 0)
-            throw Error("service-unavailable", "Cannot connect to local service.");
+        if (::getsockopt(socket->fd(), SOL_SOCKET, SO_ERROR, &error, &size) != 0)
+            throw Error("service-io", "Cannot inspect local connection completion.");
+        if (error != 0) connect_failure(error);
     }
     require_peer(socket->fd());
     if (directory_identity(directory, true) != identity || socket_identity(path) != endpoint_identity)

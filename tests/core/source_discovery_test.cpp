@@ -203,6 +203,15 @@ void resident_checks(const fs::path& parent) {
     wrong.profile.config_hash = "changed-policy";
     rejected([&] { index.query(wrong, {"stableResidentNeedle"}); }, "source-discovery-binding-mismatch");
     rejected([&] { index.query(f.options, {}); }, "source-discovery-query-limit");
+    std::string vocabulary;
+    for (unsigned i = 0; i < 64; ++i) vocabulary += " термин" + std::to_string(i);
+    validate_source_discovery_query_budget(vocabulary);
+    vocabulary += " термин64";
+    rejected([&] { validate_source_discovery_query_budget(vocabulary); }, "source-discovery-token-limit");
+    rejected([&] { index.query(f.options, {vocabulary}); }, "source-discovery-token-limit");
+    auto missing_output = f.options;
+    missing_output.out_root /= "absent";
+    rejected([&] { discover_source_candidates(missing_output, {vocabulary}); }, "source-discovery-token-limit");
     expect(index.query(f.options, {"stableResidentNeedle"}).at("reuse").at("query_sequence") == 3,
            "bad requests do not invalidate good index");
 

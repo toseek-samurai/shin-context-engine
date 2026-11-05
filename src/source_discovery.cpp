@@ -17,6 +17,11 @@ namespace {
 constexpr std::size_t kFileBytes = 1024 * 1024;
 constexpr std::size_t kSourceBytes = 64 * 1024 * 1024;
 constexpr std::size_t kRows = 65536;
+constexpr std::size_t kQueryTokens = 64;
+constexpr std::size_t kExpandedTerms = 256;
+constexpr const char* kQueryVocabulary =
+    "CREATE VIRTUAL TABLE temp.query_text USING fts5(body, tokenize='unicode61');"
+    "CREATE VIRTUAL TABLE temp.query_vocab USING fts5vocab(query_text, 'row');";
 using Database = std::unique_ptr<sqlite3, decltype(&sqlite3_close)>;
 using Statement = std::unique_ptr<sqlite3_stmt, decltype(&sqlite3_finalize)>;
 
@@ -52,7 +57,51 @@ void validate_queries(const std::vector<std::string>& queries) {
         require(!query.empty() && query.size() <= 4096 && query.find('\0') == std::string::npos,
                 "source-discovery-query-limit");
 }
+
+struct SourceQuery {
+    std::vector<std::string> terms;
+    bool distinct_paths_first;
+};
+
+SourceQuery prepare_source_query(sqlite3* db, const std::string& query) {
+    execute(db, "DELETE FROM query_text;");
+    auto input = prepare(db, "INSERT INTO query_text(body) VALUES (?)");
+    bind_text(input, 1, query);
+    require(sqlite3_step(input.get()) == SQLITE_DONE, "source-discovery-sql");
+    auto vocabulary = prepare(db, "SELECT term FROM query_vocab ORDER BY term");
+    std::vector<std::string> tokens;
+    int rc;
+    while ((rc = sqlite3_step(vocabulary.get())) == SQLITE_ROW) {
+        if (tokens.size() == kQueryTokens)
+            throw CliError("source-discovery-token-limit", "source-discovery",
+                           "Query exceeds " + std::to_string(kQueryTokens) + " distinct search terms.",
+                           1, false, "Split the question or keep the most relevant names and identifiers.");
+        tokens.push_back(column_text(vocabulary.get(), 0));
+    }
+    require(rc == SQLITE_DONE, "source-discovery-sql");
+    auto terms = source_query_terms(tokens);
+    if (terms.size() > kExpandedTerms)
+        throw CliError("source-discovery-token-limit", "source-discovery",
+                       "Query exceeds " + std::to_string(kExpandedTerms) + " terms after expansion.",
+                       1, false, "Split the question or keep the most relevant names and identifiers.");
+    return {std::move(terms), source_query_distinct_paths_first(tokens)};
+}
 }  // namespace
+
+void validate_source_discovery_query_budget(const std::string& query) {
+    // Native RPC has already checked the frame's size and NUL bound. Keep
+    // empty-query handling with the document query parser.
+    if (query.empty()) return;
+    validate_queries({query});
+    sqlite3* raw = nullptr;
+    const int opened = sqlite3_open_v2(":memory:", &raw,
+        SQLITE_OPEN_READWRITE | SQLITE_OPEN_CREATE | SQLITE_OPEN_NOMUTEX, nullptr);
+    Database db(raw, sqlite3_close);
+    require(opened == SQLITE_OK, "source-discovery-sql");
+    execute(db.get(), "PRAGMA temp_store=MEMORY;");
+    execute(db.get(), kQueryVocabulary);
+    (void)prepare_source_query(db.get(), query);
+}
 
 std::string source_search_projection(std::string_view text) {
     std::string additions;
@@ -76,7 +125,7 @@ std::string source_search_projection(std::string_view text) {
 }
 
 struct SourceDiscoveryIndex::Impl {
-    Impl(RuntimeOptions value, const fs::path& cache_directory);
+    Impl(RuntimeOptions value, const fs::path& cache_directory, const GenerationAdmission* preparation_admission);
     Json query(const RuntimeOptions& binding, const std::vector<std::string>& queries,
                bool materialize = false, bool at_snapshot = false);
     void persist_published_cache(const RuntimeOptions& destination, const fs::path& cache_directory);
@@ -85,7 +134,7 @@ struct SourceDiscoveryIndex::Impl {
     bool restore(const std::string& bytes, const Json& binding, const Json& schema,
                  const std::map<std::string, std::string>& sources);
     void persist(SourceCache& cache, const Json& binding);
-    IndexFreshness validate_current();
+    IndexFreshness validate_current(const GenerationAdmission* preparation_admission = nullptr);
     void check_time() const { require(SteadyClock::now() < deadline, "source-discovery-timeout"); }
     void check_profile() const {
         if (!options.profile.config_source.empty()) {
@@ -168,9 +217,8 @@ void SourceDiscoveryIndex::Impl::configure(sqlite3* db) {
     }, &deadline);
     // Query vocabulary must never enter a serialized/published source cache,
     // including a prepared generation transferred after a validation query.
-    execute(db, "CREATE VIRTUAL TABLE temp.query_text USING fts5(body, tokenize='unicode61');"
-                "CREATE VIRTUAL TABLE temp.query_vocab USING fts5vocab(query_text, 'row');"
-                "CREATE VIRTUAL TABLE temp.query_stems USING fts5(body, tokenize='porter unicode61');"
+    execute(db, kQueryVocabulary);
+    execute(db, "CREATE VIRTUAL TABLE temp.query_stems USING fts5(body, tokenize='porter unicode61');"
                 "CREATE VIRTUAL TABLE temp.stem_vocab USING fts5vocab(query_stems, 'instance');");
 }
 
@@ -267,7 +315,8 @@ void SourceDiscoveryIndex::Impl::persist(SourceCache& cache, const Json& binding
     cache.save(std::string_view(reinterpret_cast<const char*>(bytes.get()), static_cast<std::size_t>(size)));
 }
 
-SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_directory)
+SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_directory,
+                                 const GenerationAdmission* preparation_admission)
     : options(std::move(value)), profile_hash(profile_config_hash(options.profile)) {
     const auto started = SteadyClock::now();
     require(options.root.is_absolute() && options.out_root.is_absolute() &&
@@ -288,7 +337,7 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
         return RetrievalSession(options, RetrievalSessionOpenMode::verified_snapshot);
     }();
     snapshot_id = session.freshness().snapshot_id;
-    (void)validate_current();
+    (void)validate_current(preparation_admission);
     const auto& source_counts = session.manifest().at("source_fact_counts");
     deadline = SteadyClock::now() + std::chrono::seconds(30);
     require(sqlite3_threadsafe() != 0, "source-discovery-sqlite-threading");
@@ -313,7 +362,7 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
         if (saved && restore(*saved, binding, database_schema(raw), sources)) {
             cache_status = "restored";
             persisted_cache = true;
-            (void)validate_current();
+            (void)validate_current(preparation_admission);
             check_time();
             preparation_ms = elapsed_ms_since(started);
             return;
@@ -365,13 +414,13 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
         }
     }
     execute(raw, "COMMIT;");
-    (void)validate_current();
+    (void)validate_current(preparation_admission);
     if (cache) {
         const auto persist_started = SteadyClock::now();
         persist(*cache, binding);
         persist_ms += elapsed_ms_since(persist_started);
         persisted_cache = true;
-        (void)validate_current();
+        (void)validate_current(preparation_admission);
     }
     check_time();
     preparation_ms = elapsed_ms_since(started);
@@ -379,12 +428,12 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
     // publish a new generation, which the next query then refuses to reuse.
 }
 
-IndexFreshness SourceDiscoveryIndex::Impl::validate_current() {
+IndexFreshness SourceDiscoveryIndex::Impl::validate_current(const GenerationAdmission* preparation_admission) {
     require(!invalidated, "source-discovery-invalidated");
     try {
         check_profile();
-        auto freshness = options.generation_admission ? assess_index_freshness(options, true) :
-                                                       assess_source_discovery_freshness(options);
+        const auto* admission = preparation_admission ? preparation_admission : options.generation_admission.get();
+        auto freshness = admission ? admission->assess(options) : assess_source_discovery_freshness(options);
         require_current_index_or_throw(freshness);
         require(freshness.snapshot_id == snapshot_id, "source-discovery-snapshot-changed");
         check_profile();
@@ -498,21 +547,8 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
     for (const auto& query : queries) {
         check_time();
         const auto query_started = SteadyClock::now();
-        execute(raw, "DELETE FROM query_text;");
-        auto input = prepare(raw, "INSERT INTO query_text(body) VALUES (?)");
-        bind_text(input, 1, query);
-        require(sqlite3_step(input.get()) == SQLITE_DONE, "source-discovery-sql");
-        auto vocabulary = prepare(raw, "SELECT term FROM query_vocab ORDER BY term");
-        std::vector<std::string> tokens;
+        const auto [terms, distinct_paths_first] = prepare_source_query(raw, query);
         int rc;
-        while ((rc = sqlite3_step(vocabulary.get())) == SQLITE_ROW) {
-            require(tokens.size() < 64, "source-discovery-token-limit");
-            tokens.push_back(column_text(vocabulary.get(), 0));
-        }
-        require(rc == SQLITE_DONE, "source-discovery-sql");
-        const auto terms = source_query_terms(tokens);
-        const auto distinct_paths_first = source_query_distinct_paths_first(tokens);
-        require(terms.size() <= 256, "source-discovery-token-limit");
         // Several spellings may stem to one word (cancelled / cancelling).
         // FTS counts repeated OR phrases repeatedly; keep one representative
         // per stem so inflections cannot multiply that concept's BM25 weight.
@@ -630,8 +666,9 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
     return result;
 }
 
-SourceDiscoveryIndex::SourceDiscoveryIndex(RuntimeOptions options, const fs::path& cache_directory)
-    : impl_(std::make_unique<Impl>(std::move(options), cache_directory)) {}
+SourceDiscoveryIndex::SourceDiscoveryIndex(RuntimeOptions options, const fs::path& cache_directory,
+                                           const GenerationAdmission* preparation_admission)
+    : impl_(std::make_unique<Impl>(std::move(options), cache_directory, preparation_admission)) {}
 SourceDiscoveryIndex::~SourceDiscoveryIndex() = default;
 Json SourceDiscoveryIndex::query(const RuntimeOptions& binding, const std::vector<std::string>& queries) {
     return impl_->query(binding, queries);
@@ -655,6 +692,7 @@ Json SourceDiscoveryIndex::context_at_snapshot(const RuntimeOptions& binding, co
 
 Json discover_source_candidates(const RuntimeOptions& options, const std::vector<std::string>& queries) {
     validate_queries(queries);
+    for (const auto& query : queries) validate_source_discovery_query_budget(query);
     SourceDiscoveryIndex index(options);
     return index.query(options, queries);
 }

@@ -70,9 +70,10 @@
     self.updateNotesButton = live_button("Release notes", self, @selector(openUpdateReleaseNotes:));
     self.updateCopyButton = live_button("Copy diagnostic report", self, @selector(copyUpdateResult:));
     self.updateAcknowledgeButton = live_button("Acknowledge verified result", self, @selector(acknowledgeUpdateResult:));
+    self.updateResumeButton = live_button("Continue update", self, @selector(resumeUpdateResult:));
     self.updateReviewButton = live_button("Review previous update", self, @selector(showLastUpdateResult:));
     for (NSButton* button in @[self.updateCheckButton, self.updateInstallButton, self.updateNotesButton,
-            self.updateCopyButton, self.updateAcknowledgeButton, self.updateReviewButton]) {
+            self.updateCopyButton, self.updateAcknowledgeButton, self.updateReviewButton, self.updateResumeButton]) {
         button.font = [NSFont systemFontOfSize:15];
         [button setContentHuggingPriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
         [button setContentCompressionResistancePriority:NSLayoutPriorityRequired forOrientation:NSLayoutConstraintOrientationHorizontal];
@@ -90,7 +91,7 @@
     NSStackView* actions = [NSStackView stackViewWithViews:@[self.updateCheckButton, self.updateInstallButton]];
     actions.spacing = 10; actions.distribution = NSStackViewDistributionFill; actions.detachesHiddenViews = YES;
     NSBox* separator = [NSBox new]; separator.boxType = NSBoxSeparator;
-    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, self.updateReviewButton, separator, links, actions])
+    for (NSView* view in @[header, self.updateTitle, self.updateVersion, details, self.updateSpinner, self.updateAcknowledgeButton, self.updateResumeButton, self.updateReviewButton, separator, links, actions])
         [stack addArrangedSubview:view];
     for (NSView* view in @[self.updateTitle, self.updateVersion, details, self.updateSpinner, separator])
         [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
@@ -117,7 +118,8 @@
     const bool acknowledging = self.updateScreen == UpdateScreen::acknowledging;
     const bool offer = self.updateScreen == UpdateScreen::offer;
     const bool result = self.updateScreen == UpdateScreen::resultReady || self.updateScreen == UpdateScreen::acknowledgeFailed;
-    const bool installed = _updateResult.is_object() && _updateResult.value("phase", "") == "installed" && _updateResult.value("ok", false);
+    const bool installed = _updateResult.is_object() && (_updateResult.value("outcome", "") == "installed" ||
+        (_updateResult.value("phase", "") == "installed" && _updateResult.value("ok", false)));
     self.updateReviewButton.hidden = self.updateScreen != UpdateScreen::startFailed ||
         cli_error_code(_updateResult) != "update-outcome-unknown";
     self.updateCheckButton.enabled = !checking && !loading && !self.updateActionBusy;
@@ -127,6 +129,9 @@
     self.updateCopyButton.hidden = !result && self.updateScreen != UpdateScreen::startFailed;
     self.updateAcknowledgeButton.hidden = !result || installed || !_updateResult.value("can_acknowledge", false);
     self.updateAcknowledgeButton.enabled = !self.updateActionBusy;
+    self.updateResumeButton.hidden = !result || !(_updateResult.value("can_retry", false) || _updateResult.value("can_resume", false));
+    self.updateResumeButton.enabled = !self.updateActionBusy;
+    self.updateResumeButton.title = ui_text(_updateResult.is_object() && _updateResult.value("can_retry", false) ? "Retry update" : "Continue update");
     self.updateCheckButton.title = ui_text(offer || self.updateScreen == UpdateScreen::startFailed ? "Check again" : "Check for updates…");
     for (NSButton* button in @[self.updateInstallButton, self.updateAcknowledgeButton])
         button.attributedTitle = [[NSAttributedString alloc] initWithString:button.title attributes:@{
@@ -142,7 +147,7 @@
         detail = ui_text("Shin continues to work while the release is checked. You can leave this window open or close it."); break;
     case UpdateScreen::offer:
         title = ui_text("A Shin update is available");
-        detail = ui_text("Monitor will close while the updater installs the new version, then reopen. Projects, settings and history stay in place. Reconnect persistent MCP clients afterwards."); break;
+        detail = ui_text("Monitor will close while the updater installs the new version, then reopen. Projects, settings and history stay in place. Compatible MCP connections resume automatically; older integrations may need one reconnection."); break;
     case UpdateScreen::current: title = ui_text("Shin is up to date"); break;
     case UpdateScreen::checkFailed:
         title = ui_text("Could not check for updates");
@@ -164,13 +169,31 @@
             title = ui_text("Update was not started"); detail = update_failure_text(_updateResult, nil);
         } else {
             title = installed ? ui_text("Shin was updated") : ui_text("Update needs review");
-            detail = installed ? ui_text("The installed kit was verified. Reconnect persistent MCP clients to use the new version.") :
+            detail = installed ? ui_text(_updateResult.value("projects_pending", 0) > 0 ?
+                "Shin is installed. Some projects are still preparing or need attention; inspect Projects for details." :
+                "The installed kit was verified. Compatible MCP connections resume automatically; reconnect an older integration if it reports a version mismatch.") :
                 _updateResult.value("can_acknowledge", false) && _updateResult.value("installation_verified", false) ?
                 ui_text("The current installation is verified and has no pending recovery. Confirm this saved result to clear the previous attempt and allow another update. Project data stays in place.") :
                 ui_text("The update did not confirm completion. The saved result includes the candidate location and native recovery outcome. Do not repeat installation before reviewing it.");
         }
+        if (!installed && _updateResult.value("phase", "") != "failed" && (_updateResult.contains("error") ||
+                (_updateResult.contains("result") && _updateResult.at("result").is_object() && _updateResult.at("result").contains("error"))))
+            detail = [NSString stringWithFormat:@"%@\n\n%@", update_failure_text(_updateResult, nil), detail];
         break;
     case UpdateScreen::idle: break;
+    }
+    if (result && _updateResult.contains("affected_projects") && _updateResult.at("affected_projects").is_array()) {
+        NSMutableString* projects = [NSMutableString string];
+        std::size_t shown = 0;
+        for (const auto& project : _updateResult.at("affected_projects")) {
+            if (!project.is_object() || !project.contains("name") || !project.at("name").is_string() ||
+                !project.contains("reason") || !project.at("reason").is_string()) continue;
+            if (shown++ == 16) break;
+            [projects appendFormat:@"\n%@ — %@", diagnostic_text_content(project.at("name").get_ref<const std::string&>()),
+                diagnostic_text_content(project.at("reason").get_ref<const std::string&>())];
+        }
+        if (projects.length) detail = [NSString stringWithFormat:@"%@\n\n%@%@", detail,
+            ui_text("Affected projects"), projects];
     }
     self.updateTitle.stringValue = title;
     const bool reviewed = offer || starting || self.updateScreen == UpdateScreen::startFailed;
@@ -261,7 +284,7 @@
             alert.icon = NSApp.applicationIconImage;
             alert.messageText = ui_text("Update with Homebrew");
             alert.informativeText = [NSString stringWithFormat:@"%@\n\nbrew upgrade toseek-samurai/tap/shin-context-engine",
-                ui_text("Homebrew manages this installation. Quit Monitor and TUI before upgrading, then restart the background service and persistent MCP clients.")];
+                ui_text("Homebrew manages this installation. Quit Monitor and TUI before upgrading, then restart the background service. Compatible MCP connections resume automatically; older integrations may need one reconnection.")];
             [alert addButtonWithTitle:ui_text("Close")];
             [alert addButtonWithTitle:ui_text("Copy command")];
             [NSApp activateIgnoringOtherApps:YES];
@@ -293,7 +316,20 @@
         if (!failure && result.value("ok", false)) {
             _updateOffer = result; release_update_version = result.value("version", "");
             if (visibleReview) {
-                if (result.value("available", false)) [self presentUpdateOffer];
+                if (result.value("available", false)) {
+                    const auto epoch = self.updateWindowEpoch;
+                    self.updateChecking = YES;
+                    [self runCLI:@"update-status" arguments:@[] completion:^(Json saved, NSString* problem) {
+                        self.updateChecking = NO;
+                        if (epoch != self.updateWindowEpoch && self.updateScreen != UpdateScreen::checking) return;
+                        const auto phase = saved.value("outcome", saved.value("phase", ""));
+                        if (problem || phase.empty() || (phase != "idle" && phase != "reviewed" && phase != "installed")) {
+                            _updateResult = saved;
+                            if (problem) _updateResult = {{"ok", false}, {"error", {{"message", problem.UTF8String}}}};
+                            self.updateScreen = UpdateScreen::resultReady; [self renderUpdateWindow];
+                        } else [self presentUpdateOffer];
+                    }];
+                }
                 else { self.updateScreen = UpdateScreen::current; [self renderUpdateWindow]; }
             }
         } else if (visibleReview) { self.updateScreen = UpdateScreen::checkFailed; [self renderUpdateWindow]; }
@@ -348,4 +384,27 @@
 - (void)setUpdatePending:(BOOL)pending {
     if (pending) [[NSUserDefaults standardUserDefaults] setBool:YES forKey:@"ShinUpdatePending"];
     else [[NSUserDefaults standardUserDefaults] removeObjectForKey:@"ShinUpdatePending"];
+}
+
+- (void)resumeUpdateResult:(id)sender {
+    (void)sender;
+    if (self.updateActionBusy || self.updateScreen != UpdateScreen::resultReady ||
+        !(_updateResult.value("can_retry", false) || _updateResult.value("can_resume", false))) return;
+    bool expected = false;
+    if (!project_management_busy.compare_exchange_strong(expected, true)) return;
+    const auto revision = _updateResult.value("review_revision", "");
+    const auto version = _updateResult.value("version", "");
+    if (revision.empty() || version.empty()) { release_project_operation(); return; }
+    _reviewedUpdateOffer = {{"version", version}, {"current_version", _updateResult.value("current_version", std::string(SHIN_OBSERVER_VERSION))}};
+    self.updateActionBusy = YES; self.updateScreen = UpdateScreen::starting;
+    [self renderUpdateWindow]; [self setUpdatePending:YES];
+    [self runCLI:@"update-resume" arguments:@[@"--revision", diagnostic_text_content(revision), @"--ui-version", diagnostic_text_content(version),
+        @"--wait-pid", [NSString stringWithFormat:@"%d", getpid()], @"--ui-language",
+        shin::ui::language() == shin::ui::Language::ru ? @"ru" : @"en"] completion:^(Json result, NSString* failure) {
+        release_project_operation(); self.updateActionBusy = NO; [self setUpdatePending:NO];
+        _updateResult = result; self.updateFailure = failure;
+        if (failure) _updateResult = {{"ok", false}, {"error", {{"message", failure.UTF8String}}}};
+        self.updateScreen = UpdateScreen::resultReady; [self renderUpdateWindow];
+        if (self.updateWindow.visible && !self.updateWindow.miniaturized) [self showUpdateWindow];
+    }];
 }

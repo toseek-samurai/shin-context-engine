@@ -242,15 +242,18 @@ if(BUILD_TESTING AND NOT WIN32)
         endif()
         add_executable(shin-observer-test-core ../src/main.cpp)
         target_link_libraries(shin-observer-test-core PRIVATE shin-context-core)
-        add_test(NAME shin-ce-local-route
-            COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_route_test.py
-                $<TARGET_FILE:shin-ce> $<TARGET_FILE:shin-observer> $<TARGET_FILE:shin-observer-test-core>
-                $<TARGET_FILE:shin-local-qualification-driver> -v)
-        set_tests_properties(shin-ce-local-route PROPERTIES TIMEOUT 180)
+        foreach(group IN ITEMS lifecycle approvals)
+            add_test(NAME shin-ce-local-route-${group}
+                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_route_test.py
+                    $<TARGET_FILE:shin-ce> $<TARGET_FILE:shin-observer> $<TARGET_FILE:shin-observer-test-core>
+                    $<TARGET_FILE:shin-local-qualification-driver> --group ${group})
+            set_tests_properties(shin-ce-local-route-${group} PROPERTIES TIMEOUT 180)
+        endforeach()
         # Start the longest isolated lifecycle suites first on a fresh CTest run.
         # Costs only affect scheduling; deadlines and assertions are unchanged.
         set_tests_properties(shin-ce-local-service PROPERTIES COST 65)
-        set_tests_properties(shin-ce-local-route PROPERTIES COST 110)
+        set_tests_properties(shin-ce-local-route-lifecycle PROPERTIES COST 80)
+        set_tests_properties(shin-ce-local-route-approvals PROPERTIES COST 40)
         set_tests_properties(shin-ce-local-watch shin-ce-managed-init PROPERTIES COST 65)
         if(SHIN_OBSERVER_MCP)
             set_tests_properties(shin-native-mcp PROPERTIES COST 90)

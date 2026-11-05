@@ -2594,4 +2594,15 @@ class LocalRouteTests(unittest.TestCase):
 
 
 if __name__ == "__main__":
+    if len(sys.argv) == 3 and sys.argv[1] == '--group':
+        group = sys.argv[2]
+        if group not in ('lifecycle', 'approvals'):
+            sys.exit(f'Unknown local route test group: {group}')
+        approval_prefixes = ('test_config_', 'test_marker_', 'test_legacy_marker_', 'test_profile_')
+        names = unittest.defaultTestLoader.getTestCaseNames(LocalRouteTests)
+        selected = [name for name in names if name.startswith(approval_prefixes) == (group == 'approvals')]
+        if not selected:
+            sys.exit(f'Empty local route test group: {group}')
+        result = unittest.TextTestRunner(verbosity=2).run(unittest.TestSuite(LocalRouteTests(name) for name in selected))
+        sys.exit(not result.wasSuccessful())
     unittest.main()

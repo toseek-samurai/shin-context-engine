@@ -109,7 +109,8 @@ void verify(const fs::path& prefix, const Runtime& runtime) {
     }
     auto version = [&](const char* path) {
         auto value = runtime_file(prefix/path,128);
-        if (!value.empty() && value.back() == '\n') value.pop_back();
+        if (value.ends_with("\r\n")) value.resize(value.size() - 2);
+        else if (value.ends_with('\n')) value.pop_back();
         return value;
     };
     require_runtime(version("share/shin-context/VERSION") == runtime.manifest.at("core_version").get<std::string>() &&

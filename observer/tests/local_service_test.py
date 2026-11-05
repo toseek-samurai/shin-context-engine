@@ -173,7 +173,11 @@ class LocalServiceTests(unittest.TestCase):
                 after = json.loads(status.stdout)
                 break
             self.assertEqual(status.returncode, 2, status.stderr)
-            self.assertIn(json.loads(status.stderr)['error']['code'], ('service-unavailable', 'service-disconnected'))
+            error = json.loads(status.stderr)['error']
+            self.assertIn(error['code'], ('service-unavailable', 'service-disconnected', 'service-busy'))
+            if error['code'] == 'service-busy':
+                self.assertIn(error['diagnostic']['reason'], ('connection-backlog', 'connection-capacity'))
+                self.assertFalse(error['diagnostic']['execution_started'])
             time.sleep(0.01)
         else:
             self.fail('service did not become reachable after the reset-client burst')
@@ -189,17 +193,20 @@ class LocalServiceTests(unittest.TestCase):
             occupied = [self.connect() for _ in range(8)]
         finally:
             os.kill(child.pid, signal.SIGCONT)
-        # Retain eight partial frames; they cannot execute or free capacity yet.
-        time.sleep(.05)
+        # Wait for room in the native backlog without replaying submitted requests.
+        # The eight idle clients still hold the normal connection slots.
+        connect_deadline = time.monotonic() + 1
         for index in range(4):
-            response = self.raw('query', query='readLimit', request_id=f'overflow-{index}')
+            response = self.raw('query', query='readLimit', request_id=f'overflow-{index}',
+                                connect_deadline=connect_deadline)
             self.assertFalse(response['ok'], response)
             self.assertEqual(response['request_id'], f'overflow-{index}')
             self.assertEqual(response['error']['code'], 'service-busy')
             self.assertEqual(response['error']['diagnostic']['reason'], 'connection-capacity')
             self.assertFalse(response['error']['diagnostic']['execution_started'])
         # Even a capacity refusal preserves version/shape validation.
-        wrong = self.raw('query', query='readLimit', observer_version='0.0.0')
+        wrong = self.raw('query', query='readLimit', observer_version='0.0.0',
+                         connect_deadline=connect_deadline)
         self.assertEqual(wrong['error']['code'], 'service-version-mismatch')
         for client in occupied:
             client.close()
@@ -253,12 +260,21 @@ class LocalServiceTests(unittest.TestCase):
         self.assertEqual(result.returncode, 2)
         self.assertEqual(json.loads(result.stderr)['error']['code'], 'service-unavailable')
 
-    def connect(self):
-        client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-        self.addCleanup(client.close)
-        client.settimeout(10)
-        client.connect(str(self.endpoint))
-        return client
+    def connect(self, deadline=None):
+        while True:
+            client = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
+            client.settimeout(10)
+            try:
+                client.connect(str(self.endpoint))
+            except OSError as error:
+                client.close()
+                if (deadline is None or time.monotonic() >= deadline or
+                        error.errno not in (errno.EAGAIN, errno.EWOULDBLOCK, errno.ECONNREFUSED)):
+                    raise
+                time.sleep(.01)
+            else:
+                self.addCleanup(client.close)
+                return client
 
     def receive(self, client):
         data = b''
@@ -269,8 +285,8 @@ class LocalServiceTests(unittest.TestCase):
             self.assertLessEqual(len(data), 128 * 1024)
         return json.loads(data)
 
-    def raw(self, command, root=None, **extra):
-        with self.connect() as client:
+    def raw(self, command, root=None, *, connect_deadline=None, **extra):
+        with self.connect(connect_deadline) as client:
             client.sendall((json.dumps(self.frame(command, root, **extra)) + '\n').encode())
             return self.receive(client)
 

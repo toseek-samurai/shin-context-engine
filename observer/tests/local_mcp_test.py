@@ -324,7 +324,7 @@ class McpTests(unittest.TestCase):
         child.stdin.flush()
         return child
 
-    def runtime_kit(self, prefix, version=None, marker='original'):
+    def runtime_kit(self, prefix, version=None, marker='original', version_newline='\n'):
         """A disposable code cohort, never an installed consumer kit."""
         (prefix/'bin').mkdir(parents=True)
         shutil.copy2(MCP, prefix/'bin/shin-mcp')
@@ -337,7 +337,7 @@ class McpTests(unittest.TestCase):
                                  ('shin-observer',version or self.identity['version'])]:
             folder=prefix/'share'/component
             folder.mkdir(parents=True)
-            (folder/'VERSION').write_text(value+'\n')
+            (folder/'VERSION').write_bytes((value + version_newline).encode('ascii'))
         return self.runtime_manifest(prefix,version)
 
     def runtime_manifest(self, prefix, version=None, protocol='shin.mcp-service.v1'):
@@ -404,7 +404,7 @@ class McpTests(unittest.TestCase):
 
     def test_bridge_survives_real_service_and_payload_replacement(self):
         prefix=self.base/'kit'
-        first=self.runtime_kit(prefix)
+        first=self.runtime_kit(prefix, version_newline='\r\n')
         serving=self.start(tool=prefix/'bin/shin-ce')
         child=self.adapter(executable=prefix/'bin/shin-mcp')
         initial=self.tool(child,'shin_query',{'query':'readLimit','diagnostic':True})

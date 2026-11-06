@@ -55,9 +55,11 @@ with tempfile.TemporaryDirectory(prefix='shin-mcp-up-', dir='/tmp') as directory
         while time.monotonic()<end:
             if b'\n' not in child.pending:
                 if not select.select([child.stdout],[],[],max(0,end-time.monotonic()))[0]:break
-                block=os.read(child.stdout.fileno(),131072)
-                assert block,child.stderr.read().decode()
+                # Force a short first read so this test always exercises framing.
+                block=os.read(child.stdout.fileno(), 1 if not child.pending else 131072)
+                assert block, 'MCP stdout ended before the expected response'
                 child.pending+=block
+                continue  # A pipe read can end before the newline.
             line,child.pending=child.pending.split(b'\n',1)
             value=json.loads(line)
             if value.get('id')==child.sequence:return value

@@ -120,17 +120,30 @@ void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
 void image_digest_is_fenced(const fs::path& base) {
     for (const bool retain : {false, true}) {
         const auto binary = base / (retain ? "cached-image-digest-fixture" : "one-shot-image-digest-fixture");
+        const auto image_digest = [&] {
+            // A delayed native event for a fixture write may land during the
+            // first hash read. The fence must refuse until the image is stable.
+            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+            for (;;) {
+                try { return qualification_image_digest(binary, retain); }
+                catch (const Error& error) {
+                    if (!retain || error.code != "qualification-engine-changed" ||
+                        std::chrono::steady_clock::now() >= deadline) throw;
+                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
+                }
+            }
+        };
         write(binary, "first-image");
-        const auto original = qualification_image_digest(binary, retain);
+        const auto original = image_digest();
         check(original == digest("first-image"), "executable digest did not match its content");
         const auto stamp = fs::last_write_time(binary);
-        check(qualification_image_digest(binary, retain) == original, "unchanged executable digest drifted");
+        check(image_digest() == original, "unchanged executable digest drifted");
         write(binary, "other-image"); fs::last_write_time(binary, stamp);
-        check(qualification_image_digest(binary, retain) == digest("other-image"), "restored-mtime image edit reused its hash");
+        check(image_digest() == digest("other-image"), "restored-mtime image edit reused its hash");
         const auto replacement = base / "replacement-image";
         write(replacement, "first-image"); fs::last_write_time(replacement, stamp);
         fs::remove(binary); fs::rename(replacement, binary);
-        check(qualification_image_digest(binary, retain) == original, "named image replacement retained an old digest");
+        check(image_digest() == original, "named image replacement retained an old digest");
     }
 }
 void canonical_authority(const fs::path& base, const fs::path& profiles) {

@@ -5,6 +5,7 @@
 #include "snapshot_verification.h"
 #include "source_read.h"
 #include <array>
+#include <iterator>
 
 namespace shin::context {
 
@@ -261,9 +262,10 @@ static std::string typed_references_jsonl(const std::vector<TypedReferenceRow>& 
     return out.str();
 }
 
-static std::string facts_jsonl(const std::vector<FactRow>& rows) {
+static std::string facts_jsonl(std::vector<FactRow> rows) {
     std::ostringstream out;
-    for (const FactRow& row : rows) {
+    for (FactRow& entry : rows) {
+        const auto row = std::move(entry); // Release the source strings after writing this row.
         out << "{"
             << "\"id\":" << json_string(row.id)
             << ",\"record_type\":" << json_string(row.record_type)
@@ -286,7 +288,8 @@ static std::string facts_jsonl(const std::vector<FactRow>& rows) {
         out << ",\"topics\":" << json_string_array(row.topics)
             << "}\n";
     }
-    return out.str();
+    std::vector<FactRow>{}.swap(rows);
+    return std::move(out).str();
 }
 
 static std::string sections_jsonl(const std::vector<SectionRow>& rows) {
@@ -386,14 +389,14 @@ static void add_index_terms_from_text(IndexTermSet& terms,
     terms.insert(it->second.begin(), it->second.end());
 }
 
-static void add_terms_postings(TermPostingMap& postings,
+static void add_terms_postings(GeneratedPostingMap& postings,
                         const IndexTermSet& terms,
-                        std::vector<int> TermPosting::*slot,
+                        PostingKind kind,
                         int row_index) {
     for (const std::string& term : terms) {
         auto [posting, inserted] = postings.try_emplace(term);
         (void)inserted;
-        (posting->second.*slot).push_back(row_index);
+        posting->second.push_back({row_index, kind});
     }
 }
 
@@ -431,31 +434,23 @@ static std::size_t estimate_term_posting_capacity(const GeneratedRows& rows) {
 }
 
 struct TermPostingWorkerState {
-    TermPostingMap postings;
+    GeneratedPostingMap postings;
     IndexTermExtractionCache cache;
 };
 
 struct TermPostingBuildResult {
-    TermPostingMap postings;
+    GeneratedPostingMap postings;
     int worker_count = 1;
 };
 
-static void append_term_posting(TermPosting& target, const TermPosting& source) {
-    target.sections.insert(target.sections.end(), source.sections.begin(), source.sections.end());
-    target.facts.insert(target.facts.end(), source.facts.begin(), source.facts.end());
-    target.decisions.insert(target.decisions.end(), source.decisions.begin(), source.decisions.end());
-    target.contracts.insert(target.contracts.end(), source.contracts.begin(), source.contracts.end());
-    target.runbooks.insert(target.runbooks.end(), source.runbooks.begin(), source.runbooks.end());
-}
-
-static void merge_term_posting_map(TermPostingMap& target, TermPostingMap& source) {
+static void merge_term_posting_map(GeneratedPostingMap& target, GeneratedPostingMap& source) {
     for (auto it = source.begin(); it != source.end();) {
         const auto existing = target.find(it->first);
         if (existing == target.end()) {
             ++it;
             continue;
         }
-        append_term_posting(existing->second, it->second);
+        existing->second.insert(existing->second.end(), it->second.begin(), it->second.end());
         it = source.erase(it);
     }
     target.merge(source);
@@ -482,23 +477,23 @@ static TermPostingBuildResult build_term_postings(const GeneratedRows& rows, Bui
         TermPostingWorkerState& state = worker_states[worker];
         if (index < sections_end) {
             add_terms_postings(state.postings, section_index_terms(rows.sections[index], state.cache),
-                               &TermPosting::sections, static_cast<int>(index));
+                               PostingKind::section, static_cast<int>(index));
         } else if (index < facts_end) {
             const std::size_t row = index - sections_end;
-            add_terms_postings(state.postings, fact_index_terms(rows.facts[row], state.cache), &TermPosting::facts,
-                               static_cast<int>(row));
+            add_terms_postings(state.postings, fact_index_terms(rows.facts[row], state.cache),
+                               PostingKind::fact, static_cast<int>(row));
         } else if (index < decisions_end) {
             const std::size_t row = index - facts_end;
             add_terms_postings(state.postings, decision_index_terms(rows.decisions[row], state.cache),
-                               &TermPosting::decisions, static_cast<int>(row));
+                               PostingKind::decision, static_cast<int>(row));
         } else if (index < contracts_end) {
             const std::size_t row = index - decisions_end;
             add_terms_postings(state.postings, typed_reference_index_terms(rows.contracts[row], state.cache),
-                               &TermPosting::contracts, static_cast<int>(row));
+                               PostingKind::contract, static_cast<int>(row));
         } else {
             const std::size_t row = index - contracts_end;
             add_terms_postings(state.postings, typed_reference_index_terms(rows.runbooks[row], state.cache),
-                               &TermPosting::runbooks, static_cast<int>(row));
+                               PostingKind::runbook, static_cast<int>(row));
         }
     });
 
@@ -506,7 +501,7 @@ static TermPostingBuildResult build_term_postings(const GeneratedRows& rows, Bui
     for (auto& state : worker_states) {
         decltype(state.cache.text_terms){}.swap(state.cache.text_terms);
     }
-    TermPostingMap postings = std::move(worker_states.front().postings);
+    GeneratedPostingMap postings = std::move(worker_states.front().postings);
     if (workers > 1) {
         postings.reserve(estimated_capacity);
         for (std::size_t worker = 1; worker < worker_states.size(); ++worker) {
@@ -730,10 +725,21 @@ static void append_generated_doc_rows(const Profile& profile,
     }
 }
 
-static void append_generated_source_fact_rows(const Profile& profile, const fs::path& root, GeneratedRows& rows) {
+static void append_generated_source_fact_rows(const Profile& profile, const fs::path& root,
+                                              GeneratedRows& rows, bool retain_source_rows) {
     rows.source_facts = build_source_fact_rows(profile, root);
-    rows.facts.insert(rows.facts.end(), rows.source_facts.rows.begin(), rows.source_facts.rows.end());
-    rows.links.insert(rows.links.end(), rows.source_facts.relations.begin(), rows.source_facts.relations.end());
+    const auto append = [retain_source_rows](auto& combined, auto& source) {
+        if (retain_source_rows) {
+            combined.insert(combined.end(), source.begin(), source.end());
+        } else if (combined.empty()) {
+            combined = std::move(source);
+        } else {
+            auto owned = std::move(source);
+            combined.insert(combined.end(), std::make_move_iterator(owned.begin()), std::make_move_iterator(owned.end()));
+        }
+    };
+    append(rows.facts, rows.source_facts.rows);
+    append(rows.links, rows.source_facts.relations);
 }
 
 static int count_broken_local_links(const std::vector<LinkRow>& links) {
@@ -973,7 +979,8 @@ static void sort_generated_rows(GeneratedRows& rows) {
     });
 }
 
-static GeneratedRows build_generated_rows(const Profile& profile, const fs::path& root, BuildPhaseTimings* timings = nullptr) {
+static GeneratedRows build_generated_rows(const Profile& profile, const fs::path& root,
+                                          bool retain_source_rows, BuildPhaseTimings* timings = nullptr) {
     GeneratedRows rows;
     auto phase_start = SteadyClock::now();
     rows.docs = read_sources(profile, root);
@@ -1005,7 +1012,7 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
     }
 
     phase_start = SteadyClock::now();
-    append_generated_source_fact_rows(profile, root, rows);
+    append_generated_source_fact_rows(profile, root, rows, retain_source_rows);
     if (timings != nullptr) {
         timings->source_facts_ms += elapsed_ms_since(phase_start);
         timings->peak_rss_bytes["source_facts"] = process_peak_rss_bytes();
@@ -1041,7 +1048,7 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
 }
 
 SourceScanCorpus build_source_scan_corpus(const Profile& profile, const fs::path& root) {
-    GeneratedRows rows = build_generated_rows(profile, root);
+    GeneratedRows rows = build_generated_rows(profile, root, /*retain_source_rows=*/true);
     SourceScanCorpus corpus;
     corpus.documents = std::move(rows.docs);
     corpus.source_facts = std::move(rows.source_facts);
@@ -1056,7 +1063,7 @@ SourceScanCorpus build_source_scan_corpus(const Profile& profile, const fs::path
 }
 
 static GeneratedOutput render_generated_output(const Profile& profile,
-                                        const GeneratedRows& rows,
+                                        GeneratedRows& rows,
                                         BuildPhaseTimings* timings) {
     GeneratedOutput generated;
     generated.document_count = static_cast<int>(rows.docs.size());
@@ -1072,11 +1079,11 @@ static GeneratedOutput render_generated_output(const Profile& profile,
         phase_start = SteadyClock::now();
         RenderedTermIndex rendered;
         {
-            rendered.postings_jsonl = encode_compact_terms(term_posting_build.postings,
+            rendered.term_count = static_cast<int>(term_posting_build.postings.size());
+            rendered.postings_jsonl = encode_generated_terms(std::move(term_posting_build.postings),
                 {static_cast<std::uint32_t>(rows.sections.size()), static_cast<std::uint32_t>(rows.facts.size()),
                  static_cast<std::uint32_t>(rows.decisions.size()), static_cast<std::uint32_t>(rows.contracts.size()),
                  static_cast<std::uint32_t>(rows.runbooks.size())});
-            rendered.term_count = static_cast<int>(term_posting_build.postings.size());
         }
         if (timings != nullptr) {
             timings->term_render_ms += elapsed_ms_since(phase_start);
@@ -1106,7 +1113,7 @@ static GeneratedOutput render_generated_output(const Profile& profile,
     generated.files[(kGeneratedDir / "decisions.jsonl").generic_string()] = decisions_jsonl(rows.decisions);
     generated.files[(kGeneratedDir / "contracts.jsonl").generic_string()] = typed_references_jsonl(rows.contracts);
     generated.files[(kGeneratedDir / "runbooks.jsonl").generic_string()] = typed_references_jsonl(rows.runbooks);
-    generated.files[(kGeneratedDir / "facts.jsonl").generic_string()] = facts_jsonl(rows.facts);
+    generated.files[(kGeneratedDir / "facts.jsonl").generic_string()] = facts_jsonl(std::move(rows.facts));
     if (timings != nullptr) {
         timings->json_render_ms += elapsed_ms_since(phase_start);
     }
@@ -1145,11 +1152,7 @@ std::uint64_t generation_execution_count() { return generation_executions; }
 GeneratedOutput generate_outputs(const Profile& profile, const fs::path& root, BuildPhaseTimings* timings) {
     ++generation_executions;
     const auto total_start = SteadyClock::now();
-    auto rows = build_generated_rows(profile, root, timings);
-    // Aggregated rows already own these payloads. Rendering needs only the
-    // source inventory/counters; source-scan callers keep their original copies.
-    std::vector<FactRow>{}.swap(rows.source_facts.rows);
-    std::vector<LinkRow>{}.swap(rows.source_facts.relations);
+    auto rows = build_generated_rows(profile, root, /*retain_source_rows=*/false, timings);
     rows.facts_by_doc.clear();
     GeneratedOutput output = render_generated_output(profile, rows, timings);
     if (timings != nullptr) {

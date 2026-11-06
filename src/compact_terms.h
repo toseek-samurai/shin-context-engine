@@ -8,6 +8,15 @@ using TermRowCounts = std::array<std::uint32_t, 5>;
 // Portable little-endian v1: header, N+1 record offsets, sorted term records.
 // Each record owns its only key and five count + delta-varint posting lists.
 std::string encode_compact_terms(const TermPostingMap& postings, const TermRowCounts& counts);
+
+// During generation, keep one vector per term with row kinds in wire order.
+enum class PostingKind : unsigned char { section, fact, decision, contract, runbook };
+struct GeneratedPostingRow {
+    int index;
+    PostingKind kind;
+};
+using GeneratedPostingMap = std::unordered_map<std::string, std::vector<GeneratedPostingRow>>;
+std::string encode_generated_terms(GeneratedPostingMap&& postings, const TermRowCounts& counts);
 TermRowCounts term_row_counts(const Json& manifest);
 std::uint32_t compact_term_count(const Json& manifest);
 

@@ -1,5 +1,7 @@
 #include "compact_terms.h"
 #include "context_internal.h"
+#include <span>
+#include <type_traits>
 
 namespace shin::context {
 namespace {
@@ -25,10 +27,8 @@ std::size_t decimal_bytes(std::uint32_t value) {
     while (value >= 10) { value /= 10; ++bytes; }
     return bytes;
 }
-std::size_t logical_record_base(const std::string& term) {
-    return json_string(term).size() + std::string_view(
-        "{\"term\":,\"sections\":[],\"facts\":[],\"decisions\":[],\"contracts\":[],\"runbooks\":[]}\n").size();
-}
+constexpr std::size_t logical_record_overhead = std::string_view(
+    "{\"term\":,\"sections\":[],\"facts\":[],\"decisions\":[],\"contracts\":[],\"runbooks\":[]}\n").size();
 // Sorted unique IDs have at least the decimal size of [0, ..., count-1].
 // Check before allocation, retaining the legacy 64 MiB logical row budget.
 std::uint64_t minimum_list_bytes(std::uint32_t count) {
@@ -59,25 +59,36 @@ std::uint32_t take_varint(std::string_view& bytes) {
     }
     corrupt();
 }
-std::string take_term(std::string_view& bytes) {
+std::string take_term(std::string_view& bytes, std::size_t* encoded_size = nullptr) {
     const auto count = take_varint(bytes);
     if (!count || count > 128 || count > bytes.size()) corrupt();
     std::string term(bytes.substr(0, count)); bytes.remove_prefix(count);
     // The lexical producer does not emit control characters.
-    if (std::any_of(term.begin(), term.end(), [](unsigned char c) { return c < 32 || c == 127; }) ||
-        !Json::accept(json_string(term))) corrupt();
+    bool needs_escape_check = false;
+    for (const unsigned char c : term) {
+        if (c < 32 || c == 127) corrupt();
+        needs_escape_check |= c >= 128 || c == '"' || c == '\\';
+    }
+    auto size = term.size() + 2; // The two JSON quotes suffice for plain ASCII.
+    if (needs_escape_check) {
+        const auto encoded = json_string(term);
+        if (!Json::accept(encoded)) corrupt();
+        size = encoded.size();
+    }
+    if (encoded_size) *encoded_size = size;
     return term;
 }
-TermPosting decode_posting(std::string_view view, const TermRowCounts& counts, std::string* term = nullptr) {
-    auto key = take_term(view);
-    auto logical_bytes = logical_record_base(key);
-    TermPosting result;
+std::string decode_posting(std::string_view view, const TermRowCounts& counts, TermPosting* result) {
+    std::size_t encoded_size = 0;
+    auto key = take_term(view, &encoded_size);
+    auto logical_bytes = encoded_size + logical_record_overhead;
     for (std::size_t kind = 0; kind < members.size(); ++kind) {
         const auto count = take_varint(view);
         if (count > counts[kind] || count > view.size() ||
             minimum_list_bytes(count) > maximum_record_bytes - logical_bytes) corrupt();
         if (count) logical_bytes += count - 1;
-        auto& rows = result.*members[kind]; rows.reserve(count);
+        auto* rows = result ? &(result->*members[kind]) : nullptr;
+        if (rows) rows->reserve(count);
         std::int64_t previous = -1;
         for (std::uint32_t row = 0; row < count; ++row) {
             const auto delta = take_varint(view);
@@ -85,12 +96,11 @@ TermPosting decode_posting(std::string_view view, const TermRowCounts& counts, s
             previous += delta;
             logical_bytes += decimal_bytes(static_cast<std::uint32_t>(previous));
             if (logical_bytes > maximum_record_bytes) corrupt();
-            rows.push_back(static_cast<int>(previous));
+            if (rows) rows->push_back(static_cast<int>(previous));
         }
     }
     if (!view.empty()) corrupt();
-    if (term) *term = std::move(key);
-    return result;
+    return key;
 }
 } // namespace
 
@@ -118,11 +128,30 @@ TermRowCounts term_row_counts(const Json& manifest) {
     return counts;
 }
 
-std::string encode_compact_terms(const TermPostingMap& postings, const TermRowCounts& counts) {
+static std::span<const int> posting_group(const TermPosting& posting, std::size_t kind, std::size_t&) {
+    return posting.*members[kind];
+}
+
+static std::span<const GeneratedPostingRow> posting_group(const std::vector<GeneratedPostingRow>& posting,
+                                                          std::size_t kind, std::size_t& next) {
+    const auto remaining = std::span(posting).subspan(next);
+    const auto end = std::find_if_not(remaining.begin(), remaining.end(), [kind](const auto& row) {
+        return row.kind == static_cast<PostingKind>(kind);
+    });
+    const auto count = static_cast<std::size_t>(end - remaining.begin());
+    next += count;
+    return remaining.first(count);
+}
+
+static int posting_index(int row) { return row; }
+static int posting_index(const GeneratedPostingRow& row) { return row.index; }
+
+template<class Postings>
+static std::string encode_postings(Postings& postings, const TermRowCounts& counts) {
     if (postings.size() > static_cast<std::size_t>(std::numeric_limits<int>::max())) corrupt();
-    std::vector<const TermPostingMap::value_type*> ordered;
+    std::vector<decltype(postings.begin())> ordered;
     ordered.reserve(postings.size());
-    for (const auto& entry : postings) ordered.push_back(&entry);
+    for (auto entry = postings.begin(); entry != postings.end(); ++entry) ordered.push_back(entry);
     std::sort(ordered.begin(), ordered.end(), [](auto a, auto b) { return a->first < b->first; });
     std::string out(magic);
     fixed(out, postings.size(), 4);
@@ -138,20 +167,22 @@ std::string encode_compact_terms(const TermPostingMap& postings, const TermRowCo
             out[table_start + id * 8 + byte] = static_cast<char>((static_cast<std::uint64_t>(offset) >> (8U * byte)) & 255U);
     };
     std::size_t id = 0;
-    for (const auto* entry : ordered) {
+    for (const auto entry : ordered) {
         set_offset(id++);
         const auto start = out.size();
         if (entry->first.empty() || entry->first.size() > 128) corrupt();
         varint(out, static_cast<std::uint32_t>(entry->first.size()));
         out += entry->first;
-        auto logical_bytes = logical_record_base(entry->first);
+        auto logical_bytes = json_string(entry->first).size() + logical_record_overhead;
+        std::size_t next_row = 0;
         for (std::size_t kind = 0; kind < members.size(); ++kind) {
-            const auto& rows = entry->second.*members[kind];
+            const auto rows = posting_group(entry->second, kind, next_row);
             if (rows.size() > counts[kind]) corrupt();
             varint(out, static_cast<std::uint32_t>(rows.size()));
             if (!rows.empty()) logical_bytes += rows.size() - 1;
             int previous = -1;
-            for (const int row : rows) {
+            for (const auto& item : rows) {
+                const int row = posting_index(item);
                 if (row <= previous || row < 0 || static_cast<std::uint32_t>(row) >= counts[kind]) corrupt();
                 varint(out, static_cast<std::uint32_t>(static_cast<std::int64_t>(row) - previous));
                 previous = row;
@@ -160,9 +191,21 @@ std::string encode_compact_terms(const TermPostingMap& postings, const TermRowCo
             }
         }
         if (out.size() - start > maximum_record_bytes) corrupt();
+        if constexpr (std::is_same_v<Postings, GeneratedPostingMap>) {
+            if (next_row != entry->second.size()) corrupt();
+            postings.erase(entry); // Erasing this term preserves the other iterators.
+        }
     }
     set_offset(id);
     return out;
+}
+
+std::string encode_compact_terms(const TermPostingMap& postings, const TermRowCounts& counts) {
+    return encode_postings(postings, counts);
+}
+
+std::string encode_generated_terms(GeneratedPostingMap&& postings, const TermRowCounts& counts) {
+    return encode_postings(postings, counts);
 }
 
 std::string CompactTerms::read(std::uint64_t offset, std::size_t bytes) {
@@ -206,7 +249,9 @@ TermPosting CompactTerms::posting(std::uint32_t id) {
     const auto [start, end] = range(id);
     const auto record = read(start, static_cast<std::size_t>(end - start));
     std::string_view view(record);
-    return decode_posting(view, counts_);
+    TermPosting result;
+    (void)decode_posting(view, counts_, &result);
+    return result;
 }
 std::uint32_t CompactTerms::lower_bound(std::string_view key) {
     std::uint32_t first = 0, end = count_;
@@ -239,12 +284,12 @@ void CompactTerms::validate_all() {
         const auto start = fixed_value(pair.substr(0, 8));
         const auto end = fixed_value(pair.substr(8, 8));
         if (start < data_start_ || end <= start || end > bytes_ || end - start > maximum_record_bytes) corrupt();
-        std::string key;
         const auto length = static_cast<std::size_t>(end - start);
         // Exceptional large postings retain the original per-record budget.
         // They never make either read-ahead window grow with the whole corpus.
-        if (length > block_bytes) (void)decode_posting(read(start, length), counts_, &key);
-        else (void)decode_posting(window(records, start, length, bytes_), counts_, &key);
+        auto key = length > block_bytes
+            ? decode_posting(read(start, length), counts_, nullptr)
+            : decode_posting(window(records, start, length, bytes_), counts_, nullptr);
         if (id && key <= previous) corrupt();
         previous = std::move(key);
     }

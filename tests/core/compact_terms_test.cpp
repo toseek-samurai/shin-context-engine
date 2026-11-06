@@ -72,6 +72,15 @@ void codec() {
                        {"alphabet", {{2}, {}, {0}, {}, {}}}, {"βeta", {{12}, {}, {}, {}, {}}}};
     TermRowCounts counts{5000, 300, 1, 4, 1};
     const auto bytes = encode_compact_terms(map, counts);
+    using Kind = PostingKind;
+    GeneratedPostingMap generated{
+        {"alpha", {{0, Kind::section}, {1, Kind::section}, {128, Kind::section}, {4000, Kind::section},
+                   {0, Kind::fact}, {299, Kind::fact}, {3, Kind::contract}, {0, Kind::runbook}}},
+        {"alphabet", {{2, Kind::section}, {0, Kind::decision}}},
+        {"βeta", {{12, Kind::section}}},
+    };
+    expect(encode_generated_terms(std::move(generated), counts) == bytes && generated.empty(),
+           "consuming encoder changed the lexical bytes or retained postings");
     std::istringstream input(bytes); CompactTerms terms(input, counts); terms.validate_all();
     expect(terms.size() == map.size(), "wrong dictionary count");
     for (const auto& [key, posting] : map) {

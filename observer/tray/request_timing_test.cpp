@@ -6,6 +6,16 @@
 int main() try {
     using nlohmann::json;
     using shin::ui::request_timing;
+    json mixed{{"request_metrics", {{"recent", json::array({
+        {{"project_id", "chosen"}, {"method", "query"}},
+        {{"project_id", "other"}, {"method", "query"}}, {{"method", "query"}}})}, {"recent_truncated", true}}},
+        {"history", {{"status", "ready"}, {"request_cohorts", json::array({json::array({"chosen"}), json::array({"other"})})}}}};
+    const auto scoped = shin::ui::project_request_telemetry(mixed, "chosen");
+    assert(scoped["request_metrics"]["recent"].size() == 1);
+    assert(scoped["history"]["request_cohorts"].size() == 1);
+    assert(scoped["request_metrics"]["recent_truncated"] == true);
+    assert(shin::ui::project_request_telemetry(mixed, "")["request_metrics"]["recent"].empty());
+    assert(shin::ui::project_request_telemetry(nullptr, "chosen").empty());
     assert(shin::ui::service_activity_lines(json::object()).empty());
     json activity{{"activity", {{"schema_version","shin.service-activity.v1"},
         {"calls",{{"query",2},{"inspect",1},{"read",3},{"status",4}}},

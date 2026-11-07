@@ -204,7 +204,7 @@ int main(int argc, char** argv) {
             unsigned rendered = 0;
             for (const auto maximum_size : {ImVec2{520, 680}, ImVec2{620, 810}, ImVec2{400, 560}, ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 if (fit_test && maximum_size.x != 520) continue;
-                for (const auto* scenario : {"first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
+                for (const auto* scenario : {"project-analytics", "project-analytics-empty", "project-analytics-offline", "first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "overview-warning", "overview-warning-short", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
@@ -225,7 +225,7 @@ int main(int argc, char** argv) {
                     timing_open = kind.starts_with("timing-");
                     dashboard_view = kind.starts_with("overview") ? 0 : timing_open || kind.starts_with("models") || kind.starts_with("sessions") ? 2 : kind == "settings" ? 3 : 1;
                     activity_view = kind.starts_with("models") ? 1 : kind.starts_with("sessions") ? 2 : 0;
-                    diagnostic_details_open = kind == "search-warning-details" || kind == "search-warning-invalid"; diagnostic_focus = 0;
+                    diagnostic_details_open = kind == "search-warning-details" || kind == "search-warning-invalid"; diagnostic_focus = -1;
                     if (kind.starts_with("search-warning") || kind.starts_with("overview-warning")) project["quality_warning"] = {
                         {"state", "degraded"}, {"diagnostic", {{"schema_version", "shin.validation-diagnostic.v1"}, {"gates", Json::array({
                             {{"id", "eval"}, {"cases", Json::array({{{"id", "fixture-discovery"},
@@ -407,6 +407,20 @@ int main(int argc, char** argv) {
                         if (kind == "sessions-details") {
                             session_row_ids[0] = std::string(64,'a'); activate(91);
                         }
+                    }
+                    if (kind.starts_with("project-analytics")) {
+                        auto& telemetry = view.data["telemetry"];
+                        view.connected = kind != "project-analytics-offline";
+                        auto& recent = telemetry["request_metrics"]["recent"];
+                        recent = Json::array();
+                        if (kind != "project-analytics-empty") {
+                            for (int i = 0; i < 32; ++i)
+                                recent.push_back({{"project_id", "fixture"}, {"method", i % 5 == 0 ? "read" : i % 7 == 0 ? "inspect" : "query"},
+                                    {"elapsed_ms", i * 2000}, {"duration_ms", 12 + i % 9},
+                                    {"service_duration_ms", 40 + (i % 9) * 7 + (i == 12 ? 240 : 0)}, {"outcome", "response-ready"}});
+                            telemetry["history"]["request_cohorts"] = Json::array({
+                                Json::array({"fixture", "query", "unclassified", "warm", 1240, 2, 1240, 72, 320, 18, 64, 2, 5, 8, 3, 2, 1240, 1240, 1240, 1240, 1240, 1240})});
+                        } else telemetry["history"]["request_cohorts"] = Json::array();
                     }
                     selected = kind.starts_with("projects") || kind == "project-states" ? "" : "fixture";
                     project_page = kind == "projects-last-page" ? 100 : 0;

@@ -38,6 +38,33 @@ inline std::optional<std::uint64_t> timing_count(const nlohmann::json& value) {
     if (!std::isfinite(number) || number < 0 || number > 20000 || std::floor(number) != number) return {};
     return static_cast<std::uint64_t>(number);
 }
+// Keep the existing timing contract, scoped to one exact project identity.
+inline nlohmann::json project_request_telemetry(const nlohmann::json& telemetry, std::string_view project) {
+    using Json = nlohmann::json;
+    Json result = Json::object();
+    if (!telemetry.is_object()) return result;
+    for (const bool retained : {false, true}) {
+        const char* part_name = retained ? "history" : "request_metrics";
+        const char* rows_name = retained ? "request_cohorts" : "recent";
+        const auto found = telemetry.find(part_name);
+        if (found == telemetry.end() || !found->is_object()) continue;
+        const auto& part = *found;
+        const auto entries = part.find(rows_name);
+        if (entries == part.end() || !entries->is_array() || entries->size() > (retained ? 48 : 64)) continue;
+        const auto& rows = *entries;
+        Json filtered{{rows_name, Json::array()}};
+        for (const auto* key : {"status", "request_cohorts_truncated", "recent_truncated"})
+            if (part.contains(key)) filtered[key] = part.at(key);
+        for (const auto& row : rows) {
+            const auto id = retained ? (row.is_array() && !row.empty() ? row[0] : Json()) :
+                (row.is_object() ? row.value("project_id", Json()) : Json());
+            if (!project.empty() && id.is_string() && id.get_ref<const std::string&>() == project)
+                filtered[rows_name].push_back(row);
+        }
+        result[part_name] = std::move(filtered);
+    }
+    return result;
+}
 inline RequestTiming request_timing(const nlohmann::json& telemetry, bool retained, int filter) {
     using Json = nlohmann::json;
     RequestTiming result;

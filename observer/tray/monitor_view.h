@@ -523,7 +523,7 @@ Clock::time_point diagnostic_copied{};
 void select_project(const std::string& id) {
     selected = selected == id ? "" : id;
     diagnostic_history_first = false;
-    diagnostic_details_open = false; diagnostic_focus = 0;
+    diagnostic_details_open = false; diagnostic_focus = -1;
     diagnostic_copied = {};
     profile_review_open = false;
     project_tools_open = false;
@@ -1275,6 +1275,105 @@ void render_profile_review(const ViewState& view, const std::string& current_roo
     profile_review_button(shin::ui::tr("Accept changes"), 71, can_accept, width);
 }
 
+void render_project_analytics(const ViewState& view, const Json& project, const Json& telemetry) {
+    const auto scoped = shin::ui::project_request_telemetry(telemetry, project.at("id").get<std::string>());
+    const auto history = scoped.find("history");
+    const bool retained = history != scoped.end() && history->value("status", "") == "ready";
+    const auto summary = shin::ui::request_timing(scoped, retained, 0);
+    const bool known = summary.available && !summary.invalid && (summary.requests || !summary.truncated);
+    heading(shin::ui::tr("Project analytics"));
+    ImGui::PushFont(nullptr, 13);
+    ImGui::TextColored(muted, "%s", shin::ui::tr(retained ? "Searches · retained history" : "Searches · this run"));
+    if (!view.connected) ImGui::TextColored(amber, "%s", shin::ui::tr("No fresh service response"));
+    if (summary.truncated || summary.invalid) ImGui::TextWrapped("%s", shin::ui::tr("Only part of the request history is available."));
+    ImGui::PopFont();
+    if (ImGui::BeginTable("project-metrics", 3, ImGuiTableFlags_SizingStretchSame)) {
+        ImGui::TableNextColumn(); metric(shin::ui::tr("Searches"), known ? std::to_string(summary.requests) : "—", ink, 20);
+        ImGui::TableNextColumn(); metric(shin::ui::tr("Search errors"), known ? std::to_string(summary.errors) : "—", summary.errors ? amber : ink, 20);
+        ImGui::TableNextColumn(); metric(shin::ui::tr("Mean response"), summary.service.value() ? number(*summary.service.value(), shin::ui::tr("ms")) : "—", ink, 20);
+        ImGui::EndTable();
+    }
+    ImGui::Spacing();
+    begin_surface("project-search-chart");
+    heading(shin::ui::tr("Recent search response time"));
+    const auto recent = scoped.value("request_metrics", Json::object()).value("recent", Json::array());
+    const auto origin = ImGui::GetCursorScreenPos();
+    const float width = ImGui::GetContentRegionAvail().x, height = 78;
+    auto* draw = ImGui::GetWindowDrawList();
+    double maximum = 1, end = 0, first = 0;
+    std::size_t observations = 0;
+    for (const auto& row : recent) {
+        if (row.value("method", "") != "query" || !row.value("elapsed_ms", Json()).is_number()) continue;
+        shin::ui::TimingMean sample; sample.add(row.value("service_duration_ms", Json()));
+        if (!sample.value()) continue;
+        const auto at = row.at("elapsed_ms").get<double>();
+        if (!observations++) first = at;
+        end = at; maximum = std::max(maximum, *sample.value() * 1.15);
+    }
+    for (int line = 0; line < 3; ++line)
+        draw->AddLineH(origin.x, origin.x + width, origin.y + line * height / 2, ImGui::GetColorU32(rule));
+    ImVec2 previous{};
+    double previous_at = 0;
+    bool connected_point = false;
+    const double span = std::max(60000.0, end - first);
+    for (const auto& row : recent) {
+        if (row.value("method", "") != "query") continue;
+        shin::ui::TimingMean sample; sample.add(row.value("service_duration_ms", Json()));
+        if (!sample.value() || !row.value("elapsed_ms", Json()).is_number()) { connected_point = false; continue; }
+        const double at = row.at("elapsed_ms").get<double>();
+        const ImVec2 point{origin.x + 2 + static_cast<float>((at - end + span) / span) * std::max(1.0f, width - 4),
+            origin.y + height - static_cast<float>(*sample.value() / maximum) * (height - 16)};
+        const auto color = ImGui::GetColorU32(view.connected ? blue : muted);
+        if (connected_point && at >= previous_at && at - previous_at <= 60000) {
+            draw->AddQuadFilled(previous, point, {point.x, origin.y + height}, {previous.x, origin.y + height}, alpha_color(blue, .08f));
+            draw->AddLine(previous, point, color, 1.8f);
+        }
+        draw->AddCircleFilled(point, 2.5f, row.value("outcome", "") == "response-error" ? ImGui::GetColorU32(amber) : color);
+        previous = point; previous_at = at; connected_point = true;
+    }
+    if (observations) draw->AddText(origin, ImGui::GetColorU32(muted), number(maximum, shin::ui::tr("ms")).c_str());
+    else draw->AddText({origin.x + 4, origin.y + 30}, ImGui::GetColorU32(muted), shin::ui::tr("No search measurements yet"));
+    ImGui::Dummy({width, height + 4});
+    ImGui::PushFont(nullptr, 13);
+    if (observations) ImGui::TextColored(muted, shin::ui::tr("%.0f s · samples: %zu"), (end - first) / 1000, observations);
+    ImGui::TextWrapped("%s", shin::ui::tr("Recent requests from this run. Gaps have no measurements."));
+    if (shin::ui::request_timing(scoped, false, 0).truncated)
+        ImGui::TextWrapped("%s", shin::ui::tr("Only part of the request history is available."));
+    ImGui::PopFont();
+    end_surface();
+    ImGui::Spacing();
+    heading(shin::ui::tr("Request mix · recent calls"));
+    std::array<unsigned, 4> calls{};
+    for (const auto& row : recent) {
+        const auto method = row.value("method", "");
+        ++calls[method == "query" ? 0 : method == "inspect" ? 1 : method == "read" ? 2 : 3];
+    }
+    const std::array colors{blue, sand, green, muted};
+    const std::array labels{shin::ui::tr("Search"), shin::ui::tr("Inspect"), shin::ui::tr("Read"), shin::ui::tr("Other")};
+    auto* mix_draw = ImGui::GetWindowDrawList();
+    const float mix_width = ImGui::GetContentRegionAvail().x;
+    const auto bar = ImGui::GetCursorScreenPos();
+    float offset = 0;
+    mix_draw->AddRectFilled(bar, {bar.x + mix_width, bar.y + 6}, ImGui::GetColorU32(rule), 3);
+    for (std::size_t i = 0; i < calls.size(); ++i) {
+        const float length = recent.empty() ? 0 : mix_width * static_cast<float>(calls[i]) / static_cast<float>(recent.size());
+        mix_draw->AddRectFilled({bar.x + offset, bar.y}, {bar.x + offset + length, bar.y + 6}, ImGui::GetColorU32(view.connected ? colors[i] : muted));
+        offset += length;
+    }
+    ImGui::Dummy({mix_width, 9});
+    ImGui::PushFont(nullptr, 13);
+    if (ImGui::BeginTable("project-request-legend", 2, ImGuiTableFlags_SizingStretchSame)) {
+        for (std::size_t i = 0; i < calls.size(); ++i) {
+            ImGui::TableNextColumn();
+            ImGui::TextColored(colors[i], "%s %u", labels[i], calls[i]);
+        }
+        ImGui::EndTable();
+    }
+    if (recent.empty()) ImGui::TextWrapped("%s", shin::ui::tr("No project calls in this sample"));
+    ImGui::PopFont();
+    ImGui::Separator();
+}
+
 void render_project_diagnostics(const ViewState& view, const Json& project, const Json& telemetry, const Json& history) {
     using namespace shin::ui;
     diagnostic_project = text_field(project, "id", 96);
@@ -1310,7 +1409,6 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     const double elapsed = view.received == Clock::time_point{} ? 0 :
         std::chrono::duration<double, std::milli>(Clock::now() - view.received).count();
     const auto age = age_text(age_ms(project, "last_success_age_ms", elapsed));
-    (void)telemetry;
     const float width = ImGui::GetContentRegionAvail().x;
     const float available = ImGui::GetContentRegionAvail().y;
     const bool compact = available < 300;
@@ -1366,6 +1464,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
             }
             text(shin::ui::tr("A search miss does not mean the file is absent. Review the document and profile; preserve useful queries and checks."), muted, 127);
         }
+        render_project_analytics(view, project, telemetry);
         if (!compact) {
             ImGui::Spacing();
             begin_surface("project-context");
@@ -1860,8 +1959,10 @@ float render(const ViewState& view, float height_limit = 0) {
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{8, tiny ? 4.0f : 8.0f});
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{compact ? 8.0f : 10.0f, tiny ? 4.0f : 5.0f});
     ImGui::PushStyleColor(ImGuiCol_WindowBg, outer_frame);
+    ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
     ImGui::Begin("Shin", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
+    ImGui::PopStyleVar(); // The outer panel owns its Sand outline.
     auto* draw = ImGui::GetWindowDrawList();
     const float edge = compact ? 4.0f : 7.0f;
     draw->AddRectFilled({edge, edge}, {size.x - edge, size.y - edge}, ImGui::GetColorU32(raised), 12);
@@ -1906,10 +2007,11 @@ float render(const ViewState& view, float height_limit = 0) {
         }
     }
     const float content_top = ImGui::GetCursorPosY();
-    const float footer_y = size.y - (tiny ? 33 : 36);
+    const float footer_height = tiny ? 41.0f : 46.0f;
+    const float footer_y = size.y - footer_height;
     panel_fit_active = panel_automatic_layout && !profile_review_open &&
         (dashboard_view == 0 || dashboard_view == 3 || (dashboard_view == 1 && (selected.empty() || projects.empty())));
-    panel_body_budget = height_limit - content_top - (tiny ? 33 : 36) - 7;
+    panel_body_budget = height_limit - content_top - footer_height - 7;
     draw->AddLineH(edge, size.x - edge, content_top - 3, alpha_color(sand, .6f));
     ImGui::PushStyleVar(ImGuiStyleVar_Alpha, monitor_motion.reveal.value());
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{compact ? 0.0f : 2.0f, tiny ? 2.0f : 8.0f});
@@ -1930,7 +2032,7 @@ float render(const ViewState& view, float height_limit = 0) {
     else render_settings(view, telemetry, history);
     const float natural_body_height = ImGui::GetCursorPosY() + ImGui::GetStyle().WindowPadding.y;
     const float preferred_height = panel_fit_active ? std::clamp(std::ceil(content_top + natural_body_height +
-        (tiny ? 33 : 36) + 7), std::min(280.0f, height_limit), height_limit) :
+        footer_height + 7), std::min(280.0f, height_limit), height_limit) :
         (panel_automatic_layout ? height_limit : size.y);
     ImGui::EndChild();
     ImGui::PopStyleColor();
@@ -1939,9 +2041,10 @@ float render(const ViewState& view, float height_limit = 0) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{0, 0});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{8, 0});
     ImGui::PushStyleColor(ImGuiCol_ChildBg, raised);
-    ImGui::BeginChild("fixed-footer", {0, tiny ? 27.0f : 30.0f}, ImGuiChildFlags_None,
+    ImGui::BeginChild("fixed-footer", {0, footer_height - 8}, ImGuiChildFlags_None,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     ImGui::Separator();
+    ImGui::Dummy({0, 6});
     ImGui::PushFont(nullptr, compact ? 11.0f : 13.0f);
     const std::string version = "v" SHIN_OBSERVER_VERSION;
     const auto origin = ImGui::GetCursorScreenPos();

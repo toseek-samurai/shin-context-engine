@@ -41,7 +41,7 @@
     "validation": "Require matching profile id/config fingerprint and generator, exact manifest/output integrity and safe generated layout. Validate byte budgets before hashing each artifact, then hash the captured bytes against the same manifest. A local reader may borrow the verified observation from the same locked qualification. It checks layout and hashes the copied bytes, and the caller still verifies the entire admitted generation before making the reader ready.",
     "limits": {
       "defaultPayloadBytes": 268435456,
-      "defaultFileBytes": 67108864,
+      "defaultFileBytes": 268435456,
       "hardMaximumPayloadBytes": 1073741824
     },
     "memoryAccounting": "Payload bytes count manifest and stored artifact text, not resident RAM. The private backing inode consumes temporary disk space until its last mapping closes, including process termination. Read-only mapped pages are faulted on demand. C++ metadata, temporary buffers and request allocations are additional; RSS and macOS physical footprint are measured separately.",

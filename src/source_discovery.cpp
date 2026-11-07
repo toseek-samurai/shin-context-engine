@@ -19,6 +19,11 @@ constexpr std::size_t kSourceBytes = 64 * 1024 * 1024;
 constexpr std::size_t kRows = 65536;
 constexpr std::size_t kQueryTokens = 64;
 constexpr std::size_t kExpandedTerms = 256;
+std::size_t source_file_budget(const RuntimeOptions& options) {
+    const auto reviewed = options.profile.source_fact_max_file_bytes > 0 ?
+        static_cast<std::size_t>(options.profile.source_fact_max_file_bytes) : kFileBytes;
+    return std::min<std::size_t>(reviewed, 2U * 1024U * 1024U);
+}
 constexpr const char* kQueryVocabulary =
     "CREATE VIRTUAL TABLE temp.query_text USING fts5(body, tokenize='unicode61');"
     "CREATE VIRTUAL TABLE temp.query_vocab USING fts5vocab(query_text, 'row');";
@@ -188,9 +193,11 @@ Json source_cache_binding(const RuntimeOptions& options, const std::string& prof
 
 std::map<std::string, std::string> source_bindings(const RetrievalSession& session) {
     std::map<std::string, std::string> result;
+    const auto maximum_files = session.options().profile.source_fact_max_files > 0 ?
+        static_cast<std::size_t>(session.options().profile.source_fact_max_files) : 10000U;
     for (const auto& source : session.manifest().at("source_fact_sources")) {
         if (source.at("status") != "scanned") continue;
-        require(result.size() < 10000, "source-discovery-file-limit");
+        require(result.size() < maximum_files, "source-discovery-file-limit");
         require(result.emplace(source.at("path"), source.at("content_hash")).second,
                 "source-discovery-duplicate-path");
     }
@@ -271,7 +278,7 @@ bool SourceDiscoveryIndex::Impl::restore(const std::string& bytes, const Json& b
             const auto source = sources.find(row.at("path").get<std::string>());
             require(source != sources.end() && row.at("source_content_hash") == source->second &&
                     row.at("byte_start").get<std::size_t>() < row.at("byte_end").get<std::size_t>() &&
-                    row.at("byte_end").get<std::size_t>() <= kFileBytes &&
+                    row.at("byte_end").get<std::size_t>() <= source_file_budget(options) &&
                     row.at("start_line").get<std::size_t>() > 0 &&
                     row.at("end_line").get<std::size_t>() >= row.at("start_line").get<std::size_t>(), "source-cache-records");
             ++restored;
@@ -372,10 +379,11 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
     files = sources.size();
     auto insert = prepare(raw, "INSERT INTO chunks(rowid,body) VALUES (?,?)");
     auto record = prepare(raw, "INSERT INTO cache_meta(id,payload) VALUES (?,?)");
+    const auto maximum_file_bytes = source_file_budget(options);
     for (const auto& [path, hash] : sources) {
         check_time();
         const auto read_started = SteadyClock::now();
-        const auto content = read_bound_source(options.root, path, hash, kFileBytes);
+        const auto content = read_bound_source(options.root, path, hash, maximum_file_bytes);
         total_bytes += content.size();
         require(total_bytes <= kSourceBytes, "source-discovery-byte-limit");
         const bool redacted = source_range_secret(content).found;
@@ -582,7 +590,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         const auto append_candidate = [&](Json candidate) {
             if (at_snapshot || cache_status == "restored") {
                 const auto content = read_bound_source(options.root, candidate.at("path"),
-                                                       candidate.at("source_content_hash"), kFileBytes);
+                                                       candidate.at("source_content_hash"), source_file_budget(options));
                 const auto begin = candidate.at("byte_start").get<std::size_t>();
                 const auto end = candidate.at("byte_end").get<std::size_t>();
                 const auto offsets = source_line_offsets(content);
@@ -644,7 +652,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         {"files", files}, {"chunks", chunks}, {"source_bytes", total_bytes},
         {"indexed_text_bytes", indexed_text_bytes},
         {"redacted_files", redacted_files}, {"fallback_chunks", fallback_chunks},
-        {"limits", {{"max_source_bytes", kSourceBytes}, {"max_file_bytes", kFileBytes},
+        {"limits", {{"max_source_bytes", kSourceBytes}, {"max_file_bytes", source_file_budget(options)},
                     {"max_chunks", kRows}, {"records_per_query", 8}, {"records_per_file", 2}}},
         {"preparation_ms", successful_queries == 0 ? preparation_ms : 0.0},
         {"index_preparation_ms", preparation_ms}, {"admission_ms", admission_ms},

@@ -64,7 +64,11 @@ int main() {
         cover("", ".cpp", 8);
         cover("  \n\r\n\t", ".ts", 4);
         const auto large = chunk_source_syntax(std::string(1048577, 'a'), ".cpp");
-        require(large.chunks.empty() && !large.coverage_complete, "file budget bypass");
+        require(large.supported && !large.syntax_complete && large.coverage_complete,
+                "larger text windows must not claim syntax parsing");
+        for (const auto& part : large.chunks) require(part.fallback, "large input lost fallback provenance");
+        const auto over_budget = chunk_source_syntax(std::string(2097153, 'a'), ".cpp");
+        require(over_budget.chunks.empty() && !over_budget.coverage_complete, "file budget bypass");
         std::string nested = "int f() { return ";
         nested += std::string(100, '(') + "123456789" + std::string(100, ')') + "; }";
         cover(nested, ".cpp", 4);

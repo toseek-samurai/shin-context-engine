@@ -335,16 +335,19 @@ VerifiedSnapshot load_verified_snapshot(const fs::path& out_root,
             json_string_value(item, "content_hash");
         const std::uintmax_t expected_bytes = required_nonnegative_size(
             item, "bytes", "generated_file_integrity.files");
-        if (expected_bytes > maximum_file_bytes || expected_bytes > maximum_payload_bytes - payload_bytes)
-            throw CliError("snapshot-memory-budget-exceeded", "resource", "Snapshot exceeds its load budget.",
-                           1, false, "Use a smaller snapshot or review the explicit load budget.");
-        payload_bytes += expected_bytes;
         if (!generated_snapshot_path_valid(path) || expected_hash.empty()) {
             throw_index_error(
                 "snapshot-integrity-invalid",
                 "Generated snapshot integrity entry has invalid path, bytes, or hash.",
                 false);
         }
+        if (expected_bytes > maximum_file_bytes || expected_bytes > maximum_payload_bytes - payload_bytes)
+            throw CliError("snapshot-memory-budget-exceeded", "resource",
+                           "Generated artifact " + path + " declares " + std::to_string(expected_bytes) +
+                           " bytes; per-artifact limit " + std::to_string(maximum_file_bytes) +
+                           ", remaining snapshot budget " + std::to_string(maximum_payload_bytes - payload_bytes) + " bytes.",
+                           1, false, "Use a smaller snapshot or review the explicit load budget.");
+        payload_bytes += expected_bytes;
         const fs::path full_path = out_root / path;
         require_regular_snapshot_file(full_path, "Generated snapshot file");
         const FileFingerprint actual = fingerprint_file(full_path);

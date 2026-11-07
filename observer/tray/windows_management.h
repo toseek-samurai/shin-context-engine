@@ -38,6 +38,10 @@ struct WindowsManagement {
             const auto& failure=service_failed ? result.at("service") : result;
             message=shin::ui::tr("Operation was not confirmed. Review the report before retrying.");
             if (failure.contains("error")) message+="\n"+failure.at("error").value("code","");
+            if (failure.contains("error") && failure.at("error").value("code", "") == "snapshot-memory-budget-exceeded") {
+                message=shin::ui::tr("The generated project index exceeds a load budget. Review the index size and project limits before retrying.");
+                message+="\nsnapshot-memory-budget-exceeded\n"+failure.at("error").value("message", std::string{}).substr(0,1024);
+            }
             if(operation=="connect" || operation=="preview") for(auto& agent:agents) agent.review=Json();
             storage=Json::object();
         } else if (operation=="targets") {

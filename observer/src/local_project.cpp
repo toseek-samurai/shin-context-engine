@@ -243,8 +243,15 @@ Json observer_configuration(const fs::path& workspace, const fs::path& root, con
         {"root", root.string()}, {"profile", "generic-source"}, {"profile_dir", registry.string()},
         {"out_dir", (workspace / "index").string()}, {"state_dir", (workspace / "observer").string()},
         {"poll_interval_ms", 1000}, {"max_snapshot_bytes", 256U * 1024U * 1024U},
-        {"max_file_bytes", 64U * 1024U * 1024U},
+        {"max_file_bytes", 256U * 1024U * 1024U},
         {"outbox", {{"enabled", false}, {"max_entries", 128}, {"max_bytes", 192 * 1024}}}};
+}
+
+bool matches_bootstrap_configuration(const Json& document, const Json& expected) {
+    if (document == expected) return true;
+    auto previous_policy = expected;
+    previous_policy["max_file_bytes"] = 64U * 1024U * 1024U;
+    return document == previous_policy;
 }
 
 void add_query_context(Json& result, const core::RuntimeOptions& options, const Config& config,
@@ -1297,7 +1304,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     }
     if (!binding_store) binding_store = std::make_unique<StateStore>(workspace, writer);
     auto& store = *binding_store;
-    if (!writer && !attached && store.writer_present()) throw Error("project-busy", "Project initialization is in progress.");
+    if (!writer && !attached && !request.query_session && store.writer_present())
+        throw Error("project-busy", "Project initialization is in progress.");
     auto loaded = store.load();
     if (loaded != detected) throw Error("binding-changed", "Local route changed during detection; retry without replacing it.");
     guard_unbound_workspace(workspace, loaded);
@@ -1360,8 +1368,11 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     if (overlaps(home, registry)) throw Error("unsafe-home", "Private state must be separate from the profile registry.");
     if (loaded && request.profile_dir_explicit && request.profile_dir && package_profile_registry(*request.profile_dir) != registry)
         throw Error("binding-profile-conflict", "An existing project cannot silently switch profile registries.");
+    // An explicit retry of an unfinished first import may use today's bootstrap
+    // template. A successfully prepared project keeps its pinned policy.
+    const bool unfinished_import = initialize && loaded && loaded->at("prepared_snapshot") == "";
     auto policy = core::inspect_profile_policy(root, registry, "generic-source",
-        loaded ? std::optional<std::string>(loaded->at("profile_config_hash").get<std::string>()) : std::nullopt);
+        loaded && !unfinished_import ? std::optional<std::string>(loaded->at("profile_config_hash").get<std::string>()) : std::nullopt);
     if (policy.at("ok") != true) {
         auto result = envelope(request.command, false);
         result.update({{"local_ready", false}, {"state", "invalid-policy"}, {"policy", std::move(policy)}});
@@ -1375,6 +1386,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         {"workspace_identity", directory_identity(workspace, true)}, {"profile_dir", registry.string()},
         {"profile_config_hash", policy.at("revision").at("profile_config_hash")},
         {"core_version", SHIN_VERSION}, {"generator_version", core::kGeneratorVersion}, {"prepared_snapshot", ""}};
+    const bool bootstrap_policy_changed = unfinished_import &&
+        binding.at("profile_config_hash") != policy.at("revision").at("profile_config_hash");
+    if (bootstrap_policy_changed) binding["profile_config_hash"] = policy.at("revision").at("profile_config_hash");
     if (initialize) {
         store.recover_pending();
         if (!loaded) store.save(binding);
@@ -1382,16 +1396,20 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         StateStore config_store(workspace / "config", true);
         const auto previous = config_store.load();
         const auto expected = observer_configuration(workspace, root, registry);
-        if (previous && *previous != expected)
+        if (previous && !matches_bootstrap_configuration(*previous, expected))
             throw Error("binding-config-conflict", "Existing Observer configuration differs; no automatic overwrite.");
         config_store.recover_pending();
         if (!previous) config_store.save(expected);
     }
     StateStore config_reader(workspace / "config", false);
     const auto config_document = config_reader.load();
-    if (!config_document || *config_document != observer_configuration(workspace, root, registry))
+    const auto bootstrap_policy = observer_configuration(workspace, root, registry);
+    if (!config_document || !matches_bootstrap_configuration(*config_document, bootstrap_policy))
         throw Error("binding-config-conflict", "Bound Observer configuration differs from local offline policy.");
-    const auto config = config_from_json(*config_document, workspace / "config/state.json");
+    // Older private templates remain byte-for-byte available to rollback. The
+    // current bootstrap policy admits each artifact within the total budget.
+    // Attached project-owned configurations retain their explicit file limits.
+    const auto config = config_from_json(bootstrap_policy, workspace / "config/state.json");
     core::RuntimeOptions options;
     options.root = root;
     options.out_root = workspace / "index";
@@ -1401,7 +1419,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         throw Error("unsupported-local-profile", "This local entry supports bootstrap only; use the canonical route for project quality gates.");
     if (options.profile.config_hash != binding.at("profile_config_hash").get<std::string>())
         throw Error("binding-profile-conflict", "Profile changed during local attachment.");
-    const bool engine_changed = binding.at("core_version") != SHIN_VERSION ||
+    const bool engine_changed = bootstrap_policy_changed || binding.at("core_version") != SHIN_VERSION ||
                                 binding.at("generator_version") != core::kGeneratorVersion;
     const auto quality_key = qualification_key(binding, options.profile.config_hash, std::nullopt,
                                                refresh && request.refresh_session);
@@ -1505,7 +1523,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             if (current.at("status") == "stale" && current.at("worktree_id") != observed.at("observation").at("worktree_id"))
                 throw Error("refresh-superseded", "Source changed during search preparation.");
         }, [&] {
-            core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache");
+            core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache", options.generation_admission.get());
         });
         authority();
         const auto freshness = core::assess_index_freshness(options, true);
@@ -1544,7 +1562,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         (void)run_observer(config, 1, [] { return false; });
         readiness = readiness_for_generation();
         if (readiness.at("ok") == true) {
-            core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache");
+            core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache", options.generation_admission.get());
             binding["core_version"] = SHIN_VERSION;
             binding["generator_version"] = core::kGeneratorVersion;
             const auto freshness = core::assess_index_freshness(options, true);
@@ -1611,7 +1629,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     if (local_project_lifecycle(workspace) != lifecycle || directory_identity(root) != root_identity ||
         store.load() != std::optional<Json>(binding) || config_reader.load() != config_document)
         throw Error("binding-changed", "Project binding changed before returning the result.");
-    if (!initialize && store.writer_present())
+    if (!initialize && !request.query_session && store.writer_present())
         throw Error("project-busy", "Project maintenance is in progress; retry the request.");
     if (result.dump(2).size() + 1 > 65536) throw Error("output-limit", "Response exceeds the bounded local view; narrow the query.");
     if (initialize && ready) qualify(readiness);
@@ -2186,10 +2204,11 @@ bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Jso
     const fs::path profiles = expected.at("profile_dir").get<std::string>();
     StateStore configuration(workspace / "config", false);
     const auto document = configuration.load();
-    if (!document || *document != observer_configuration(workspace, root, profiles) ||
+    const auto bootstrap_policy = observer_configuration(workspace, root, profiles);
+    if (!document || !matches_bootstrap_configuration(*document, bootstrap_policy) ||
         core::make_profile("generic-source", profiles).config_hash != expected.at("profile_config_hash").get<std::string>())
         throw Error("binding-config-conflict", "Rollback cannot change project policy or configuration.");
-    const auto config = config_from_json(*document, workspace / "config/state.json");
+    const auto config = config_from_json(bootstrap_policy, workspace / "config/state.json");
     recover_refresh_candidate(workspace);
     shin::generated_io::IndexLock writer(config.out_dir, shin::generated_io::LockMode::exclusive,
                                          shin::generated_io::LockTarget::writer);

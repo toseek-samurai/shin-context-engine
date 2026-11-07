@@ -60,6 +60,17 @@ public:
 };
 
 void check(const fs::path& parent) {
+    {
+        // Extraction and discovery must share the reviewed file-count budget.
+        // Empty sources make the >10k boundary independent of row/byte limits.
+        Fixture capacity(parent);
+        capacity.options.profile.source_fact_max_files = 10001;
+        for (int i = 0; i < 10001; ++i)
+            capacity.write("src/unit" + std::to_string(i) + ".sql", "");
+        capacity.publish();
+        const auto indexed = discover_source_candidates(capacity.options, {"unknownCapacityMarker"});
+        expect(indexed.at("ok") == true && indexed.at("files") == 10001, "discovery honors source file budget above ten thousand");
+    }
     expect(source_search_projection("SqlRowWindow HTTPServer foo_bar a2B unchanged") ==
            "SqlRowWindow HTTPServer foo_bar a2B unchanged\nSql Row Window HTTP Server a2 B", "identifier projection");
     const std::string unicode = "\xd0\xba\xd0\xbe\xd0\xb4";
@@ -115,7 +126,7 @@ void check(const fs::path& parent) {
     std::map<std::string, int> counts;
     for (const auto& row : result.at("results")[0].at("candidates"))
         expect(++counts[row.at("path").get<std::string>()] <= 2, "per file cap");
-    capped.write("src/huge.cpp", std::string(1024 * 1024 + 1, ' '));
+    capped.write("src/huge.cpp", std::string(2 * 1024 * 1024 + 1, ' '));
     capped.publish();
     rejected([&] { discover_source_candidates(capped.options, {"boundedNeedle"}); });
     capped.options.profile.source_fact_max_files = 1;

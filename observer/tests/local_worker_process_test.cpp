@@ -198,6 +198,23 @@ void scenario() {
         project->command = "init"; check(local_project(*project).at("local_ready") == true, "init failed");
     }
     {
+        // Background qualification can own this writer throughout a cold
+        // reader's preparation. Unchanged committed authority is still usable.
+        StateStore maintenance(first.home / "projects" / digest(first.root.string()), true);
+        LocalWorkerProcess reader(executable, LocalWorkerRole::resident);
+        reader.send(preparation(first), deadline());
+        check(reader.receive(deadline()).at("kind") == "ready", "maintenance lock starved a verified cold reader");
+        reader.send(query(first), deadline());
+        check(reader.receive(deadline()).at("response").at("result").at("source_context").get<std::string>().find("return 17") != std::string::npos,
+            "maintenance lock blocked verified source retrieval");
+        reader.stop();
+        write(first.root / "quota.cpp", "int quotaLimit() { return 18; }\n");
+        LocalWorkerProcess stale(executable, LocalWorkerRole::resident);
+        stale.send(preparation(first), deadline());
+        check(stale.receive(deadline()).at("kind") == "preparation-failed", "maintenance reader accepted changed sources");
+        write(first.root / "quota.cpp", "int quotaLimit() { return 17; }\n");
+    }
+    {
         auto read = first; read.command = "query"; read.query = "quotaLimit";
         check(request_local_worker(read, executable).at("source_context").get<std::string>().find("return 17") != std::string::npos,
             "common cold worker failed");

@@ -28,8 +28,8 @@
     ".py", ".go", ".rs", ".sql", ".rsx", ".json", ".yaml", ".yml"
   ],
   "sourceFactExtractors": ["language", "retool"],
-  "sourceFactMaxFiles": 15000,
-  "sourceFactMaxFileBytes": 1048576,
+  "sourceFactMaxFiles": 30000,
+  "sourceFactMaxFileBytes": 2097152,
   "agentStartPaths": [],
   "bootstrapOnly": true,
   "jsonKeyMaxDepth": 2,

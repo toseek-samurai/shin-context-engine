@@ -18,6 +18,7 @@ namespace shin::context {
 namespace {
 
 constexpr std::size_t kMaxSourceBytes = 1024U * 1024U;
+constexpr std::size_t kMaxChunkSourceBytes = 2U * 1024U * 1024U;
 constexpr std::size_t kMaxSyntaxNodes = 200000;
 constexpr std::size_t kMaxProgressCallbacks = 100000;
 constexpr uint32_t kInputChunkBytes = 4096;
@@ -526,9 +527,12 @@ SyntaxChunking chunk_source_syntax(std::string_view content, std::string_view ex
     SyntaxChunking result;
     auto language = syntax_language(extension);
     result.supported = language != SyntaxLanguage::Unsupported;
-    if (content.size() > kMaxSourceBytes) return result;
+    if (content.size() > kMaxChunkSourceBytes) return result;
     ParseInput input{content};
-    TreePtr tree = result.supported ? select_syntax_tree(input, language, extension) : TreePtr(nullptr, ts_tree_delete);
+    // Larger reviewed source files use bounded text windows. Parser node and
+    // progress limits, including its 1 MiB input ceiling, remain unchanged.
+    TreePtr tree = result.supported && content.size() <= kMaxSourceBytes ?
+        select_syntax_tree(input, language, extension) : TreePtr(nullptr, ts_tree_delete);
     result.visited_nodes = input.syntax_nodes;
     result.syntax_complete = tree && !input.cancelled && !ts_node_has_error(ts_tree_root_node(tree.get()));
     const auto emit = [&](std::size_t begin, std::size_t end, bool fallback) {

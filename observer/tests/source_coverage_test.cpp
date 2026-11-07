@@ -81,7 +81,8 @@ int main(int argc, char** argv) {
                   "permanent failure got retry or lost cause");
             check(f.sample().at("status") == "unpublished", "recovery after permission restore failed");
         }
-        std::ofstream(f.root / "limits.js") << std::string(1048577, 'x');
+        // Remain just beyond the bundled bootstrap's reviewed 2 MiB budget.
+        std::ofstream(f.root / "limits.js") << std::string(2097153, 'x');
         const auto incomplete = f.sample();
         check(incomplete.at("reason_code") == "incomplete-source-observation" && !incomplete.contains("diagnostic"), "source cap changed");
         std::cout << "observation diagnostics passed\n";

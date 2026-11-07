@@ -223,6 +223,10 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 target_profile = candidate / 'share/shin-context/profiles/generic-source.json'
                 old_policy, new_policy = json.loads(previous_profile.read_text()), json.loads(target_profile.read_text())
                 old_extensions, new_extensions = set(old_policy.pop('sourceFactExtensions')), set(new_policy.pop('sourceFactExtensions'))
+                old_files, new_files = old_policy.pop('sourceFactMaxFiles'), new_policy.pop('sourceFactMaxFiles')
+                assert old_files == new_files or (old_files, new_files) == (15000, 30000)
+                old_bytes, new_bytes = old_policy.pop('sourceFactMaxFileBytes'), new_policy.pop('sourceFactMaxFileBytes')
+                assert old_bytes == new_bytes or (old_bytes, new_bytes) == (1048576, 2097152)
                 assert old_policy == new_policy and old_extensions <= new_extensions
                 added = sorted(new_extensions - old_extensions)
                 assert set(added) <= {'.m', '.mm'}

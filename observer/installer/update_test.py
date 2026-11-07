@@ -137,8 +137,22 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
     update = ['update', '--prefix', str(prefix)]
     adoption = [*update, '--adopt-existing', '--home', str(home), '--bin-dir', str(bin_dir)]
     previous_fixture()
+    # A bootstrap capacity update must migrate its pinned profile even when
+    # the Core identity is unchanged. Other policy changes remain unapproved.
+    previous_profile = prefix / 'share/shin-context/profiles/generic-source.json'
+    previous_policy = json.loads(previous_profile.read_text())
+    assert previous_policy['sourceFactMaxFiles'] == 30000
+    previous_policy['sourceFactMaxFiles'] = 15000
+    previous_policy['sourceFactMaxFileBytes'] = 1048576
+    write_json(previous_profile, previous_policy)
+    previous_manifest = json.loads((prefix / 'shin-kit.json').read_text())
+    entry = next(row for row in previous_manifest['files'] if row['path'] == 'share/shin-context/profiles/generic-source.json')
+    entry.update(size=previous_profile.stat().st_size, sha256=hashlib.sha256(previous_profile.read_bytes()).hexdigest())
+    write_json(prefix / 'shin-kit.json', previous_manifest)
     try:
         call('init', '--home', home, executable=prefix / 'bin/shin-ce')
+        bootstrap_binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
+        previous_binding = json.loads(bootstrap_binding_path.read_text())
         call('query', 'updateQuota', '--home', home, executable=prefix / 'bin/shin-ce')
         quality = Fixture(work, 'quality-canonical')
         quality.write_source('# Contract\n\nThe retry ceiling belongs to readLimit.\n')
@@ -183,6 +197,11 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         call('watch', '--root', quality.root, '--home', home, '--samples', '2', executable=prefix / 'bin/shin-ce')
         migrated = call(*adoption, progress="json")
         assert migrated['changed'] and migrated['data_preserved'] and migrated['service_restored']
+        next_binding = json.loads(bootstrap_binding_path.read_text())
+        assert previous_binding['core_version'] == next_binding['core_version'] == manifest['core_version']
+        assert previous_binding['profile_config_hash'] != next_binding['profile_config_hash']
+        preserved_fields = set(previous_binding) - {'profile_config_hash', 'prepared_snapshot'}
+        assert all(previous_binding[key] == next_binding[key] for key in preserved_fields)
         receipt = json.loads((prefix / '.shin-installation.json').read_text())
         state_file = Path(receipt['control']) / 'state.json'
         stage = Path(receipt['control']) / 'update-payload'

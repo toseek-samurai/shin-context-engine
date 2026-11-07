@@ -294,7 +294,7 @@ bool project_has_retired_index(const LocalProjectRequest& project) {
     const auto index = saved->value("schema_version", "") == "shin.local-project-binding.v1" ? workspace / "index" :
         load_config(saved->at("observer_config").get<std::string>()).out_dir;
     auto lock = shin::context::lock_index_for_read(index);
-    const auto snapshot = shin::context::load_verified_snapshot(index, 256U * 1024U * 1024U, 128U * 1024U * 1024U);
+    const auto snapshot = shin::context::load_verified_snapshot(index, 256U * 1024U * 1024U, 256U * 1024U * 1024U);
     require(binding.load() == saved, "binding-changed", "Project authority changed during update inspection.");
     return retired_source_generator(snapshot.generator_version);
 }
@@ -338,7 +338,7 @@ Json qualify_update(const fs::path& home, const fs::path& executable,
                 // substituted publications are not a successful preflight.
                 const fs::path index = result.at("index").get<std::string>();
                 auto lock = shin::context::lock_index_for_read(index);
-                (void)shin::context::load_verified_snapshot(index, 256U * 1024U * 1024U, 128U * 1024U * 1024U);
+                (void)shin::context::load_verified_snapshot(index, 256U * 1024U * 1024U, 256U * 1024U * 1024U);
                 pending("project-not-ready", update_project_diagnostic(project.root.string(), "project-not-ready", readiness));
             }
         } catch (const Error& error) {
@@ -538,6 +538,12 @@ bool compatible_core_patch(const std::string& from, const std::string& to) {
         return previous[0] == next[0] && previous < next;
     } catch (const Error&) { return false; }
 }
+bool compatible_publication_transition(const std::string& from, const std::string& to,
+                                      const Json& bootstrap, const Json& markers) {
+    // A reviewed bundled-profile revision needs the same journal and rollback
+    // fences even when the kit keeps its Core and generator identities.
+    return compatible_core_patch(from, to) || (from == to && !bootstrap.empty() && markers.empty());
+}
 Json marker_generator_migrations(const fs::path& home) {
     Json records = Json::array();
     if (!present(home / "registry")) return records;
@@ -590,9 +596,15 @@ Json bundled_bootstrap_profile_revision(const Json& binding, const fs::path& pre
     auto after = parse_json(read_text(next_registry / "generic-source.json", kMaximumStateBytes, false));
     const auto before_extensions = before.at("sourceFactExtensions"), after_extensions = after.at("sourceFactExtensions");
     before.erase("sourceFactExtensions"); after.erase("sourceFactExtensions");
+    const auto before_files = before.at("sourceFactMaxFiles"), after_files = after.at("sourceFactMaxFiles");
+    before.erase("sourceFactMaxFiles"); after.erase("sourceFactMaxFiles");
+    const auto before_bytes = before.at("sourceFactMaxFileBytes"), after_bytes = after.at("sourceFactMaxFileBytes");
+    before.erase("sourceFactMaxFileBytes"); after.erase("sourceFactMaxFileBytes");
     require(before == after && before_profile.bootstrap_only && after_profile.bootstrap_only &&
-        before_extensions.is_array() && after_extensions.is_array(), "installation-profile-transition-unsupported",
-        "The bundled bootstrap policy changed beyond the qualified language-extension update; review it before installation.");
+        before_extensions.is_array() && after_extensions.is_array() &&
+        (before_files == after_files || (before_files == 15000 && after_files == 30000)) &&
+        (before_bytes == after_bytes || (before_bytes == 1048576 && after_bytes == 2097152)), "installation-profile-transition-unsupported",
+        "The bundled bootstrap policy changed beyond the qualified language or capacity update; review it before installation.");
     const auto old_extensions = before_extensions.get<std::set<std::string>>();
     const auto new_extensions = after_extensions.get<std::set<std::string>>();
     require(std::includes(new_extensions.begin(), new_extensions.end(), old_extensions.begin(), old_extensions.end()),
@@ -611,9 +623,11 @@ Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate,
         StateStore store(home / "projects" / digest(project.root.string()), false);
         const auto binding = store.load();
         if (!binding) throw Error("binding-unavailable", "An enrolled project binding is missing.");
-        if (binding->value("schema_version", "") != "shin.local-project-binding.v1" ||
-            binding->value("core_version", "") == SHIN_VERSION) continue;
-        require(compatible_core_patch(binding->value("core_version", ""), SHIN_VERSION) &&
+        if (binding->value("schema_version", "") != "shin.local-project-binding.v1") continue;
+        const auto profile_revision = bundled_bootstrap_profile_revision(*binding, prefix, candidate);
+        const bool same_engine = binding->value("core_version", "") == SHIN_VERSION;
+        if (same_engine && profile_revision.is_null()) continue;
+        require((same_engine || compatible_core_patch(binding->value("core_version", ""), SHIN_VERSION)) &&
             rebuildable_bootstrap_format(*binding),
             "refresh-engine-changed", "This private binding is outside the qualified Core patch transition.");
         try { (void)qualify_local_project(project, candidate); } // Validate identity/policy without publication.
@@ -623,7 +637,6 @@ Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate,
             // Only the ordinary owned init path below may replace it.
         }
         Json record{{"root", project.root.string()}, {"binding", *binding}};
-        const auto profile_revision = bundled_bootstrap_profile_revision(*binding, prefix, candidate);
         if (!profile_revision.is_null()) record["profile_revision"] = profile_revision;
         records.push_back(std::move(record));
     }
@@ -637,7 +650,8 @@ void migrate_bootstrap_patch(const fs::path& home, const Json& records, const fs
         const fs::path root = record.at("root").get<std::string>();
         require(record.at("binding").value("schema_version", "") == "shin.local-project-binding.v1" &&
             record.at("binding").value("root", "") == root.string() &&
-            compatible_core_patch(record.at("binding").value("core_version", ""), SHIN_VERSION) &&
+            (record.at("binding").value("core_version", "") == SHIN_VERSION ||
+             compatible_core_patch(record.at("binding").value("core_version", ""), SHIN_VERSION)) &&
             rebuildable_bootstrap_format(record.at("binding")),
             "installation-state-invalid", "Bootstrap migration is outside the reviewed source contract.");
         const auto project = std::find_if(projects.begin(), projects.end(), [&](const auto& value) { return value.root == root; });
@@ -939,8 +953,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         const auto migrations = state.value("resume_bootstrap_migrations", Json::array());
         const auto marker_migrations = state.value("resume_marker_migrations", Json::array());
         if (!migrations.empty() || !marker_migrations.empty())
-            require(compatible_core_patch(state.at("kit").at("core_version"),
-                state.at("previous").at("kit").at("core_version")),
+            require(compatible_publication_transition(state.at("kit").at("core_version"),
+                state.at("previous").at("kit").at("core_version"), migrations, marker_migrations),
                 "installation-state-invalid", "Interrupted bootstrap rollback has an incompatible kit pair.");
         owner.reset();
         migrate_marker_generators(home, marker_migrations, prefix / "bin/shin-ce");
@@ -973,7 +987,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
             if (!core_patch || error.code != "installation-project-not-ready") throw;
             recover_publications = true;
         }
-        const auto bootstrap_migrations = recover_publications ? bootstrap_patch_migrations(home, source / "bin/shin-ce", prefix) : Json::array();
+        const auto bootstrap_migrations = bootstrap_patch_migrations(home, source / "bin/shin-ce", prefix);
+        recover_publications = recover_publications || !bootstrap_migrations.empty();
         auto runtime = runtime_before_update(home, prefix / "bin/shin-ce");
         if (runtime.at("running")) {
             runtime["unready_roots"] = Json::array();
@@ -998,7 +1013,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
     (void)validate_manifest(update.at("old_kit"));
     if (!update.value("bootstrap_migrations", Json::array()).empty() || !update.value("marker_migrations", Json::array()).empty())
         require(update.value("recover_publications", false) &&
-            compatible_core_patch(update.at("old_kit").at("core_version"), kit.at("core_version")),
+            compatible_publication_transition(update.at("old_kit").at("core_version"), kit.at("core_version"),
+                update.value("bootstrap_migrations", Json::array()), update.value("marker_migrations", Json::array())),
             "installation-state-invalid", "Bootstrap migration requires the qualified Core patch transition.");
     for (const auto* field : {"receipt", "old_receipt"}) {
         verify_record_locations(prefix, update.at(field));
@@ -1069,7 +1085,8 @@ Json update_kit(const fs::path& source, const fs::path& prefix, const fs::path& 
         verify_files(prefix, kit, true);
         owner.reset(); // The operation lock remains held while the new child takes its startup fence.
         if (update.value("recover_publications", false)) {
-            require(compatible_core_patch(update.at("old_kit").at("core_version"), kit.at("core_version")), "installation-state-invalid",
+            require(compatible_publication_transition(update.at("old_kit").at("core_version"), kit.at("core_version"),
+                update.value("bootstrap_migrations", Json::array()), update.value("marker_migrations", Json::array())), "installation-state-invalid",
                 "Publication recovery requires the qualified Core patch transition.");
             // An interrupted activation may already have started this candidate's
             // service. Reacquire its startup fence and stop it before replaying

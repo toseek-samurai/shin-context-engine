@@ -120,6 +120,16 @@ class LocalProjectTests(unittest.TestCase):
         result = self.run_ce("query", "retry ceiling")
         self.assertIn("README.md", json.dumps(result["document_context"]))
 
+    def test_generic_bootstrap_honors_its_two_mebibyte_source_budget(self):
+        (self.root / 'large.sql').write_text('SELECT budgetSizedPayload;\n' +
+            ('-- padding ' + 'x' * 100 + '\n') * 10000 + 'SELECT tailBudgetPayload;\n')
+        self.assertTrue(self.init()['local_ready'])
+        result = self.run_ce('query', 'budgetSizedPayload')
+        self.assertTrue(result['local_ready'])
+        self.assertIn('large.sql', result['source_context'])
+        tail = self.run_ce('query', 'tailBudgetPayload')
+        self.assertIn('tailBudgetPayload', tail['source_context'])
+
     def test_followup_inspect_file_and_record_share_query_snapshot(self):
         self.init()
         query = self.run_ce("query", "readLimit")
@@ -312,6 +322,59 @@ class LocalProjectTests(unittest.TestCase):
         self.assertEqual(self.init(profile_dir=registry, expected=2)["error"]["code"],
                          "profile-policy-revision-conflict")
         self.assertEqual(self.init(profile_dir=REGISTRY, expected=2)["error"]["code"], "binding-profile-conflict")
+
+    def test_old_private_artifact_limit_preserves_config_and_total_budget(self):
+        self.init()
+        path = self.workspace() / "config/state.json"
+        config = json.loads(path.read_text())
+        self.assertEqual(config['max_file_bytes'], 256 * 1024 * 1024)
+        self.assertEqual(config['max_snapshot_bytes'], 256 * 1024 * 1024)
+        config['max_file_bytes'] = 64 * 1024 * 1024
+        self.write_private(path, config)
+        before = path.read_bytes()
+        self.assertTrue(self.run_ce('status')['local_ready'])
+        self.assertFalse(self.init()['rebuilt'])
+        self.assertEqual(path.read_bytes(), before)
+        config['max_snapshot_bytes'] *= 2
+        self.write_private(path, config)
+        self.assertEqual(self.init(expected=2)['error']['code'], 'binding-config-conflict')
+
+    def test_explicit_retry_of_unfinished_import_uses_current_bootstrap(self):
+        registry = self.base / 'profiles'
+        registry.mkdir()
+        profile = registry / 'generic-source.json'
+        policy = json.loads((REGISTRY / 'generic-source.json').read_text())
+        policy['sourceFactMaxFiles'] = 15000
+        policy['sourceFactMaxFileBytes'] = 1048576
+        profile.write_text(json.dumps(policy))
+        first = self.init(profile_dir=registry)
+        state = self.workspace() / 'state.json'
+        binding = json.loads(state.read_text())
+        # A failed first preparation can leave valid generated files but no
+        # prepared reader, as when loading a large artifact used to fail.
+        binding['prepared_snapshot'] = ''
+        self.write_private(state, binding)
+        before = self.file_map(self.root)
+        policy['sourceFactMaxFiles'] = 30000
+        policy['sourceFactMaxFileBytes'] = 2097152
+        profile.write_text(json.dumps(policy))
+        self.assertEqual(self.run_ce('status', expected=2)['error']['code'], 'profile-policy-revision-conflict')
+        retried = self.init(profile_dir=registry)
+        self.assertTrue(retried['local_ready'])
+        self.assertTrue(retried['rebuilt'])
+        self.assertNotEqual(first['profile_config_hash'], retried['profile_config_hash'])
+        self.assertEqual(self.file_map(self.root), before)
+        self.assertTrue(self.run_ce('query', 'readLimit')['local_ready'])
+        self.assertFalse(self.init()['rebuilt'])
+
+        binding = json.loads(state.read_text())
+        binding['prepared_snapshot'] = ''
+        self.write_private(state, binding)
+        saved = state.read_bytes()
+        policy['bootstrapOnly'] = False
+        profile.write_text(json.dumps(policy))
+        self.assertEqual(self.init(profile_dir=registry, expected=1)['state'], 'invalid-policy')
+        self.assertEqual(state.read_bytes(), saved)
 
     def test_corrupt_and_pending_binding_not_replaced(self):
         self.init()

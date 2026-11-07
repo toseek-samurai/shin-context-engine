@@ -185,10 +185,21 @@ fresh locations; do not delete existing state to force installation.
 ### Project source budgets
 
 New projects connected through `init` or `project-add` use the bundled
-`generic-source` profile, which explicitly allows 15,000 source files and 1 MiB
+`generic-source` profile, which explicitly allows 30,000 source files and 2 MiB
 per file. The language-specific bootstrap profiles allow 10,000 files and 1 MiB
 per file. These are extraction budgets, not the amount of text sent to an agent
 or a guarantee about peak indexing memory.
+
+Private bootstrap indexes have a 256 MiB aggregate load budget; an individual
+generated artifact may use that budget, including a large facts or terms file.
+This is separate from the 2 MiB limit on an individual source file. Project-owned
+Observer configurations keep their explicit snapshot and artifact limits. An
+unfinished first import can be retried with the current bootstrap template;
+prepared projects retain their pinned profile revision until an approved update.
+Source discovery follows the profile's file count and per-file size budgets;
+its 64 MiB aggregate source-text and 256 MiB cache budgets remain separate.
+Sources between 1 and 2 MiB use bounded text windows for discovery, while the
+syntax parser retains its 1 MiB, node-count and progress limits.
 
 Core defaults to 10,000 files and 1 MiB per file
 when a profile omits those fields, matching the language-specific templates.

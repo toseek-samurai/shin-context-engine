@@ -37,7 +37,9 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
         auto found = contents.find(path);
         if (found == contents.end()) {
             require_context(contents.size() < 12);
-            auto content = read_bound_source(options.root, path, sources.at(path), 1024 * 1024);
+            const auto file_budget = options.profile.source_fact_max_file_bytes > 0 ?
+                std::min<std::size_t>(options.profile.source_fact_max_file_bytes, 2U * 1024U * 1024U) : 1024U * 1024U;
+            auto content = read_bound_source(options.root, path, sources.at(path), file_budget);
             require_context(content.size() <= kSourceBytes - source_bytes);
             source_bytes += content.size();
             found = contents.emplace(path, std::move(content)).first;

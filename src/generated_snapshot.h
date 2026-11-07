@@ -8,7 +8,7 @@ struct VerifiedSnapshot;
 
 struct SnapshotLoadLimits {
     std::uintmax_t maximum_payload_bytes = 256ULL * 1024ULL * 1024ULL;
-    std::uintmax_t maximum_file_bytes = 64ULL * 1024ULL * 1024ULL;
+    std::uintmax_t maximum_file_bytes = 256ULL * 1024ULL * 1024ULL;
 };
 
 // Owns verified artifact bytes, never a publication lock or a reusable freshness proof.

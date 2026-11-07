@@ -77,6 +77,8 @@ NSString* friendly_cleanup_error(const std::string& code) {
     return ui_text("Shin stopped cleanup. Some search caches may remain.");
 }
 NSString* friendly_project_storage_error(const std::string& code) {
+    if (code == "snapshot-memory-budget-exceeded")
+        return ui_text("The generated project index exceeds a load budget. Review the index size and project limits before retrying.");
     if (code == "storage-quota-exceeded")
         return ui_text("Shin reached its service storage budget. Open Shin → Storage to review caches outside projects.");
     if (code == "storage-free-space-low")
@@ -771,6 +773,10 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
             else if (code == "unsafe-project-storage")
                 message = ui_text("The folder or its location failed a safety check. Choose a regular project folder owned by your user.");
             else message = friendly_project_storage_error(code);
+            if (code == "snapshot-memory-budget-exceeded") {
+                const auto detail = errorResult.at("error").value("message", std::string{});
+                if (!detail.empty()) message = [message stringByAppendingFormat:@"\n\n%s\n%s", code.c_str(), detail.substr(0, 1024).c_str()];
+            }
         }
         release_project_operation();
         self.setupChoose.enabled = YES;

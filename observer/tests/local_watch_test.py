@@ -141,7 +141,7 @@ class LocalWatchTests(unittest.TestCase):
         index = self.workspace() / 'index'
         before = self.file_map(index)
         binding = (self.workspace() / 'state.json').read_bytes()
-        (self.root / 'large.js').write_text(' ' * (1024 * 1024 + 1))
+        (self.root / 'large.js').write_text(' ' * (2 * 1024 * 1024 + 1))
         result = self.run_ce('watch', '--samples', '3')
         self.assertGreaterEqual(result['watch']['failures'], 1)
         self.assertEqual(result['watch']['publications'], 0)

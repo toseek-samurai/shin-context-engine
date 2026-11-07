@@ -16,8 +16,8 @@
     "maintenance": "The compatibility baseline identifies contract provenance only. It does not qualify current public source or delivery."
   },
   "developmentLane": {
-    "coreVersion": "2.0.5-dev.17",
-    "observerSourceVersion": "2.0.5-dev.94",
+    "coreVersion": "2.0.5-dev.18",
+    "observerSourceVersion": "2.0.5-dev.95",
     "artifactRetention": {
       "policy": "Generated build outputs and measurements are disposable unless explicitly retained by a separate reviewed process.",
       "releaseClaim": false

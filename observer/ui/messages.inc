@@ -853,6 +853,7 @@
     {"The folder could not be connected. Check that it is an accessible project folder and try again.", "Папку не удалось подключить. Проверьте, что это доступная папка проекта, и повторите попытку."},
     {"The folder or its location failed a safety check. Choose a regular project folder owned by your user.", "Папка или её расположение не прошли проверку безопасности. Выберите обычную пользовательскую папку проекта."},
     {"The folder or project location failed its safety check.", "Папка или расположение проекта не прошли проверку безопасности."},
+    {"The generated project index exceeds a load budget. Review the index size and project limits before retrying.", "Индекс проекта превышает лимит загрузки. Проверьте размер индекса и лимиты проекта перед повторной попыткой."},
     {"The installed kit was verified. Compatible MCP connections resume automatically; reconnect an older integration if it reports a version mismatch.", "Установленный комплект проверен. Совместимые MCP-подключения продолжат работу автоматически; переподключите старую интеграцию, если она сообщает о несовпадении версий."},
     {"The latest check finished. Search data is loading.", "Последняя проверка завершена. Поисковые данные загружаются."},
     {"The new file inventory has not passed checks yet. Verifiable files from the previous version remain available.", "Новый состав файлов ещё не прошёл проверки. Доступны проверяемые файлы прежней версии."},

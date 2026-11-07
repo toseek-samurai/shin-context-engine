@@ -43,7 +43,8 @@ def qualification(run, jobs, artifacts, repo, sha, run_id, attempt, recover_publ
     require(run['head_sha'] == sha and run['id'] == run_id and run['run_attempt'] == attempt,
             'CI identity or attempt differs from the requested source')
     require(run['repository']['full_name'] == repo and run['head_repository']['full_name'] == repo
-            and run['event'] == 'push' and run['path'] == '.github/workflows/ci.yml', 'Wrong CI provenance')
+            and run['event'] in ('push', 'workflow_dispatch')
+            and run['path'] == '.github/workflows/ci.yml', 'Wrong CI provenance')
     # A queued or failed unrelated platform cannot invalidate a qualified kit.
     # An explicit cancellation still prevents a new publication. Previously
     # published bytes remain verifiable through their exact historical attempt.

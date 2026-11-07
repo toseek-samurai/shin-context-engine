@@ -1,22 +1,22 @@
-name: Recover qualified preview publication
+name: Retry artifact publication (advanced)
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing preview tag whose native qualification passed
+        description: Existing preview tag (for example v2.0.5-dev.100)
         required: true
         type: string
       run_id:
-        description: Source qualification run ID
+        description: Build, test and publish run ID (number from its URL)
         required: true
         type: string
       attempt:
-        description: Exact qualified run attempt
+        description: Exact qualified attempt (usually 1)
         required: true
         type: string
       platform:
-        description: Platform whose own source and exact archive passed
+        description: Platform with successful source and exact-package checks
         required: true
         type: choice
         options:

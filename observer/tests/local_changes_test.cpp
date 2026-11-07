@@ -89,8 +89,13 @@ void ordinary_changes_and_ignored_paths() {
         }
         return true;
     });
-    check(changes.healthy() && changes.sequence() == 0, "initial monitor state is not healthy/zero");
+    // Native delivery can run before the constructor returns, including delayed
+    // fixture preparation events. A healthy invalidation token need not be zero.
+    if (!changes.healthy()) {
+        throw std::runtime_error("initial monitor setup is unhealthy: " + changes.failure_reason());
+    }
     changes.flush();
+    check(changes.healthy(), "initial native delivery lost monitor health");
     sees(changes, [&] { write(fixture.root / "existing" / "deep" / "file", "edit"); });
     sees(changes, [&] { write(fixture.root / "created", "created"); });
     sees(changes, [&] { fs::remove(fixture.root / "created"); });

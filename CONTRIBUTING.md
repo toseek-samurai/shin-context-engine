@@ -29,3 +29,5 @@ failing test to claim support. Report untested platforms and installation steps.
 Source builds and tests do not authorize changing a running installation or
 enrolling a project. Use disposable, explicitly selected state for qualification.
 Report security issues through [the private reporting channel](SECURITY.md).
+
+Maintainers can [release a preview through GitHub Actions](docs/releasing.md).

@@ -244,6 +244,22 @@ class Publication(unittest.TestCase):
             with self.assertRaises(ValueError):
                 self.check_gate(run, jobs, artifact)
 
+    def test_manual_tag_dispatch_preserves_all_publication_gates(self):
+        for platform in publisher.PLATFORMS:
+            github = GitHubFixture(platform=platform)
+            github.run['event'] = 'workflow_dispatch'
+            with self.subTest(platform=platform):
+                self.assertEqual(self.publish_with(github, platform), 'fixture-release')
+        for key, value in [('head_branch', 'main'), ('head_branch', 'other-preview'),
+                           ('event', 'repository_dispatch'), ('path', '.github/workflows/release-preview.yml')]:
+            github = GitHubFixture()
+            github.run['event'] = 'workflow_dispatch'
+            github.run[key] = value
+            with self.subTest(key=key, value=value), self.assertRaises(ValueError):
+                self.publish_with(github)
+            self.assertFalse(any(c[:3] in [('gh', 'release', 'create'), ('gh', 'release', 'upload')]
+                                 for c in github.calls))
+
     def test_each_platform_requires_only_its_own_complete_source_and_archive_proof(self):
         for platform, spec in publisher.PLATFORMS.items():
             run, jobs, artifacts = fixtures(platform)
@@ -630,6 +646,8 @@ class Publication(unittest.TestCase):
             self.assertIn('needs: ['+target+']',block)
             self.assertIn('--platform '+target,block)
             self.assertIn('!cancelled()',block)
+            self.assertIn("github.event_name == 'workflow_dispatch'", block)
+            self.assertIn("startsWith(github.ref, 'refs/tags/v')", block)
             self.assertIn('group: preview-assets-${{ github.ref }}',block)
             self.assertIn('queue: max',block)
             self.assertNotIn('cancel-in-progress: true',block)
@@ -637,6 +655,12 @@ class Publication(unittest.TestCase):
         self.assertIn('group: preview-assets-refs/tags/${{ inputs.tag }}',recovery)
         self.assertIn('queue: max',recovery)
         self.assertIn('--platform "$PREVIEW_PLATFORM"',recovery)
+        entry=(root/'.github/workflows/release-preview.yml').read_text()
+        self.assertIn("if: github.ref == 'refs/heads/main'",entry)
+        self.assertIn('persist-credentials: false',entry)
+        self.assertIn('actions: write',entry)
+        self.assertIn('python3 -B tools/create_preview.py',entry)
+        self.assertNotIn('release upload',entry)
 
     def test_cancellation_or_tag_movement_stops_public_platform_append_before_kit_visibility(self):
         for failure in ('cancelled','moved-tag'):

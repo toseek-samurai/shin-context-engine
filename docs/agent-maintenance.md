@@ -38,6 +38,9 @@ Automatic source qualification runs on pull requests and `v*` tag pushes.
 Ordinary branch pushes, including `main`, do not start another matrix. Use the
 manual workflow for an untagged direct change that needs hosted checks. A release
 tag performs its platform tests, exact packaging and guarded publication once.
+Maintainers can use [Release preview](releasing.md) to prepare the next Observer
+version and dispatch that same pipeline for its immutable tag. Manual tag runs
+retain the source, attempt and exact-package gates; branch runs cannot publish.
 
 Installation examples must point to a published release with its complete kit,
 checksum and installer assets. Update those pins after publication, not when a

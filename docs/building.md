@@ -236,6 +236,9 @@ Windows source-test inventories; neither requires Bash/jq.
 
 ## Continuous integration
 
+To publish from the GitHub interface, use **Actions → Release preview**. See the
+[maintainer release guide](releasing.md) for the three workflows and recovery.
+
 CI qualifies standalone Core and Observer independently on Linux and macOS.
 The macOS Observer job also builds Monitor and qualifies the exact kit archive.
 Core checks in that kit exercise the embedded build configuration; they do not

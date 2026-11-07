@@ -1,0 +1,43 @@
+name: Release preview
+run-name: Release preview from main
+
+on:
+  workflow_dispatch:
+    inputs:
+      notes:
+        description: 'Optional release notes (Markdown). Blank uses commits or prepared notes.'
+        required: false
+        type: string
+
+permissions:
+  contents: read
+
+concurrency:
+  group: prepare-preview-main
+  queue: max
+
+jobs:
+  prepare:
+    name: Prepare preview and start platform checks
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+      actions: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - name: Check release preparation and publication guards
+        run: |
+          python3 -B tools/test_create_preview.py
+          python3 -B tools/test_publish_preview.py
+      - name: Prepare version, tag and start release CI
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_NOTES: ${{ inputs.notes }}
+        run: |
+          gh auth setup-git
+          python3 -B tools/create_preview.py

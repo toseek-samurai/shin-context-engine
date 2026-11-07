@@ -21,6 +21,7 @@ public:
     LocalChanges& operator=(LocalChanges&&) = delete;
 
     // An invalidation token, not a count of writes (native events coalesce).
+    // Delivery can advance it during startup; compare baselines, not with zero.
     // Health is sticky false after lost events, setup failure or token overflow.
     std::uint64_t sequence() const noexcept;
     bool healthy() const noexcept;

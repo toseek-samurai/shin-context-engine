@@ -101,6 +101,9 @@ if(BUILD_TESTING AND NOT WIN32)
         add_test(NAME shin-preview-publication
             COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_publish_preview.py)
         set_tests_properties(shin-preview-publication PROPERTIES TIMEOUT 30)
+        add_test(NAME shin-preview-preparation
+            COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_create_preview.py)
+        set_tests_properties(shin-preview-preparation PROPERTIES TIMEOUT 30)
         add_test(NAME shin-linux-package
             COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_linux_package.py)
         set_tests_properties(shin-linux-package PROPERTIES TIMEOUT 30)

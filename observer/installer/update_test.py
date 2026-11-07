@@ -133,6 +133,26 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             assert time.monotonic() < until, 'service did not release its endpoint'
             time.sleep(0.01)
 
+    # An installed kit may have no enrolled projects yet. Updating it must not
+    # require a registry that only the first project connection creates.
+    empty_prefix, empty_home, empty_bin = user / 'empty-kit', user / 'empty-data', user / 'empty-bin'
+    call('install', '--prefix', empty_prefix, '--home', empty_home, '--bin-dir', empty_bin)
+    empty_manifest = json.loads((empty_prefix / 'shin-kit.json').read_text())
+    empty_manifest['version'] = '2.0.5-dev.0'
+    write_json(empty_prefix / 'shin-kit.json', empty_manifest)
+    empty_receipt_path = empty_prefix / '.shin-installation.json'
+    empty_receipt = json.loads(empty_receipt_path.read_text())
+    empty_receipt['manifest_sha256'] = hashlib.sha256((empty_prefix / 'shin-kit.json').read_bytes()).hexdigest()
+    write_json(empty_receipt_path, empty_receipt, True)
+    empty_state_path = Path(empty_receipt['control']) / 'state.json'
+    empty_state = json.loads(empty_state_path.read_text())
+    empty_state.update(kit=empty_manifest, receipt=empty_receipt)
+    write_json(empty_state_path, empty_state, True)
+    assert not (empty_home / 'registry').exists()
+    empty_update = call('update', '--prefix', empty_prefix)
+    assert empty_update['changed'] and empty_update['data_preserved'], empty_update
+    assert not (empty_home / 'registry').exists(), 'update created a project registry without enrollment'
+
     managed = os.environ.get('SHIN_TEST_LAUNCHD') == '1'
     update = ['update', '--prefix', str(prefix)]
     adoption = [*update, '--adopt-existing', '--home', str(home), '--bin-dir', str(bin_dir)]

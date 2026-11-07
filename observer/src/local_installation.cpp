@@ -619,6 +619,7 @@ Json bundled_bootstrap_profile_revision(const Json& binding, const fs::path& pre
 }
 Json bootstrap_patch_migrations(const fs::path& home, const fs::path& candidate, const fs::path& prefix) {
     Json records = Json::array();
+    if (!present(home / "registry")) return records;
     for (const auto& project : registered_local_projects(home)) {
         StateStore store(home / "projects" / digest(project.root.string()), false);
         const auto binding = store.load();

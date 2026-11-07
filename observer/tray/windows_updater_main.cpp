@@ -7,6 +7,7 @@
 #include "shin/observer/local_updates.h"
 #include "shin/windows/file.h"
 #include "../ui/language.h"
+#include "../ui/project_progress.h"
 #include "windows_download.h"
 #include "windows_installation.h"
 #include <future>

@@ -10,10 +10,10 @@ for MSI and portable-kit ownership.
 Manual configuration remains available for clients without automatic writers.
 On Windows, **Review connections** precedes the final connection confirmation.
 
-The dev.97 candidate adds a retained project-connection view with live preparation
+The dev.98 candidate includes a retained project-connection view with live preparation
 stages and elapsed time. macOS keeps setup visible from folder selection through
 the result; failures remain inline for review and retry. Windows shows the same
-stages in its management page. Use it after dev.97 is published for your platform.
+stages in its management page. Use it after dev.98 is published for your platform.
 
 1. On a fresh installation, open **Set up Shin…**. Otherwise use
    **Settings → Connect projects and agents…**. Choose a project folder. Shin connects it

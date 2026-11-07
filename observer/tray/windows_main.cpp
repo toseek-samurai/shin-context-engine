@@ -7,6 +7,7 @@
 #include <winhttp.h>
 #include "shin/observer/local_updates.h"
 #include "shin/windows/file.h"
+#include "../ui/project_progress.h"
 #include "windows_installation.h"
 #include "imgui_impl_win32.h"
 #include "windows_dpi.h"

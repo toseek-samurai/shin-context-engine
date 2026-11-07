@@ -642,7 +642,10 @@ class LocalServiceTests(unittest.TestCase):
             self.assertTrue(read['ok'], read)
             row = self.raw('service-status')['result']['telemetry']['request_metrics']['recent'][-1]
             self.assertEqual(row['follow_up'], expected)
-        self.assertEqual(self.history(lambda h: h.get('observed_follow_ups') == 1)['correlated_requests'], 3)
+        # The observed follow-up is the second request; persistence of the third
+        # request may still be queued. Wait for the complete expected cohort.
+        self.assertEqual(self.history(lambda h: h.get('observed_follow_ups') == 1 and
+                                      h.get('correlated_requests') == 3)['correlated_requests'], 3)
         history = self.history(lambda h: any(r['model_id'] == 'fixture/model-a' for r in h.get('model_cohorts', [])))
         cohort = next(r for r in history['model_cohorts'] if r['model_id'] == 'fixture/model-a')
         self.assertEqual(cohort, {'model_id': 'fixture/model-a', 'requests': 1, 'reported_sessions': 1})

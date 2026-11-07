@@ -3,6 +3,7 @@
 #include "shin/observer/local_registry.h"
 #include "shin/observer/observer.h"
 #include "shin/windows/file.h"
+#include "../ui/project_progress.h"
 #include "../tray/windows_download.h"
 #include "../tray/windows_installation.h"
 #include <windows.h>

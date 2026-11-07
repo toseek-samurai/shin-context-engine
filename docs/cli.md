@@ -14,12 +14,12 @@ CLI/MCP contracts, with `.exe` binaries. The terminal dashboard, automatic clien
 setup, agent-history collection and update installation have platform limits;
 see the [capability matrix](README.md#capabilities-by-platform).
 
-The dev.97 candidate supports
+The dev.98 candidate supports
 `shin-ce project-add --root /path/to/project --progress-json` for integrations.
 It emits bounded `shin.project-progress.v1`
 stage frames on stderr; stdout remains the final JSON receipt. Stages describe
 actual work, without an estimated percentage. Without the option, redirected
-commands retain their existing output. Use it after dev.97 is published for your platform.
+commands retain their existing output. Use it after dev.98 is published for your platform.
 
 ## Interactive terminal monitor
 

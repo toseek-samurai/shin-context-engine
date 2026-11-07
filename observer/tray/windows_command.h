@@ -1,6 +1,7 @@
 #pragma once
-#include "shin/windows/file.h"
-#include "../ui/project_progress.h"
+// Implementation fragment included inside each host's private namespace.
+// Its shin/windows/file.h and ui/project_progress.h dependencies must be
+// included at translation-unit scope so their namespaces remain global.
 
 // The UI invokes the matching native CLI directly, never through a shell.
 // Drain both streams with fixed output/deadline bounds. The CLI owns its worker

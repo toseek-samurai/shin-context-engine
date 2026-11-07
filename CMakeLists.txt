@@ -82,6 +82,7 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/adoption_plan.cpp
     src/authority.cpp
     src/core.cpp
+    src/secret_scan.cpp
     src/profiles.cpp
     src/profile_policy.cpp
     src/extraction.cpp
@@ -162,6 +163,8 @@ endif()
 target_include_directories(shin-context-core PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/src)
 target_include_directories(shin-context-core SYSTEM PUBLIC ${CMAKE_CURRENT_SOURCE_DIR}/third_party)
 target_link_libraries(shin-context-core PUBLIC Threads::Threads shin-syntax-vendor shin-unicode-vendor)
+include(shared/cmake/SecretScanner.cmake)
+target_link_libraries(shin-context-core PRIVATE re2::re2)
 target_compile_definitions(shin-context-core PUBLIC SHIN_VERSION="${SHIN_VERSION}")
 target_compile_options(shin-context-core PRIVATE ${SHIN_CXX_WARNINGS})
 include(shared/cmake/CoreAllocator.cmake)
@@ -257,6 +260,7 @@ set(SHIN_PORTABLE_CONTRACTS
 
 if(SHIN_CONTEXT_BUILD_CLI)
     install(TARGETS shin-context RUNTIME DESTINATION "${CMAKE_INSTALL_BINDIR}")
+    shin_install_secret_scanner_notices(shin-context)
     install(FILES VERSION DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context")
     install(FILES LICENSE NOTICE DESTINATION "${CMAKE_INSTALL_DATADIR}/shin-context")
     install(FILES ${SHIN_GENERIC_PROFILES}

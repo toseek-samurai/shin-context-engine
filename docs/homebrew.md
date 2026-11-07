@@ -1,5 +1,10 @@
 # Homebrew installation
 
+The published tap currently pins **dev.70**. It is an older preview than the
+[native dev.98 download](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98),
+so its interface and update behavior follow dev.70. `brew upgrade` installs the
+version offered by the formula, not the newest native-kit release automatically.
+
 The project-owned tap distributes the complete macOS preview: Core, Observer,
 CLI, MCP, usage collector, Sand TUI and Shin Monitor. The first package builds
 from a pinned source release on your Mac. It needs Homebrew's build tools and
@@ -118,3 +123,11 @@ install, query, MCP, EN/RU terminal startup, upgrade/reinstall and uninstall.
 Do not run a native installer from formula hooks, start services or edit client
 settings during installation, fetch dependencies from moving branches, or
 silently change project approval policy during `brew upgrade`.
+
+The RE2 source candidate also requires formula resources named `shin_re2` and
+`shin_abseil`, using the exact URLs and SHA-256 pins in
+[SecretScanner.cmake](../shared/cmake/SecretScanner.cmake). Stage them through
+`FETCHCONTENT_SOURCE_DIR_SHIN_RE2` and `FETCHCONTENT_SOURCE_DIR_SHIN_ABSEIL`
+before configuring with `FETCHCONTENT_FULLY_DISCONNECTED=ON`. Include both
+licenses in install checks. The published dev.70 formula remains pinned to its
+existing source; update that recipe only after the new preview is qualified.

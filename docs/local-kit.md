@@ -15,7 +15,7 @@ Windows ZIP/MSI packaging route are described in the [Windows guide](https://git
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -23,7 +23,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.96/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.98/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -125,13 +125,10 @@ stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-Current development source restores the original dark Sand palette with
-**Overview**, **Projects**, **History** and **Settings**. The compact panel is
-520 px wide, with 14 px body text and content-dependent height up to 680 px.
-Short pages no longer reserve a full-height empty area; long views retain their
-height limit and scrolling. These refinements are not yet released. Published
-dev.85 uses Light Sand with the same navigation. Earlier desktop previews use
-**Activity** as their third section.
+The current native preview uses dark Sand with **Overview**, **Projects**,
+**History** and **Settings**. Short pages fit their contents; longer views scroll
+within the panel. Earlier desktop previews, including the Homebrew dev.70
+package, use **Activity** as their third section.
 Overview summarizes current project readiness and leads to a project needing
 review. Projects groups folder and agent connections with their current context
 status. Project explanations expose a labeled next action, with search-check
@@ -155,6 +152,9 @@ The background service has a separate login-startup setting.
 
 Add more projects from **Projects** with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
+Native dev.98 keeps the setup window visible during preparation, showing the
+current stage and elapsed time. Failures remain inline with a retry action;
+successful preparation leads to agent selection in the same window.
 
 For the dark Sand terminal dashboard with line charts, run `shin-ce stats`.
 The TUI groups its screens under Overview, Projects, Activity and
@@ -337,15 +337,17 @@ folder. Close Monitor and run the **new kit's** executable:
 
 For a custom installation, add `--prefix /path/to/installed-kit`; its recorded
 command directory and data home are retained. The updater verifies both manifests,
-checks current projects under the new engine, stages complete files, stops the
-owned service and atomically exchanges the payload directories. It restores the
-previous service/autostart preference and checks readiness before reporting success.
+checks project authority and derived state under the new engine, stages complete
+files, stops the owned service and atomically exchanges the payload directories.
+It restores the previous service/autostart preference and confirms the installed
+kit and service. Projects still preparing or retaining a permitted diagnostic
+are reported separately as `projects_pending`; their own retrieval gates remain enforced.
 Project bindings, indexes, identity and history remain in their existing data home.
 Terminal updates show each stage and elapsed time on stderr, with real byte counts
 for copying and completed/total project counts for qualification. stdout retains
 the JSON receipt. Redirected commands stay quiet by default; add `--progress` to
 include readable stages in a log. No desktop window opens for a terminal command.
-Restart Monitor after completion. Current development source adds an update-aware
+Restart Monitor after completion. The current native kit includes an update-aware
 MCP bridge on macOS: once a client has loaded this bridge, compatible kit updates
 do not require restarting its MCP connection or coding application. Older adapters
 need one reconnection to load it. Published kits without the new runtime manifest
@@ -365,7 +367,7 @@ previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
-The current preview uses Core dev.13 and the Objective-C++ v24 index format. It
+Published dev.98 uses Core dev.18 and the Objective-C++ v24 index format. It
 rebuilds older derived indexes from approved project sources under their existing
 authority; no old retrieval reader or data conversion is retained. During rollback to an
 older kit, a private bootstrap index that the old CLI cannot read is atomically
@@ -581,7 +583,13 @@ only to rebuild approved source inputs, not to read or convert old retrieval
 data. Canonical publications are refreshed by the ordinary Observer under
 existing grants. Private-bootstrap bindings are updated through native
 initialization without new enrollment or changed identity/profile policy.
-All projects must qualify before success.
+Project sources remain subject to ordinary qualification. A confirmed kit/service
+update may report pending projects; it does not make their context current or
+readable before those checks pass.
+
+The Core dev.19 source candidate changes secret scanning to RE2. Its engine
+version change causes normal managed regeneration, including rechecking previous
+quarantines; it does not change the v24 format or project approval policy.
 
 If an already approved project marker pins the previous generator, the installer
 journals the original and replacement bytes, changes only that generator value
@@ -620,7 +628,7 @@ dismissed. A manual request during a background check
 shows that check's result instead of discarding the request. After selecting
 **Download and install**, the window shows the helper handoff before Monitor exits.
 
-Current development source gives these update windows the same dark Sand
+The current preview gives these update windows the same dark Sand
 surfaces and readable, compact actions as the dashboard. It retains the independent Updater handoff, saved results and recovery
 checks described below.
 
@@ -663,7 +671,7 @@ shin-ce update-install --revision HASH_FROM_CHECK
 shin-ce update-status
 ```
 
-Current development source separates installation from project readiness. A verified
+The current native preview separates installation from project readiness. A verified
 kit and healthy service can complete an update while individual projects refresh
 or retain a search/validation diagnostic. Those projects keep their normal
 freshness, policy and quality gates; installation does not approve new profiles,

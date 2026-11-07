@@ -82,6 +82,7 @@ target_link_libraries(shin-observer PRIVATE shin-observer-native)
 target_compile_options(shin-observer PRIVATE ${SHIN_NATIVE_WARNINGS})
 set(SHIN_LOCAL_ANALYSIS ${SHIN_NATIVE_SOURCES} "${SHIN_OBSERVER_ROOT}/src/main.cpp")
 install(TARGETS shin-observer RUNTIME DESTINATION bin)
+shin_install_secret_scanner_notices(shin-observer)
 install(FILES "${SHIN_OBSERVER_ROOT}/VERSION" DESTINATION share/shin-observer)
 install(FILES
     "${SHIN_OBSERVER_ROOT}/../docs/machine/local-session-recovery-v1.json"

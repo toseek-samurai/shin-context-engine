@@ -11,10 +11,10 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-Download the Windows files from [preview dev.96](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96):
+Download the Windows files from [preview dev.98](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98):
 
-- `shin-desktop-2.0.5-dev.96-windows-AMD64.msi` for the installed desktop route.
-- `shin-desktop-2.0.5-dev.96-windows-AMD64.zip` for a portable extraction.
+- `shin-desktop-2.0.5-dev.98-windows-AMD64.msi` for the installed desktop route.
+- `shin-desktop-2.0.5-dev.98-windows-AMD64.zip` for a portable extraction.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
@@ -64,8 +64,8 @@ client setup, MSI/UAC installation, saved-result and recovery checks.
   <img src="images/monitor-windows-projects.png" width="400" alt="Windows Sand Projects with readable state labels and compact controls">
 </p>
 
-These current-source captures come from the native Windows render test at 100%
-display scaling; their data is synthetic. They are source-render evidence, not an
+These captures come from the published dev.98 ZIP's native Windows render test
+on a signed-in Mini-PC at 100% render scaling. Their data is synthetic; this is render evidence, not an
 installed MSI or live-project test. See
 [Windows Settings](images/monitor-windows-settings.png),
 [Russian Overview](images/monitor-windows-overview-ru.png),

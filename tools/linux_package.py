@@ -40,6 +40,8 @@ for component in ('shin-context', 'shin-observer'):
             'tree-sitter-typescript': ('LICENSE', 'UPSTREAM.json'), 'tree-sitter-cpp': ('LICENSE', 'UPSTREAM.json'),
             'pugixml': ('LICENSE.MIT', 'UPSTREAM.json'), 'utf8proc': ('LICENSE.md', 'UPSTREAM.json')}.items():
         REQUIRED_FILES.update('share/' + component + '/licenses/' + dependency + '/' + name for name in names)
+    REQUIRED_FILES.update('share/' + component + '/licenses/' + dependency + '/LICENSE'
+                          for dependency in ('re2', 'abseil'))
 REQUIRED_FILES.update({
     'share/shin-context/licenses/tree-sitter-objcpp/LICENSE',
     'share/shin-context/licenses/tree-sitter-objcpp/UPSTREAM.json',

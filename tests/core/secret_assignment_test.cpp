@@ -20,6 +20,19 @@ int main() {
         "token = \"pre\" + (codec.EncodeCursorV2(cursor)) + \"post\";",
         "export const credentialSecretProviderReadSecret = async (request: CredentialRequest, options?: RequestInit): Promise<CredentialResponse> => {",
         "const getSecret = (options?: RequestInit): Promise<Response42> => {",
+        "Authorization: Bearer ${{ secrets.DEPLOYMENT_ACCESS_TOKEN }}",
+        "Authorization: Bearer ${DEPLOYMENT_ACCESS_TOKEN}",
+        "Authorization: Bearer <supplied-by-credential-provider>",
+        "export const getToken = (token: string): Promise<AuthorizationHeadersVersion2> => {\n"
+        "  return buildHeaders(token);\n}\n",
+        "const token = makeToken();\nconst version = AuthorizationHeadersVersion2;\n",
+        "const password = process.env.DEPLOYMENT_PASSWORD;",
+        "const secret = readSecret(); // AuthorizationHeadersVersion2",
+        "const description = 'This API returns a secret or token';",
+        "fetch(`/api/continue?token=${token}`);\nconst mode = AuthorizationHeadersVersion2;\n",
+        "expect(url).toBe('https://service.test/continue?api_token=hello');\n",
+        "fetch('https://service.test/continue?token=undefined');\nconst mode = AuthorizationHeadersVersion2;\n",
+        "\"SENTRY_AUTH_TOKEN\": \"${SENTRY_AUTH_TOKEN}\"",
     };
     const std::vector<std::string> blocked = {
         "token = \"local-development-" + opaque + "\";",
@@ -53,6 +66,17 @@ int main() {
         "token = static_cast<const char*>(\"" + opaque + "\");",
         "token = \"prefix\" + \"" + opaque + "\";",
         "token = condition ? \"" + opaque + "\" : fallback;",
+        "Authorization: Bearer ${{ secrets.DEPLOYMENT_ACCESS_TOKEN }}\nAuthorization: Bearer " + opaque,
+        "const harmless = 1;\nconst api_key = \"" + opaque + "\";",
+        "const getSecret = (options?: RequestInit): Promise<Response42> => {\n"
+        "  const password = \"" + opaque + "\";\n}\n",
+        "password =\n  \"" + opaque + "\";",
+        "token = GetPrefix() +\n WithSuffix(\"" + opaque + "\");",
+        "authorization = Bearer\t" + opaque,
+        "const password = process.env.DEPLOYMENT_PASSWORD; const api_key = \"" + opaque + "\";",
+        "const url = 'https://service.test/continue?token=" + opaque + "';",
+        "export ACCESS_KEY=ASIA" + std::string(16, 'Z'),
+        std::string("-----") + "BEGIN RSA PRIVATE KEY-----\nopaque\n-----END RSA PRIVATE KEY-----",
         "var value = IssueForRole(\"sk-" + opaque + "\");",
         "var token = IssueForRole(\"sk-" + opaque + "\");",
         "authorization = Bearer " + opaque,
@@ -75,5 +99,11 @@ int main() {
     const auto suppressed = "token = \"" + opaque + "\"; // GiTlEaKs:AlLoW";
     if (shin::context::detect_secret_like_text(suppressed, true).found ||
         !shin::context::detect_secret_like_text(suppressed, false).found) return 1;
+    // Neither long safe prefixes nor non-UTF-8 source bytes waive later findings.
+    const auto large = std::string(1024 * 1024, 'x') + "\n";
+    if (shin::context::detect_secret_like_text(large, false).found ||
+        !shin::context::detect_secret_like_text(large + "password = \"" + opaque + "\";", false).found ||
+        !shin::context::detect_secret_like_text(std::string(1, static_cast<char>(0xff)) +
+            "\nauthorization = Bearer " + opaque, false).found) return 1;
     std::cout << safe.size() + blocked.size() << " secret assignment cases passed\n";
 }

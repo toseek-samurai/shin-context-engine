@@ -38,15 +38,7 @@ std::string source_physical_range(const std::string& content,
 }
 
 SecretScanHit source_range_secret(const std::string& text) {
-    SecretScanHit hit = detect_secret_like_text(text, false);
-    if (!hit.found) {
-        for (const auto& line : split_lines(text)) {
-            hit = detect_secret_like_text(line, false);
-            if (hit.found) break;
-        }
-    }
-    if (!hit.found) hit = detect_secret_like_text(compact_whitespace(text), false);
-    return hit;
+    return detect_secret_like_text(text, false);
 }
 
 }  // namespace shin::context

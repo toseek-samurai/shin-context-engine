@@ -1,123 +1,135 @@
 # <img src="docs/images/shin-logo.png" align="absmiddle" width="48" height="48" alt="Shin logo"> Shin Context Engine
 
-[![Source qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml)
+[![Published dev.98 qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.98)](https://github.com/toseek-samurai/shin-context-engine/actions/runs/42400861769)
 
 **Fresh code and documentation context for coding agents.**
 
-Shin indexes your project locally, watches for changes, and returns focused
-context through **MCP or a native CLI**. Its C++ engine needs no account, model
-download, or cloud inference API for local retrieval.
+Shin indexes your project locally, watches for changes, and gives your coding
+agent focused evidence through **MCP or a native CLI**. Find unfamiliar code,
+check the relevant contracts, and inspect the matching source without loading
+the whole repository into every conversation.
 
-Use it to find unfamiliar code, retrieve related documentation, and pick up a
-task with evidence your agent can inspect. Query results carry a snapshot that
-binds subsequent inspection and reads to the matching source.
+Local retrieval needs no account, model download, embedding service or cloud
+inference API. Your coding agent keeps its own model and workflow.
 
-[Download preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96) ·
+[Download preview dev.98](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98) ·
 [macOS setup](#get-started-on-macos) · [Windows setup](docs/windows-desktop.md#download-a-preview) ·
 [Linux / WSL2](docs/building.md#linux-and-wsl2-terminal-tools) ·
 [Connect your coding agent](docs/native-client-setup.md)
 
-**Development preview:** macOS Apple Silicon and Windows x64 packages are
-available, along with Ubuntu 24.04 x86_64 terminal tools for Linux and WSL2.
-There is no stable release yet.
-Platform capabilities differ; see the [component table](#choose-the-component-you-need)
-and [Windows scope](docs/windows-desktop.md).
-
-[Report a bug or suggest a feature](https://github.com/toseek-samurai/shin-context-engine/issues/new/choose) ·
-[Documentation and platform support](docs/README.md) · [CLI guide](docs/cli.md) · [Architecture](docs/architecture.md) · [Contribute](CONTRIBUTING.md)
+**Development preview:** macOS 15+ Apple Silicon, Windows x64 ZIP/MSI, and
+Ubuntu 24.04 x86_64 terminal archives are available. There is no stable release yet.
+See [platform support](docs/README.md#capabilities-by-platform) for the differences
+in desktop, terminal and update support.
 
 ## From a question to source
 
-After adding a project through the setup guide above, ask your connected agent
-to use Shin, or run a query from the project's directory:
+1. **Add a folder.** Use Monitor's project setup or run `shin-ce init` in the project.
+2. **Choose your agents.** Setup discovers supported clients and shows which
+   configurations will change, preserving their other settings.
+3. **Ask and inspect.** Use your connected agent or the CLI:
 
 ```sh
 shin-ce query "Where are requests validated?"
 ```
 
-Follow the returned paths and snapshot with `inspect` and `read` to examine the
-matching source. The same evidence flow is available through MCP; your agent
-can fetch context when it needs it. See the [inspection commands](docs/cli.md#inspect-evidence).
+Results include source paths, evidence and a snapshot identifier. Follow that
+snapshot with `inspect` and `read` to examine the matching source; changed files
+require fresh evidence. See the [inspection commands](docs/cli.md#inspect-evidence).
+For a known file or symbol, your agent can still read it directly.
 
 ## See your project's state
 
-**Shin Monitor** shows project readiness, request history, timings, storage and
-optional model usage. The macOS kit includes a menu bar app; the Windows preview
-includes its native desktop host. On macOS and Linux, `shin-ce stats` opens the
-Sand terminal monitor with the same project states and timing calculations.
-
-The screenshots below show the **dark Sand layout**: the original dark
-Sand palette with compact navigation, readable 14 px body text and a panel that
-fits short pages instead of leaving empty space below them. This layout is
-included in the published preview.
+**Shin Monitor** puts readiness, project analytics and recent activity in a
+compact dark Sand interface. macOS uses a menu bar popup; Windows uses its native
+tray host. Both support English and Russian.
 
 <p>
-  <img src="docs/images/monitor-overview.png" width="400" alt="Sand Overview with project availability, a labeled warning action and a line graph">
-  <img src="docs/images/monitor-projects.png" width="400" alt="Sand Projects distinguishes available, preparing, partial and blocked context with readable labels">
-</p>
-<p>
-  <img src="docs/images/monitor-timing.png" width="400" alt="History timing details separate search time from total service time and reader preparation">
-  <img src="docs/images/monitor-settings.png" width="400" alt="Sand Settings groups language, storage and updates with compact labeled controls">
+  <img src="docs/images/monitor-overview.png" width="400" alt="Shin Overview shows project availability and a memory line graph">
+  <img src="docs/images/monitor-project.png" width="400" alt="Project analytics show search totals, errors, response times and the request mix">
 </p>
 
-Monitor uses **Overview**, **Projects**, **History** and **Settings**. Overview
-shows availability and recent activity; Projects connects folders and coding
-agents. History opens with recorded calls, with timing and optional model usage
-available separately. Technical reports stay in expandable details rather than
-competing with everyday actions.
+- **Overview:** see which projects are available and follow memory and request activity.
+- **Projects:** connect folders and agents, inspect search response times, and understand warnings.
+- **History:** review recorded calls, session activity, timing and optional agent usage.
+- **Settings:** change language, inspect storage and check for updates.
 
-These native macOS Monitor renders use synthetic sample data. Windows uses the
-same dashboard, but its setup and update controls differ; see the
-[capability matrix](docs/README.md#capabilities-by-platform).
-Monitor supports English and Russian; these examples use English. Names, counts,
-and timings above are examples, not benchmark results.
-[Screenshot sources and reproduction](docs/images/README.md).
+Project setup stays visible while a folder is prepared, showing the current
+stage and elapsed time. Partial coverage, preparation and blocked states have
+separate explanations; available verified context remains usable when a warning
+permits it.
 
-- **See freshness and failures.** Monitor distinguishes current, preparing,
-  partial, and blocked project states, with a next step when action is needed.
-- **Ask for focused evidence.** Query from your terminal or coding agent, then
-  inspect and read using the returned snapshot.
-- **Keep state outside your repository.** The native kit stores indexes and
-  history in a separate private data directory. Adding a project does not add
-  configuration files to its source tree.
-- **Use the same local service from UI and CLI.** Desktop and TUI use the same
-  project states and timing calculations. The desktop redesign calls its activity
-  section History; the terminal keeps Activity. Text and JSON status remain available. See the
-  [UI-to-CLI map](docs/cli.md#monitor-and-cli).
+Screenshots use synthetic data, not private projects or benchmark results.
+[Native EN/RU gallery and capture sources](docs/images/README.md) ·
+[Windows screenshots and behavior](docs/windows-desktop.md).
 
 ## Follow agent sessions
 
-<img src="docs/images/monitor-sessions.png" width="360" alt="Sand History displays recorded calls, timestamps and colored outcomes, with an explicit 48-event display limit">
+<img src="docs/images/monitor-sessions.png" width="440" alt="Shin History journal groups synthetic MCP calls by session with timestamps and colored outcomes">
 
-In the desktop redesign, **History** opens with recent MCP calls and
-explicit client events, session counters and expandable details. Up to eight
-sessions and six events per session keep the view bounded; this display limit
-does not reduce stored history or analysis totals. The screenshot uses synthetic
-data. Earlier dark desktop previews and the terminal keep this journal under
-**Activity → Journal**. See [Sessions and recording boundaries](docs/cli.md#sessions-and-optional-recovery-notes-dev45)
-and the [Russian screenshot](docs/images/monitor-sessions-ru.png).
+History groups recorded MCP calls and explicit client events by session.
+Timing and agent token usage are separate: a client's token totals do not count
+Shin calls, and missing session or model metadata stays unknown.
+The journal shows up to 48 recent events while retaining its separate history
+and analysis totals. See [what is recorded](docs/cli.md#sessions-and-optional-recovery-notes-dev45).
 
 ## Also in your terminal
 
-<img src="docs/images/tui-overview.svg" width="864" alt="Shin Sand TUI with a memory line graph, metrics and five example projects showing distinct search and coverage states">
+```sh
+shin-ce stats
+```
 
-`shin-ce stats` keeps its dark Sand palette. This native FTXUI render uses
-synthetic example data; fonts and color support follow your terminal.
-Sand TUI is included in preview dev.39 and later. The four-section layout shown
-here is included in preview dev.66 and later. The desktop Light Sand redesign
-does not change the terminal's appearance or keyboard controls.
+<img src="docs/images/tui-overview.svg" width="864" alt="Native Sand terminal monitor with a line graph and distinct project readiness and coverage states">
 
-<p>
-  <img src="docs/images/tui-project.svg" width="428" alt="Terminal project details explain partial coverage and name the excluded example file">
-  <img src="docs/images/tui-timing.svg" width="428" alt="Terminal timing separates retained query latency, cold readers and preparation phases">
-</p>
+The macOS/Linux terminal monitor uses the same project-state and timing
+calculations. Navigate **Overview**, **Projects**, **Activity** and **Settings**
+with Tab or 1–4; press `?` for help and `l` to switch EN/RU.
+Native macOS update review and progress are available under Settings / Updates.
 
-[All terminal screens, including Russian and compact layouts](docs/tui.md) ·
-[Keyboard controls and usage setup](docs/cli.md#interactive-terminal-monitor).
+[Terminal screen gallery](docs/tui.md) · [CLI guide and keyboard controls](docs/cli.md).
+These native FTXUI captures also use synthetic data; terminal fonts and colors vary.
+
+## Get started on macOS
+
+Install the [current native preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98):
+
+```sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.98/install.sh | sh
+```
+
+The installer downloads a versioned binary kit, verifies SHA-256 and installs it
+for your user without `sudo` or a compiler. You can [inspect the script and archive](docs/local-kit.md#download-a-preview-release)
+first. The preview is ad-hoc signed and not notarized; macOS may require manual
+approval on first launch.
+
+Open Monitor, then use its project setup to add a folder and choose agents:
+
+```sh
+open "$HOME/.local/opt/shin-local/Shin Monitor.app"
+```
+
+For terminal setup:
+
+```sh
+export PATH="$HOME/.local/bin:$PATH"
+cd /path/to/your/project
+shin-ce init
+shin-ce status --text
+shin-ce query "Where are requests validated?"
+```
+
+The `PATH` change applies to this terminal session; installation leaves shell
+startup files unchanged. Indexes and history stay in a separate private data
+home. Adding a project does not add configuration files to its source tree.
+
+Monitor checks for complete published updates and offers a review before
+installation. Its independent Updater shows download, staging and activation
+progress. [Installation, startup, updates and recovery](docs/local-kit.md) ·
+[Automatic and manual agent connections](docs/native-client-setup.md).
 
 ## Install with Homebrew
 
-The project-owned tap builds the complete macOS preview, including Monitor,
+The project-owned tap builds the complete macOS application, including Monitor,
 CLI/TUI and MCP:
 
 ```sh
@@ -125,95 +137,39 @@ brew install toseek-samurai/tap/shin-context-engine
 shin-monitor
 ```
 
-This route targets macOS 15+ and is qualified on Apple Silicon; Intel installation
-qualification remains incomplete. The first installation builds from source and
-can take several minutes.
-[Homebrew setup, agent connections, upgrades and removal](docs/homebrew.md).
-Homebrew manages this package; use `brew upgrade` for updates.
-
-## Get started on macOS
-
-The preview includes a first-run setup window, automatic agent connections
-and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
-
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96)
-is available for **macOS 15+ on Apple Silicon**. Install or update with:
-
-```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.96/install.sh | sh
-```
-
-The installer downloads a versioned binary kit, checks SHA-256, and installs it
-for your user without `sudo` or a compiler. This preview is ad-hoc signed and
-not notarized; macOS may require manual approval on first launch. You can also
-[download and inspect the archive](docs/local-kit.md#download-a-preview-release),
-[build from source](docs/local-kit.md#build-the-package), or test a
-[CI candidate](docs/local-kit.md#download-a-ci-candidate).
-
-Connect your first project:
-
-```sh
-export PATH="$HOME/.local/bin:$PATH"
-
-cd /path/to/your/project
-shin-ce init
-shin-ce status --text
-shin-ce query "Where are requests validated?"
-```
-
-`init` adds the current project and starts the local service. Initial preparation
-can take time; use `status --text` to see whether search is ready. The `PATH`
-change above applies to this terminal session; installation leaves your shell
-startup files unchanged.
-
-Open Monitor and click its menu bar icon:
-
-```sh
-open "$HOME/.local/opt/shin-local/Shin Monitor.app"
-```
-
-You can add further folders in Monitor or with
-`shin-ce project-add --root /path/to/another/project`. For terminal-only use, run
-`shin-ce stats` (or `shin-ce service-status --text` for a single status report).
-In preview dev.66 and later, use Tab or 1–4 for **Overview**, **Projects**,
-**Activity** and **Settings**. Left/Right or `[` / `]` switches pages inside
-Activity and Settings; Enter opens project details and q exits. The journal lives
-in Activity; updates live in Settings (shortcut `u`).
-To use Shin from a coding agent,
-[configure the included MCP adapter](docs/native-client-setup.md). Service and Monitor
-startup at login are described in the
-[installation guide](docs/local-kit.md#automatic-startup). For an existing kit,
-follow the [update procedure](docs/local-kit.md#update-an-existing-kit), which preserves
-project data and restores the previous kit if activation fails.
+**The tap currently pins dev.70**, an older preview than the native download above.
+Its UI and update behavior follow that version. The first installation builds
+from source and can take several minutes; Apple Silicon installation has been
+qualified, while Intel qualification is incomplete. Homebrew owns updates through
+`brew upgrade`. [Homebrew setup and lifecycle](docs/homebrew.md).
 
 ## Choose the component you need
 
-| Component | What it does | Current build and distribution scope |
+| Route | Included | Get started |
 | --- | --- | --- |
-| Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
-| Core | Indexing and bounded retrieval for tools and integrations | macOS, Linux and native Windows x64 source builds; [build instructions](docs/building.md) |
-| Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | Included in the macOS/Windows kits and [Linux terminal archive](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96); [source builds](docs/building.md) |
-| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96) and [development checks](docs/building.md#native-windows-development-builds) |
+| macOS 15+ Apple Silicon | Core, local service, CLI/TUI, MCP, usage collector and Monitor | [Native kit](docs/local-kit.md) or [Homebrew](docs/homebrew.md) |
+| Windows x64 on local NTFS | Core, local service, CLI, MCP, usage collector and Win32/DX11 Monitor | [ZIP/MSI preview](docs/windows-desktop.md#download-a-preview) |
+| Ubuntu 24.04 x86_64 / WSL2 | Core, local service, CLI/TUI, MCP and usage collector | [Terminal archive or source build](docs/building.md#linux-and-wsl2-terminal-tools) |
+| Core for tools and integrations | C++ indexing, bounded retrieval and snapshot-bound source reads | [Build from source](docs/building.md#core) |
 
-Windows support adds platform adapters to the same Core, profiles and protocols.
-Published ZIP/MSI previews pass the matching CI matrix and exact-package checks;
-see the [Windows scope and remaining gates](docs/windows-desktop.md) for the
-distinction between hosted checks, interactive tests and installation lifecycle.
-Linux desktop packaging and complete macOS Intel installation
-qualification remain pending. Configuring an AI client may send the context it retrieves to that
-client's chosen model provider.
+Windows does not yet provide the TUI. Linux has no native desktop host, OS service
+installer or automatic package updater. The [capability matrix](docs/README.md#capabilities-by-platform)
+describes the supported setup and update routes. Configuring a coding agent may
+send retrieved context to that agent's chosen model provider.
 
-For contributors: [build and test](docs/building.md),
-[contribution guidance](CONTRIBUTING.md), and the
-[product manifest](docs/machine/shin-context-engine.manifest.json).
-The root `VERSION` records [Core](VERSION); [Observer](observer/VERSION) is
-versioned separately.
+[Documentation](docs/README.md) · [Architecture](docs/architecture.md) ·
+[Contribute](CONTRIBUTING.md) · [Report a bug or suggest a feature](https://github.com/toseek-samurai/shin-context-engine/issues/new/choose)
 
-Licensed under [Apache-2.0](LICENSE). [Third-party notices](THIRD_PARTY.md)
-and [private security reporting](SECURITY.md).
+Core and Observer are versioned independently: Core [`VERSION`](VERSION) and
+[Observer version](observer/VERSION). Published packages and current development
+source can differ; see [release and source identities](docs/README.md#current-preview)
+and the [machine-readable manifest](docs/machine/shin-context-engine.manifest.json).
+
+Licensed under [Apache-2.0](LICENSE). [Third-party notices](THIRD_PARTY.md) ·
+[Private security reporting](SECURITY.md).
 
 <p align="center">
   <a href="docs/local-kit.md"><img src="docs/images/platform-macos.svg" width="230" height="56" alt="macOS 15+ Apple Silicon — preview binary kit"></a>
-  <a href="docs/building.md#linux-and-wsl2-terminal-tools"><img src="docs/images/platform-linux.svg" width="230" height="56" alt="Linux and WSL2 — build from source"></a>
-  <a href="docs/windows-desktop.md"><img src="docs/images/platform-windows.svg" width="230" height="56" alt="Windows x64 — ZIP/MSI desktop preview; see platform scope"></a>
+  <a href="docs/building.md#linux-and-wsl2-terminal-tools"><img src="docs/images/platform-linux.svg" width="230" height="56" alt="Linux and WSL2 — terminal preview and source builds"></a>
+  <a href="docs/windows-desktop.md"><img src="docs/images/platform-windows.svg" width="230" height="56" alt="Windows x64 — ZIP/MSI desktop preview"></a>
 </p>

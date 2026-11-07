@@ -418,6 +418,26 @@
   ],
   "dependencies": [
     {
+      "id": "re2",
+      "version": "2025-11-05",
+      "source": "https://codeload.github.com/google/re2/tar.gz/refs/tags/2025-11-05",
+      "archiveSha256": "87f6029d2f6de8aa023654240a03ada90e876ce9a4676e258dd01ea4c26ffd67",
+      "type": "fetched-static-source",
+      "license": "BSD-3-Clause",
+      "runtimeDependency": false,
+      "purpose": "Source candidate: fixed, bounded-memory secret scanning patterns; not shipped in preview dev.98."
+    },
+    {
+      "id": "abseil",
+      "version": "20250814.1",
+      "source": "https://codeload.github.com/abseil/abseil-cpp/tar.gz/refs/tags/20250814.1",
+      "archiveSha256": "1692f77d1739bacf3f94337188b78583cf09bab7e420d2dc6c5605a4f86785a1",
+      "type": "fetched-static-source",
+      "license": "Apache-2.0",
+      "runtimeDependency": false,
+      "purpose": "Source candidate: RE2 upstream's pinned C++ utility dependency."
+    },
+    {
       "id": "utf8proc",
       "version": "2.12.0",
       "location": "third_party/utf8proc",
@@ -1342,6 +1362,9 @@
     ]
   },
   "secretProtectionContract": {
+    "engine": "RE2 2025-11-05, statically linked with Abseil 20250814.1; pinned SHA-256 source archives; fixed Latin-1 byte patterns with a 256 KiB compiled-memory budget per pattern; compilation failure refuses scanning.",
+    "rules": "Built-in private-key, AWS access-key, OpenAI key, JWT, Bearer value and credential-assignment classes. RE2 is the matching engine, not the complete Gitleaks ruleset or a guarantee that all secrets are detected. Matches inspect token values; source code and template references are not credentials merely because their names contain secret/token. Assignment inspection preserves local statement boundaries instead of flattening unrelated source lines.",
+    "cutover": "Core source candidate dev.19 changes scanner policy and therefore requires normal engine-version qualification and managed source regeneration. The generated format is unchanged. No installed kit or project approval is modified by preparing this source.",
     "doctorCounter": "counts.secret_findings",
     "profileExclusions": "secretScanExcludePrefixes contains only explicitly reviewed relative path prefixes; counts.secret_scan_excluded_files and secret-scan-path-policy-applied expose every applied policy.",
     "doctorIssue": "secret-like-source-content",

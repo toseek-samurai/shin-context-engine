@@ -19,6 +19,13 @@ discovery requires SQLite with FTS5, version 3.38 or newer, and Observer require
 OpenSSL Crypto. Windows uses a pinned static SQLite build and native cryptography.
 CMake downloads pinned dependencies and checks their hashes.
 
+The current source candidate links [RE2 2025-11-05](https://github.com/google/re2/tree/2025-11-05)
+and its upstream-pinned Abseil 20250814.1 statically for secret scanning.
+They require no additional runtime installation. CMake
+verifies both source archives and includes their licenses in packaged tools;
+upstream tests and utilities are excluded from the product build. This change
+is not included in preview dev.98.
+
 macOS CI uses Xcode 26.3 on macOS 15. Local builds can use Command Line Tools
 for Xcode 26 or newer, or a current full Xcode installation. The C++20 standard
 library must provide `std::jthread` and `std::stop_token`; an older Apple standard
@@ -102,15 +109,17 @@ build directory. For a new project, use an explicit private data home:
 The project folder stays separate from that home. A source build does not
 install the commands, replace another kit or enable login startup. In WSL, use
 a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
-native desktop Monitor or prebuilt local-kit download. The TUI's generic Updates
-guidance links to Releases, but there is currently no Linux installer there:
-rebuild the source tools, restart the service and reconnect persistent MCP clients.
+native desktop Monitor. A prebuilt Ubuntu 24.04 x86_64 terminal archive is also
+available from the [current preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98).
+The TUI's Updates guidance links to Releases; there is no automatic Linux installer.
+Replace the archive or rebuild the source tools, restart the service and reconnect
+persistent MCP clients.
 Built-in OS service registration (`service-install`) is not implemented on Linux;
 session service start/stop commands are available.
 
 ### Prepare a Linux terminal archive
 
-The next-preview packaging route produces
+The Linux packaging route produces
 `shin-terminal-VERSION-linux-x86_64.tar.gz`, its checksum and
 `linux-qualification.json`. This is an Ubuntu 24.04 x86_64/glibc 2.39+ archive,
 with system `libc6`, `libstdc++6`, OpenSSL 3 (`libssl3t64`) and `libsqlite3-0`.
@@ -136,7 +145,7 @@ MCP snapshot reads and the EN/RU PTY/signals/restoration gate. Runtime checks us
 only synthetic projects and their own service processes. Local `0/0` provenance
 is explicitly ineligible for public release; CI records its real run and attempt.
 Downloads appear per platform only after its source and exact-archive checks pass.
-Until a preview actually includes this Linux asset, use the source route above.
+For an existing published kit, use its release archive and matching checksum.
 
 ## Native Windows development builds
 
@@ -242,9 +251,11 @@ it, and compares every file with the ZIP. It runs the relocated ZIP's native
 Monitor render and init/query/stop checks under a disposable standard account.
 Hosted runner elevation is never used as evidence of a supported user runtime.
 
-Both Windows jobs and all four Linux/macOS jobs are mandatory for publication.
-The publisher verifies both artifacts from the same commit, tag, run and attempt;
-Windows runtime evidence and all four Windows asset hashes are bound in a receipt.
+Each platform requires its own matching Core and Observer jobs and exact-package
+qualification before publication. A pending or failed macOS ARM job does not block
+qualified Linux or Windows downloads. The publisher verifies that platform's
+artifacts against the same source commit, tag, run and attempt; platform receipts
+bind its exact asset hashes. Windows runtime evidence remains mandatory for its assets.
 These CI package checks complement the real interactive-session MSI lifecycle
 rehearsal; they do not claim to repeat logon, installed SCM recovery or upgrade
 rehearsals on a hosted runner. See [Windows gates](windows-desktop.md#package-publication-and-remaining-gates).

@@ -14,12 +14,12 @@ CLI/MCP contracts, with `.exe` binaries. The terminal dashboard, automatic clien
 setup, agent-history collection and update installation have platform limits;
 see the [capability matrix](README.md#capabilities-by-platform).
 
-The dev.98 candidate supports
+Native preview dev.98 supports
 `shin-ce project-add --root /path/to/project --progress-json` for integrations.
 It emits bounded `shin.project-progress.v1`
 stage frames on stderr; stdout remains the final JSON receipt. Stages describe
 actual work, without an estimated percentage. Without the option, redirected
-commands retain their existing output. Use it after dev.98 is published for your platform.
+commands retain their existing output.
 
 ## Interactive terminal monitor
 
@@ -97,14 +97,15 @@ time, real download/staging bytes and project counts. There is no estimated
 overall percentage. Completion comes from the native receipt, independently of
 progress. `v` reads retained outcomes; a recoverable result exposes `a` only when
 the native status permits acknowledgement. After a successful swap, restart
-Monitor and `shin-ce stats` to load the new binaries. Current development source
-adds an update-aware MCP bridge: reconnect an older adapter once to load it;
+Monitor and `shin-ce stats` to load the new binaries. The current native macOS kit
+includes an update-aware MCP bridge: reconnect an older adapter once to load it;
 compatible subsequent macOS updates preserve that MCP connection. A changed MCP
 contract still requires reconnecting the integration. This does not qualify
 continuous stdio across a Windows MSI replacement.
 Homebrew builds show `brew upgrade` instead of invoking the native Updater.
-Linux has no release installer: rebuild its source tools and restart them.
-The generic Updates message links to Releases but does not provide a Linux package.
+Linux has no automatic installer: replace its terminal archive or rebuild its
+source tools, then restart them. The generic Updates message links to Releases;
+download and replacement remain manual.
 
 Service observations refresh every two seconds. Storage is inspected when you
 open its tab or press `r`, not continuously. Usage is read every 30 seconds or
@@ -174,9 +175,8 @@ onboarding and storage management in Monitor; its terminal dashboard remains
 unimplemented. See [Windows scope](windows-desktop.md#monitor-setup-and-updates).
 
 Desktop Monitor uses **Overview**, **Projects**, **History** and **Settings**.
-Published dev.85 uses Light Sand; current development source restores the dark
-Sand palette, compact spacing and content-dependent panel height. Those visual
-refinements are not yet released. History opens with the recorded-call journal;
+The current native preview uses dark Sand, compact spacing and a panel that fits
+short pages. History opens with the recorded-call journal;
 timing and agent token usage remain secondary views. Technical reports are
 disclosed from project details. Earlier desktop previews and the TUI keep
 **Activity** as their third section, with the journal under **Activity → Journal**.
@@ -264,8 +264,9 @@ connection failures, even while the service is unavailable. Initial and terminal
 observations count as one invocation. A service request ID links the layers;
 their counts must not be added together. Protocol initialization, tool-list discovery
 and malformed frames are outside this tool-call count.
-Only upgraded MCP adapters contribute; reconnect existing clients after installing
-the kit. Older processes and earlier calls are not reconstructed.
+Current MCP adapters contribute. Reconnect an older adapter once if needed;
+compatible macOS update handoff retains subsequent connections. Earlier calls
+and traffic from unsupported adapters are not reconstructed.
 
 The local numerical journal survives adapter/service restarts. It retains up to
 seven days and 10,000 calls in a database capped at 32 MiB, under the recorded data
@@ -429,7 +430,7 @@ a kit without applying it. These commands use the recorded data home, preserve
 client configuration and never change project authority. See the
 [local kit guide](local-kit.md) for Monitor checks and recovery boundaries.
 
-Current development source adds `update-resume --revision REVIEW_HASH`. Read
+The current native kit provides `update-resume --revision REVIEW_HASH`. Read
 `update-status` first: `can_retry` permits another attempt after a verified
 no-change refusal, and `can_resume` permits recovery of the recorded native
 transaction. The revision is bound to both saved state and installation identity.

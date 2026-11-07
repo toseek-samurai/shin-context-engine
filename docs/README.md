@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.96](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96).
-It contains Core **2.0.5-dev.18** and Observer/CLI/MCP/Monitor **2.0.5-dev.96**.
+The current published preview is [dev.98](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98).
+It contains Core **2.0.5-dev.18** and Observer/CLI/MCP/Monitor **2.0.5-dev.98**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -11,6 +11,11 @@ CI run, attempt and SHA-256 values.
 Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
+
+The current source candidate uses Core **2.0.5-dev.19** with RE2-based secret
+scanning. That change is not part of the published dev.98 kit. The Homebrew tap
+currently pins **dev.70**, with that older preview's UI and update behavior;
+use the native dev.98 downloads for the current packaged application.
 
 Source identities are maintained in [VERSION](../VERSION),
 [observer/VERSION](../observer/VERSION) and the
@@ -25,7 +30,7 @@ restart them.
 Monitor groups tasks under **Overview**, **Projects**, **History** and
 **Settings**, with labeled actions and technical details disclosed separately.
 History opens with recorded calls; timing and optional agent usage remain
-secondary views. Published dev.85 introduced this navigation with Light Sand.
+secondary views.
 
 The current preview uses the original dark Sand palette while
 keeping the new layout, 14 px body text and 520 px standard width. Short Overview,
@@ -43,7 +48,7 @@ dashboard does not imply that every platform has the same setup and update tools
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 terminal tools | Windows x64 ZIP / MSI |
 | --- | --- | --- | --- | --- |
 | Core, local Observer, CLI and MCP | Yes | Yes | Yes | Yes |
-| Desktop Monitor: Overview, Projects, History, Settings; Light Sand; EN/RU | Yes | Yes | No native desktop host | Yes |
+| Dark Sand desktop Monitor, EN/RU | Overview, Projects, History, Settings | Included; dev.70 retains Activity navigation | No native desktop host | Overview, Projects, History, Settings |
 | TUI `shin-ce stats`, line charts and EN/RU | Yes | Yes | Yes | Not implemented |
 | Add a project from Monitor | Yes | Yes | Use CLI | Yes |
 | Automatic MCP client configuration | Reviewed CLI / Monitor setup | Reviewed CLI / Monitor setup | Reviewed CLI setup | Reviewed CLI / Monitor setup |

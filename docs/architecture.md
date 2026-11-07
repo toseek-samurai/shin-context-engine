@@ -22,9 +22,10 @@ Core and Observer provide CMake source routes for macOS, Linux and native Window
 
 Published previews provide a macOS Apple Silicon kit and Windows x64 ZIP/MSI
 packages. The project-owned Homebrew tap builds the complete macOS application
-from source; Linux/WSL2 uses source builds without a native desktop host. The
-unified CI requires four Linux/macOS jobs and two Windows jobs, including exact
-package qualification, before publishing a preview. Hosted package tests remain
+from source; Linux/WSL2 provides an Ubuntu 24.04 x86_64 terminal archive and source
+builds without a native desktop host. The unified CI qualifies each platform
+independently: its own Core and Observer jobs and exact-package checks must pass
+before that platform's assets are published. Hosted package tests remain
 separate from interactive desktop and installed SCM lifecycle checks. See the
 [platform capability matrix](README.md#capabilities-by-platform),
 [Windows scope](windows-desktop.md) and [build guide](building.md).

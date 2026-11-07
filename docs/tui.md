@@ -1,10 +1,11 @@
 # Sand terminal monitor
 
 `shin-ce stats` brings project states and timing calculations to an interactive
-terminal with the original dark Sand palette. Current desktop development restores the dark Sand palette with a separate
-compact layout; terminal appearance and keyboard controls stay independent. The Sand TUI is included in preview
-dev.39 and later; use the [preview kit](local-kit.md#download-a-preview-release)
-on macOS or [build from source](building.md) on Linux.
+terminal with the original dark Sand palette. Desktop Monitor has its own compact
+layout; terminal appearance and keyboard controls stay independent. Use the
+[native kit](local-kit.md#download-a-preview-release) on macOS or the
+[terminal archive or source build](building.md#linux-and-wsl2-terminal-tools)
+on Linux/WSL2.
 Homebrew also includes the complete TUI. Native Windows does not implement
 `shin-ce stats`; WSL2 uses the Linux build.
 
@@ -130,9 +131,12 @@ Installation uses the same native verification and recovery path as Monitor.
 The full plan, actual byte percentages, completed-project counts and stage elapsed
 time remain visible. Quitting becomes available after installation settles;
 `v` shows the saved result and `a` acknowledges it only when native status permits.
-After success, restart the TUI and persistent MCP clients. Homebrew builds show
+After success, restart the TUI. Current native macOS MCP adapters resume compatible
+updates automatically; reconnect an older adapter or a changed contract when
+requested. Homebrew builds show
 `brew upgrade` guidance and do not invoke the native Updater. Linux has no
-published installer: rebuild the source tools and restart the service and clients.
+automatic installer: replace its terminal archive or rebuild the source tools,
+then restart the service and clients.
 Its generic Updates guidance links to Releases but does not install a Linux kit.
 
 ![Native update progress with measured download percentage](images/tui-update-progress.svg)

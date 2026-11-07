@@ -1,9 +1,11 @@
 # UI screenshots
 
-The macOS PNGs show **current development source**: the original dark Sand
-palette with compact navigation and content-dependent height. These refinements
-are not yet released. The terminal captures retain the shipped Sand appearance.
-Windows capture provenance is described separately below.
+The gallery was refreshed on **2026-11-07**. macOS PNGs and terminal SVGs come
+from the current source build (Observer dev.98, Core dev.19); the depicted UI is
+available in native preview dev.98. The unreleased RE2 scanner is an engine change,
+not a new UI capability. Windows PNGs come from the published dev.98 ZIP
+(Core dev.18), rendered on a signed-in Windows Mini-PC. All displayed project
+names, activity, paths and measurements are independent synthetic examples.
 
 ## macOS Monitor
 
@@ -19,8 +21,9 @@ see the [platform matrix](../README.md#capabilities-by-platform).
 | --- | --- |
 | `monitor-overview.png` / `monitor-overview-ru.png` | `overview-520x680-fit.png` (EN / RU) |
 | `monitor-settings.png` / `monitor-settings-ru.png` | `settings-520x680-fit.png` (EN / RU) |
-| `monitor-projects.png` | `project-states-520x680-fit.png` |
-| `monitor-project.png` | `search-warning-520x680-fit.png` |
+| `monitor-projects.png` / `monitor-projects-ru.png` | `project-states-520x680-fit.png` (EN / RU) |
+| `monitor-project.png` / `monitor-project-ru.png` | `project-analytics-520x680-fit.png` (EN / RU) |
+| `monitor-search-warning.png` / `monitor-search-warning-ru.png` | `search-warning-520x680-fit.png` (EN / RU) |
 | `monitor-timing.png` | `timing-retained-520x680-fit.png` |
 | `monitor-sessions.png` | `sessions-520x680-fit.png` (EN) |
 | `monitor-sessions-ru.png` | `sessions-520x680-fit.png` (RU) |
@@ -43,8 +46,9 @@ bounded. These macOS images use a 520 px logical width and fit their height to
 the page within a 680 px ceiling. Retina captures have a 1040 px pixel width;
 height varies with content and language. EN and RU are
 generated into separate output directories.
-The project-detail image
-shows its search-check explanation and next action. Overview shows healthy
+The main project-detail image shows retained search totals, errors, response
+time and the recent request mix. The separate warning images show a search-check
+explanation and next action. Overview shows healthy
 context with its memory line graph and recent activity. Expected documents are
 revealed by the explicit search-check review. Dark Sand surfaces,
 compact type and labeled buttons distinguish actions from status
@@ -58,6 +62,15 @@ compact layout remains available. Memory curves retain observation gaps and
 service-run boundaries.
 
 <p>
+  <img src="monitor-project.png" width="340" alt="Native project analytics in English with response-time graph and request mix">
+  <img src="monitor-project-ru.png" width="340" alt="The same project analytics in Russian">
+</p>
+
+[Project states in Russian](monitor-projects-ru.png) ·
+[Search warning](monitor-search-warning.png) ·
+[Search warning in Russian](monitor-search-warning-ru.png).
+
+<p>
   <img src="monitor-sessions.png" width="340" alt="English Sand History journal rendered with synthetic MCP events">
   <img src="monitor-sessions-ru.png" width="340" alt="Russian Sand History journal with the same synthetic MCP events">
 </p>
@@ -67,16 +80,20 @@ service-run boundaries.
 The `monitor-windows-*` PNGs come from the native Win32/DX11 Monitor, using WARP
 software rendering and the synthetic `documentation_main_views` fixture in
 [windows_main.cpp](../../observer/tray/windows_main.cpp). They were captured in
-a signed-in Windows desktop session through `--render-test`, not produced from
-the macOS images or a browser mockup. No live service, enrolled project or client
-history supplies their displayed data. These captures show source UI rendering;
+a signed-in Windows desktop session through `--render-test` from the published
+dev.98 portable ZIP, not produced from the macOS images or a browser mockup.
+Its archive SHA-256 is `767f31ce1a96ffe550e07341016e38f0f85c9b3b658c59b06d5922f489db176f`,
+matching the release's `shin-preview-windows.json` receipt.
+No live service, enrolled project or client
+history supplies their displayed data. These captures show native UI rendering;
 they do not establish an installed MSI lifecycle or live-project readiness.
 
 Each Windows PNG uses a 520 px logical/physical width at 100% display scaling
-(1×). Height fits the content: Overview is 540 px, the three-project list 429 px,
-and Settings 621 px in both languages. Original PNG bytes are preserved. The
-macOS captures above retain their native 2× resolution. The source render and
-adaptive-height checks passed on native Windows; installed MSI update lifecycle
+(1×). Height fits the content: Overview is 550 px, the three-project list 439 px,
+and Settings 631 px in both languages. Original PNG bytes are preserved. The
+macOS captures above retain their native 2× resolution. Native rendering and
+adaptive-height checks passed, including shell integration, TaskbarCreated
+recovery and physical clicks at 100%, 150% and 200% DPI; installed MSI update lifecycle
 is a separate proof boundary.
 
 | Documentation asset | Native fixture output, relative to the capture directory |
@@ -85,7 +102,8 @@ is a separate proof boundary.
 | `monitor-windows-projects.png` / `monitor-windows-projects-ru.png` | `monitor-projects-en.png` / `monitor-projects-ru.png` |
 | `monitor-windows-settings.png` / `monitor-windows-settings-ru.png` | `monitor-settings-en.png` / `monitor-settings-ru.png` |
 
-From the matching Windows desktop build directory containing `shin-tray.exe`,
+From the extracted dev.98 ZIP's `bin` directory, or a matching Windows desktop
+build directory containing `shin-tray.exe`,
 run in an unelevated, signed-in Windows desktop session at 100% scaling:
 
 ```powershell

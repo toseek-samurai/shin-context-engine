@@ -480,6 +480,20 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 @property(nonatomic, strong) NSMutableString* setupReport;
 @property(nonatomic, copy) NSString* setupConnectRoot;
 @property(nonatomic) BOOL setupConnecting;
+@property(nonatomic) BOOL setupAdding;
+@property(nonatomic) BOOL setupPreparationFailed;
+@property(nonatomic) BOOL setupProjectConfirmed;
+@property(nonatomic) NSInteger setupProgressStage;
+@property(nonatomic) NSUInteger setupProgressMask;
+@property(nonatomic) NSTimeInterval setupProgressStarted;
+@property(nonatomic) NSTimeInterval setupProgressDuration;
+@property(nonatomic, strong) NSTextField* setupAgentsHeading;
+@property(nonatomic, strong) NSTextField* setupNote;
+@property(nonatomic, strong) NSMutableArray<NSTextField*>* setupProgressRows;
+@property(nonatomic, strong) NSProgressIndicator* setupProgressSpinner;
+@property(nonatomic, strong) NSTextField* setupProgressTitle;
+@property(nonatomic, strong) NSTextField* setupProgressElapsed;
+@property(nonatomic, strong) NSTimer* setupProgressTimer;
 @property(nonatomic) BOOL updateChecking;
 @property(nonatomic) NSUInteger updateWindowEpoch;
 @property(nonatomic) NSUInteger updateCheckEpoch;
@@ -552,6 +566,11 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (void)checkSetup:(id)sender;
 - (void)enableSetupLogin:(id)sender;
 - (void)addProjectFolder:(id)sender;
+- (void)connectProjectRoot:(NSString*)root;
+- (void)prepareProjectPresentation:(NSString*)root;
+- (void)showProjectStage:(NSInteger)stage;
+- (NSString*)projectStageText:(NSInteger)stage;
+- (NSString*)projectElapsedText;
 - (void)disconnectProject:(id)sender;
 - (void)disconnectAndCleanProject:(id)sender;
 - (void)showProjectManagementMenu:(id)sender;
@@ -566,6 +585,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (void)cleanStorage:(id)sender;
 - (NSString*)nativeCLIPath;
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion;
+- (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments progress:(void (^)(NSInteger))progress completion:(void (^)(Json, NSString*))completion;
 - (void)closePanel:(id)sender;
 - (void)updatePanelSize;
 - (void)activatedApplication:(NSNotification*)notification;
@@ -627,6 +647,9 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 }
 
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
+    [self runCLI:command arguments:arguments progress:nil completion:completion];
+}
+- (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments progress:(void (^)(NSInteger))progress completion:(void (^)(Json, NSString*))completion {
     if (!self.shinHome.length) { completion(Json::object(), ui_text("Cannot locate the Shin folder.")); return; }
     NSString* cli = [self nativeCLIPath];
     if (!cli || ![NSFileManager.defaultManager isExecutableFileAtPath:cli]) {
@@ -658,6 +681,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
                 } else {
                     NSMutableData* bytes = [NSMutableData data];
                     NSMutableData* diagnostics = [NSMutableData data];
+                    shin::ui::ProjectProgressReader projectProgress;
                     NSArray<NSFileHandle*>* readers = @[pipe.fileHandleForReading, errors.fileHandleForReading];
                     BOOL oversized = NO;
                     BOOL timedOut = NO, sentKill = NO, handoffRequested = NO;
@@ -702,7 +726,13 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
                                 if (!oversized && bytes.length + diagnostics.length + length > 1024 * 1024) {
                                     oversized = YES; terminate_at = std::chrono::steady_clock::now();
                                     if (task.isRunning) [task terminate];
-                                } else if (!oversized) [(i == 0 ? bytes : diagnostics) appendBytes:buffer.data() length:length];
+                                } else if (!oversized) {
+                                    [(i == 0 ? bytes : diagnostics) appendBytes:buffer.data() length:length];
+                                    if (i == 1 && progress) projectProgress.feed(
+                                        std::string_view(reinterpret_cast<const char*>(buffer.data()), length), [&](int stage) {
+                                            dispatch_async(dispatch_get_main_queue(), ^{ progress(stage); });
+                                        });
+                                }
                                 if (i == 0 && ([command isEqualToString:@"update-install"] || [command isEqualToString:@"update-resume"]) && !oversized && !handoffRequested) {
                                     const std::string_view output((const char*)bytes.bytes, bytes.length);
                                     const auto end = output.find('\n');
@@ -728,7 +758,8 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
                     else if (oversized) failure = ui_text("The shin-ce response exceeded its size limit.");
                     else {
                         const std::string output = bytes.length ? std::string((const char*)bytes.bytes, bytes.length) : "";
-                        const std::string error = diagnostics.length ? std::string((const char*)diagnostics.bytes, diagnostics.length) : "";
+                        const std::string error = progress ? projectProgress.finish() :
+                            diagnostics.length ? std::string((const char*)diagnostics.bytes, diagnostics.length) : "";
                         result = Json::parse(output.substr(acknowledgementLength), nullptr, false);
                         if (result.is_discarded() || !result.is_object()) result = Json::parse(error, nullptr, false);
                         if (result.is_discarded() || !result.is_object()) {
@@ -757,11 +788,16 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
     const auto response = [picker runModal];
     NSString* root = picker.URL.path;
     if (response != NSModalResponseOK || !root) { release_project_operation(); return; }
-    self.setupChoose.enabled = NO;
-    live_text(self.setupStatus, @"stringValue", "Preparing project… This can take a moment on the first import.");
-    [self runCLI:@"project-add" arguments:@[@"--root", root] completion:^(Json result, NSString* failure) {
+    [self connectProjectRoot:root];
+}
+- (void)connectProjectRoot:(NSString*)root {
+    [self prepareProjectPresentation:root];
+    [self runCLI:@"project-add" arguments:@[@"--root", root, @"--progress-json"] progress:^(NSInteger stage) {
+        [self showProjectStage:stage];
+    } completion:^(Json result, NSString* failure) {
         const bool serviceFailed = result.contains("service") && result.at("service").is_object() &&
-            result.at("service").contains("ok") && result.at("service").at("ok").is_boolean() && !result.at("service").at("ok").get<bool>();
+            ((result.at("service").contains("ok") && result.at("service").at("ok").is_boolean() && !result.at("service").at("ok").get<bool>()) ||
+             (result.at("service").contains("error") && result.at("service").at("error").is_object()));
         const bool added = !failure && result.value("ok", false) && !serviceFailed;
         const Json& errorResult = serviceFailed ? result.at("service") : result;
         NSString* message = failure;
@@ -776,19 +812,32 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
             if (code == "snapshot-memory-budget-exceeded") {
                 const auto detail = errorResult.at("error").value("message", std::string{});
                 if (!detail.empty()) message = [message stringByAppendingFormat:@"\n\n%s\n%s", code.c_str(), detail.substr(0, 1024).c_str()];
-            }
+            } else if (!code.empty()) message = [message stringByAppendingFormat:@"\n\n%@", diagnostic_text_content(code)];
         }
         release_project_operation();
+        self.setupAdding = NO;
+        self.setupProgressDuration = std::max(0.0, NSProcessInfo.processInfo.systemUptime - self.setupProgressStarted);
+        self.setupPreparationFailed = !added;
+        [self.setupProgressTimer invalidate]; self.setupProgressTimer = nil;
+        [self.setupProgressSpinner stopAnimation:nil];
+        [self.setupWindow standardWindowButton:NSWindowCloseButton].enabled = YES;
         self.setupChoose.enabled = YES;
         if (added) {
+            self.setupProjectConfirmed = YES;
             self.setupRoot = root;
             [self showSetup:nil];
             live_text(self.setupStatus, @"stringValue", "Project added. Select the agents that should have access.");
             return;
         }
         self.setupStatus.stringValue = message;
-        NSAlert* alert = [[NSAlert alloc] init]; alert.messageText = added ? ui_text("Project connected") : ui_text("Project not connected");
-        alert.informativeText = message; [alert runModal]; release_project_operation();
+        self.setupWindow.contentMinSize = NSMakeSize(660, 620);
+        if (self.setupWindow.contentView.bounds.size.height < 620)
+            [self.setupWindow setContentSize:NSMakeSize(self.setupWindow.contentView.bounds.size.width, 620)];
+        live_text(self.setupProgressTitle, @"stringValue", "Project not connected");
+        self.setupProgressTitle.textColor = [NSColor colorWithCalibratedRed:.941 green:.518 blue:.471 alpha:1];
+        self.setupProgressSpinner.hidden = YES;
+        [self showProjectStage:self.setupProgressStage];
+        [NSApp activateIgnoringOtherApps:YES]; [self.setupWindow makeKeyAndOrderFront:nil];
     }];
 }
 

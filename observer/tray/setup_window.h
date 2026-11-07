@@ -1,4 +1,79 @@
 // Native onboarding. Detection is read-only; only checked targets are written.
+- (NSString*)projectElapsedText {
+    const auto seconds = static_cast<long long>(self.setupAdding ?
+        std::max(0.0, NSProcessInfo.processInfo.systemUptime - self.setupProgressStarted) : self.setupProgressDuration);
+    return [NSString stringWithFormat:ui_text("Elapsed: %lld s"), seconds];
+}
+- (NSString*)projectStageText:(NSInteger)stage {
+    const bool observed = (self.setupProgressMask & (1U << stage)) != 0;
+    NSString* mark = stage == self.setupProgressStage ? (self.setupPreparationFailed ? @"!" : @"●") :
+        observed ? @"✓" : stage < self.setupProgressStage ? @"—" : @"○";
+    return [NSString stringWithFormat:@"%@  %@", mark,
+        diagnostic_text_content(shin::ui::project_connection_label(static_cast<int>(stage)))];
+}
+- (void)showProjectStage:(NSInteger)stage {
+    if (stage >= 0 && stage < static_cast<NSInteger>(shin::ui::project_connection_stages.size())) {
+        self.setupProgressMask |= 1U << stage;
+        self.setupProgressStage = std::max(stage, self.setupProgressStage);
+    }
+    for (NSUInteger i = 0; i < self.setupProgressRows.count; ++i) {
+        NSTextField* row = self.setupProgressRows[i];
+        const bool current = static_cast<NSInteger>(i) == self.setupProgressStage;
+        row.stringValue = [self projectStageText:static_cast<NSInteger>(i)];
+        row.textColor = current ? (self.setupPreparationFailed ?
+            [NSColor colorWithCalibratedRed:.941 green:.518 blue:.471 alpha:1] :
+            [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1]) :
+            (self.setupProgressMask & (1U << i)) ? [NSColor colorWithCalibratedRed:.478 green:.749 blue:.561 alpha:1] : NSColor.secondaryLabelColor;
+    }
+}
+- (void)prepareProjectPresentation:(NSString*)root {
+    ++self.setupEpoch; // A previous agent discovery must not replace progress.
+    self.setupAdding = YES; self.setupPreparationFailed = NO;
+    self.setupProjectConfirmed = NO;
+    self.setupRoot = root; self.setupProgressStage = -1; self.setupProgressMask = 0;
+    self.setupProgressDuration = 0;
+    self.setupProgressStarted = NSProcessInfo.processInfo.systemUptime;
+    [self showSetup:nil]; // Create and show the retained window before launching CLI.
+    self.setupProject.stringValue = root; self.setupProject.toolTip = root;
+    self.setupChoose.enabled = NO;
+    self.setupAdvanced.hidden = self.setupConnect.hidden = self.setupCheck.hidden = self.setupLogin.hidden = self.setupNote.hidden = YES;
+    self.setupWindow.contentMinSize = NSMakeSize(660, 500);
+    [self.setupWindow setContentSize:NSMakeSize(self.setupWindow.contentView.bounds.size.width, 520)];
+    [self.setupWindow standardWindowButton:NSWindowCloseButton].enabled = NO;
+    live_text(self.setupAgentsHeading, @"stringValue", "Connecting project");
+    live_text(self.setupStatus, @"stringValue", "Preparing project… This can take a moment on the first import.");
+    self.setupStatus.textColor = NSColor.secondaryLabelColor;
+    for (NSView* view in self.setupAgents.arrangedSubviews.copy) { [self.setupAgents removeArrangedSubview:view]; [view removeFromSuperview]; }
+    self.setupProgressSpinner = [NSProgressIndicator new];
+    self.setupProgressSpinner.style = NSProgressIndicatorStyleSpinning;
+    self.setupProgressSpinner.indeterminate = YES;
+    [self.setupProgressSpinner.widthAnchor constraintEqualToConstant:18].active = YES;
+    [self.setupProgressSpinner.heightAnchor constraintEqualToConstant:18].active = YES;
+    self.setupProgressTitle = live_label("Preparing project…");
+    NSStackView* working = [NSStackView stackViewWithViews:@[self.setupProgressSpinner, self.setupProgressTitle]];
+    working.spacing = 10;
+    [self.setupAgents addArrangedSubview:working];
+    [self.setupProgressSpinner startAnimation:nil];
+    self.setupProgressRows = [NSMutableArray array];
+    __weak ShinApp* weak = self;
+    for (NSInteger i = 0; i < static_cast<NSInteger>(shin::ui::project_connection_stages.size()); ++i) {
+        NSTextField* row = [NSTextField labelWithString:[self projectStageText:i]];
+        row.font = [NSFont systemFontOfSize:14];
+        live_caption(row, @"stringValue", ^{ return [weak projectStageText:i]; });
+        [self.setupProgressRows addObject:row]; [self.setupAgents addArrangedSubview:row];
+    }
+    self.setupProgressElapsed = [NSTextField labelWithString:[self projectElapsedText]];
+    self.setupProgressElapsed.font = [NSFont monospacedDigitSystemFontOfSize:13 weight:NSFontWeightRegular];
+    self.setupProgressElapsed.textColor = NSColor.secondaryLabelColor;
+    live_caption(self.setupProgressElapsed, @"stringValue", ^{ return [weak projectElapsedText]; });
+    [self.setupAgents addArrangedSubview:self.setupProgressElapsed];
+    [self.setupProgressTimer invalidate];
+    self.setupProgressTimer = [NSTimer scheduledTimerWithTimeInterval:1 repeats:YES block:^(NSTimer* timer) {
+        if (!weak.setupAdding) { [timer invalidate]; return; }
+        weak.setupProgressElapsed.stringValue = [weak projectElapsedText];
+    }];
+    [self showProjectStage:-1];
+}
 - (void)showSetup:(id)sender {
     (void)sender;
     [self closePanel:nil];
@@ -14,7 +89,6 @@
         window.contentView.layer.backgroundColor = window.backgroundColor.CGColor;
         window.contentView.layer.borderWidth = 1;
         window.contentView.layer.borderColor = [NSColor colorWithCalibratedRed:.894 green:.800 blue:.635 alpha:1].CGColor;
-        NSColor* actionBlue = [NSColor colorWithCalibratedRed:.510 green:.753 blue:.941 alpha:1];
         NSColor* secondaryInk = [NSColor colorWithCalibratedRed:.690 green:.710 blue:.651 alpha:1];
         NSStackView* stack = [[NSStackView alloc] init];
         stack.orientation = NSUserInterfaceLayoutOrientationVertical;
@@ -36,9 +110,9 @@
         [stack addArrangedSubview:self.setupProject];
         self.setupChoose = live_button("Choose project folder…", self, @selector(beginSetupProject:));
         [stack addArrangedSubview:self.setupChoose];
-        NSTextField* agentsHeading = live_label("2. Select coding agents and profiles", false);
-        agentsHeading.font = [NSFont systemFontOfSize:16 weight:NSFontWeightMedium];
-        [stack addArrangedSubview:agentsHeading];
+        self.setupAgentsHeading = live_label("2. Select coding agents and profiles", false);
+        self.setupAgentsHeading.font = [NSFont systemFontOfSize:16 weight:NSFontWeightMedium];
+        [stack addArrangedSubview:self.setupAgentsHeading];
         self.setupAdvanced = live_button("Advanced agent settings", self, @selector(toggleSetupAdvanced:), true);
         [stack addArrangedSubview:self.setupAdvanced];
         NSScrollView* scroll = [[NSScrollView alloc] init];
@@ -69,6 +143,7 @@
         self.setupStatus.selectable = YES; self.setupStatus.maximumNumberOfLines = 8;
         [stack addArrangedSubview:self.setupStatus];
         NSTextField* note = live_label("Only checked agents are changed. A private backup is kept for existing files. Restart those agents after connecting; project-specific settings may override user settings.");
+        self.setupNote = note;
         note.font = [NSFont systemFontOfSize:14]; note.textColor = secondaryInk;
         [stack addArrangedSubview:note];
         self.setupLogin = live_button("Enable background service at login", self, @selector(enableSetupLogin:));
@@ -84,13 +159,25 @@
             [view.widthAnchor constraintEqualToAnchor:stack.widthAnchor].active = YES;
         self.setupWindow = window; [window center];
     }
-    if (!self.setupConnecting) [self refreshSetup:nil];
+    if (!self.setupConnecting && !self.setupAdding && !self.setupPreparationFailed) {
+        self.setupWindow.contentMinSize = NSMakeSize(660, 620);
+        if (self.setupWindow.contentView.bounds.size.height < 620)
+            [self.setupWindow setContentSize:NSMakeSize(self.setupWindow.contentView.bounds.size.width, 620)];
+        self.setupAdvanced.hidden = self.setupConnect.hidden = self.setupCheck.hidden = self.setupLogin.hidden = self.setupNote.hidden = NO;
+        live_text(self.setupAgentsHeading, @"stringValue", "2. Select coding agents and profiles");
+        self.setupStatus.textColor = NSColor.labelColor;
+        [self refreshSetup:nil];
+    }
     [NSApp activateIgnoringOtherApps:YES]; [self.setupWindow makeKeyAndOrderFront:nil];
 }
 - (void)showAgentSetup:(id)sender {
     (void)sender;
     if (diagnostic_root.empty()) return;
-    if (!self.setupConnecting) self.setupRoot = [NSString stringWithUTF8String:diagnostic_root.c_str()];
+    if (!self.setupConnecting && !self.setupAdding) {
+        self.setupPreparationFailed = NO;
+        self.setupProjectConfirmed = NO;
+        self.setupRoot = [NSString stringWithUTF8String:diagnostic_root.c_str()];
+    }
     [self showSetup:nil];
 }
 - (void)beginSetupProject:(id)sender {
@@ -101,7 +188,7 @@
 }
 - (void)refreshSetup:(id)sender {
     (void)sender;
-    if (self.setupConnecting) return;
+    if (self.setupConnecting || self.setupAdding || self.setupPreparationFailed) return;
     const NSUInteger epoch = ++self.setupEpoch;
     self.setupConnect.enabled = NO;
     self.setupCheck.enabled = self.setupRoot.length > 0 && !project_management_busy.load();
@@ -158,7 +245,8 @@
             [self.setupAdvancedViews addObject:file]; [self.setupAdvancedViews addObject:location];
             [self.setupTargetButtons addObject:check]; [self.setupFileButtons addObject:file];
         }
-        live_text(self.setupStatus, @"stringValue", "Choose connections to add or update. Unchecked agents keep their existing configuration.");
+        if (self.setupProjectConfirmed) live_text(self.setupStatus, @"stringValue", "Project added. Select the agents that should have access.");
+        else live_text(self.setupStatus, @"stringValue", "Choose connections to add or update. Unchecked agents keep their existing configuration.");
     }];
 }
 - (void)toggleSetupAdvanced:(id)sender {
@@ -169,7 +257,8 @@
     (void)sender;
     bool selectedAgent = false;
     for (NSButton* button in self.setupTargetButtons) if (button.state == NSControlStateValueOn) selectedAgent = true;
-    self.setupConnect.enabled = selectedAgent && self.setupRoot.length && !self.setupConnecting && !project_management_busy.load();
+    self.setupConnect.enabled = selectedAgent && self.setupRoot.length && !self.setupConnecting && !self.setupAdding &&
+        !self.setupPreparationFailed && !project_management_busy.load();
 }
 - (void)chooseSetupConfig:(NSButton*)sender {
     if (self.setupConnecting || sender.tag < 0 || static_cast<NSUInteger>(sender.tag) >= self.setupTargets.count) return;

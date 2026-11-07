@@ -1551,6 +1551,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     if (initialize) {
         if (engine_changed || readiness.at("ok") != true) {
             publication.reset();
+            refresh_progress(request.maintenance_progress, "candidate-build");
             const auto build = core_result([&] { return core::run_build(options); });
             if (build.at("ok") != true) throw Error("build-failed", "Native project publication failed.");
             rebuilt = true;
@@ -1559,9 +1560,11 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         guard_existing_routes(root, home);
         if (directory_identity(root) != root_identity)
             throw Error("binding-identity-changed", "Project identity or adoption changed during init.");
+        refresh_progress(request.maintenance_progress, "candidate-validation");
         (void)run_observer(config, 1, [] { return false; });
         readiness = readiness_for_generation();
         if (readiness.at("ok") == true) {
+            refresh_progress(request.maintenance_progress, "source-cache");
             core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache", options.generation_admission.get());
             binding["core_version"] = SHIN_VERSION;
             binding["generator_version"] = core::kGeneratorVersion;

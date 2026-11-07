@@ -48,7 +48,11 @@ with tempfile.TemporaryDirectory(prefix='shin-setup-', dir='/tmp') as temporary:
     run('mcp-config', '--client', 'codex', '--client', 'rider', '--root', root, '--home', home, ok=False)
     try:
         # Same action as the first-run folder picker, with no existing registry/service.
-        added = json.loads(run('project-add', '--root', root, '--home', home, '--profile-dir', profiles).stdout)
+        connection = run('project-add', '--root', root, '--home', home, '--profile-dir', profiles, '--progress-json')
+        stages = [json.loads(line) for line in connection.stderr.splitlines()]
+        assert all(set(row) == {'schema_version', 'stage'} and row['schema_version'] == 'shin.project-progress.v1' for row in stages), stages
+        assert [row['stage'] for row in stages] == ['checking-project', 'candidate-build', 'candidate-validation', 'source-cache', 'starting-service', 'checking-connection'], stages
+        added = json.loads(connection.stdout)
         assert added['ok'], added
         for client, server in configs.items():
             process = subprocess.Popen([server['command'], *server['args']], stdin=subprocess.PIPE,

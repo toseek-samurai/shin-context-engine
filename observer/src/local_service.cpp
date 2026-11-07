@@ -1070,9 +1070,15 @@ Json initialize_local_service(const LocalProjectRequest& input, const fs::path& 
         const auto workspace = request.home / "projects" / digest(request.root.string());
         const auto lifecycle = require_local_project_active(workspace);
         enroll_local_project(request);
+        if (input.maintenance_progress) {
+            try { input.maintenance_progress("starting-service"); } catch (...) { /* Presentation only. */ }
+        }
         auto status = start_local_service(request, executable);
         result["daemon_started"] = status.at("started");
         request.command = "service-status";
+        if (input.maintenance_progress) {
+            try { input.maintenance_progress("checking-connection"); } catch (...) { /* Presentation only. */ }
+        }
         const auto deadline = Clock::now() + std::chrono::seconds(60);
         for (;;) {
             result["service"] = status;

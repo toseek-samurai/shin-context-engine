@@ -153,6 +153,22 @@ int main(int argc, char** argv) {
                 if (!png.length || ![png writeToFile:diagnostic_text_content(name.string()) atomically:YES])
                     throw std::runtime_error("setup snapshot failed");
             }
+            [setupApp prepareProjectPresentation:@"/fixture/project"];
+            [setupApp showProjectStage:0]; [setupApp showProjectStage:1]; [setupApp showProjectStage:2];
+            [setupApp.setupWindow.contentView layoutSubtreeIfNeeded];
+            [setupApp.setupWindow displayIfNeeded];
+            if (!setupApp.setupWindow.visible || setupApp.setupChoose.enabled || setupApp.setupProgressRows.count != 6)
+                throw std::runtime_error("project preparation is hidden or permits duplicate connection");
+            NSView* progressBody = setupApp.setupWindow.contentView;
+            NSBitmapImageRep* progressBitmap = [progressBody bitmapImageRepForCachingDisplayInRect:progressBody.bounds];
+            [progressBody cacheDisplayInRect:progressBody.bounds toBitmapImageRep:progressBitmap];
+            NSData* progressPNG = [progressBitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+            if (![progressPNG writeToFile:diagnostic_text_content((output / "setup-progress.png").string()) atomically:YES])
+                throw std::runtime_error("project preparation snapshot failed");
+            [setupApp.setupProgressTimer invalidate]; [setupApp.setupProgressSpinner stopAnimation:nil];
+            setupApp.setupAdding = NO;
+            [setupApp.setupWindow standardWindowButton:NSWindowCloseButton].enabled = YES;
+            setupApp.setupRoot = nil; [setupApp showSetup:nil];
             // Change language in place: retained Cocoa windows and draft state
             // must survive without running setup discovery or service commands.
             setupApp.setupRoot = @"/fixture/project";
@@ -674,6 +690,10 @@ int main(int argc, char** argv) {
                     }
                     if (surface_pixels < 1000 || text_pixels < 300) throw std::runtime_error("blank rendering: " + context +
                         " surfaces=" + std::to_string(surface_pixels) + " text=" + std::to_string(text_pixels));
+                    // The target is 2x: sample three logical points in, beyond
+                    // the single stroke's antialiasing and inside the former rim.
+                    if (std::abs(pixels[(height / 2 * width + 6) * 4 + 1] - raised.y * 255) > 3)
+                        throw std::runtime_error("dark outer rim returned around the Sand outline: " + context);
                     const auto filename = output / (kind + "-" + std::to_string(static_cast<int>(limit.x)) + "x" + std::to_string(static_cast<int>(limit.y)) + (fit_test ? "-fit.png" : ".png"));
                     auto color = CGColorSpaceCreateDeviceRGB();
                     auto provider = CGDataProviderCreateWithData(nullptr, pixels.data(), pixels.size(), nullptr);

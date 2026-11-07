@@ -13,6 +13,7 @@
 #include "shin/observer/local_package.h"
 #include "shin/observer/model_usage.h"
 #include "context_internal.h"
+#include "../ui/project_progress.h"
 #include <array>
 #include <cstdio>
 #include <cstring>
@@ -90,7 +91,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce update [--prefix DIR] [--adopt-existing --home DIR --bin-dir DIR] updates from an extracted kit.\n"
                      "shin-ce update --accept-degraded-rollback reviews a legacy same-Core rollback; it restores the previous kit only.\n"
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
-                     "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
+                     "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] [--progress-json] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"
                      "shin-ce client-targets lists supported agents and their settings paths.\n"
                      "shin-ce client-connect --client NAME [--config FILE] [--root DIR] [--home DIR] previews a connection; --revision HASH applies that exact review.\n"
@@ -160,6 +161,7 @@ int run(int argc, char** argv, char** environment) {
     const bool supervised_child = request.command == "_serve-supervised";
     bool registered = background_child || supervised_child;
     bool no_service = false;
+    bool project_progress_json = false;
     [[maybe_unused]] bool preparation_check = false;
     bool text_status = false;
     std::string setup_client = "generic", client_revision;
@@ -179,6 +181,9 @@ int run(int argc, char** argv, char** environment) {
     std::set<std::string> seen;
     for (int i = 2; i < argc; ++i) {
         const std::string option = argv[i];
+        if (request.command == "project-add" && option == "--progress-json" && seen.insert(option).second) {
+            project_progress_json = true; continue;
+        }
         if(request.command=="prepare-projects" && option=="--check" && seen.insert(option).second) {preparation_check=true;continue;}
         if(request.command=="prepare-projects" && option!="--home")
             throw Error("invalid-arguments","Use prepare-projects [--home DIR] [--check].");
@@ -396,6 +401,18 @@ int run(int argc, char** argv, char** environment) {
             storage_revision, storage_automatic);
     }
     else if (request.command == "project-add") {
+        if (project_progress_json) {
+#ifndef _WIN32
+            std::signal(SIGPIPE, SIG_IGN); // Closing a presenter must not abort publication.
+#endif
+            request.maintenance_progress = [last = -1](const std::string& stage) mutable {
+                const int next = shin::ui::project_connection_stage(stage);
+                if (next <= last) return;
+                last = next;
+                std::cerr << Json{{"schema_version", "shin.project-progress.v1"}, {"stage", stage}}.dump() << '\n' << std::flush;
+            };
+        }
+        if (request.maintenance_progress) request.maintenance_progress("checking-project");
         guard_project_storage(fs::absolute(request.home).lexically_normal(),request.root);
         request.command = "init";
         result = initialize_local_service(request, executable_path());

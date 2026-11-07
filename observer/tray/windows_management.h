@@ -9,15 +9,26 @@ struct WindowsManagement {
     Json storage = Json::object();
     Json report = Json::object();
     std::future<Json> pending;
+    std::shared_ptr<std::atomic<unsigned>> connection_progress;
+    std::chrono::steady_clock::time_point connection_started;
+    double connection_seconds = 0;
     bool busy() const { return pending.valid(); }
     fs::path cli() const { return current_executable_path().parent_path()/"shin-ce.exe"; }
     std::vector<std::string> arguments(const std::string& command) const { return {command,"--home",home.string()}; }
     void run(const std::string& name, std::vector<std::string> args) {
         if (busy() || test_mode) return;
         operation = name; message.clear(); project_management_busy=true;
+        if (name == "add") {
+            args.push_back("--progress-json");
+            connection_progress = std::make_shared<std::atomic<unsigned>>(0);
+            connection_started = std::chrono::steady_clock::now(); connection_seconds = 0;
+        }
+        const auto progress = name == "add" ? connection_progress : nullptr;
         const auto executable = cli();
-        pending = std::async(std::launch::async,[executable,args=std::move(args)] {
-            try { return windows_command(executable,args); }
+        pending = std::async(std::launch::async,[executable,args=std::move(args),progress] {
+            try { return windows_command(executable,args,std::chrono::seconds(120),progress ? std::function<void(int)>([progress](int stage) {
+                progress->fetch_or(1U << stage);
+            }) : std::function<void(int)>{}); }
             catch (const Error& error) { return Json{{"ok",false},{"error",{{"code",error.code},{"message",error.what()}}}}; }
             catch (...) { return Json{{"ok",false},{"error",{{"code","monitor-command-failed"}}}}; }
         });
@@ -32,8 +43,10 @@ struct WindowsManagement {
     void poll() {
         if (!busy() || pending.wait_for(std::chrono::seconds(0))!=std::future_status::ready) return;
         const auto result=pending.get();
+        if (operation == "add") connection_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - connection_started).count();
         report=result;
-        const bool service_failed=result.contains("service") && !result.at("service").value("ok",false);
+        const bool service_failed=result.contains("service") && (!result.at("service").value("ok",false) ||
+            (result.at("service").contains("error") && result.at("service").at("error").is_object()));
         if (!result.value("ok",false) || service_failed) {
             const auto& failure=service_failed ? result.at("service") : result;
             message=shin::ui::tr("Operation was not confirmed. Review the report before retrying.");
@@ -47,7 +60,7 @@ struct WindowsManagement {
         } else if (operation=="targets") {
             agents.clear();
             for (const auto& connection:result.at("targets")) agents.push_back({connection,false,Json()});
-        } else if (operation=="add") { message=shin::ui::tr("Project added. Select the agents that should have access."); discover(); }
+        } else if (operation=="add") { discover(); message=shin::ui::tr("Project added. Select the agents that should have access."); }
         else if (operation=="storage") storage=result;
         else if (operation=="preview") {
             for (std::size_t i=0;i<agents.size();++i) agents[i].review=result.at("reviews").at(i);
@@ -146,6 +159,7 @@ void render_management() {
                 management.run("add",std::move(args));
             }
         }
+        if (management.operation != "add") {
         ImGui::Spacing(); ImGui::TextWrapped("%s",tr("Only checked agents are changed. Existing settings are preserved and backed up."));
         bool selected_agent=false, reviewed=true;
         for(std::size_t i=0;i<management.agents.size();++i) {
@@ -166,6 +180,7 @@ void render_management() {
         if(management_button(tr("Connect selected agents"),303,idle&&selected_agent&&reviewed&&!management.root.empty())) management.connections(true);
         if(management_button(tr("Check project"),304,idle&&!management.root.empty())) {
             auto args=management.arguments("status"); args.insert(args.end(),{"--root",management.root}); management.run("status",std::move(args));
+        }
         }
     } else if(page==WindowsManagement::Page::storage) {
         const auto& data=management.storage;
@@ -199,7 +214,21 @@ void render_management() {
         if(management_button(tr("Open Windows Startup Apps"),310)) ShellExecuteW(panel,L"open",L"ms-settings:startupapps",nullptr,nullptr,SW_SHOWNORMAL);
     }
     ImGui::EndDisabled();
-    if(!idle) ImGui::TextColored(sand,"%s",tr("Operation in progress…"));
+    if (page == WindowsManagement::Page::setup && management.operation == "add" && management.connection_progress) {
+        ImGui::Spacing();
+        ImGui::TextColored(idle ? red : sand,"%s",tr(idle ? "Project not connected" : "Preparing project…"));
+        const auto mask = management.connection_progress->load();
+        int current = -1;
+        for (int i = 0; i < static_cast<int>(shin::ui::project_connection_stages.size()); ++i) if (mask & (1U << i)) current = i;
+        for (int i = 0; i < static_cast<int>(shin::ui::project_connection_stages.size()); ++i) {
+            const bool seen = mask & (1U << i);
+            const char* mark = i == current ? (idle ? "!" : ">") : seen ? "+" : i < current ? "-" : " ";
+            ImGui::TextColored(i == current ? (idle ? red : sand) : seen ? green : muted,"%s  %s",mark,shin::ui::project_connection_label(i));
+        }
+        const auto seconds = static_cast<long long>(idle ? management.connection_seconds :
+            std::chrono::duration<double>(std::chrono::steady_clock::now()-management.connection_started).count());
+        ImGui::TextColored(muted,tr("Elapsed: %lld s"),seconds);
+    } else if(!idle) ImGui::TextColored(sand,"%s",tr("Operation in progress…"));
     if(!management.message.empty()) ImGui::TextWrapped("%s",management.message.c_str());
     if(!management.report.empty() && management_button(tr("Copy diagnostic report"),312)) platform_copy(management.report.dump(2));
     ImGui::EndChild(); ImGui::SetCursorPosY(footer);

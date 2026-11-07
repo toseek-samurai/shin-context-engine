@@ -23,6 +23,27 @@ int native_cli_helper(int argc, char** argv) {
     if (mode.starts_with("popup-")) mode.remove_prefix(6);
     const fs::path receipt = argv[argc - 1];
     const auto parent = getppid();
+    if (mode == "project-ready" || mode == "project-error" || mode == "project-service-error") {
+        const auto stage = [](const char* value) {
+            const auto frame = Json{{"schema_version", "shin.project-progress.v1"}, {"stage", value}}.dump() + "\n";
+            std::cerr << frame.substr(0, 3) << std::flush;
+            std::this_thread::sleep_for(std::chrono::milliseconds(15));
+            std::cerr << frame.substr(3) << std::flush;
+            std::this_thread::sleep_for(std::chrono::milliseconds(250));
+        };
+        stage("checking-project"); stage("candidate-build"); stage("source-cache");
+        if (mode == "project-error") {
+            std::cerr << Json{{"ok", false}, {"error", {{"code", "fixture-project-error"}, {"message", "Fixture refused."}}}}.dump() << '\n';
+            return 2;
+        }
+        stage("starting-service"); stage("checking-connection");
+        if (mode == "project-service-error") {
+            std::cout << Json{{"ok", false}, {"service", {{"ok", true}, {"error", {{"code", "fixture-project-error"}}}}}}.dump() << '\n';
+            return 1;
+        }
+        std::cout << Json{{"ok", true}, {"service_enrolled", true}, {"service", {{"ok", true}}}}.dump() << '\n';
+        return 0;
+    }
     if (mode == "oversized") {
         ::signal(SIGTERM, SIG_IGN);
         const std::string chunk(16 * 1024, 'x');
@@ -78,6 +99,30 @@ int native_cli_host(const char* cli, const char* home, const char* modeText, con
     app.shinHome = diagnostic_text_content(home);
     if (scenario == "refused-exit") app.refusalMarker = diagnostic_text_content(std::string(output) + ".handoff.refused");
     NSApp.delegate = app;
+    if (scenario == "project-ready" || scenario == "project-error" || scenario == "project-service-error") {
+        project_management_busy = true;
+        [app connectProjectRoot:@"/fixture/project"];
+        __block BOOL sawProgress = NO, stayedVisible = YES, controlsLocked = YES;
+        NSTimer* sample = [NSTimer scheduledTimerWithTimeInterval:.02 repeats:YES block:^(NSTimer* timer) {
+            stayedVisible = stayedVisible && app.setupWindow.visible;
+            if (app.setupAdding) {
+                sawProgress = sawProgress || app.setupProgressStage >= 1;
+                controlsLocked = controlsLocked && !app.setupChoose.enabled &&
+                    ![app.setupWindow standardWindowButton:NSWindowCloseButton].enabled;
+                return;
+            }
+            [timer invalidate];
+            std::ofstream(output) << Json{{"progress_before_completion", (bool)sawProgress}, {"window_stayed_visible", (bool)stayedVisible},
+                {"controls_locked", (bool)controlsLocked}, {"retry_enabled", (bool)app.setupChoose.enabled},
+                {"failed", (bool)app.setupPreparationFailed}, {"status", app.setupStatus.stringValue.UTF8String},
+                {"progress_mask", app.setupProgressMask}, {"operation_released", !project_management_busy.load()}}.dump();
+            [NSApp stop:nil];
+            [NSApp postEvent:[NSEvent otherEventWithType:NSEventTypeApplicationDefined location:NSZeroPoint modifierFlags:0
+                timestamp:0 windowNumber:0 context:nil subtype:0 data1:0 data2:0] atStart:NO];
+        }];
+        [NSApp run]; [sample invalidate]; [app.setupWindow close]; NSApp.delegate = nil;
+        return 0;
+    }
     if (mode.starts_with("popup-")) {
         monitor = std::make_unique<Monitor>(home);
         app.content = [ShinView new]; app.popover = [NSPopover new];

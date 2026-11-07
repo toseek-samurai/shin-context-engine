@@ -5,6 +5,7 @@
 #include "shin/observer/observer.h"
 #include "shin/observer/model_usage.h"
 #include "../ui/project_diagnostics.h"
+#include "../ui/project_progress.h"
 #include "../ui/model_projects.h"
 #include "../ui/request_timing.h"
 #include "../ui/service_activity.h"
@@ -279,7 +280,7 @@ void draw_brand(ImVec2 origin, float size);
 
 // Sand frames the product. Blue identifies interaction, not project health.
 constexpr ImVec4 background{.114f, .122f, .110f, 1}, raised{.145f, .157f, .137f, 1};
-constexpr ImVec4 outer_frame = background, header_surface = raised;
+constexpr ImVec4 header_surface = raised;
 constexpr ImVec4 hover_surface{.188f, .204f, .169f, 1}, rule{.267f, .286f, .235f, 1};
 constexpr ImVec4 sand{.894f, .800f, .635f, 1}, ink{.941f, .937f, .890f, 1}, muted{.690f, .710f, .651f, 1};
 constexpr ImVec4 green{.510f, .831f, .608f, 1}, amber{.957f, .753f, .384f, 1};
@@ -1559,7 +1560,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     const float table_available = panel_fit_active ? panel_body_budget - ImGui::GetCursorPosY() : ImGui::GetContentRegionAvail().y;
     const float table_height = std::min(std::max(1.0f, table_available - (tiny ? 21 : 28)),
         std::max(1, visible_rows) * row_height + 8);
-    ImGui::BeginChild("projects-table-region", {0, table_height}, ImGuiChildFlags_Borders | ImGuiChildFlags_AlwaysUseWindowPadding,
+    ImGui::BeginChild("projects-table-region", {0, table_height}, ImGuiChildFlags_AlwaysUseWindowPadding,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     int index = 0;
     for (const auto& project : projects) {
@@ -1958,13 +1959,13 @@ float render(const ViewState& view, float height_limit = 0) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{compact ? 12.0f : 16.0f, tiny ? 9.0f : 12.0f});
     ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2{8, tiny ? 4.0f : 8.0f});
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2{compact ? 8.0f : 10.0f, tiny ? 4.0f : 5.0f});
-    ImGui::PushStyleColor(ImGuiCol_WindowBg, outer_frame);
+    ImGui::PushStyleColor(ImGuiCol_WindowBg, raised);
     ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 0);
     ImGui::Begin("Shin", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar |
         ImGuiWindowFlags_NoScrollWithMouse | ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoSavedSettings);
     ImGui::PopStyleVar(); // The outer panel owns its Sand outline.
     auto* draw = ImGui::GetWindowDrawList();
-    const float edge = compact ? 4.0f : 7.0f;
+    const float edge = .5f; // One outline at the panel edge, without an inset dark rim.
     draw->AddRectFilled({edge, edge}, {size.x - edge, size.y - edge}, ImGui::GetColorU32(raised), 12);
     draw->AddRect({edge, edge}, {size.x - edge, size.y - edge}, alpha_color(sand, .7f), 12);
     const auto title_origin = ImGui::GetCursorScreenPos();

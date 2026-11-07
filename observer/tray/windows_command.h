@@ -1,11 +1,13 @@
 #pragma once
 #include "shin/windows/file.h"
+#include "../ui/project_progress.h"
 
 // The UI invokes the matching native CLI directly, never through a shell.
 // Drain both streams with fixed output/deadline bounds. The CLI owns its worker
 // jobs; an intentionally detached service must survive completion of this command.
 Json windows_command(const fs::path& executable, const std::vector<std::string>& arguments,
-                     std::chrono::seconds timeout = std::chrono::seconds(120)) {
+                     std::chrono::seconds timeout = std::chrono::seconds(120),
+                     const std::function<void(int)>& progress = {}) {
     struct Handle {
         HANDLE value = nullptr;
         ~Handle() { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
@@ -53,7 +55,8 @@ Json windows_command(const fs::path& executable, const std::vector<std::string>&
     CloseHandle(out_write.value); out_write.value = nullptr; CloseHandle(err_write.value); err_write.value = nullptr;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
     std::string output, errors;
-    const auto drain = [](HANDLE handle, std::string& bytes) {
+    shin::ui::ProjectProgressReader project_progress;
+    const auto drain = [&](HANDLE handle, std::string& bytes, bool diagnostic) {
         DWORD available = 0;
         if (!PeekNamedPipe(handle, nullptr, 0, nullptr, &available, nullptr)) return;
         std::array<char, 8192> buffer{};
@@ -62,16 +65,17 @@ Json windows_command(const fs::path& executable, const std::vector<std::string>&
             if (!ReadFile(handle, buffer.data(), std::min(available, static_cast<DWORD>(buffer.size())), &read, nullptr) || !read) break;
             if (bytes.size() + read > kMaximumStateBytes) throw Error("monitor-response-too-large", "Native command output exceeds its bound.");
             bytes.append(buffer.data(), read); available -= read;
+            if (diagnostic && progress) project_progress.feed(std::string_view(buffer.data(), read), progress);
         }
     };
     for (;;) {
-        drain(out_read.value, output); drain(err_read.value, errors);
+        drain(out_read.value, output, false); drain(err_read.value, errors, true);
         if (WaitForSingleObject(process.value, 20) == WAIT_OBJECT_0) break;
         if (std::chrono::steady_clock::now() >= deadline) throw Error("monitor-command-timeout", "Native command exceeded its deadline. Check project status before retrying.");
     }
-    drain(out_read.value, output); drain(err_read.value, errors);
+    drain(out_read.value, output, false); drain(err_read.value, errors, true);
     DWORD code = 1; GetExitCodeProcess(process.value, &code);
-    Json result = parse_json(output.empty() ? errors : output);
+    Json result = parse_json(output.empty() ? (progress ? project_progress.finish() : errors) : output);
     if (!result.is_object() || !result.contains("ok") || !result.at("ok").is_boolean())
         throw Error("monitor-response-invalid", "Native command returned an invalid response.");
     if (code && result.value("ok", false)) throw Error("monitor-response-invalid", "Native command did not confirm completion.");

@@ -12,13 +12,14 @@ Use it to find unfamiliar code, retrieve related documentation, and pick up a
 task with evidence your agent can inspect. Query results carry a snapshot that
 binds subsequent inspection and reads to the matching source.
 
-[Download preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77) ·
+[Download preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96) ·
 [macOS setup](#get-started-on-macos) · [Windows setup](docs/windows-desktop.md#download-a-preview) ·
 [Linux / WSL2](docs/building.md#linux-and-wsl2-terminal-tools) ·
 [Connect your coding agent](docs/native-client-setup.md)
 
 **Development preview:** macOS Apple Silicon and Windows x64 packages are
-available; Linux and WSL2 build from source. There is no stable release yet.
+available, along with Ubuntu 24.04 x86_64 terminal tools for Linux and WSL2.
+There is no stable release yet.
 Platform capabilities differ; see the [component table](#choose-the-component-you-need)
 and [Windows scope](docs/windows-desktop.md).
 
@@ -45,10 +46,10 @@ optional model usage. The macOS kit includes a menu bar app; the Windows preview
 includes its native desktop host. On macOS and Linux, `shin-ce stats` opens the
 Sand terminal monitor with the same project states and timing calculations.
 
-The screenshots below show the **current development UI**: the original dark
+The screenshots below show the **dark Sand layout**: the original dark
 Sand palette with compact navigation, readable 14 px body text and a panel that
-fits short pages instead of leaving empty space below them. These refinements
-are not yet included in a published preview; dev.85 uses Light Sand.
+fits short pages instead of leaving empty space below them. This layout is
+included in the published preview.
 
 <p>
   <img src="docs/images/monitor-overview.png" width="400" alt="Sand Overview with project availability, a labeled warning action and a line graph">
@@ -135,11 +136,11 @@ Homebrew manages this package; use `brew upgrade` for updates.
 The preview includes a first-run setup window, automatic agent connections
 and project statistics; see [guided setup](docs/native-client-setup.md#automatic-setup).
 
-The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77)
+The [development preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96)
 is available for **macOS 15+ on Apple Silicon**. Install or update with:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.77/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.96/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, checks SHA-256, and installs it
@@ -191,8 +192,8 @@ project data and restores the previous kit if activation fails.
 | --- | --- | --- |
 | Local kit | Core, Observer, CLI, MCP, usage collector, and Monitor | macOS 15+ Apple Silicon preview; verified binary kit |
 | Core | Indexing and bounded retrieval for tools and integrations | macOS, Linux and native Windows x64 source builds; [build instructions](docs/building.md) |
-| Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | macOS, Linux and Windows x64 source builds; [build instructions](docs/building.md) |
-| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77) and [development checks](docs/building.md#native-windows-development-builds) |
+| Observer tools | Local service, CLI, and MCP; terminal monitor on macOS/Linux | Included in the macOS/Windows kits and [Linux terminal archive](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96); [source builds](docs/building.md) |
+| Windows desktop preview | Native Observer/CLI/MCP and Win32/DX11 Monitor using the shared engine and UI | [ZIP/MSI preview assets](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96) and [development checks](docs/building.md#native-windows-development-builds) |
 
 Windows support adds platform adapters to the same Core, profiles and protocols.
 Published ZIP/MSI previews pass the matching CI matrix and exact-package checks;

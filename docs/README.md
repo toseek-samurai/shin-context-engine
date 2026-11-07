@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.85](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.85).
-It contains Core **2.0.5-dev.15** and Observer/CLI/MCP/Monitor **2.0.5-dev.85**.
+The current published preview is [dev.96](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96).
+It contains Core **2.0.5-dev.18** and Observer/CLI/MCP/Monitor **2.0.5-dev.96**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -15,9 +15,10 @@ There is no stable public release yet.
 Source identities are maintained in [VERSION](../VERSION),
 [observer/VERSION](../observer/VERSION) and the
 [development policy](machine/shin-development-v1.json). An installed process can
-still belong to an earlier kit: reconnect persistent MCP clients after updating,
-including clients hosted inside an IDE. Restarting another desktop client does
-not restart those IDE sessions.
+still belong to an earlier kit. Compatible MCP connections resume automatically;
+reconnect an older integration if it reports a version mismatch. IDE-hosted
+clients have their own sessions; restarting another desktop client does not
+restart them.
 
 ## Desktop layout
 
@@ -26,11 +27,11 @@ Monitor groups tasks under **Overview**, **Projects**, **History** and
 History opens with recorded calls; timing and optional agent usage remain
 secondary views. Published dev.85 introduced this navigation with Light Sand.
 
-Current development source restores the original dark Sand palette while
+The current preview uses the original dark Sand palette while
 keeping the new layout, 14 px body text and 520 px standard width. Short Overview,
 Projects and Settings pages fit their contents up to a 680 px ceiling; long
-history and detail views retain bounded height and scrolling. These refinements
-are **not yet released**. The [native screenshots](images/README.md) identify the
+history and detail views retain bounded height and scrolling.
+The [native screenshots](images/README.md) identify the
 source and capture boundaries. The terminal keeps its existing Sand appearance
 and Activity navigation.
 

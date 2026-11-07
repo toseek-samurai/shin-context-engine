@@ -11,16 +11,16 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-Download the Windows files from [preview dev.77](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.77):
+Download the Windows files from [preview dev.96](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.96):
 
-- `shin-desktop-2.0.5-dev.77-windows-AMD64.msi` for the installed desktop route.
-- `shin-desktop-2.0.5-dev.77-windows-AMD64.zip` for a portable extraction.
+- `shin-desktop-2.0.5-dev.96-windows-AMD64.msi` for the installed desktop route.
+- `shin-desktop-2.0.5-dev.96-windows-AMD64.zip` for a portable extraction.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
 Installation and new-project connection are separate steps. The MSI Finish action
 prepares already enrolled projects and opens Monitor. In published previews, use
-**Settings → Connect projects and agents…** to add a new project. See [MCP client setup](native-client-setup.md)
+**Projects → Add project…** to add a new project. See [MCP client setup](native-client-setup.md)
 for connection review and manual integrations.
 
 ## Current scope
@@ -30,7 +30,7 @@ for connection review and manual integrations.
 | Core and retrieval | Shared indexing, source discovery and snapshot-bound reads. Hosted smoke checks cover a selected native subset of the Core suite. |
 | Observer, CLI and MCP | Native processes and authenticated named pipes; project work runs with unelevated user tokens and explicit root authority. |
 | Storage and workers | Owner-private ACLs, Windows file identities, atomic replacement and bounded Job Objects. UNC paths and reparse traversal are refused. |
-| Monitor | Win32/DX11 tray host, Sand, EN/RU, Overview, Projects, Activity and Settings; per-monitor DPI awareness with matching logical input. |
+| Monitor | Win32/DX11 tray host, Sand, EN/RU, Overview, Projects, History and Settings; per-monitor DPI awareness with matching logical input. |
 | Setup and management | Reviewed agent connections, project actions, storage management and Windows Startup Apps access. |
 | Usage | Automatic collection from readable supported Codex, OpenCode and Hermes history; missing sources remain visibly unavailable or partial. |
 | Updates | Automatic or manual release checks; confirmed MSI download/verification, normal UAC, project preparation and retained results. |
@@ -42,9 +42,9 @@ exercise Linux and do not substitute for native Windows tests. Mixed-monitor
 moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
 
-### Desktop layout in development
+### Desktop layout
 
-Current source restores the original dark Sand palette while retaining the
+The current preview uses the original dark Sand palette with the
 **Overview**, **Projects**, **History** and **Settings** navigation. Project
 connections remain under Projects, the journal opens first in History, and
 technical reports stay in details. Body text is 14 px, with compact labeled
@@ -56,9 +56,8 @@ and scrolling. Resizing preserves the popup's bottom anchor and focus, follows
 the current monitor's bounds and supports 100/150/200% DPI. Management, update
 and modal screens retain their own sizes.
 
-These refinements are **not yet released**; published dev.85 uses Light Sand.
-The source build and native render checks below do not change or qualify the
-reviewed client setup, MSI/UAC installation, saved-result or recovery flows.
+The native render checks below remain separate evidence from interactive
+client setup, MSI/UAC installation, saved-result and recovery checks.
 
 <p>
   <img src="images/monitor-windows-overview.png" width="400" alt="Windows Sand Overview rendered by the native Win32/DX11 Monitor with synthetic data">

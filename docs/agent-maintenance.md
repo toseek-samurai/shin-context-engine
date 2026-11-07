@@ -18,6 +18,22 @@ with the component version files. Before tagging, run both
 `shin-context-universality` and `shin-context-codex-skill`; the latter also checks
 the root agent-entry byte budget after maintenance-policy edits.
 
+Before tagging a Core or Observer change, also build the native Observer with
+source discovery and MCP enabled and run its complete CTest suite with
+`--parallel 4 --output-on-failure --no-tests=error --output-junit <external-report>`.
+On macOS use the Monitor and local-kit options from
+[the kit build procedure](local-kit.md#build-the-package).
+This matches the source-test workload in CI. Focused tests are regression proof;
+the full suite also covers the service, MCP, lifecycle and installer contracts.
+Use an external build directory dedicated to source checks and original
+development dependencies. Keep relocated libraries from extracted kits in
+archive fixtures. Record the component versions, compiler, Python and CMake
+options with the results.
+Keep package qualification tied to the exact archive, independently of source tests.
+For asynchronous failures, force the relevant ordering with existing process or
+publication controls in disposable fixtures. Preserve both the waiting call and
+later-call behavior, including bounded diagnostics and automatic recovery.
+
 Automatic source qualification runs on pull requests and `v*` tag pushes.
 Ordinary branch pushes, including `main`, do not start another matrix. Use the
 manual workflow for an untagged direct change that needs hosted checks. A release

@@ -407,7 +407,7 @@ private:
         for (auto& client : connections) if (client->admission_pending) client->next_admission = Clock::time_point{};
     }
 
-    void discard_resident(const std::string& root, const std::string& code) {
+    void discard_resident(const std::string& root, const std::string& code, const Json& diagnostic = nullptr) {
         for (auto& client : connections) {
             if ((!client->resident_pending && !client->admission_pending) || client->root.string() != root) continue;
             // An admitted wait has not executed. A peer's cancellation or a
@@ -420,7 +420,7 @@ private:
             }
             client->resident_pending = false;
             client->admission_pending = false;
-            client->output = failure(client->request_id, code, "Project search is preparing in the background; retry shortly.").dump() + '\n';
+            client->output = failure(client->request_id, code, "Project reader is unavailable.", diagnostic).dump() + '\n';
             record_result(*client, {{"error_code", code}});
         }
         residents.erase(root);
@@ -466,7 +466,7 @@ private:
     }
 
     void poll_residents() {
-        std::map<std::string, std::string> remove;
+        std::map<std::string, Error> remove;
         for (auto& [root, resident] : residents) {
             auto& reader = *resident;
             try {
@@ -503,21 +503,25 @@ private:
                         reader.request_id.clear();
                         reader.last_used = Clock::now();
                         wake_admissions();
-                        if (!frame.at("reusable").get<bool>()) remove[root] = "project-updating";
+                        if (!frame.at("reusable").get<bool>())
+                            remove.try_emplace(root, "project-updating", "Project reader is preparing.");
                     } else if (kind == "invalidated" || kind == "preparation-failed") {
-                        remove[root] = frame.value("code", "project-updating");
+                        remove.insert_or_assign(root, Error(frame.value("code", "project-updating"),
+                            "Project reader preparation requires attention.", frame.value("diagnostic", Json())));
                     } else throw Error("resident-frame-invalid", "Unexpected resident frame.");
                 }
                 if (output.ended || (!reader.ready && Clock::now() >= reader.deadline))
-                    remove.try_emplace(root, output.ended ? "resident-disconnected" : "resident-preparation-timeout");
+                    remove.try_emplace(root, output.ended ? "resident-disconnected" : "resident-preparation-timeout",
+                        "Project reader preparation did not complete.");
             } catch (const Error& error) {
-                remove[root] = error.code == "service-disconnected" ? "resident-disconnected" : "resident-frame-invalid";
-            } catch (...) { remove[root] = "resident-frame-invalid"; }
+                remove.insert_or_assign(root, Error(error.code == "service-disconnected" ? "resident-disconnected" : "resident-frame-invalid",
+                    "Project reader response could not be verified."));
+            } catch (...) { remove.insert_or_assign(root, Error("resident-frame-invalid", "Project reader response could not be verified.")); }
         }
-        for (const auto& [root, code] : remove) {
+        for (const auto& [root, error] : remove) {
             qualified.erase(root);
-            resident_errors[root] = code;
-            discard_resident(root, code);
+            resident_errors.insert_or_assign(root, error);
+            discard_resident(root, error.code, error.diagnostic);
         }
     }
 
@@ -591,11 +595,12 @@ private:
                 {"resident_evictions", resident_evictions}, {"resident_warm_requests", resident_warm_requests},
                 {"resident_retention_bytes", kResidentRetentionBytes}, {"resident_memory_evictions", resident_memory_evictions},
                 {"resident_memory_limited", resident_memory_limited},
-                {"resident_errors", resident_errors},
+                {"resident_errors", Json::object()},
                 {"enrollment_mode", registry_mode ? "registry" : "explicit"}, {"instance_id", instance_id},
                 {"supervision", supervised ? local_service_manager() : "unmanaged"},
                 {"registry_error", registry_error}, {"enrollment_errors", enrollment_errors},
                 {"readiness_assessed", false}, {"stop_requested", command == "service-stop"}};
+            for (const auto& [root, error] : resident_errors) value["result"]["resident_errors"][root] = error.code;
             // A stop acknowledgement must not depend on dashboard/history size.
             if (command == "service-status") {
                 value["result"]["telemetry"] = telemetry.snapshot();
@@ -611,11 +616,12 @@ private:
                     project["query_phase"] = project.at("query_ready") == true ? "ready" :
                         (found == residents.end() && qualified.contains(root) ? "standby" : "preparing");
                     const auto error = resident_errors.find(project.at("root").get<std::string>());
-                    project["query_error_code"] = error == resident_errors.end() ? "" : error->second;
+                    project["query_error_code"] = error == resident_errors.end() ? "" : error->second.code;
                     if (project.at("query_ready") == false && error != resident_errors.end() &&
-                        error->second != "project-updating" && error->second != "resident-disconnected") {
+                        error->second.code != "project-updating" && error->second.code != "resident-disconnected") {
                         project["active_issue"] = true;
-                        project["error_code"] = error->second;
+                        project["error_code"] = error->second.code;
+                        if (!error->second.diagnostic.is_null()) project["validation_diagnostic"] = error->second.diagnostic;
                     }
                     const auto blocker = project_blockers.find(root);
                     if (blocker != project_blockers.end()) {
@@ -663,8 +669,8 @@ private:
         if (const auto error = enrollment_errors.find(found->first); error != enrollment_errors.end())
             throw Error(error->second, "Project enrollment requires attention.");
         if (const auto error = resident_errors.find(found->first); error != resident_errors.end() &&
-            error->second != "project-updating" && error->second != "resident-disconnected")
-            throw Error(error->second, "Project reader preparation requires attention.");
+            error->second.code != "project-updating" && error->second.code != "resident-disconnected")
+            throw error->second;
         const auto blocker = project_blockers.find(found->first);
         if (blocker != project_blockers.end())
             throw Error(blocker->second.at("code"), blocker->second.at("message"),
@@ -866,7 +872,7 @@ private:
             resident_memory_limited = true;
         }
     }
-    std::map<std::string, std::string> resident_errors;
+    std::map<std::string, Error> resident_errors;
     std::map<std::string, Json> project_blockers;
     std::unique_ptr<LocalWorkerProcess> refresh_process;
     bool retired_refresh_scope = false;

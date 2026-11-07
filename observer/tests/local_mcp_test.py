@@ -1,11 +1,13 @@
 #!/usr/bin/env python3
 """Protocol-to-service native tests, with no model inference or Python SDK."""
 import json
+import argparse
 import fcntl
 import hashlib
 import os
 from pathlib import Path
 import select
+import signal
 import socket
 import sqlite3
 import subprocess
@@ -1223,6 +1225,60 @@ class McpTests(unittest.TestCase):
             self.fail('permission restoration did not recover: ' + str(result))
         self.assertIsNone(client.poll())
 
+    def test_cold_reader_permission_diagnostic_reaches_waiting_and_later_calls(self):
+        # Qualify more projects than the resident cache holds, so a query must
+        # prepare a reader. Keep background refresh out of this failure path.
+        for index in range(5):
+            root = self.base / f'cold-{index}'
+            root.mkdir()
+            (root / 'limits.js').write_text('export function readLimit() { return 37; }\n')
+            self.init(root=root)
+            self.roots.append(root)
+        server = self.start(ready=False)
+        state = self.wait_service_state(lambda s: len(s['qualified_projects']) == len(self.roots)
+                                        and all(r['ready'] for r in s['resident_projects']), timeout=15)
+        warm = {r['root'] for r in state['resident_projects']}
+        root = next(root for root in self.roots if str(root) not in warm)
+        processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,args='], text=True)
+        refreshers = [int(parts[0]) for row in processes.splitlines()
+                      if len(parts := row.split(None, 2)) == 3
+                      and int(parts[1]) == server.pid and parts[2].endswith(' _refresh-worker')]
+        self.assertEqual(len(refreshers), 1, refreshers)
+        refresher = refreshers[0]
+        source = root / 'limits.js'
+        mode = source.stat().st_mode & 0o777
+        workspace = self.home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest()
+        os.kill(refresher, signal.SIGSTOP)
+        try:
+            client = self.adapter(root)
+            with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+                fcntl.flock(lock, fcntl.LOCK_EX)
+                request_id = self.send(client, 'tools/call',
+                                       {'name': 'shin_query', 'arguments': {'query': 'readLimit'}})
+                self.wait_service_state(lambda s: s['waiting_requests'] == 1
+                                        and any(r['root'] == str(root) and not r['ready']
+                                                for r in s['resident_projects']))
+                source.chmod(0)
+            pending = self.response(client, request_id)['result']
+            result = json.loads(pending['content'][0]['text'])
+            for response in (result, self.tool(client, 'shin_query', {'query': 'readLimit'})):
+                self.assertEqual(response['error']['code'], 'access-denied', response)
+                self.assertEqual(response['error'].get('diagnostic', {}).get('category'), 'access-denied', response)
+                self.assertEqual(response['recovery']['diagnostic'], response['error']['diagnostic'])
+                self.assertNotIn(str(root), json.dumps(response['error']['diagnostic']))
+                self.assertNotIn('source_context', response)
+            self.assertEqual(self.raw('service-status')['result']['resident_errors'][str(root)], 'access-denied')
+        finally:
+            source.chmod(mode)
+            os.kill(refresher, signal.SIGCONT)
+        result = self.tool(client, 'shin_query', {'query': 'readLimit'})
+        deadline = time.monotonic() + 20
+        while not result['ok'] and time.monotonic() < deadline:
+            time.sleep(.05)
+            result = self.tool(client, 'shin_query', {'query': 'readLimit'})
+        self.assertTrue(result['ok'], result)
+        self.assertIsNone(client.poll())
+
     def test_profile_change_guidance_requires_review_then_same_mcp_recovers(self):
         fixture = self.permanent_route(managed=True)
         self.start()
@@ -1568,12 +1624,23 @@ class McpTests(unittest.TestCase):
 
 
 if __name__ == '__main__':
-    # Keep upgrade proof separately scheduled without duplicating it in the
-    # longer native-MCP suite. Direct invocation still runs every case.
-    if '--bridge-only' in sys.argv or '--without-bridge' in sys.argv:
-        only='--bridge-only' in sys.argv
-        sys.argv.remove('--bridge-only' if only else '--without-bridge')
+    # Every case belongs to exactly one group. Each group gets its own CTest
+    # deadline and failure output; direct invocation still runs every case.
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument('--group', choices=('protocol', 'projects', 'bridge'))
+    options, remaining = parser.parse_known_args()
+    sys.argv[1:] = remaining
+    if options.group:
+        project_prefixes = ('test_external_route_', 'test_membership_candidate_', 'test_active_edits_',
+                            'test_source_permission_', 'test_cold_reader_', 'test_profile_change_', 'test_managed_')
         def load_tests(loader, tests, pattern):
-            return unittest.TestSuite(McpTests(name) for name in loader.getTestCaseNames(McpTests)
-                                      if name.startswith('test_bridge_') == only)
+            groups = {'protocol': [], 'projects': [], 'bridge': []}
+            for name in loader.getTestCaseNames(McpTests):
+                group = 'protocol'
+                if name.startswith('test_bridge_'):
+                    group = 'bridge'
+                elif name.startswith(project_prefixes):
+                    group = 'projects'
+                groups[group].append(McpTests(name))
+            return unittest.TestSuite(groups[options.group])
     unittest.main()

@@ -214,13 +214,15 @@ if(BUILD_TESTING AND NOT WIN32)
                 COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/client_setup_test.py
                     $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles)
             set_tests_properties(shin-client-setup PROPERTIES TIMEOUT 180)
-            add_test(NAME shin-native-mcp
-                COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_mcp_test.py
-                    $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --without-bridge)
-            set_tests_properties(shin-native-mcp PROPERTIES TIMEOUT 180)
+            foreach(group IN ITEMS protocol projects)
+                add_test(NAME shin-native-mcp-${group}
+                    COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_mcp_test.py
+                        $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --group ${group} -v)
+                set_tests_properties(shin-native-mcp-${group} PROPERTIES TIMEOUT 180 COST 90)
+            endforeach()
             add_test(NAME shin-mcp-update-bridge
                 COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/local_mcp_test.py
-                    $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --bridge-only)
+                    $<TARGET_FILE:shin-mcp> $<TARGET_FILE:shin-ce> ${CMAKE_CURRENT_SOURCE_DIR}/../profiles --group bridge -v)
             set_tests_properties(shin-mcp-update-bridge PROPERTIES TIMEOUT 45)
         endif()
         add_test(NAME shin-ce-local-install
@@ -255,9 +257,6 @@ if(BUILD_TESTING AND NOT WIN32)
         set_tests_properties(shin-ce-local-route-lifecycle PROPERTIES COST 80)
         set_tests_properties(shin-ce-local-route-approvals PROPERTIES COST 40)
         set_tests_properties(shin-ce-local-watch shin-ce-managed-init PROPERTIES COST 65)
-        if(SHIN_OBSERVER_MCP)
-            set_tests_properties(shin-native-mcp PROPERTIES COST 90)
-        endif()
     endif()
     add_executable(shin-observer-source-view-tests tests/source_view_test.cpp)
     target_link_libraries(shin-observer-source-view-tests PRIVATE shin-observer-native)

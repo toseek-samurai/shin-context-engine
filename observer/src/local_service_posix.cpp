@@ -390,7 +390,10 @@ int local_resident_worker() {
         const auto* observer = dynamic_cast<const Error*>(&error);
         const auto* core = dynamic_cast<const shin::context::CliError*>(&error);
         const auto code = observer ? observer->code : core ? core->code() : "resident-preparation-failed";
-        write_frame(STDOUT_FILENO, Json{{"kind", "preparation-failed"}, {"code", code}}.dump() + '\n',
+        const auto diagnostic = observer ? observer->diagnostic : core ? core->diagnostic() : Json();
+        auto frame = error_json(Error(code, "Project reader preparation requires attention.", diagnostic));
+        frame["kind"] = "preparation-failed";
+        write_frame(STDOUT_FILENO, frame.dump() + '\n',
             Clock::now() + std::chrono::seconds(2));
         return 1;
     }

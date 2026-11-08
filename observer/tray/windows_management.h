@@ -1,4 +1,5 @@
 #pragma once
+#include "../ui/client_connections.h"
 // Sand management pages reuse the native CLI's authority and revision contracts.
 struct WindowsManagement {
     enum class Page { setup, storage, project, login } page = Page::setup;
@@ -33,7 +34,11 @@ struct WindowsManagement {
             catch (...) { return Json{{"ok",false},{"error",{{"code","monitor-command-failed"}}}}; }
         });
     }
-    void discover() { run("targets",arguments("client-targets")); }
+    void discover() {
+        auto args=arguments("client-targets");
+        if (!root.empty()) args.insert(args.end(),{"--root",root});
+        run("targets",std::move(args));
+    }
     void inventory() {
         storage = Json::object();
         auto args=arguments("storage-status");
@@ -55,7 +60,12 @@ struct WindowsManagement {
                 message=shin::ui::tr("The generated project index exceeds a load budget. Review the index size and project limits before retrying.");
                 message+="\nsnapshot-memory-budget-exceeded\n"+failure.at("error").value("message", std::string{}).substr(0,1024);
             }
-            if(operation=="connect" || operation=="preview") for(auto& agent:agents) agent.review=Json();
+            if(operation=="connect" || operation=="preview") {
+                const auto completed=result.value("completed_connections",Json::array());
+                for(std::size_t i=0;i<completed.size()&&i<agents.size();++i)
+                    if(agents[i].selected&&completed[i].is_object()) agents[i].target["access_state"]=completed[i].value("access_state","review-required");
+                for(auto& agent:agents) agent.review=Json();
+            }
             storage=Json::object();
         } else if (operation=="targets") {
             agents.clear();
@@ -63,11 +73,23 @@ struct WindowsManagement {
         } else if (operation=="add") { discover(); message=shin::ui::tr("Project added. Select the agents that should have access."); }
         else if (operation=="storage") storage=result;
         else if (operation=="preview") {
-            for (std::size_t i=0;i<agents.size();++i) agents[i].review=result.at("reviews").at(i);
+            for (std::size_t i=0;i<agents.size();++i) {
+                agents[i].review=result.at("reviews").at(i);
+                if (agents[i].selected) agents[i].target["access_state"]=agents[i].review.value("access_state","review-required");
+            }
             message=shin::ui::tr("Review the selected configuration paths, then confirm connection.");
         } else if (operation=="connect") {
-            for (auto& agent:agents) agent.review=Json();
-            message=shin::ui::tr("Agents connected. Restart their MCP sessions to load the settings.");
+            bool reconnect=false;
+            for (std::size_t i=0;i<agents.size();++i) {
+                const auto& review=result.at("reviews").at(i);
+                if (agents[i].selected) {
+                    agents[i].target["access_state"]=review.value("access_state","review-required");
+                    reconnect=reconnect||review.value("restart_required",true);
+                }
+                agents[i].review=Json();
+            }
+            message=reconnect ? shin::ui::tr("Access saved. Reconnect older MCP connections once; subsequent projects appear without restarting the agent.") :
+                shin::ui::tr("Access saved. Connected agents see this project on their next shin_projects call; no restart is needed.");
         } else if (operation=="detach") {
             message=shin::ui::tr("The project was removed from observation. Sources, indexes, history and Shin settings were preserved.");
             page=Page::storage; storage=Json::object();
@@ -167,9 +189,12 @@ void render_management() {
             const auto label=agent.target.value("label",agent.target.value("client",""));
             if(ImGui::Checkbox(label.c_str(),&agent.selected)) for(auto& item:management.agents) item.review=Json();
             ImGui::TextColored(muted,"%s",agent.target.value("detected",false)?tr("Detected"):tr("Not detected"));
+            const auto state=agent.target.value("access_state","not-configured");
+            ImGui::TextColored(state=="configured"?green:state=="not-configured"?muted:sand,"%s",tr(shin::ui::client_access_label(state)));
             ImGui::TextWrapped("%s",agent.target.value("config","").c_str());
             if(ImGui::SmallButton(tr("Choose settings file…"))) if(const auto path=management_picker(false)) {
                 agent.target["config"]=path->string(); for(auto& item:management.agents) item.review=Json();
+                agent.target["access_state"]="review-required";
             }
             if(agent.selected && agent.review.is_object() && agent.review.value("ok",false))
                 ImGui::TextColored(sand,"%s",agent.review.value("changed",false)?tr("Ready to connect"):tr("Already connected"));

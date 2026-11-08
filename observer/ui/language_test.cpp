@@ -1,4 +1,5 @@
 #include "language.h"
+#include "client_connections.h"
 #include <stdexcept>
 #include <string>
 
@@ -29,6 +30,10 @@ int main(int argc, char** argv) try {
             require(std::string_view(tr(row.en)) == (selected == Language::en ? row.en : row.ru));
         }
         require(std::string_view(tr("unrecognized diagnostic code")) == "unrecognized diagnostic code");
+        for (const auto* state : {"configured", "reconnect-required", "not-configured", "review-required"}) {
+            const auto* caption = client_access_label(state);
+            require(selected == Language::en || std::string_view(tr(caption)) != caption);
+        }
     }
     require(std::string_view(tr("Projects")) == "Проекты");
     require(decimal("12.5") == "12,5");

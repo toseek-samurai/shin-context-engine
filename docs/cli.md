@@ -472,3 +472,22 @@ project in the private `windows-setup` journal. `--check` is read-only and refus
 missing, interrupted or outdated completion. It does not approve profiles or
 re-enroll detached projects. See the [Windows guide](windows-desktop.md#monitor-setup-and-updates)
 for the MSI completion action and unattended installation boundaries.
+
+### Agent access and live catalogs (source candidate)
+
+`shin-ce client-targets --root /path/to/project` adds an `access_state` for each
+detected settings destination: `configured`, `not-configured`,
+`reconnect-required` or `review-required`. It reads settings without changing them.
+`client-connect` retains its reviewed revision and private backup contract; its
+result includes `access_configured`, `live_catalog` and `restart_required`.
+
+Automatic writers retain explicit roots and add a self-reference to that agent's
+settings. A matching MCP adapter re-reads those settings for catalog and project
+calls, so subsequent connections do not require restarting the agent. No call
+enumerates all registered projects or inherits another client's grants. Existing
+project selectors survive unrelated additions; revoked/re-granted roots receive
+new selectors. Access is rechecked before returning source results.
+
+Older static connections need one host MCP reload/reconnect to adopt this mode.
+The manual `mcp-config` export stays static. A saved configuration is not evidence
+that a particular running agent has loaded it or used the project.

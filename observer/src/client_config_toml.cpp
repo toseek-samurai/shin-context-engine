@@ -19,6 +19,13 @@ Json node_json(const toml::node& node) {
     std::ostringstream stream; stream << toml::json_formatter(node); return Json::parse(stream.str());
 }
 }
+Json read_toml_server(const std::string& source) {
+    const auto parsed = toml::parse(source);
+    const auto* container = parsed["mcp_servers"].as_table();
+    if (parsed.contains("mcp_servers") && !container) throw Error("client-config-invalid", "mcp_servers must be a TOML table.");
+    const auto* server = container ? container->get("shin") : nullptr;
+    return server ? node_json(*server) : Json();
+}
 std::string merge_toml(const std::string& source, const Json& desired) {
     auto parsed = toml::parse(source);
     auto expected = parsed;

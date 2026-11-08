@@ -44,7 +44,10 @@ set(mcp_contract_inputs src/mcp_main.cpp src/local_stdio.cpp src/local_service_c
     src/local_rpc.cpp src/local_mcp_bridge.cpp src/local_mcp_scope.cpp src/local_mcp_activity.cpp
     src/mcp_session_tools.h src/mcp_activity_tracker.h include/shin/observer/local_mcp_scope.h
     include/shin/observer/local_mcp_activity.h include/shin/observer/local_project.h
-    include/shin/observer/local_mcp_bridge.h include/shin/observer/local_rpc.h)
+    include/shin/observer/local_mcp_bridge.h include/shin/observer/local_rpc.h
+    src/local_client_connect.cpp include/shin/observer/local_client_setup.h src/client_config.h
+    src/client_config.cpp src/client_config_json.cpp src/client_config_toml.cpp src/client_config_yaml.cpp
+    src/io.cpp src/io_windows.cpp include/shin/observer/io.h)
 set(mcp_contract "")
 foreach(input IN LISTS mcp_contract_inputs)
     set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${SHIN_OBSERVER_ROOT}/${input}")

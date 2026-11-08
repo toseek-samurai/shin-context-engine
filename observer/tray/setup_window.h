@@ -142,7 +142,7 @@
         self.setupStatus.font = [NSFont systemFontOfSize:15];
         self.setupStatus.selectable = YES; self.setupStatus.maximumNumberOfLines = 8;
         [stack addArrangedSubview:self.setupStatus];
-        NSTextField* note = live_label("Only checked agents are changed. A private backup is kept for existing files. Restart those agents after connecting; project-specific settings may override user settings.");
+        NSTextField* note = live_label("Only checked agents are changed. Existing settings are backed up. Live connections refresh automatically; older connections need one MCP reconnect.");
         self.setupNote = note;
         note.font = [NSFont systemFontOfSize:14]; note.textColor = secondaryInk;
         [stack addArrangedSubview:note];
@@ -186,6 +186,16 @@
     if (!project_management_busy.compare_exchange_strong(expected, true)) return;
     [self addProjectFolder:nil];
 }
+- (void)showSetupAccess:(NSMutableDictionary*)target state:(NSString*)state {
+    target[@"accessState"] = state;
+    NSTextField* label = target[@"accessLabel"];
+    if (!label) return;
+    __weak NSMutableDictionary* accessTarget = target;
+    live_caption(label, @"stringValue", ^{
+        NSString* current = accessTarget[@"accessState"];
+        return ui_text(shin::ui::client_access_label(current ? current.UTF8String : "not-configured"));
+    });
+}
 - (void)refreshSetup:(id)sender {
     (void)sender;
     if (self.setupConnecting || self.setupAdding || self.setupPreparationFailed) return;
@@ -207,7 +217,7 @@
         return;
     }
     live_text(self.setupStatus, @"stringValue", "Finding agents and profiles…");
-    [self runCLI:@"client-targets" arguments:@[] completion:^(Json result, NSString* failure) {
+    [self runCLI:@"client-targets" arguments:@[@"--root", self.setupRoot] completion:^(Json result, NSString* failure) {
         if (epoch != self.setupEpoch) return;
         if (failure || !result.value("ok", false)) { self.setupStatus.stringValue = failure ? failure : ui_text("Could not discover agent settings."); return; }
         NSDictionary* bundles = @{@"codex": @"com.openai.codex", @"opencode": @"ai.opencode.desktop", @"command-code": @"ai.commandcode.desktop", @"hermes": @"com.nousresearch.hermes"};
@@ -217,6 +227,7 @@
             NSString* path = [NSString stringWithUTF8String:row.at("config").get<std::string>().c_str()];
             const bool detected = row.value("detected", false) || [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:bundles[client]] != nil;
             NSMutableDictionary* target = [@{@"client": client, @"label": label, @"config": path} mutableCopy];
+            target[@"accessState"] = diagnostic_text_content(row.value("access_state", "not-configured"));
             const NSInteger index = static_cast<NSInteger>(self.setupTargets.count); [self.setupTargets addObject:target];
             NSStackView* group = [[NSStackView alloc] init]; group.orientation = NSUserInterfaceLayoutOrientationVertical; group.alignment = NSLayoutAttributeLeading; group.spacing = 4;
             NSStackView* controls = [NSStackView stackViewWithViews:@[]]; controls.spacing = 12;
@@ -236,7 +247,12 @@
             if (!path.length) live_text(location, @"stringValue", "Choose a settings file for this custom installation.");
             location.font = [NSFont systemFontOfSize:13]; location.toolTip = path;
             location.textColor = [NSColor colorWithCalibratedRed:.690 green:.710 blue:.651 alpha:1];
-            [group addArrangedSubview:controls]; [group addArrangedSubview:location]; [self.setupAgents addView:group inGravity:NSStackViewGravityTop];
+            NSTextField* access = [NSTextField labelWithString:ui_text(shin::ui::client_access_label([target[@"accessState"] UTF8String]))];
+            access.font = [NSFont systemFontOfSize:13 weight:NSFontWeightMedium];
+            access.textColor = NSColor.labelColor;
+            target[@"accessLabel"] = access;
+            [self showSetupAccess:target state:target[@"accessState"]];
+            [group addArrangedSubview:controls]; [group addArrangedSubview:access]; [group addArrangedSubview:location]; [self.setupAgents addView:group inGravity:NSStackViewGravityTop];
             [group.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
             [location.widthAnchor constraintEqualToAnchor:group.widthAnchor].active = YES;
             target[@"pathLabel"] = location;
@@ -270,6 +286,13 @@
     if ([panel runModal] != NSModalResponseOK || !panel.URL.path) return;
     target[@"config"] = panel.URL.path;
     NSTextField* label = target[@"pathLabel"]; label.stringValue = panel.URL.path; label.toolTip = panel.URL.path;
+    [self showSetupAccess:target state:@"review-required"];
+    const NSUInteger epoch = self.setupEpoch; NSString* selectedPath = panel.URL.path;
+    [self runCLI:@"client-connect" arguments:@[@"--root", self.setupRoot, @"--client", target[@"client"], @"--config", selectedPath]
+        completion:^(Json result, NSString* failure) {
+            if (epoch != self.setupEpoch || ![target[@"config"] isEqualToString:selectedPath]) return;
+            [self showSetupAccess:target state:diagnostic_text_content(failure ? "review-required" : result.value("access_state", "review-required"))];
+        }];
 }
 - (void)setSetupConnecting:(BOOL)connecting {
     _setupConnecting = connecting;
@@ -304,7 +327,11 @@
 - (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying {
     if (index == self.setupPlans.count) {
         if (!applying) { [self continueSetupConnection:0 applying:YES]; return; }
-        self.setupStatus.stringValue = [self.setupReport stringByAppendingString:ui_text("Restart the selected agents to activate MCP, then ask them to call shin_status.")];
+        bool reconnect = false;
+        for (NSDictionary* plan in self.setupPlans) if ([plan[@"reconnect"] boolValue]) reconnect = true;
+        self.setupStatus.stringValue = [self.setupReport stringByAppendingString:reconnect ?
+            ui_text("Access saved. Reconnect older MCP connections once; subsequent projects appear without restarting the agent.") :
+            ui_text("Access saved. Connected agents see this project on their next shin_projects call; no restart is needed.")];
         self.setupConnecting = NO; return;
     }
     NSMutableDictionary* plan = self.setupPlans[index];
@@ -321,7 +348,13 @@
             self.setupConnecting = NO; return;
         }
         if (!applying) plan[@"revision"] = [NSString stringWithUTF8String:result.at("revision").get<std::string>().c_str()];
-        else [self.setupReport appendFormat:@"%@: %@\n", plan[@"label"], result.value("changed", false) ? ui_text("Configured") : ui_text("Already configured")];
+        else {
+            plan[@"reconnect"] = @(result.value("restart_required", true));
+            [self.setupReport appendFormat:@"%@: %@\n", plan[@"label"], ui_text(shin::ui::client_access_label(result.value("access_state", "review-required")))];
+            for (NSMutableDictionary* target in self.setupTargets) if ([target[@"config"] isEqualToString:plan[@"config"]]) {
+                [self showSetupAccess:target state:diagnostic_text_content(result.value("access_state", "review-required"))];
+            }
+        }
         [self continueSetupConnection:index + 1 applying:applying];
     }];
 }
@@ -338,7 +371,7 @@
         }
         const bool partial = result.contains("source_coverage") && result.at("source_coverage").value("state", "") == "partial";
         self.setupStatus.stringValue = partial ? ui_text("Search is ready with partial source coverage. Review Projects for excluded files. The agent connection still needs checking in the agent.") :
-            ui_text("Project search is ready. Now reconnect your agent and call shin_status there to verify its connection.");
+            ui_text("Project search is ready. Ask the selected agent to call shin_projects, then shin_status for this project.");
     }];
 }
 - (void)enableSetupLogin:(id)sender {

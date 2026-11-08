@@ -1,4 +1,5 @@
 #include "shin/observer/local_mcp_scope.h"
+#include "shin/observer/local_client_setup.h"
 #include "shin/observer/validation_diagnostic.h"
 #include <algorithm>
 #include <set>
@@ -130,6 +131,10 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
             {"next_action", "discover-allowed-project-catalog"},
             {"message", "This selector is not allowed on the current MCP connection. Discover the allowed "
                 "project catalog and use a returned selector; do not infer grants or substitute a project ID."}};
+    if (code == "client-access-unavailable" || code == "client-config-invalid" || code == "client-config-unsupported")
+        return {{"kind", "owner-action"}, {"responsible_party", "operator"}, {"next_action", "review-agent-connection"},
+            {"message", "This agent's connection settings cannot be verified. Review its connection in Shin Monitor. "
+                "Do not substitute another agent's settings or registered project list."}};
     if (code == "storage-full" || code == "storage-read-only" || code == "access-denied" || code == "source-io-error" || code == "resource-exhausted")
         return with_diagnostic({{"kind", "environment-action"}, {"responsible_party", "operator"},
             {"next_action", "review-storage-or-access-condition"},
@@ -209,8 +214,15 @@ Json local_mcp_help(const std::string& code) {
     return result;
 }
 
-LocalMcpScope::LocalMcpScope(const fs::path& home, const std::vector<fs::path>& roots)
-    : home_(home), home_identity_(directory_identity(home, true)) {
+LocalMcpScope::LocalMcpScope(const fs::path& home, const std::vector<fs::path>& roots,
+                           const fs::path& executable, const fs::path& config, const std::string& client)
+    : home_(home), home_identity_(directory_identity(home, true)), executable_(executable), config_(config), client_(client) {
+    if (!config_.empty()) {
+        if (!config_.is_absolute() || config_.lexically_normal() != config_ || executable_.empty() || client_.empty())
+            throw Error("invalid-arguments", "Use an absolute agent settings path and explicit client format.");
+        config_parent_identity_ = directory_identity(config_.parent_path());
+        refresh_locked(); return;
+    }
     if (roots.empty() || roots.size() > kLocalServiceProjectLimit)
         throw Error("invalid-arguments", "Allow between one and sixteen explicit project roots.");
     std::set<fs::path> unique;
@@ -218,6 +230,7 @@ LocalMcpScope::LocalMcpScope(const fs::path& home, const std::vector<fs::path>& 
         if (root.empty()) throw Error("invalid-arguments", "Project root must not be empty.");
         Entry value;
         value.request.root = fs::absolute(root).lexically_normal();
+        value.configured_root = value.request.root;
         value.request.home = home_;
         try {
             value.request.root = fs::canonical(root);
@@ -237,7 +250,29 @@ LocalMcpScope::LocalMcpScope(const fs::path& home, const std::vector<fs::path>& 
     }
 }
 
-const LocalMcpScope::Entry& LocalMcpScope::entry(const std::string& project) const {
+void LocalMcpScope::refresh_locked() const {
+    if (config_.empty()) return;
+    try {
+        if (directory_identity(home_, true) != home_identity_ || directory_identity(config_.parent_path()) != config_parent_identity_)
+            throw Error("binding-identity-changed", "The agent settings or data-home identity changed. Reconnect after review.");
+        const auto roots = local_client_live_roots(executable_, home_, client_, config_);
+        if (roots.empty()) { entries_.clear(); configured_roots_.clear(); return; }
+        if (roots == configured_roots_ && std::none_of(entries_.begin(), entries_.end(), [](const auto& e) { return !e.startup_error.empty(); })) return;
+        LocalMcpScope candidate(home_, roots);
+        for (auto& next : candidate.entries_) {
+            const auto old = std::find_if(entries_.begin(), entries_.end(), [&](const auto& item) { return item.configured_root == next.configured_root; });
+            // Preserve original identity/lifecycle fences for continuing grants.
+            // Re-granting after removal gets a fresh selector, never an old snapshot.
+            if (old != entries_.end() && old->startup_error.empty()) next = *old;
+            else next.handle = "p" + digest(Json::array({next.handle, ++grant_sequence_}).dump());
+        }
+        entries_ = std::move(candidate.entries_);
+        configured_roots_ = roots;
+    } catch (...) { entries_.clear(); configured_roots_.clear(); throw; }
+}
+LocalMcpScope::Entry LocalMcpScope::entry(const std::string& project) const {
+    const std::lock_guard lock(mutex_);
+    refresh_locked();
     const auto found = std::find_if(entries_.begin(), entries_.end(), [&](const Entry& value) { return value.handle == project; });
     if (found == entries_.end()) throw Error("mcp-project-denied", "Project is outside this MCP connection's allowed set.");
     return *found;
@@ -247,7 +282,7 @@ void LocalMcpScope::verify(const Entry& value) const {
     if (!value.startup_error.empty())
         throw Error(value.startup_error, "Configured project was unavailable at startup; reconnect after setup.");
     const auto workspace = home_ / "projects" / digest(value.request.root.string());
-    if (directory_identity(home_, true) != home_identity_ ||
+    if (fs::canonical(value.configured_root) != value.request.root || directory_identity(home_, true) != home_identity_ ||
         directory_identity(value.request.root) != value.root_identity ||
         directory_identity(workspace, true) != value.workspace_identity)
         throw Error("binding-identity-changed", "Project identity changed; reconnect after review.");
@@ -263,6 +298,8 @@ LocalProjectRequest LocalMcpScope::select(const std::string& project) const {
 }
 
 Json LocalMcpScope::catalog() const {
+    const std::lock_guard lock(mutex_);
+    refresh_locked();
     Json projects = Json::array();
     for (const auto& value : entries_) {
         Json item{{"project", value.handle}, {"name", value.request.root.filename().string()},
@@ -273,7 +310,7 @@ Json LocalMcpScope::catalog() const {
         projects.push_back(std::move(item));
     }
     Json result{{"ok", true}, {"schema_version", "shin.mcp-projects.v1"}, {"projects", projects},
-                {"readiness_assessed", false}, {"scope", "explicit-startup-roots"}};
+                {"readiness_assessed", false}, {"scope", config_.empty() ? "explicit-startup-roots" : "explicit-client-settings"}};
     if (result.dump().size() > 32768)
         throw Error("mcp-catalog-too-large", "Allowed project metadata exceeds the response bound.");
     return result;

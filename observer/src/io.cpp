@@ -303,6 +303,26 @@ std::string read_text(const fs::path& path, std::size_t maximum_bytes, bool priv
     return read_named_file(parent.directory.get(), parent.name.c_str(), maximum_bytes, private_only,
                            "unsafe-file", "file-too-large", "file-changed");
 }
+std::string read_user_config(const fs::path& path, std::size_t maximum_bytes) {
+    auto parent = open_parent(path, "unsafe-file", "Settings path is unavailable or unsafe.");
+    const auto identity = persistent_identity(parent.directory.get());
+    const auto check_parent = [&] {
+        const auto status = descriptor_stamp(parent.directory.get(), "unsafe-directory", "Settings parent is unavailable.");
+        if (status.owner != ::geteuid() || (status.mode & 0022) || directory_identity(path.parent_path()) != identity)
+            fail("unsafe-directory", "Settings directory must be owned by this user and not writable by others.");
+    };
+    check_parent();
+    const auto before = named_stamp(parent.directory.get(), parent.name.c_str(), "unsafe-file", "Settings are unavailable.");
+    require_regular(before, false, "unsafe-file", "Settings must be a regular file.");
+    if (before.owner != ::geteuid() || before.links != 1 || (before.mode & 0022) || (before.mode & 07000))
+        fail("unsafe-file", "Settings must be singly linked, owned by this user and not writable by others.");
+    const auto content = read_named_file(parent.directory.get(), parent.name.c_str(), maximum_bytes, false,
+                                          "unsafe-file", "file-too-large", "file-changed");
+    if (!same_stamp(before, named_stamp(parent.directory.get(), parent.name.c_str(), "unsafe-file", "Settings are unavailable.")))
+        fail("file-changed", "Settings changed during the read.");
+    check_parent();
+    return content;
+}
 
 fs::path current_executable_path() {
     std::array<char, 4096> path{};

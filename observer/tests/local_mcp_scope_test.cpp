@@ -1,4 +1,5 @@
 #include "shin/observer/local_mcp_scope.h"
+#include "shin/observer/local_client_setup.h"
 #include <chrono>
 #include <iostream>
 #include <future>
@@ -199,6 +200,68 @@ int main() {
         const auto fresh = reattached.catalog().at("projects")[0].at("project").get<std::string>();
         check(fresh != pa, "reattach reused revoked selector");
         refused("mcp-project-denied", [&] { (void)reattached.select(pa); });
+        {
+            Fixture live;
+            const auto first = live.root("first"), added = live.root("added");
+            const auto executable = current_executable_path();
+            for (const auto* format : {"codex", "opencode", "command-code", "hermes"}) {
+                const auto config = live.base / (std::string(format) + ".config");
+                Json server{{"command", executable.string()}, {"args", Json::array({"--root", first.string(), "--home", live.home.string(),
+                    "--client-config", config.string(), "--client-format", format})}};
+                const auto save = [&] {
+                    std::string content;
+                    if (std::string_view(format) == "codex") content = "[mcp_servers.shin]\ncommand = " + server.at("command").dump() + "\nargs = " + server.at("args").dump() + "\n";
+                    else if (std::string_view(format) == "opencode") {
+                        auto command = server.at("args"); command.insert(command.begin(), server.at("command"));
+                        content = Json{{"mcp", {{"shin", {{"type", "local"}, {"command", command}}}}}}.dump();
+                    } else content = Json{{std::string_view(format) == "hermes" ? "mcp_servers" : "mcpServers", {{"shin", server}}}}.dump();
+                    if (fs::exists(config)) replace_user_config(config, read_text(config, kMaximumStateBytes, false), content, directory_identity(config.parent_path()));
+                    else write_private_archive(config, content);
+                };
+                save();
+                LocalMcpScope dynamic(live.home, {first}, executable, config, format);
+                const auto handle = dynamic.catalog().at("projects")[0].at("project").get<std::string>();
+                server["args"].push_back("--root"); server["args"].push_back(added.string()); save();
+                check(dynamic.catalog().at("projects").size() == 2 && dynamic.select(handle).root == first, "live addition replaced continuing grant");
+                const auto valid = server;
+                for (int mutation = 0; mutation < 4; ++mutation) {
+                    server = valid;
+                    if (mutation == 0) server["command"] = (live.base / "foreign-executable").string();
+                    if (mutation == 1) server["args"][5] = (live.base / "other-agent.config").string();
+                    if (mutation == 2) server["args"][7] = "unknown-client";
+                    if (mutation == 3) { server["args"].push_back("--root"); server["args"].push_back(first.string()); }
+                    save();
+                    refused("client-access-unavailable", [&] { dynamic.catalog(); });
+                }
+                server = valid; save();
+                auto foreign = server; server["args"][3] = (live.base / "foreign-home").string(); save();
+                refused("client-access-unavailable", [&] { dynamic.verify(handle); });
+                server = foreign; save();
+                const auto renewed = dynamic.catalog().at("projects")[0].at("project").get<std::string>();
+                check(renewed != handle, "unverifiable access reused revoked selector");
+                refused("mcp-project-denied", [&] { dynamic.select(handle); });
+                // Directory replacement must remain blocked despite a readable config.
+                fs::rename(first, first.parent_path() / "previous"); ensure_private_directory(first, true);
+                refused("binding-identity-changed", [&] { dynamic.verify(renewed); });
+                fs::remove(first); fs::rename(first.parent_path() / "previous", first);
+                const auto original = read_text(config, kMaximumStateBytes, false);
+                replace_user_config(config, original, "invalid-private-settings", directory_identity(config.parent_path()));
+                try { dynamic.catalog(); throw std::runtime_error("malformed live settings admitted"); }
+                catch (const Error& error) { check(std::string(error.what()).find("invalid-private-settings") == std::string::npos, "settings leaked into error"); }
+                replace_user_config(config, "invalid-private-settings", original, directory_identity(config.parent_path()));
+                check(dynamic.catalog().at("projects").size() == 2, "live catalog failed recovery after settings repair");
+                const auto linked = live.base / (std::string(format) + ".linked");
+                fs::create_hard_link(config, linked);
+                refused("unsafe-file", [&] { dynamic.catalog(); });
+                fs::remove(linked);
+#ifndef _WIN32
+                fs::permissions(config, fs::perms::owner_read | fs::perms::owner_write | fs::perms::group_write);
+                refused("unsafe-file", [&] { dynamic.catalog(); });
+                fs::permissions(config, fs::perms::owner_read | fs::perms::owner_write);
+#endif
+                check(dynamic.catalog().at("projects").size() == 2, "safe access did not recover after metadata review");
+            }
+        }
         // OS path replacement cannot be adopted by an existing connection.
         fs::rename(b, b.parent_path() / "previous");
         ensure_private_directory(b, true);

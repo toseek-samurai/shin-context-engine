@@ -89,6 +89,13 @@ struct Document {
     }
 };
 }
+Json read_json_server(const std::string& source, bool opencode) {
+    Document document(source.empty() ? "{}\n" : source);
+    const auto container = opencode ? "mcp" : "mcpServers";
+    if (!document.value.contains(container)) return nullptr;
+    if (!document.value.at(container).is_object()) throw Error("client-config-invalid", "The MCP settings must be an object.");
+    return document.value.at(container).value("shin", Json());
+}
 std::string merge_json(const std::string& source, const Json& desired, bool opencode) {
     const auto input = source.empty() ? std::string("{}\n") : source;
     Document document(input);

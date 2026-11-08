@@ -126,6 +126,40 @@ int native_update_tests(int argc, char** argv) {
             update_require(argc == 3, "expected output directory and EN/RU language");
             shin::ui::set_language(shin::ui::language_for(argv[2]));
             fs::path output = argv[1]; fs::create_directories(output);
+            {
+                UpdateWindowHarness* setup = [UpdateWindowHarness new];
+                setup.setupRoot = @"/fixture/project";
+                [setup showSetup:nil];
+                update_require([setup.pendingCommand isEqualToString:@"client-targets"] &&
+                    [setup.pendingArguments containsObject:setup.setupRoot], "agent discovery did not include project access");
+                Json targets = Json::array();
+                for (const auto* state : {"configured", "not-configured", "reconnect-required", "review-required"})
+                    targets.push_back({{"client", "codex"}, {"label", state}, {"config", std::string("/fixture/") + state},
+                        {"detected", true}, {"access_state", state}});
+                [setup reply:Json{{"ok", true}, {"targets", targets}} failure:nil];
+                update_require(setup.setupTargets.count == 4, "agent access rows missing");
+                const auto original_language = shin::ui::language();
+                for (auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
+                    shin::ui::set_language(language); refresh_native_captions();
+                    for (NSMutableDictionary* target in setup.setupTargets) {
+                        NSTextField* label = target[@"accessLabel"];
+                        update_require([label.stringValue isEqualToString:ui_text(shin::ui::client_access_label([target[@"accessState"] UTF8String]))],
+                            "agent access label did not follow language");
+                    }
+                }
+                [setup showSetupAccess:setup.setupTargets[1] state:@"configured"];
+                shin::ui::set_language(original_language); refresh_native_captions();
+                NSTextField* changed = setup.setupTargets[1][@"accessLabel"];
+                update_require([changed.stringValue isEqualToString:ui_text(shin::ui::client_access_label("configured"))],
+                    "updated access status lost language binding");
+                [setup.setupWindow.contentView layoutSubtreeIfNeeded];
+                NSView* body = setup.setupWindow.contentView;
+                NSBitmapImageRep* bitmap = [body bitmapImageRepForCachingDisplayInRect:body.bounds];
+                [body cacheDisplayInRect:body.bounds toBitmapImageRep:bitmap];
+                NSData* png = [bitmap representationUsingType:NSBitmapImageFileTypePNG properties:@{}];
+                update_require([png writeToFile:diagnostic_text_content((output / "agent-access.png").string()) atomically:YES], "agent access snapshot failed");
+                [setup.setupWindow close];
+            }
             NSAppleEventDescriptor* loginEvent = [NSAppleEventDescriptor appleEventWithEventClass:kCoreEventClass
                 eventID:kAEOpenApplication targetDescriptor:nil returnID:kAutoGenerateReturnID transactionID:kAnyTransactionID];
             update_require(!launched_as_login_item(loginEvent) && !launched_as_login_item(nil), "ordinary launch classified as login startup");

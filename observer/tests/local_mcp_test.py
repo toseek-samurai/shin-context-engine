@@ -296,8 +296,10 @@ class McpTests(unittest.TestCase):
             self.assertEqual(cancelled['error']['code'], 'service-request-cancelled')
             self.wait_service_state(lambda s: s['waiting_requests'] == 0)
 
-    def adapter(self, root=None, roots=None, executable=MCP):
+    def adapter(self, root=None, roots=None, executable=MCP, config=None, client='command-code'):
         argv = [str(executable), '--home', str(self.home)]
+        if config:
+            argv += ['--client-config',str(config),'--client-format',client]
         for selected in roots or [root or self.root]:
             argv += ['--root', str(selected)]
         child = subprocess.Popen(argv,
@@ -869,6 +871,64 @@ class McpTests(unittest.TestCase):
             result = subprocess.run(argv, capture_output=True, text=True, timeout=5)
             self.assertEqual(result.returncode, 2)
             self.assertFalse(result.stdout)
+
+    def live_config(self, config, roots, enabled=True):
+        args=['--home',str(self.home),'--client-config',str(config),'--client-format','command-code']
+        for root in roots: args+=['--root',str(root)]
+        content=json.dumps({'mcpServers':{'shin':{'command':str(MCP),'args':args,'enabled':enabled}}})
+        stage=config.with_suffix('.pending');stage.write_text(content);stage.chmod(0o600);stage.replace(config)
+
+    def test_multi_project_live_client_access_without_reconnect(self):
+        other=self.base/'added';other.mkdir();(other/'limits.js').write_text('export function readLimit() { return 99; }\n')
+        hidden=self.base/'hidden';hidden.mkdir();(hidden/'README.md').write_text('# Hidden\n')
+        for root in (other,hidden): self.init(root=root);self.roots.append(root)
+        self.start()
+        config=self.base/'agent.json';neighbor=self.base/'neighbor.json'
+        self.live_config(config,[self.root]);self.live_config(neighbor,[self.root])
+        child=self.adapter(config=config);separate=self.adapter(config=neighbor)
+        initial=self.tool(child,'shin_projects',{})
+        self.assertEqual(initial['scope'],'explicit-client-settings')
+        a=initial['projects'][0]['project'];self.assertEqual(len(initial['projects']),1)
+        # This is the normal reviewed writer, while both MCP processes stay alive.
+        plan=self.run_ce('client-connect','--client','command-code','--config',config,root=other)
+        self.assertFalse(plan['restart_required'])
+        self.run_ce('client-connect','--client','command-code','--config',config,'--revision',plan['revision'],root=other)
+        catalog=self.tool(child,'shin_projects',{})
+        handles={r['root']:r['project'] for r in catalog['projects']}
+        self.assertEqual(set(handles),{str(self.root),str(other)});self.assertEqual(handles[str(self.root)],a)
+        self.assertEqual(len(self.tool(separate,'shin_projects',{})['projects']),1)
+        b=handles[str(other)]
+        query=self.tool(child,'shin_query',{'project':b,'query':'readLimit'})
+        self.assertTrue(query['ok'],query);self.assertIn('return 99;',query['source_context'])
+        read=self.tool(child,'shin_read',{'project':b,'path':'limits.js','snapshot':query['mcp_snapshot']})
+        self.assertTrue(read['ok'],read)
+        self.live_config(config,[other])
+        self.assertEqual(self.tool(child,'shin_status',{'project':a})['error']['code'],'mcp-project-denied')
+        self.assertEqual(self.tool(child,'shin_projects',{})['projects'][0]['project'],b)
+        self.live_config(config,[self.root,other])
+        renewed=self.tool(child,'shin_projects',{})['projects'][0]['project']
+        self.assertNotEqual(renewed,a)
+        self.live_config(config,[self.root,other],enabled=False)
+        self.assertEqual(self.tool(child,'shin_projects',{})['projects'],[])
+        self.assertEqual(self.tool(child,'shin_status',{'project':b})['error']['code'],'mcp-project-denied')
+        self.assertIsNone(child.poll());self.assertIsNone(separate.poll())
+
+    def test_multi_project_live_access_revoked_during_reply_discards_body(self):
+        other=self.base/'other';other.mkdir();(other/'README.md').write_text('# Other\n');self.init(root=other)
+        listener=self.delayed_service();config=self.base/'agent.json';self.live_config(config,[self.root,other])
+        child=self.adapter(config=config)
+        handle=self.tool(child,'shin_projects',{})['projects'][0]['project']
+        request_id=self.send(child,'tools/call',{'name':'shin_query','arguments':{'project':handle,'query':'readLimit'}})
+        connection,_=listener.accept();self.addCleanup(connection.close);connection.settimeout(2)
+        request=self.receive(connection)
+        self.live_config(config,[other])
+        reply={k:request[k] for k in ('schema_version','request_id','observer_version','core_version')}
+        reply.update({'ok':True,'result':{'ok':True,'root':str(self.root),'source_context':'must-not-escape',
+                                        'snapshot_id':'fnv1a64:0123456789abcdef'}})
+        connection.sendall((json.dumps(reply)+'\n').encode())
+        response=self.response(child,request_id)['result'];self.assertTrue(response['isError'])
+        self.assertEqual(json.loads(response['content'][0]['text'])['error']['code'],'mcp-project-denied')
+        self.assertNotIn('must-not-escape',json.dumps(response))
 
     def test_multi_project_navigation_parallel_and_scoped_followup(self):
         other = self.base / 'nested' / self.root.name

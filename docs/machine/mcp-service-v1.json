@@ -32,5 +32,13 @@
     "observer/tests/local_mcp_test.py: persistent stdio across atomic payload replacement and actual service restart; query/read snapshot binding",
     "observer/tests/local_mcp_test.py: controlled cross-version service, foreign success, restored-mtime tamper, in-flight cohort change and incompatible protocol",
     "observer/tests/local_rpc_test.cpp: ordinary request and installer-control version fences"
-  ]
+  ],
+  "clientCatalog": {
+    "status": "source-candidate",
+    "authority": "Automatic connection writers add --client-config and --client-format alongside the existing explicit roots/home. The selected private client settings file is the sole live allowlist; service enrollment does not grant MCP access.",
+    "refresh": "Live adapters re-read the bounded selected Shin entry on catalog, select and verification calls. Existing entries retain their original root, workspace and lifecycle identities. Unrelated added roots do not rotate existing selectors.",
+    "revocation": "Observed removal, disabling, or unverifiable settings revoke cached grants. Re-granted roots receive fresh selectors. Post-request verification withholds responses after access revocation. Unrelated client/profile configurations remain isolated.",
+    "cutover": "The adapter fingerprint includes its config readers. Older adapters/static command lines need one host MCP reload/reconnect to adopt the mode. Initial host activation remains host-owned. Manual exports retain startup-only scopes.",
+    "presentation": "client-targets --root reports configured, not-configured, reconnect-required or review-required per settings destination. These are configuration states, not verified host activation or model use."
+  }
 }

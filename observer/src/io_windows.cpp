@@ -42,6 +42,15 @@ std::string read_text(const fs::path& path, std::size_t maximum, bool private_on
         return *value;
     }, "unsafe-file");
 }
+std::string read_user_config(const fs::path& path, std::size_t maximum) {
+    return io([&] {
+        const auto leaf = name(path);
+        Directory parent(path.parent_path(), Access::user_owned);
+        const auto value = parent.read(leaf, maximum);
+        if (!value) throw Error("unsafe-file", "Settings are unavailable.");
+        parent.check(); return *value;
+    }, "unsafe-file");
+}
 std::string directory_identity(const fs::path& path, bool private_only) {
     return io([&] { return Directory(path, private_only ? Access::private_owner : Access::read_only).identity(); }, "unsafe-directory", "directory-changed");
 }

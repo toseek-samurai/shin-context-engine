@@ -21,9 +21,24 @@ this progress view.
    and starts the local service, including on a fresh installation.
 2. Select the agents and profiles that should have access, then click
    **Connect selected agents**. No JSON copying is needed.
-3. Restart or reconnect those agents. Ask them to call `shin_status` and verify
-   the selected project is available. **Check project** in Monitor checks local
-   search readiness; it does not claim that a running agent has reloaded its settings.
+3. In the current source candidate, connected agents refresh their allowed project
+   list on their next `shin_projects` call. Adding another project does not require
+   an agent restart. Ask for `shin_status` with that project's returned selector.
+   **Check project** checks local search readiness, separately from agent access.
+
+The candidate's connection list shows **Access not configured**, **Access configured**
+with a live project list, **Connection needs review**, or the one-time reconnect
+notice for older connections. These labels describe reviewed settings, not proof
+that a model has called Shin. Initial MCP activation and migration from older static
+`--root` configurations still require the host to load the new connection once:
+use its MCP reconnect/reload action, or restart that agent if it has no such action.
+Released previews without this live-catalog mechanism retain their reconnect step.
+
+Each live connection reads only its selected agent/profile's `shin` settings.
+Connecting a project for Codex does not grant it to Hermes or another profile.
+Removing a root or disabling that entry revokes access on the next call; an
+in-flight result is withheld if its grant disappears. Invalid, missing or unsafe
+settings fail closed. Manual exports remain explicit, static root lists.
 
 For an existing project on macOS, use **Projects → project → Connect agent…**.
 On Windows, open **Projects → project → Project actions** to connect agents.
@@ -155,12 +170,14 @@ mechanism. Keep its existing structure and other settings intact.
 
 ### The agent still shows the old project list
 
-Restart the affected agent or reconnect its Shin MCP server. Ask it to call
-`shin_projects`, select the intended project from that response, then call
-`shin_status` with that project handle. If it is still missing, check the active
-client profile, settings precedence and the `--root` arguments in that entry.
-Adding a project to Shin and allowing a particular MCP client to see it are
-separate operations; the setup window performs both for the selected clients.
+First check that agent's access state for the project in Monitor. **Access not
+configured** means it must be explicitly selected and connected; restarting alone
+will not grant it access. With the candidate's live project list, ask the agent
+to call `shin_projects` again, select the returned project, then call `shin_status`.
+For an older/static connection, reload or reconnect its MCP server once; restart
+the agent only if the host offers no connection reload. If the project is still
+missing, check the active client profile, settings precedence and the `--root`
+arguments in that entry. The setup window grants access only to selected clients.
 
 ### Restore a configuration backup
 
@@ -173,7 +190,11 @@ as well as Shin. Restoring client settings does not remove a project from Shin.
 
 ## Manual configuration
 
-The kit includes `bin/shin-mcp`, a native stdio MCP server. It serves only the project roots supplied at process startup and uses local project bindings under the selected data home. It does not provide login, select a project implicitly, or authorize publication.
+The kit includes `bin/shin-mcp`, a native stdio MCP server. Manual exports serve
+only the explicit startup roots and use local project bindings under the selected
+data home. Automatic writers in the current source candidate instead bind the
+adapter to that selected agent's live settings. Neither mode provides login,
+selects a project implicitly or authorizes publication.
 
 For a default per-user installation, use the installed binary and an absolute
 project path. The installation already records the data home:

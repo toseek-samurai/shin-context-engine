@@ -100,6 +100,13 @@ public:
     }
 };
 }
+Json read_yaml_server(const std::string& source) {
+    Document document(source.empty() ? "{}\n" : source);
+    if (!document.root.is_object()) throw Error("client-config-invalid", "Hermes settings must be a YAML mapping.");
+    if (!document.root.contains("mcp_servers")) return nullptr;
+    if (!document.root.at("mcp_servers").is_object()) throw Error("client-config-invalid", "mcp_servers must be a YAML mapping.");
+    return document.root.at("mcp_servers").value("shin", Json());
+}
 std::string merge_yaml(const std::string& source, const Json& desired) {
     const auto input = source.empty() ? std::string("{}\n") : source;
     Document document(input);

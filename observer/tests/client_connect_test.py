@@ -36,17 +36,18 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
         def preview():return run('client-connect','--client',client,'--root',root,'--home',home,'--config',config)
         def apply(plan):return run('client-connect','--client',client,'--root',root,'--home',home,'--config',config,'--revision',plan['revision'])
         plan=preview();assert plan['changed'] and not plan['client_modified'];assert config.read_text()==original
+        assert not plan['access_configured'] and not plan['live_catalog'] and plan['restart_required']
         result=apply(plan);assert result['client_modified'] and result['status']=='configured'
         backup=Path(result['backup']);assert backup.read_text()==original and stat.S_IMODE(backup.stat().st_mode)==0o600
         assert stat.S_IMODE(config.stat().st_mode)==0o644
         updated=config.read_text();assert 'private-value' in updated or client=='command-code'
         if client=='codex':
             value=tomllib.loads(updated);assert value['model']=='unchanged' and value['mcp_servers']['other']['command']=='other'
-            assert value['mcp_servers']['shin']['args']==old_server['args']+['--root',str(root)]
+            assert value['mcp_servers']['shin']['args']==old_server['args']+['--root',str(root),'--client-config',str(config),'--client-format',client]
             assert '# keep café' in updated and '# keep suffix' in updated
         elif client=='command-code':
             value=json.loads(updated);assert value['preferences']=={'keep':True}
-            assert value['mcpServers']['shin']['args']==old_server['args']+['--root',str(root)]
+            assert value['mcpServers']['shin']['args']==old_server['args']+['--root',str(root),'--client-config',str(config),'--client-format',client]
         elif client=='opencode':
             assert '// keep café' in updated and 'https://example.test/a//b' in updated
             assert '"nested":[{"mcp":{"shin":0}}]' in updated
@@ -55,6 +56,11 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
             assert updated.endswith('    env: {KEEP: private-value}\n# keep footer\nterminal:\n  backend: local\n')
             assert json.dumps(str(root),ensure_ascii=False) in updated
         again=apply(preview());assert not again['changed'] and not again['client_modified'];assert config.read_text()==updated
+        assert again['access_configured'] and again['live_catalog'] and not again['restart_required']
+        extra=base/('extra-'+client);extra.mkdir()
+        later=run('client-connect','--client',client,'--root',extra,'--home',home,'--config',config)
+        assert not later['access_configured'] and later['live_catalog'] and not later['restart_required']
+        run('client-connect','--client',client,'--root',extra,'--home',home,'--config',config,'--revision',later['revision'])
         # A later editor change invalidates the exact revision, never clobbers it.
         config.write_text(original);plan=preview();changed=original+'\n';config.write_text(changed)
         error=run('client-connect','--client',client,'--root',root,'--home',home,'--config',config,'--revision',plan['revision'],ok=False)
@@ -136,8 +142,19 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
     run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config,ok=False)
     assert target.read_text()=='{}'
     config.unlink();os.link(target,config)
-    plan=run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config)
-    run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config,'--revision',plan['revision'],ok=False)
+    run('client-connect','--client','command-code','--root',root,'--home',home,'--config',config,ok=False)
     assert target.read_text()=='{}' and config.read_text()=='{}'
     assert not home.exists(), 'agent configuration must not create a service or enroll projects'
+    # Discovery reports each target's configured access, without changing settings.
+    env={**os.environ,'CODEX_HOME':str(base/'codex'),'XDG_CONFIG_HOME':str(base/'empty-xdg'),'HERMES_HOME':str(base/'empty-hermes')}
+    config=base/'codex/config.toml';config.write_text(fixtures['codex'])
+    rows=run('client-targets','--root',root,'--home',home,env=env)['targets']
+    assert next(r for r in rows if r['client']=='codex')['access_state']=='not-configured'
+    plan=run('client-connect','--client','codex','--root',root,'--home',home,'--config',config)
+    run('client-connect','--client','codex','--root',root,'--home',home,'--config',config,'--revision',plan['revision'])
+    saved=config.read_bytes()
+    rows=run('client-targets','--root',root,'--home',home,env=env)['targets']
+    assert next(r for r in rows if r['client']=='codex')['access_state']=='configured'
+    assert next(r for r in rows if r['client']=='hermes')['access_state']=='not-configured'
+    assert config.read_bytes()==saved and not home.exists()
 print('Four formats: preservation, comments, backups, idempotence, stale edits, new files and unsafe-path refusals passed')

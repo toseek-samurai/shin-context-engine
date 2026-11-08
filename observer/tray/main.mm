@@ -17,6 +17,7 @@
 #include "monitor_view.h"
 #include "status_item.h"
 #include "../ui/update_window_macos.h"
+#include "../ui/client_connections.h"
 #include "shin/observer/local_package.h"
 
 namespace {

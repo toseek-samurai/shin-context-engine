@@ -30,6 +30,9 @@ inline Json error_json(const Error& error) {
 }
 
 std::string read_text(const fs::path& path, std::size_t maximum_bytes, bool private_only);
+// Trusted per-user settings: owned, singly linked, no foreign writes; permits
+// readable POSIX config files. Pinned directory/file checks bracket the read.
+std::string read_user_config(const fs::path& path, std::size_t maximum_bytes);
 fs::path current_executable_path();
 std::string executing_image_identity();
 Json parse_json(const std::string& text, std::size_t maximum_bytes = kMaximumStateBytes);

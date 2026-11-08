@@ -86,7 +86,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
                      "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] [--progress-json] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"
-                     "shin-ce client-targets lists supported agents and their settings paths.\n"
+                     "shin-ce client-targets [--root DIR] lists agents, settings paths and configured project access.\n"
                      "shin-ce client-connect --client NAME [--config FILE] [--root DIR] [--home DIR] previews a connection; --revision HASH applies that exact review.\n"
                      "shin-ce mcp-config --client codex|opencode|rider|generic [--root DIR] [--home DIR] [--text] prints settings without editing files.\n"
                      "shin-ce detach [--root DIR] [--home DIR] disconnects one project; data and history stay.\n"
@@ -324,7 +324,10 @@ int run(int argc, char** argv, char** environment) {
         request.session_id = digest("shin-session-v1:" + fs::weakly_canonical(request.home).string() + ":" + request.session_id);
     if (request.command == "client-targets" || request.command == "client-connect") {
         const auto targets = (request.command == "client-targets" || client_config.empty()) ? local_client_targets(fs::canonical(user_home(environment)), environment) : Json::object();
-        if (request.command == "client-targets") { std::cout << targets.dump(2) << '\n'; return 0; }
+        if (request.command == "client-targets") {
+            const auto result = seen.contains("--root") ? local_client_connections(executable_path(), request.root, request.home, targets) : targets;
+            std::cout << result.dump(2) << '\n'; return 0;
+        }
         if (client_config.empty()) {
             for (const auto& target : targets.at("targets")) if (target.at("client") == setup_client) {
                 client_config = target.at("config").get<std::string>(); break;

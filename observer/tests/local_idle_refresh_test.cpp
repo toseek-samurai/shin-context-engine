@@ -6,6 +6,7 @@
 #include "../src/local_refresh_guard.h"
 #include "../src/local_refresh_session.h"
 #include "../src/local_index_rebuild.h"
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -186,17 +187,7 @@ void image_digest_is_fenced(const fs::path& base) {
     for (const bool retain : {false, true}) {
         const auto binary = base / (retain ? "cached-image-digest-fixture" : "one-shot-image-digest-fixture");
         const auto image_digest = [&] {
-            // A delayed native event for a fixture write may land during the
-            // first hash read. The fence must refuse until the image is stable.
-            const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
-            for (;;) {
-                try { return qualification_image_digest(binary, retain); }
-                catch (const Error& error) {
-                    if (!retain || error.code != "qualification-engine-changed" ||
-                        std::chrono::steady_clock::now() >= deadline) throw;
-                    std::this_thread::sleep_for(std::chrono::milliseconds(20));
-                }
-            }
+            return qualification_image_digest(binary, retain);
         };
         write(binary, "first-image");
         const auto original = image_digest();
@@ -209,7 +200,61 @@ void image_digest_is_fenced(const fs::path& base) {
         write(replacement, "first-image"); fs::last_write_time(replacement, stamp);
         fs::remove(binary); fs::rename(replacement, binary);
         check(image_digest() == original, "named image replacement retained an old digest");
+        const auto before = shin::context::file_metadata(binary);
+        const auto image = executing_image_identity();
+        write(binary, "other-image"); fs::last_write_time(binary, stamp);
+        bool refused = false;
+        try { (void)qualification_image_read(binary, before, image, original); }
+        catch (const Error& error) { refused = error.code == "qualification-engine-changed"; }
+        check(refused, "a second image read accepted a changed file with restored mtime");
+        const auto before_replacement = shin::context::file_metadata(binary);
+        write(replacement, "other-image"); fs::last_write_time(replacement, stamp);
+        fs::remove(binary); fs::rename(replacement, binary);
+        refused = false;
+        try { (void)qualification_image_read(binary, before_replacement, image, digest("other-image")); }
+        catch (const Error& error) { refused = error.code == "qualification-engine-changed"; }
+        check(refused, "a second image read accepted an equal-content file replacement");
     }
+}
+void image_digest_directory_events(const fs::path& base) {
+#ifdef __APPLE__
+    const auto directory = base / "image-directory-events";
+    ensure_private_directory(directory, true);
+    const auto binary = directory / "image";
+    const std::string content(2 * 1024 * 1024, 'x');
+    write(binary, content);
+    const auto expected = digest(content);
+    std::atomic<bool> failed{false};
+    LocalChanges changes({directory}, [directory, binary](const fs::path& path, bool is_directory) {
+        return path == binary || (path == directory && is_directory);
+    });
+    changes.flush();
+    const auto before = changes.sequence();
+    std::jthread writer([&](std::stop_token stop) {
+        while (!stop.stop_requested()) {
+            std::error_code error;
+            fs::last_write_time(directory, fs::file_time_type::clock::now(), error);
+            if (error) { failed = true; break; }
+            std::this_thread::sleep_for(std::chrono::milliseconds(1));
+        }
+    });
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
+    int reads = 0;
+    while (reads < 24 || changes.sequence() == before) {
+        check(std::chrono::steady_clock::now() < deadline, "directory invalidation fixture did not settle");
+        check(qualification_image_digest(binary, true) == expected,
+              "directory events changed an unchanged executable digest");
+        ++reads;
+        changes.flush();
+        std::this_thread::sleep_for(std::chrono::milliseconds(1));
+    }
+    writer.request_stop(); writer.join();
+    changes.flush();
+    check(!failed && changes.healthy() && changes.sequence() > before,
+          "fixture did not deliver real directory invalidations");
+#else
+    (void)base;
+#endif
 }
 void canonical_authority(const fs::path& base, const fs::path& profiles) {
     namespace core = shin::context;
@@ -432,6 +477,9 @@ int main(int argc, char** argv) {
         }
         stage = "image digest";
         image_digest_is_fenced(fixture.path);
+        stage = "image directory events";
+        image_digest_directory_events(fixture.path);
+        if (argc == 3 && std::string_view(argv[2]) == "--image-digest") return 0;
         stage = "project setup";
         const auto first = project(fixture.path, profiles, "first", 17), second = project(fixture.path, profiles, "second", 99);
         stage = "persistent process";

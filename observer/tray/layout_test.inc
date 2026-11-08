@@ -253,7 +253,8 @@ int main(int argc, char** argv) {
                     if (kind == "blocked") project.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
                     if (kind == "route-review") project.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "route-revision-conflict"}});
                     if (kind == "profile-partial") project["source_coverage"] = {{"state", "partial"}, {"reason", "profile-revision-pending"}};
-                    if (kind == "quarantined") project["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2}};
+                    if (kind == "quarantined") project["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2},
+                        {"files", Json::array({{{"path", "tests/auth_test.cpp"}}, {{"path", "src/credentials.ts"}}})}};
                     if (kind == "secret-blocked") project.update({{"phase", "blocked"}, {"active_issue", true},
                         {"error_code", "refresh-validation-failed"}, {"validation_diagnostic", {
                             {"schema_version", "shin.validation-diagnostic.v1"},
@@ -565,10 +566,14 @@ int main(int argc, char** argv) {
                         if (status == ui_actions.end()) throw std::runtime_error("profile review status is not accessible: " + context);
                     }
                     if (kind == "quarantined" || kind == "profile-partial") {
-                        const auto visible = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
-                            return action.chart == 54 && action.label == shin::ui::tr("Context partially available");
+                        const auto visible = std::find_if(ui_actions.begin(), ui_actions.end(), [&](const auto& action) {
+                            return action.chart == 54 && action.label == shin::ui::tr(kind == "quarantined" ?
+                                "Search available · files excluded" : "Context partially available");
                         });
                         if (visible == ui_actions.end()) throw std::runtime_error("partial coverage not visible: " + context);
+                        if (kind == "quarantined" && size.y >= 680 && std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                            return action.chart == 129 && action.label == "tests/auth_test.cpp";
+                        })) throw std::runtime_error("excluded file is not visible: " + context);
                     }
                     if (kind == "first-run") {
                         const auto setup = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {

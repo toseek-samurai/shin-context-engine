@@ -121,7 +121,7 @@ class GitHubFixture:
         self.uncertain, self.lose_upload = uncertain, lose_upload
         self.pending_steps = 0
 
-    def command(self, *args):
+    def command(self, *args, timeout=180):
         self.calls.append(args)
         if args[0] == 'git':
             return SHA + '\n'
@@ -193,6 +193,65 @@ class GitHubFixture:
             raise AssertionError(args)
         return SimpleNamespace(returncode=0 if self.state else 1,
                                stdout=json.dumps(self.state) if self.state else '', stderr='release not found')
+
+
+class DownloadReads(unittest.TestCase):
+    def test_partial_download_is_retried_in_clean_staging(self):
+        locations = []
+        def run(*args, timeout=180):
+            path = Path(args[args.index('--dir') + 1])
+            self.assertFalse(path.exists())
+            locations.append(path)
+            path.mkdir()
+            (path / 'receipt.json').write_text('partial' if len(locations) == 1 else 'verified')
+            if len(locations) == 1:
+                (path / 'leftover').write_text('must not survive')
+                raise subprocess.CalledProcessError(1, args, stderr='HTTP 502: Bad Gateway')
+        with tempfile.TemporaryDirectory() as folder, patch.object(publisher, 'command', run), \
+                patch.object(publisher.time, 'sleep') as sleep:
+            destination = Path(folder) / 'download'
+            publisher.download(destination, 'gh', 'release', 'download', TAG)
+            self.assertEqual((destination / 'receipt.json').read_text(), 'verified')
+            self.assertEqual(list(destination.iterdir()), [destination / 'receipt.json'])
+            self.assertEqual(len(set(locations)), 2)
+            self.assertTrue(all(not path.exists() for path in locations))
+            sleep.assert_called_once_with(1)
+
+    def test_download_failure_is_bounded_and_reports_sanitized_reason(self):
+        for error in (subprocess.CalledProcessError(1, ['gh'], stderr='HTTP 502: Bad Gateway https://asset.test/?signed=value\x1b'),
+                      subprocess.TimeoutExpired(['gh'], 180)):
+            with self.subTest(error=type(error).__name__), tempfile.TemporaryDirectory() as folder, \
+                    patch.object(publisher, 'command', side_effect=error) as run, \
+                    patch.object(publisher.time, 'sleep') as sleep:
+                destination = Path(folder) / 'download'
+                with self.assertRaisesRegex(ValueError, 'GitHub download failed after 3 attempts') as caught:
+                    publisher.download(destination, 'gh', 'run', 'download', '123')
+                self.assertEqual(run.call_count, 3)
+                self.assertEqual(sleep.call_count, 2)
+                self.assertFalse(destination.exists())
+                self.assertEqual(list(Path(folder).iterdir()), [])
+                self.assertNotIn('signed=value', str(caught.exception))
+                self.assertNotIn('\x1b', str(caught.exception))
+
+    def test_mutations_and_existing_destinations_are_never_retried(self):
+        with tempfile.TemporaryDirectory() as folder, patch.object(publisher, 'command') as run:
+            for verb in ('create', 'upload', 'edit', 'delete'):
+                with self.assertRaises(ValueError):
+                    publisher.download(Path(folder) / 'new', 'gh', 'release', verb, TAG)
+            with self.assertRaises(ValueError):
+                publisher.download(Path(folder), 'gh', 'release', 'download', TAG)
+            run.assert_not_called()
+
+    def test_retries_share_the_original_read_deadline(self):
+        with tempfile.TemporaryDirectory() as folder, \
+                patch.object(publisher, 'command', side_effect=subprocess.TimeoutExpired(['gh'], 180)) as run, \
+                patch.object(publisher.time, 'monotonic', side_effect=[0, 0, 181, 181]), \
+                patch.object(publisher.time, 'sleep') as sleep:
+            with self.assertRaisesRegex(ValueError, 'failed after 1 attempts'):
+                publisher.download(Path(folder) / 'download', 'gh', 'run', 'download', '123')
+            self.assertEqual(run.call_count, 1)
+            self.assertEqual(run.call_args.kwargs['timeout'], 180)
+            sleep.assert_not_called()
 
 
 class Publication(unittest.TestCase):
@@ -336,7 +395,7 @@ class Publication(unittest.TestCase):
     def test_windows_gate_is_rechecked_before_making_release_visible(self):
         github = GitHubFixture(platform='windows')
         original = github.command
-        def changed(*args):
+        def changed(*args, timeout=180):
             result = original(*args)
             if args[:3] == ('gh', 'release', 'upload'):
                 next(j for j in github.jobs if j['name'] == 'windows (desktop)')['conclusion'] = 'failure'
@@ -448,7 +507,7 @@ class Publication(unittest.TestCase):
     def test_failed_creation_reports_api_error_without_retry_or_upload(self):
         github = GitHubFixture()
         original = github.command
-        def denied(*args):
+        def denied(*args, timeout=180):
             if args[:3] == ('gh', 'release', 'create'):
                 github.calls.append(args)
                 raise subprocess.CalledProcessError(1, args,
@@ -505,6 +564,27 @@ class Publication(unittest.TestCase):
         with patch.object(publisher, 'command', github.command), patch.object(publisher.subprocess, 'run', github.receipt):
             return publisher.publish(REPO, SHA, TAG, 123, github.run['run_attempt'], platform=platform)
 
+    def test_final_receipt_download_recovers_without_replaying_uploads(self):
+        github = GitHubFixture()
+        failures = []
+        def flaky(*args, timeout=180):
+            if args[:3] == ('gh', 'release', 'download') and not failures:
+                failures.append(args)
+                location = Path(args[args.index('--dir') + 1])
+                location.mkdir()
+                (location / 'shin-preview-macos.json').write_text('partial')
+                raise subprocess.CalledProcessError(1, args, stderr='HTTP 502: Bad Gateway')
+            return github.command(*args)
+        with patch.object(publisher, 'command', flaky), patch.object(publisher.subprocess, 'run', github.receipt), \
+                patch.object(publisher.time, 'sleep') as sleep:
+            self.assertEqual(publisher.publish(REPO, SHA, TAG, 123, 1), 'fixture-release')
+        self.assertEqual(len(failures), 1)
+        sleep.assert_called_once_with(1)
+        uploads = [c[-1].split('/')[-1] for c in github.calls if c[:3] == ('gh', 'release', 'upload')]
+        self.assertEqual(len(uploads), len(set(uploads)))
+        self.assertFalse(github.state['isDraft'])
+        self.assertIn('macos | Qualified downloads available', github.state['body'])
+
     def test_existing_tag_is_authority_instead_of_target_creation_hint(self):
         github = GitHubFixture(platform='linux')
         self.assertEqual(self.publish_with(github, 'linux'), 'fixture-release')
@@ -525,7 +605,7 @@ class Publication(unittest.TestCase):
                 if failure == 'wrong-tag':
                     github.state['tagName'] = 'v2.0.5-dev.20'
                 else:
-                    def moved(*args):
+                    def moved(*args, timeout=180):
                         if args[:2] == ('gh', 'api') and '/commits/' in args[2]:
                             github.calls.append(args)
                             return json.dumps({'sha': 'c' * 40})
@@ -603,7 +683,7 @@ class Publication(unittest.TestCase):
         github=GitHubFixture()
         original=github.command
         uploads=0
-        def interrupted(*args):
+        def interrupted(*args, timeout=180):
             nonlocal uploads
             if args[:3]==('gh','release','upload'):
                 uploads+=1
@@ -668,7 +748,7 @@ class Publication(unittest.TestCase):
             github.artifact += fixtures('macos')[2]
             next(j for j in github.jobs if j['name']=='publish-preview (macos)').update(status='in_progress',conclusion=None)
             original=github.command;changed=False;before=len(github.calls)
-            def cancel(*args):
+            def cancel(*args, timeout=180):
                 nonlocal changed
                 if changed and args[:2]==('gh','api') and '/commits/' in args[2] and failure=='moved-tag':
                     github.calls.append(args);return json.dumps({'sha':'c'*40})
@@ -690,7 +770,7 @@ class Publication(unittest.TestCase):
         github.artifact += fixtures('macos')[2]
         next(j for j in github.jobs if j['name']=='publish-preview (macos)').update(status='in_progress',conclusion=None)
         original=github.command
-        def lose_edit(*args):
+        def lose_edit(*args, timeout=180):
             if args[:3]==('gh','release','edit'):
                 github.calls.append(args);raise subprocess.CalledProcessError(1,args)
             return original(*args)

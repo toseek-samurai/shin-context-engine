@@ -259,7 +259,7 @@ RE2::Options scanner_options() {
 }
 
 struct SecretPatterns {
-    RE2 private_key{R"(-----BEGIN (?:[A-Z0-9 -]+ )?PRIVATE KEY-----)", scanner_options()};
+    RE2 private_key{R"(-----BEGIN ((?:[A-Z0-9 -]+ )?PRIVATE KEY)-----)", scanner_options()};
     RE2 aws{R"((?:^|[^A-Za-z0-9_])((?:AKIA|ASIA)[A-Za-z0-9]{16})(?:$|[^A-Za-z0-9_]))", scanner_options()};
     RE2 openai{R"((?:^|[^A-Za-z0-9_])(sk-[A-Za-z0-9_./+=-]{21,}))", scanner_options()};
     RE2 jwt{R"((?:^|[^A-Za-z0-9_])(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_./+=-]+))", scanner_options()};
@@ -365,6 +365,61 @@ bool matched_token(Piece input, const RE2& rule, Predicate accept) {
         if (!is_placeholder_secret_text(std::string(token)) && accept(token)) return true;
     return false;
 }
+
+bool private_key_material(Piece input, const SecretPatterns& rules) {
+    Piece kind;
+    while (RE2::FindAndConsume(&input, rules.private_key, &kind)) {
+        auto body = input;
+        std::size_t bytes = 0;
+        while (!body.empty()) {
+            const auto c = static_cast<unsigned char>(body.front());
+            if (is_ascii_space(c)) body.remove_prefix(1);
+            else if (c == '\\') {
+                // Serialized source/JSON may escape a line break more than once.
+                std::size_t escape = 1;
+                while (escape < body.size() && body[escape] == '\\') ++escape;
+                if (escape == body.size() || (body[escape] != 'n' && body[escape] != 'r')) break;
+                body.remove_prefix(escape + 1);
+            }
+            else if (c == '"' || c == '\'') {
+                // Keep literal PEM bodies split by source concatenation. A call
+                // to an encoder/generator is not a literal continuation.
+                auto next = body.substr(1);
+                while (!next.empty() && is_ascii_space(next.front())) next.remove_prefix(1);
+                if (!next.empty() && next.front() == '+') {
+                    next.remove_prefix(1);
+                    while (!next.empty() && is_ascii_space(next.front())) next.remove_prefix(1);
+                }
+                if (next.empty() || next.front() != c) break;
+                next.remove_prefix(1);
+                body = next;
+            } else if (std::isalnum(c) || c == '+' || c == '/' || c == '=') {
+                ++bytes;
+                body.remove_prefix(1);
+            } else break;
+        }
+        // A marker used to construct a key at runtime contains no key material.
+        // Keep complete PEM bodies and substantial truncated/escaped bodies.
+        if (bytes >= 64 || (bytes > 0 && body.starts_with("-----END " + std::string(kind) + "-----")))
+            return true;
+    }
+    return false;
+}
+
+bool ternary_branch(Piece input, Piece key, Piece remaining) {
+    auto separator = static_cast<std::size_t>(remaining.data() - input.data());
+    while (separator && is_ascii_space(input[separator - 1])) --separator;
+    if (!separator || input[separator - 1] != ':') return false;
+    auto before = static_cast<std::size_t>(key.data() - input.data());
+    while (before && is_ascii_space(input[before - 1])) --before;
+    // `condition ? token : expression` reads token; it does not assign a value.
+    // Object fields (`? {token: ...}`) and URL assignments remain inspected.
+    if (!before || input[before - 1] != '?') return false;
+    auto condition = before - 1;
+    while (condition && (input[condition - 1] == ' ' || input[condition - 1] == '\t')) --condition;
+    return condition && (std::isalnum(static_cast<unsigned char>(input[condition - 1])) ||
+        std::string_view("_$)]\"'").find(input[condition - 1]) != std::string_view::npos);
+}
 }  // namespace
 
 SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression) {
@@ -372,7 +427,7 @@ SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source
     static const SecretPatterns rules;
     const Piece input(text.data(), text.size());
     const auto any = [](Piece) { return true; };
-    if (text.find("-----BEGIN ") != std::string::npos && RE2::PartialMatch(input, rules.private_key))
+    if (text.find("-----BEGIN ") != std::string::npos && private_key_material(input, rules))
         return {true, "private-key-block"};
     if ((text.find("AKIA") != std::string::npos || text.find("ASIA") != std::string::npos) && matched_token(input, rules.aws, any))
         return {true, "aws-access-key-id"};
@@ -388,6 +443,7 @@ SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source
     while (RE2::FindAndConsume(&remaining, rules.assignment, &key)) {
         if (key.size() > 128 || !credential_key_side_is_sensitive(std::string(key)) || remaining.empty() ||
             remaining.front() == '=' || remaining.front() == '>') continue;
+        if (ternary_branch(input, key, remaining)) continue;
         auto value = remaining;
         if (const auto tail = query_fragment_tail(input, key, remaining)) {
             if (tail->empty()) continue;

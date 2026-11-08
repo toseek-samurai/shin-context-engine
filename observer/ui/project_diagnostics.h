@@ -211,6 +211,28 @@ inline bool quality_warning(const Json& project) {
     return warning != project.end() && warning->is_object() && text_field(*warning, "state") == "degraded";
 }
 
+inline bool partial_coverage(const Json& project) {
+    const auto coverage = project.find("source_coverage");
+    return coverage != project.end() && coverage->is_object() &&
+        (text_field(*coverage, "state") == "partial" || count(*coverage, "quarantined_files") > 0 ||
+         text_field(*coverage, "reason") == "source-observation-limited" ||
+         text_field(*coverage, "reason") == "profile-revision-pending");
+}
+
+struct ProjectAvailability { std::size_t ready = 0, blocked = 0, notices = 0; };
+
+inline ProjectAvailability project_availability(const Json& projects, bool connected) {
+    ProjectAvailability result;
+    if (!connected || !projects.is_array()) return result;
+    for (const auto& row : projects) {
+        const auto state = project_state(row, true);
+        if (state == ProjectState::current || state == ProjectState::standby) ++result.ready;
+        if (state == ProjectState::blocked) ++result.blocked;
+        else if (quality_warning(row) || count(row, "documentation_warnings") || partial_coverage(row)) ++result.notices;
+    }
+    return result;
+}
+
 inline DiagnosticOverview diagnostic_overview(const Json& project, bool connected) {
     const auto state = project_state(project, connected);
     if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
@@ -226,8 +248,10 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
             shin::ui::tr("You can use the available context. See profile diagnostics for the coverage gap.")};
     if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
         project.at("source_coverage").is_object() && count(project.at("source_coverage"), "quarantined_files") > 0)
-        return {shin::ui::tr("Context partially available"), shin::ui::tr("Files with possible secrets were excluded. Search over the rest of the project works."),
-            shin::ui::tr("Review the excluded files. Shin will restore them automatically after correction.")};
+        return {shin::ui::tr("Search available · files excluded"),
+            std::string(shin::ui::tr("Files excluded from search: ")) + std::to_string(count(project.at("source_coverage"), "quarantined_files")) +
+                ". " + shin::ui::tr("Search over the rest of the project works."),
+            shin::ui::tr("Review the listed files if you need them for your task. A scanner match is a precaution, not confirmation of a leaked secret. Reconnecting the project is not needed.")};
     if ((state == ProjectState::current || state == ProjectState::standby) && quality_warning(project))
         return {shin::ui::tr("Ready with search warnings"),
             shin::ui::tr("Some search checks missed expected evidence. Verified current context remains available."),
@@ -302,6 +326,8 @@ inline RecoveryOptions recovery_options(const Json& project, bool connected) {
     auto code = error_code(project, "error_code");
     if (code.empty() && active_issue(project)) code = historical_code(project);
     const auto overview = diagnostic_overview(project, true);
+    if ((state == ProjectState::current || state == ProjectState::standby) && quarantined && !limited)
+        return {false, RecoveryAction::folder, tr("Coverage details"), overview.next};
     if (code == "route-revision-conflict") return {false, RecoveryAction::profile,
         tr("Review required"), tr("Review project changes before accepting them. Shin keeps the existing approvals until you decide.")};
     if (code == "storage-quota-exceeded" || code == "storage-free-space-low" || code == "storage-full" || code == "storage-read-only")

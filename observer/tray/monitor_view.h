@@ -1388,7 +1388,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     const auto state = project_state(project, view.connected);
     const auto overview = diagnostic_overview(project, view.connected);
     const auto recovery = recovery_options(project, view.connected);
-    const bool partial_coverage = overview.title == shin::ui::tr("Context partially available");
+    const bool partial_coverage = shin::ui::partial_coverage(project);
     const bool documentation_warning = (state == ProjectState::current || state == ProjectState::standby) &&
         (count(project, "documentation_warnings") > 0 || quality_warning(project));
     const auto name = text_field(project, "name");
@@ -1448,6 +1448,18 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
             ImGui::Spacing();
             text(recovery.title.empty() ? shin::ui::tr("Next step") : recovery.title, muted, 56);
             text(recovery.next.empty() ? explanation.next : recovery.next, ink, 57);
+        }
+        if (view.connected && partial_coverage) {
+            const auto& coverage = project.at("source_coverage");
+            const auto files = coverage.value("files", Json::array());
+            if (files.is_array() && !files.empty()) {
+                ImGui::Spacing();
+                text(shin::ui::tr("Excluded files"), muted, 128);
+                for (std::size_t i = 0; i < std::min<std::size_t>(8, files.size()); ++i)
+                    text(text_field(files[i], "path", 512), ink, 129 + static_cast<int>(i));
+                if (count(coverage, "omitted_files"))
+                    text(std::string(shin::ui::tr("More excluded files: ")) + std::to_string(count(coverage, "omitted_files")), muted, 138);
+            }
         }
         if (diagnostic_details_open) {
             ImGui::Separator();
@@ -1574,12 +1586,12 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
         const auto root = shin::ui::text_field(project, "root", 4096);
         const auto state = shin::ui::project_state(project, view.connected);
         const auto overview = shin::ui::diagnostic_overview(project, view.connected);
-        const bool partial = overview.title == shin::ui::tr("Context partially available");
+        const bool partial = shin::ui::partial_coverage(project);
         const bool available_context = state == shin::ui::ProjectState::current || state == shin::ui::ProjectState::standby;
         const bool warning = available_context && (shin::ui::quality_warning(project) || shin::ui::count(project, "documentation_warnings") > 0);
         const auto state_label = partial || warning || !available_context ? overview.title :
             state == shin::ui::ProjectState::standby ? std::string(shin::ui::tr("Ready on demand")) : std::string(shin::ui::tr("Ready to use"));
-        const auto color = partial || warning ? amber : project_color(state, project);
+        const auto color = available_context && (partial || warning) ? amber : project_color(state, project);
         const double elapsed = view.received == Clock::time_point{} ? 0 : std::chrono::duration<double, std::milli>(Clock::now() - view.received).count();
         const auto age = std::string(shin::ui::tr("Successful: ")) + shin::ui::age_text(shin::ui::age_ms(project, "last_success_age_ms", elapsed));
         const auto memory = shin::ui::resident_memory(residents, root, view.connected);
@@ -1605,7 +1617,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
             if (state == shin::ui::ProjectState::checking || state == shin::ui::ProjectState::recovering ||
                 (state == shin::ui::ProjectState::pending && shin::ui::text_field(project, "query_phase") == "preparing"))
                 preparation_indicator(status_at, 15, color);
-            else draw_icon(partial || warning ? Icon::blocked : state_icon(state), status_at, 15, color);
+            else draw_icon(available_context && (partial || warning) ? Icon::details : state_icon(state), status_at, 15, color);
             draw->AddText({status_at.x + 19, status_at.y}, ImGui::GetColorU32(color),
                 clipped(state_label, side_status ? status_width - 15 : row_width - 24).c_str());
             if (side_status) draw->AddText({origin.x, origin.y + 23}, ImGui::GetColorU32(muted), clipped(age, row_width - 24).c_str());
@@ -1892,16 +1904,16 @@ void render_settings(const ViewState& view, const Json& telemetry, const Json& h
 }
 
 void render_readiness(const ViewState& view, const Json& projects) {
-    std::size_t ready = 0, review = 0;
+    const auto availability = shin::ui::project_availability(projects, view.connected);
+    const auto ready = availability.ready;
+    const auto review = availability.blocked + availability.notices;
     attention_project.clear();
     bool attention_blocked = false;
     std::string attention_name, attention_summary;
     for (const auto& row : projects) {
         const auto state = shin::ui::project_state(row, view.connected);
-        if (state == shin::ui::ProjectState::current || state == shin::ui::ProjectState::standby) ++ready;
         if (shin::ui::active_issue(row) || shin::ui::quality_warning(row) || shin::ui::count(row, "documentation_warnings") ||
-            shin::ui::text_field(row.value("source_coverage", Json::object()), "state") == "partial") {
-            ++review;
+            shin::ui::partial_coverage(row)) {
             const bool blocked = state == shin::ui::ProjectState::blocked;
             if (attention_project.empty() || (blocked && !attention_blocked)) {
                 attention_project = row.value("id", ""); attention_blocked = blocked;
@@ -1913,15 +1925,17 @@ void render_readiness(const ViewState& view, const Json& projects) {
     const bool registry_problem = view.connected && view.data.is_object() &&
         (!view.data.value("registry_error", "").empty() || !view.data.value("enrollment_errors", Json::object()).empty());
     page_title(shin::ui::tr(!view.connected ? "Waiting for Shin" : registry_problem ? "Project connection error" :
-        ready == projects.size() ? "Your context is ready" : review ? "Some projects need attention" : "Preparing project context"));
+        ready == projects.size() ? "Your context is ready" : availability.blocked ? "Some projects need attention" : "Preparing project context"));
     ImGui::PushFont(nullptr, 14);
-    ImGui::TextColored(muted, shin::ui::tr("Available: %zu of %zu · Needs review: %zu"), view.connected ? ready : 0, projects.size(), view.connected ? review : 0);
+    ImGui::PushTextWrapPos();
+    ImGui::TextColored(muted, shin::ui::tr("Available: %zu/%zu · Blocked: %zu · Notices: %zu"), ready, projects.size(), availability.blocked, availability.notices);
+    ImGui::PopTextWrapPos();
     ImGui::PopFont();
     if (!view.connected) {
         ImGui::TextWrapped("%s", shin::ui::tr("Current project readiness is unknown"));
     } else if (review && layout_height() >= 400) {
-        begin_surface("overview-attention", attention_blocked ? ImVec4{.247f, .157f, .145f, 1} : ImVec4{.231f, .184f, .110f, 1});
-        const auto tint = attention_blocked ? red : amber;
+        begin_surface("overview-attention", attention_blocked ? ImVec4{.247f, .157f, .145f, 1} : raised);
+        const auto tint = attention_blocked ? red : ink;
         ImGui::TextColored(tint, "%s", clipped(attention_name, ImGui::GetContentRegionAvail().x).c_str());
         ImGui::PushFont(nullptr, 14);
         ImGui::TextWrapped("%s", attention_summary.c_str());

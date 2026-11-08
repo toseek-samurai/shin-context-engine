@@ -80,14 +80,21 @@ inline Json envelope(const std::string& command, bool ok) {
 // Native events plus file identity, size, mtime and platform change time fence
 // every reuse. A replaced named executable must still change the key even while
 // the old image runs. Loss/unavailability of native events restores full hashing.
+inline std::string qualification_image_read(const fs::path& executable,
+        const shin::context::FileMetadata& before, const std::string& image,
+        const std::string& expected_hash = {}) {
+    const auto hash = digest(read_text(executable, 128U * 1024U * 1024U, false));
+    if (shin::context::file_metadata(executable) != before || executing_image_identity() != image ||
+        (!expected_hash.empty() && hash != expected_hash))
+        throw Error("qualification-engine-changed", "The executing image changed during qualification admission.");
+    return hash;
+}
+
 inline std::string qualification_image_digest(const fs::path& executable, bool retain = false) {
     if (!retain) {
         const auto before = shin::context::file_metadata(executable);
         const auto image = executing_image_identity();
-        const auto hash = digest(read_text(executable, 128U * 1024U * 1024U, false));
-        if (shin::context::file_metadata(executable) != before || executing_image_identity() != image)
-            throw Error("qualification-engine-changed", "The executing image changed during qualification admission.");
-        return hash;
+        return qualification_image_read(executable, before, image);
     }
     struct CachedImage {
         fs::path path;
@@ -117,11 +124,18 @@ inline std::string qualification_image_digest(const fs::path& executable, bool r
         changes->flush();
         if (changes->healthy() && changes->sequence() == epoch) return cached->digest;
     }
-    const auto hash = digest(read_text(executable, 128U * 1024U * 1024U, false));
+    const auto hash = qualification_image_read(executable, before, image);
     changes->flush();
-    if (shin::context::file_metadata(executable) != before || executing_image_identity() != image ||
-        (changes->healthy() && changes->sequence() != epoch))
+    if (shin::context::file_metadata(executable) != before || executing_image_identity() != image)
         throw Error("qualification-engine-changed", "The executing image changed during qualification admission.");
+    if (changes->healthy() && changes->sequence() != epoch) {
+        // Directory invalidations can arrive after stream startup or coalesce
+        // unrelated metadata edits. Discard cached proof and perform one full
+        // stable read against the ORIGINAL identity/stamps, not a new baseline.
+        // An actual edit/replacement or differing bytes still refuses admission.
+        cached.reset();
+        return qualification_image_read(executable, before, image, hash);
+    }
     if (changes->healthy()) cached = CachedImage{executable, before, image, hash, epoch};
     else cached.reset();
     return hash;

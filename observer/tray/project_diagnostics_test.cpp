@@ -48,6 +48,30 @@ void search_warning_overview() {
     assert(diagnostic_overview(project, true).title != tr("Ready with search warnings"));
 }
 
+void coverage_availability() {
+    using namespace shin::ui;
+    const Json available{{"phase", "current"}, {"query_ready", true}, {"active_issue", false},
+        {"source_coverage", {{"state", "partial"}, {"quarantined_files", 2}}}};
+    const auto overview = diagnostic_overview(available, true);
+    assert(overview.title == tr("Search available · files excluded"));
+    assert(overview.summary.find(std::string(tr("Files excluded from search: ")) + "2") != std::string::npos);
+    assert(project_state(available, true) == ProjectState::current);
+    assert(recovery_options(available, true).title == tr("Coverage details"));
+    auto blocked = available;
+    blocked["active_issue"] = true; blocked["error_code"] = "access-denied";
+    assert(diagnostic_overview(blocked, true).title != overview.title);
+    assert(recovery_options(blocked, true).title == tr("Action needed"));
+    auto standby = available;
+    standby["query_phase"] = "standby";
+    auto documentation = available;
+    documentation.erase("source_coverage"); documentation["documentation_warnings"] = 3;
+    const auto rows = Json::array({available, blocked, standby, documentation});
+    const auto totals = project_availability(rows, true);
+    assert(totals.ready == 3 && totals.blocked == 1 && totals.notices == 3);
+    const auto disconnected = project_availability(rows, false);
+    assert(disconnected.ready == 0 && disconnected.blocked == 0 && disconnected.notices == 0);
+}
+
 int check_language() try {
     using namespace shin::ui;
     for (const auto& [code, action] : std::vector<std::pair<std::string, RecoveryAction>>{
@@ -67,6 +91,7 @@ int check_language() try {
     assert(recovery_options(Json{{"phase", "coalescing"}, {"active_issue", false}}, true).automatic);
     documentation_warning_overview();
     search_warning_overview();
+    coverage_availability();
     MonitorTween tween;
     tween.snap(0);
     const float first = tween.step(1, .04f, false);
@@ -158,7 +183,7 @@ int check_language() try {
     assert(project_state(project, true) == ProjectState::current);
     assert(diagnostic_overview(project, true).title == shin::ui::tr("Context is current"));
     project["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 1}};
-    assert(diagnostic_overview(project, true).title == shin::ui::tr("Context partially available"));
+    assert(diagnostic_overview(project, true).title == shin::ui::tr("Search available · files excluded"));
     assert(diagnostic_overview(project, false).title == shin::ui::tr("Service offline"));
     project.erase("source_coverage");
     project["query_ready"] = false;

@@ -58,6 +58,15 @@ The default bootstrap route keeps serving verified context when local links are
 broken; `documentation_warnings` counts these warnings in readiness and service
 project rows. Strict Core audits still report the documentation defect.
 
+The current source candidate separates available projects, blocked projects and
+coverage/documentation notices in Monitor and TUI. A secret-scanner match can
+exclude a file while search over the remaining verified files keeps working.
+Project details list the excluded paths without exposing matched values.
+Reconnecting the project is not a remedy for a scanner finding. Review a listed
+file when it matters to the task: remove real credentials, or report a minimal
+synthetic reproduction for a false positive. Test directories are still scanned;
+Shin does not automatically trust a value just because it is in a test.
+
 | Key | Action |
 | --- | --- |
 | `1`–`4`, Tab / Shift-Tab | Overview, Projects, Activity, Settings |

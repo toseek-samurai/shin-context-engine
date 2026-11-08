@@ -195,10 +195,43 @@ def release_matches(receipt, sha, expected, complete=True):
         require({a['name'] for a in assets} == set(expected), 'Release assets are incomplete')
 
 
-def command(*args):
-    result = subprocess.run(list(args), check=True, capture_output=True, text=True, timeout=180)
+def command(*args, timeout=180):
+    result = subprocess.run(list(args), check=True, capture_output=True, text=True, timeout=timeout)
     require(len(result.stdout) <= 4 * 1024 * 1024, 'GitHub response exceeds the publication bound')
     return result.stdout
+
+
+def download(destination, *args):
+    """Retry reads in fresh staging; never replay release mutations."""
+    require(args[:3] in (('gh', 'release', 'download'), ('gh', 'run', 'download')),
+            'Only GitHub downloads may be retried')
+    require(not destination.exists() and not destination.is_symlink(), 'Download destination already exists')
+    deadline = time.monotonic() + 180
+    failure = None
+    attempts = 0
+    for attempt in range(3):
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            break
+        attempts += 1
+        try:
+            with tempfile.TemporaryDirectory(prefix='download-', dir=destination.parent) as staging:
+                payload = Path(staging) / 'payload'
+                command(*args, '--dir', str(payload), timeout=remaining)
+                require(payload.is_dir() and not payload.is_symlink(), 'Download did not produce a directory')
+                payload.rename(destination)
+            return
+        except (subprocess.CalledProcessError, subprocess.TimeoutExpired) as error:
+            failure = error
+            remaining = deadline - time.monotonic()
+            if attempt < 2 and remaining > 0:
+                time.sleep(min(attempt + 1, remaining))
+    detail = getattr(failure, 'stderr', None) or str(failure or 'Read deadline exceeded')
+    if isinstance(detail, bytes):
+        detail = detail.decode('utf-8', errors='replace')
+    detail = re.sub(r'https?://\S+', '[URL]', detail)
+    detail = ''.join(c for c in detail[-2048:] if c.isprintable() or c == '\n').strip()
+    raise ValueError(f'GitHub download failed after {attempts} attempts: {detail}') from None
 
 
 def mutation(*args):
@@ -327,8 +360,8 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
             if key not in checked:
                 artifact = gate(target, target_run, target_attempt, existing)
                 destination = directory / f'{target}-{target_run}-{target_attempt}'
-                command('gh', 'run', 'download', str(target_run), '--repo', repo,
-                        '--name', artifact, '--dir', str(destination))
+                download(destination, 'gh', 'run', 'download', str(target_run), '--repo', repo,
+                         '--name', artifact)
                 if target == 'macos':
                     assets = verify_assets(destination, version, core)
                 elif target == 'windows':
@@ -353,8 +386,8 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
             for target in PLATFORMS:
                 name = marker_name(target)
                 if name in names:
-                    location = Path(tempfile.mkdtemp(prefix='existing-' + target + '-', dir=directory))
-                    command('gh', 'release', 'download', tag, '--repo', repo, '--pattern', name, '--dir', str(location))
+                    location = Path(tempfile.mkdtemp(prefix='existing-' + target + '-', dir=directory)) / 'receipt'
+                    download(location, 'gh', 'release', 'download', tag, '--repo', repo, '--pattern', name)
                     raw = (location / name).read_bytes()
                     require(len(raw) <= 32768, 'Platform receipt exceeds bound')
                     proof = json.loads(raw)

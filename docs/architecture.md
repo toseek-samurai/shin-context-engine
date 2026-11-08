@@ -66,6 +66,11 @@ running-image checks. Replacing the named executable invalidates it and the
 qualification key. Unavailable events restore full binary hashing. One-shot CLI
 admission and final qualification recording read the full executable and check
 its identity and metadata before/after, without starting a native event stream.
+If a delayed or coalesced directory event arrives during a cached-image read,
+Observer discards the cached proof and performs one additional full read against
+the original file identity, timestamps and running image. Both hashes must agree.
+Actual edits or replacements still refuse admission; directory invalidation alone
+does not establish that the executable changed.
 
 An idle observation reports `content_reverified: false` and
 `verification_level: source-inventory-and-metadata-observed`; it does not create

@@ -261,19 +261,14 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
             secondary.push_back(element);
         }
     } else {
-        std::size_t ready = 0, review = 0;
         const auto& rows = field(telemetry, "project_states");
-        if (rows.is_array()) for (const auto& row : rows) {
-            const auto status = ui::project_state(row, online);
-            if (status == ui::ProjectState::current || status == ui::ProjectState::standby) ++ready;
-            if (ui::active_issue(row) || ui::quality_warning(row) || ui::count(row, "documentation_warnings") ||
-                field(field(row, "source_coverage"), "state") == "partial") ++review;
-        }
+        const auto availability = ui::project_availability(rows, online);
         char summary[128];
-        std::snprintf(summary, sizeof(summary), ui::tr("Ready: %zu · Needs review: %zu"), ready, review);
+        std::snprintf(summary, sizeof(summary), ui::tr("Ready: %zu · Blocked: %zu · Notices: %zu"),
+            availability.ready, availability.blocked, availability.notices);
         secondary.push_back(paint.label(!online ? ui::tr("Current project readiness is unknown") :
             !rows.is_array() || rows.empty() ? ui::tr("No connected projects") : summary,
-            !online || review ? Tone::warning : Tone::good));
+            !online || availability.blocked ? Tone::warning : Tone::good));
     }
     Elements body;
     const int available = height - 7;

@@ -214,8 +214,12 @@ int main(int argc, char** argv) {
             {"root", "/workspace/steady"}, {"name", "steady"}, {"phase", "current"}, {"query_ready", true},
             {"active_issue", false}, {"error_code", ""}, {"failures", 11}, {"last_error_code", "route-revision-conflict"}}});
         tui::State historical_state;
-        require(render(historical, historical_state).plain.find("Ready: 1 · Needs review: 0") != std::string::npos,
+        require(render(historical, historical_state).plain.find("Ready: 1 · Blocked: 0 · Notices: 0") != std::string::npos,
             "historical failures reported as a current readiness warning");
+        auto partial = historical;
+        partial.service["telemetry"]["project_states"][0]["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2}};
+        require(render(partial, historical_state).plain.find("Ready: 1 · Blocked: 0 · Notices: 1") != std::string::npos,
+            "quarantined files made a searchable project look blocked");
         tui::State state;
         auto result = render(snapshot, state);
         require(result.plain.find(SHIN_OBSERVER_VERSION) != std::string::npos, "kit version absent");

@@ -42,3 +42,9 @@ attempt number. The normal release path invokes the publisher automatically.
 Implementation: [release preparation](../tools/create_preview.py),
 [platform checks](../.github/workflows/ci.yml),
 [guarded publisher](../tools/publish_preview.py).
+
+The source publisher retries artifact and platform-receipt downloads at most
+three times within the original three-minute read deadline. Each attempt uses
+fresh temporary staging; partial files cannot enter qualification. Exhaustion
+reports a bounded CLI/HTTP error with download URLs removed. Release creation,
+uploads and edits remain single attempts followed by independent readback.

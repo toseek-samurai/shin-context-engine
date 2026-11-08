@@ -311,7 +311,9 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 if (excluded.is_array()) for (std::size_t i = 0; i < std::min<std::size_t>(excluded.size(), 8); ++i) {
                     const auto& file = excluded[i];
                     out.push_back({"! " + text(field(file, "path")), Tone::warning});
-                    out.push_back({"  " + text(field(file, "reason")), Tone::muted});
+                    const auto reason = text(field(file, "reason"));
+                    out.push_back({"  " + std::string(reason == "secret-like-source-content" ?
+                        shin::ui::tr("Possible secret; contents withheld.") : reason), Tone::muted});
                 }
                 const auto& histories = field(field(telemetry, "history"), "projects");
                 if (histories.is_array()) for (const auto& item : histories) if (field(item, "id") == field(row, "id"))

@@ -41,6 +41,12 @@ int main() {
         "append('?next_token=');\nconst mode = AuthorizationHeadersVersion2;\n",
         "append(`&next_token=`)\nconst mode = AuthorizationHeadersVersion2;\n",
         "private const string Secret = \"\"\"" + manifest + "\"\"\";",
+        "String key = \"-----BEGIN PRIVATE KEY-----\\n\" + encoder.encode(generateNewKey());",
+        "String key = \"-----BEGIN RSA PRIVATE KEY-----\";",
+        "const nodes = values.map((token, i) => i % 2 === 0 ? token : (\n"
+        "  <span className={token.startsWith(\"\\\"\")\n"
+        "    ? token.trimEnd().endsWith(\":\") ? \"syntax-highlight-property\" : \"syntax-highlight-string\"\n"
+        "    : \"syntax-highlight-literal\"}>{token}</span>));",
     };
     const std::vector<std::string> blocked = {
         "token = \"local-development-" + opaque + "\";",
@@ -105,6 +111,17 @@ int main() {
         "authorization = bEaReR " + opaque,
         "token = IssueForRole(\"AKIA" + std::string(16, 'Z') + "\");",
         "token = IssueForRole(\"eyJ" + std::string(20, 'a') + "." + std::string(20, 'b') + "." + std::string(20, 'c') + "\");",
+        "const value = flag ? token : fallback; password = \"" + opaque + "\";",
+        "const value = flag ? {token: \"" + opaque + "\"} : fallback;",
+        "const value = flag ? {password: \"" + opaque + "\"} : {token: fallback};",
+        "const url = \"https://service.test/?token=" + opaque + "\";",
+        std::string("-----") + "BEGIN PRIVATE KEY-----\n" + std::string(64, 'A'),
+        std::string("-----") + "BEGIN RSA PRIVATE KEY-----\\n" + opaque + "\\n-----END RSA PRIVATE KEY-----",
+        std::string("const pem = \"-----") + "BEGIN PRIVATE KEY-----\\n\" +\n \"" + std::string(64, 'A') + "\\n\" + \"-----END PRIVATE KEY-----\";",
+        std::string("const pem = \"-----") + "BEGIN PRIVATE KEY-----\\n\"\n \"" + std::string(64, 'A') + "\\n-----END PRIVATE KEY-----\";",
+        "? token : \"" + opaque + "\"\n",
+        "String header = \"-----BEGIN PRIVATE KEY-----\";\nconst api_key = \"" + opaque + "\";",
+        std::string("-----") + "BEGIN PRIVATE KEY-----\\\\n" + std::string(64, 'A') + "\\\\n-----END PRIVATE KEY-----",
     };
     for (const auto& line : safe) {
         if (shin::context::detect_secret_like_text(line, false).found) {

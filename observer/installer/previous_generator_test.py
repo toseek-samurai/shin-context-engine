@@ -2,12 +2,13 @@
 """Qualify an exact candidate archive against the pinned published retired generator."""
 
 import argparse
-import hashlib
 import json
 from pathlib import Path
 import subprocess
 import sys
 import tempfile
+
+from pinned_archive import download_pinned_archive
 
 
 def main():
@@ -22,12 +23,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix='shin-previous-generator-') as temporary:
         folder = Path(temporary)
         archive = folder / previous['archive']
-        subprocess.run(['/usr/bin/curl', '--fail', '--location', '--proto', '=https', '--proto-redir', '=https',
-                        '--retry', '2', '--connect-timeout', '15', '--max-time', '120',
-                        '--max-filesize', str(previous['bytes']), '--output', str(archive), previous['url']],
-                       check=True, timeout=300)
-        assert archive.stat().st_size == previous['bytes']
-        assert hashlib.sha256(archive.read_bytes()).hexdigest() == previous['sha256']
+        download_pinned_archive(previous, archive)
         old = folder / 'old'; old.mkdir()
         new = folder / 'new'; new.mkdir()
         for path, destination in ((archive, old), (args.candidate_archive.resolve(), new)):

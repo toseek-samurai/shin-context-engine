@@ -303,6 +303,8 @@ jobs:
       - name: Exact macOS kit qualification
         id: qualify-kit
         if: matrix.component == 'observer' && runner.os == 'macOS'
+        env:
+          GH_TOKEN: ${{ github.token }}
         shell: bash
         run: |
           cpack --config "$RUNNER_TEMP/observer/CPackConfig.cmake" 2>&1 | tee "$RUNNER_TEMP/package-build.log"
@@ -408,7 +410,19 @@ jobs:
         run: |
           # The upstream CMake release is pinned separately from PyPI wheels.
           $archive = "$env:RUNNER_TEMP/cmake.zip"
-          Invoke-WebRequest 'https://github.com/Kitware/CMake/releases/download/v4.3.5/cmake-4.3.5-windows-x86_64.zip' -OutFile $archive
+          $downloaded = $false
+          foreach ($url in @(
+            'https://github.com/Kitware/CMake/releases/download/v4.3.5/cmake-4.3.5-windows-x86_64.zip',
+            'https://cmake.org/files/v4.3/cmake-4.3.5-windows-x86_64.zip'
+          )) {
+            try {
+              Invoke-WebRequest $url -OutFile $archive -MaximumRetryCount 2 -RetryIntervalSec 5 `
+                -ConnectionTimeoutSeconds 30 -OperationTimeoutSeconds 120
+              $downloaded = $true
+              break
+            } catch { Write-Warning 'Pinned CMake download failed; trying the next official origin.' }
+          }
+          if (-not $downloaded) { throw 'Pinned CMake download failed from all official origins' }
           if ((Get-FileHash $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne 'c05a60d22d5df22d75a72ae9b6628ef5f20daee4f4ba380920e1fbbeaf244fc1') { throw 'CMake checksum mismatch' }
           Expand-Archive $archive -DestinationPath "$env:RUNNER_TEMP/cmake"
           "$env:RUNNER_TEMP/cmake/cmake-4.3.5-windows-x86_64/bin" >> $env:GITHUB_PATH

@@ -98,6 +98,9 @@ endif()
 if(BUILD_TESTING AND NOT WIN32)
     if(SHIN_OBSERVER_SOURCE_DISCOVERY)
         find_package(Python3 REQUIRED COMPONENTS Interpreter)
+        add_test(NAME shin-pinned-archive
+            COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/installer/pinned_archive_test.py)
+        set_tests_properties(shin-pinned-archive PROPERTIES TIMEOUT 30)
         add_test(NAME shin-preview-publication
             COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_publish_preview.py)
         set_tests_properties(shin-preview-publication PROPERTIES TIMEOUT 30)

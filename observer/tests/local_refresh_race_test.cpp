@@ -141,6 +141,32 @@ void source_race(const fs::path& profiles, const std::string& mode) {
           "recovered context is not current");
 }
 
+void temporary_writer_contention(const fs::path& profiles, const std::string& code) {
+    Fixture fixture(profiles);
+    unsigned calls = 0;
+    bool pending = false;
+    const auto refresh = [&](const LocalProjectRequest& request) -> Json {
+        if (++calls == 2) throw Error(code, "temporary maintenance lock fixture");
+        return local_project(request);
+    };
+    const auto report = [&](const fs::path&, const Json& state) {
+        if (state.at("phase") == "checking") return;
+        const auto& last = state.at("last_result");
+        if (!last.is_object() || last.value("retry_reason", "") != code) return;
+        pending = true;
+        check(state.at("phase") == "coalescing" && state.at("failures") == 0,
+            "temporary writer contention became a project failure");
+        check(state.at("superseded_refreshes") == 0 && state.at("suspended_refreshes") == 0,
+            "writer contention inflated source/suspend counters");
+        check(!last.contains("error") && last.at("ok") == false,
+            "writer contention advertised readiness or a hard blocker");
+    };
+    const auto result = watch_local_projects(fixture.request, {fixture.root}, 2,
+        [] { return false; }, {}, {}, report, refresh);
+    check(pending && result.at("watch").at("last_result").at("phase") == "current",
+        "temporary maintenance contention did not recover through ordinary qualification");
+}
+
 void hard_failure(const fs::path& profiles, const std::string& code) {
     Fixture fixture(profiles);
     unsigned calls = 0;
@@ -612,6 +638,7 @@ int main(int argc, char** argv) {
             progress("documentation regressions");
         }
         if (group == "all" || group == "races") {
+            for (const auto* code : {"writer-busy", "project-busy"}) temporary_writer_contention(profiles, code);
             for (const auto* mode : {"core", "worker", "superseded", "source-binding", "stale-index", "qualification"}) source_race(profiles, mode);
             progress("source races");
             returned_observation_race_recovers(profiles);

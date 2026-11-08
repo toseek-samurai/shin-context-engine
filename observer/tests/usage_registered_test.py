@@ -191,11 +191,11 @@ class RegisteredUsage(unittest.TestCase):
             while True:
                 status=self.ce('service-status')
                 row=status['telemetry']['project_states'][0]
-                if row.get('error_code')=='writer-busy':break
+                if row.get('phase')=='coalescing' and row.get('retry_reason')=='writer-busy':break
                 self.assertLess(time.monotonic(),deadline,status)
                 time.sleep(.02)
             fcntl.flock(lock,fcntl.LOCK_UN)
-        # Bootstrap can finish before the watcher's normal failure backoff.
+        # Bootstrap can finish before the watcher's next contention retry.
         # Admission must wait for requalification, not accept the local build.
         response=self.ce('project-add',root)
         self.assertTrue(response['service_enrolled'],response)

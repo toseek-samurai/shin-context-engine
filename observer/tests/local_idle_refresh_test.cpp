@@ -106,6 +106,13 @@ void fresh_kit_rebuild(const LocalProjectRequest& request, const fs::path& cache
     const auto rebuilt = current(worker, request);
     check(rebuilt.value("rebuilt", false) && rebuilt.at("snapshot_id") == snapshot,
         "a new kit must rebuild even a byte-identical publication");
+    check(rebuilt.at("work_performed").at("full_generations").get<unsigned>() == 2,
+        "bootstrap gates repeatedly regenerated the same expected index");
+    check(rebuilt.at("refresh_work").at("validation_generation_runs") == 1 &&
+        rebuilt.at("refresh_work").at("validation_reuses").get<unsigned>() >= 2,
+        "bootstrap validation did not reuse one independently verified expectation");
+    check(rebuilt.at("refresh_work").at("source_cache_builds") == 1,
+        "bootstrap publication rebuilt its transferred reader cache");
     check(current_index_generation(workspace, snapshot), "fresh generation policy was not committed");
     for (const auto& path : artifacts)
         check(fs::last_write_time(path) != old_time, "fresh generation reused an earlier reader cache");

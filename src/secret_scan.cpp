@@ -267,9 +267,13 @@ struct SecretPatterns {
     RE2 assignment{R"((?:^|[^A-Za-z0-9_$])["']?((?i:(?:[A-Za-z_$][A-Za-z0-9_$.-]*)?(?:secret|password|token|api_?key|access_key|private_key)(?:value)?))["']?[ \t]*[:=][ \t]*)", scanner_options()};
     RE2 literals{R"re("((?:\\(?s:.)|[^"\\])*)(?:"|$)|'((?:\\(?s:.)|[^'\\])*)(?:'|$)|`((?:\\(?s:.)|[^`\\])*)(?:`|$))re", scanner_options()};
     RE2 bare{R"(^[ \t\r\n]*([A-Za-z0-9_./+=-]{16,})[ \t]*(?:$|[,;}\r\n]))", scanner_options()};
+    RE2 manifest_version{R"((?m)^[ \t]*apiVersion:[ \t]+[A-Za-z0-9./_-]+[ \t]*\r?$)", scanner_options()};
+    RE2 manifest_kind{R"((?m)^[ \t]*kind:[ \t]+[A-Za-z][A-Za-z0-9]*[ \t]*\r?$)", scanner_options()};
+    RE2 manifest_name{R"((?m)^[ \t]*metadata:[ \t]*\{[ \t]*name:[ \t]*([a-z0-9](?:[-a-z0-9.]*[a-z0-9])?)[ \t]*[,}])", scanner_options()};
 
     SecretPatterns() {
-        for (const auto* rule : {&private_key, &aws, &openai, &jwt, &bearer, &assignment, &literals, &bare})
+        for (const auto* rule : {&private_key, &aws, &openai, &jwt, &bearer, &assignment, &literals, &bare,
+                                &manifest_version, &manifest_kind, &manifest_name})
             if (!rule->ok()) throw std::logic_error("Invalid built-in secret scanner rule");
     }
 };
@@ -316,10 +320,42 @@ Piece assignment_value(Piece input, bool& unfinished) {
     return input.substr(start);
 }
 
-bool secret_value(Piece input) {
-    for (const auto& token : secret_candidate_tokens(std::string(input)))
+bool secret_value(Piece input, const SecretPatterns& rules) {
+    std::string value(input);
+    // A resource identifier is not a credential value. Only omit the name
+    // scalar in a recognized manifest's flow metadata; all other fields and
+    // every provider signature remain scanned, including data/stringData.
+    if (value.find("apiVersion:") != std::string::npos && value.find("metadata:") != std::string::npos &&
+        RE2::PartialMatch(input, rules.manifest_version) && RE2::PartialMatch(input, rules.manifest_kind)) {
+        Piece remaining = input, name;
+        while (RE2::FindAndConsume(&remaining, rules.manifest_name, &name)) {
+            const auto offset = static_cast<std::size_t>(name.data() - input.data());
+            std::fill_n(value.begin() + offset, name.size(), ' ');
+        }
+    }
+    for (const auto& token : secret_candidate_tokens(value))
         if (looks_like_assigned_secret_value(token)) return true;
     return false;
+}
+
+std::optional<Piece> query_fragment_tail(Piece input, Piece key, Piece remaining) {
+    const auto offset = static_cast<std::size_t>(key.data() - input.data());
+    if (!offset || (input[offset - 1] != '?' && input[offset - 1] != '&') || remaining.empty() ||
+        (remaining.front() != '"' && remaining.front() != '\'' && remaining.front() != '`')) return std::nullopt;
+    // The quote closes an empty URL parameter. Do not let it open a literal
+    // spanning subsequent statements. Retain concatenated value operands.
+    remaining.remove_prefix(1);
+    while (!remaining.empty() && (remaining.front() == ' ' || remaining.front() == '\t' ||
+           remaining.front() == ')' || remaining.front() == ']')) remaining.remove_prefix(1);
+    if (!remaining.empty() && (remaining.front() == '\n' || remaining.front() == '\r')) {
+        auto continued = remaining;
+        while (!continued.empty() && is_ascii_space(continued.front())) continued.remove_prefix(1);
+        if (!continued.empty() && continued.front() == '+') return continued;
+    }
+    if (remaining.empty() || remaining.front() == '\n' || remaining.front() == '\r' ||
+        remaining.front() == ';' || remaining.front() == ',' || remaining.front() == '}') return Piece{};
+    if (remaining.front() == '+') return remaining;
+    return std::nullopt;
 }
 
 template <typename Predicate>
@@ -352,15 +388,20 @@ SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source
     while (RE2::FindAndConsume(&remaining, rules.assignment, &key)) {
         if (key.size() > 128 || !credential_key_side_is_sensitive(std::string(key)) || remaining.empty() ||
             remaining.front() == '=' || remaining.front() == '>') continue;
+        auto value = remaining;
+        if (const auto tail = query_fragment_tail(input, key, remaining)) {
+            if (tail->empty()) continue;
+            value = *tail;
+        }
         bool unfinished = false;
-        const auto local = assignment_value(remaining, unfinished);
+        const auto local = assignment_value(value, unfinished);
         const auto candidate = assignment_candidate_text(std::string(local));
-        if (unfinished && secret_value(candidate)) return {true, "credential-assignment"};
+        if (unfinished && secret_value(candidate, rules)) return {true, "credential-assignment"};
         Piece literals(candidate.data(), candidate.size()), quoted, single, templated, bare;
         while (RE2::FindAndConsume(&literals, rules.literals, &quoted, &single, &templated))
-            if (secret_value(quoted) || secret_value(single) || secret_value(templated))
+            if (secret_value(quoted, rules) || secret_value(single, rules) || secret_value(templated, rules))
                 return {true, "credential-assignment"};
-        if (RE2::PartialMatch(candidate, rules.bare, &bare) && secret_value(bare))
+        if (RE2::PartialMatch(candidate, rules.bare, &bare) && secret_value(bare, rules))
             return {true, "credential-assignment"};
     }
     return {};

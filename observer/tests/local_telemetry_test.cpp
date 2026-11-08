@@ -209,6 +209,11 @@ int telemetry_scenario() {
             paused_telemetry.record("/project/paused", paused_state);
             paused_project = paused_telemetry.snapshot().at("project_states").at(0);
             if (paused_project.at("retry_reason") != "") return 59;
+            paused_state.erase("retry_reason");
+            paused_state["last_result"] = {{"ok", false}, {"phase", "coalescing"}, {"retry_reason", "writer-busy"}};
+            paused_telemetry.record("/project/paused", paused_state);
+            paused_project = paused_telemetry.snapshot().at("project_states").at(0);
+            if (paused_project.at("retry_reason") != "writer-busy" || paused_project.at("active_issue") != false) return 72;
         }
         {
             LocalTelemetry warned;

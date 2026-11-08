@@ -3,6 +3,7 @@
 #include "shin/observer/local_rpc.h"
 #include "shin/windows/transport.h"
 #include "context_internal.h"
+#include "local_refresh_deadline.h"
 #include <windows.h>
 #include <thread>
 
@@ -53,7 +54,8 @@ int local_refresh_worker() {
             if (error.code == "service-disconnected") return 0;
             throw;
         }
-        WorkerDeadline bound(60000); // Renew only for actual work, never idle time.
+        WorkerDeadline bound(static_cast<DWORD>(std::chrono::duration_cast<std::chrono::milliseconds>(
+            LocalRefreshDeadline::operation_limit).count())); // Bound blocked Core work independently of the parent.
         Json result;
         try {
             const auto payload = parse_json(input.read_frame(16384, deadline(2)));

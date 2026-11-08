@@ -7,6 +7,9 @@ int main() {
     const std::string opaque = "kV8mQ2xL9sN4" "pT6wY3dR7jC5";
     const std::string role = "support-operator-admin";
     const std::string install = "installation-release-integrity";
+    const std::string manifest =
+        "\napiVersion: v1\nkind: Secret\nmetadata: {name: workflow-runtime-settings-secrets}\n"
+        "stringData: {SERVICE_CONFIG: placeholder}\n";
     const std::vector<std::string> safe = {
         "SAMPLE_SERVICE_AUTH_JWT_SECRET: local-development-auth-jwt-secret",
         "var token = IssueForRole(services, key, \"" + role + "\", \"" + install + "\");",
@@ -33,6 +36,11 @@ int main() {
         "expect(url).toBe('https://service.test/continue?api_token=hello');\n",
         "fetch('https://service.test/continue?token=undefined');\nconst mode = AuthorizationHeadersVersion2;\n",
         "\"SENTRY_AUTH_TOKEN\": \"${SENTRY_AUTH_TOKEN}\"",
+        "append(\"&next_token=\")\nappend(URLEncoder.encode(nextToken, StandardCharsets.UTF_8))\n"
+        "val response = get(url, headers)\nreturn workflowRuntimeSettings\n",
+        "append('?next_token=');\nconst mode = AuthorizationHeadersVersion2;\n",
+        "append(`&next_token=`)\nconst mode = AuthorizationHeadersVersion2;\n",
+        "private const string Secret = \"\"\"" + manifest + "\"\"\";",
     };
     const std::vector<std::string> blocked = {
         "token = \"local-development-" + opaque + "\";",
@@ -65,6 +73,20 @@ int main() {
         "token = GetPrefix(); password = \"" + opaque + "\";",
         "token = static_cast<const char*>(\"" + opaque + "\");",
         "token = \"prefix\" + \"" + opaque + "\";",
+        "append(\"&next_token=" + opaque + "\");",
+        "append(\"&next_token=\" + \"" + opaque + "\");",
+        "const url = (\"?next_token=\") + \"" + opaque + "\";",
+        "append(\"&next_token=\"\n + \"" + opaque + "\");",
+        "append(\"&next_token=\");\nconst password = \"" + opaque + "\";",
+        "private const string Secret = \"\"\"" + manifest + "password: " + opaque + "\n\"\"\";",
+        "private const string Secret = \"\"\"\napiVersion: v1\nkind: Secret\n"
+        "metadata: {name: workflow-runtime-settings-secrets}\nstringData: {SERVICE_CONFIG: " + opaque + "}\n\"\"\";",
+        "private const string Secret = \"\"\"\napiVersion: v1\nkind: Secret\n"
+        "metadata: {name: workflow-runtime-settings-secrets}\nstringData: {SERVICE_CONFIG: " + install + "}\n\"\"\";",
+        "token = \"workflow-runtime-settings-secrets\";",
+        "private const string Secret = \"\"\"\napiVersion: v1\nkind: Secret\n"
+        "metadata: {name: sk-" + opaque + "}\nstringData: {SERVICE_CONFIG: placeholder}\n\"\"\";",
+        "private const string Secret = \"\"\"\nmetadata: {name: workflow-runtime-settings-secrets}\n\"\"\";",
         "token = condition ? \"" + opaque + "\" : fallback;",
         "Authorization: Bearer ${{ secrets.DEPLOYMENT_ACCESS_TOKEN }}\nAuthorization: Bearer " + opaque,
         "const harmless = 1;\nconst api_key = \"" + opaque + "\";",

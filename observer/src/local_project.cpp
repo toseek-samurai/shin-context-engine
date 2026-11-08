@@ -12,6 +12,7 @@
 #include "source_discovery.h"
 #include "snapshot_verification.h"
 #include "worktree_state.h"
+#include "validation_generation.h"
 #include "local_refresh_guard.h"
 #include "local_profile_revision.h"
 #include "local_partial_context.h"
@@ -48,7 +49,11 @@ template<class Invoke> Json core_result(Invoke&& invoke) {
     return result;
 }
 
-Json bootstrap_readiness(const core::RuntimeOptions& options) {
+Json bootstrap_readiness(const core::RuntimeOptions& input_options) {
+    auto options = input_options;
+    options.generation_admission.reset();
+    options.validation_generation = std::make_shared<core::ValidationGeneration>(options);
+    const auto initial_generations = core::generation_execution_count();
     Json result = {{"ok", false}, {"scope", "local-integrity-and-currentness"},
                    {"project_quality", "not-configured"}, {"local_link_policy", "diagnostic"}, {"gates", Json::array()}};
     try {
@@ -75,6 +80,8 @@ Json bootstrap_readiness(const core::RuntimeOptions& options) {
         result["error"] = {{"code", error.code()}, {"message", error.what()}};
         result["gates"].push_back({{"id", "bootstrap"}, {"status", "failed"}, {"error", result.at("error")}});
     }
+    result["preparation"] = options.validation_generation->metrics();
+    result["preparation"]["generation_runs"] = core::generation_execution_count() - initial_generations;
     return result;
 }
 
@@ -141,7 +148,7 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
         validation_args.push_back("--marker");
         validation_args.push_back(marker);
     }
-    const auto before_validation = grant ? core::generation_fingerprint(prepared_options) : "";
+    const auto before_validation = core::generation_fingerprint(prepared_options);
     const auto checked = prepare_with_source_fence(verify_authority, source_fence, [&] {
         return grant ? core_result([&] { return validate_refresh_candidate(prepared_options, config.profile_dir, validation_args, verify_authority, source_fence); }) :
                        bootstrap_readiness(prepared_options);
@@ -154,11 +161,9 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
         throw Error("refresh-validation-failed", "Candidate validation failed; the previous index is preserved.",
                     validation_diagnostic(checked));
     }
-    if (grant) {
-        prepared_options.generation_admission = core::GenerationAdmission::reuse(prepared_options, before_validation);
-        if (!prepared_options.generation_admission)
-            throw Error("qualification-inputs-changed", "Candidate dependencies changed during strict validation.");
-    }
+    prepared_options.generation_admission = core::GenerationAdmission::reuse(prepared_options, before_validation);
+    if (!prepared_options.generation_admission)
+        throw Error("qualification-inputs-changed", "Candidate dependencies changed during strict validation.");
     refresh_progress(progress, grant ? "candidate-source-cache" : "source-cache");
     std::unique_ptr<core::SourceDiscoveryIndex> prepared_source_index;
     prepare_with_source_fence(verify_authority, source_fence, [&] {
@@ -180,13 +185,12 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
     }
     core::require_worktree_stable(options, inventory);
     verify_authority();
-    const auto candidate_snapshot = grant ? core::load_verified_snapshot(candidate.path, config.max_snapshot_bytes, config.max_file_bytes).snapshot_id : "";
+    const auto candidate_snapshot = core::load_verified_snapshot(candidate.path, config.max_snapshot_bytes, config.max_file_bytes).snapshot_id;
     if (accept_revision) accept_revision();
     if (grant) grant->preparing(base, candidate_snapshot,
         accept_revision && grant->approved_profile_hash() != options.profile.config_hash ? options.profile.config_hash : "");
     shin::generated_io::publish_snapshot(options.out_root, core::kGeneratedDir, generated.files);
     if (grant) grant->committed(candidate_snapshot);
-    if (!grant) return std::nullopt;
     // Transfer only the exact validated byte/dependency closure. The destination
     // remains protected by its writer fence; neither this proof nor its hash grants rights.
     const auto source_lock = core::lock_index_for_read(candidate.path);
@@ -200,7 +204,8 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
     published_options.generation_admission = admission;
     refresh_progress(progress, "source-cache-transfer");
     prepare_with_source_fence(verify_authority, source_fence, [&] {
-        prepared_source_index->persist_published_cache(published_options, workspace / "source-cache");
+        prepared_source_index->persist_published_cache(published_options,
+            grant ? workspace / "source-cache" : config.state_dir / "source-cache");
     });
     const auto metrics = prepared_source_index->preparation_metrics();
     Json work{{"source_files", metrics.at("files")}, {"source_bytes", metrics.at("source_bytes")},
@@ -1479,10 +1484,11 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const auto quality_key = qualification_key(binding, options.profile.config_hash, std::nullopt,
                                                refresh && request.refresh_session);
     std::optional<core::VerifiedSnapshot> reader_snapshot;
+    std::optional<RefreshQualification> published_qualification;
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
         return qualified_readiness(options, {}, config, workspace, binding, quality_key,
-            {}, nullptr, request.query_session ? &reader_snapshot : nullptr, fresh_kit);
+            published_qualification, nullptr, request.query_session ? &reader_snapshot : nullptr, fresh_kit);
     };
     const auto qualify = [&](const Json& readiness) {
         if (readiness.at("ok") == true && readiness.at("quality_reuse").at("reused") == false)
@@ -1565,8 +1571,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         store.recover_pending();
         authority();
         if (fresh_kit || observation.at("snapshot_current") != true) {
-            publish_refreshed(options, config, workspace, request.maintenance_worktree, authority, nullptr, repair, {}, request.maintenance_progress);
+            published_qualification = publish_refreshed(options, config, workspace, request.maintenance_worktree, authority, nullptr, repair, {}, request.maintenance_progress);
             result["rebuilt"] = true;
+            result["refresh_work"] = published_qualification->work;
         }
         const auto observed = run_observer(config, 1, [] { return false; });
         const auto read = core::lock_index_for_read(options.out_root);
@@ -1579,7 +1586,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             if (current.at("status") == "stale" && current.at("worktree_id") != observed.at("observation").at("worktree_id"))
                 throw Error("refresh-superseded", "Source changed during search preparation.");
         }, [&] {
-            prepare_source_cache(options, config.state_dir / "source-cache", fresh_kit);
+            if (!published_qualification || !published_qualification->source_cache_transferred)
+                prepare_source_cache(options, config.state_dir / "source-cache", fresh_kit);
         });
         authority();
         const auto freshness = core::assess_index_freshness(options, true);
@@ -1958,7 +1966,15 @@ private:
         const auto code = error.at("code").get<std::string>();
         // Do not infer transience from a generic "changed" suffix: identity,
         // authority and publication changes require their existing hard refusal.
-        if (code == "file-changed-during-verification" || code == "refresh-superseded" ||
+        if (code == "writer-busy" || code == "project-busy") {
+            // Another owned maintenance operation is temporary contention, not
+            // a failed project check. Retire the observation token and retry
+            // through ordinary qualification; never manufacture readiness.
+            failures = 0;
+            request.maintenance_worktree.clear();
+            state["phase"] = "coalescing";
+            state["last_result"] = {{"ok", false}, {"phase", "coalescing"}, {"retry_reason", code}};
+        } else if (code == "file-changed-during-verification" || code == "refresh-superseded" ||
             code == "refresh-suspended") {
             failures = 0;
             request.maintenance_worktree.clear();

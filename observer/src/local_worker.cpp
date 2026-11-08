@@ -7,6 +7,7 @@
 #include "shin/observer/local_query.h"
 #include "shin/observer/local_registry.h"
 #include "local_refresh_session.h"
+#include "local_refresh_deadline.h"
 #include "context_internal.h"
 #include <chrono>
 #include <atomic>
@@ -47,18 +48,31 @@ Json request_local_worker(const LocalProjectRequest& request, const fs::path& ex
             {"root_identity", root_id}, {"workspace_identity", workspace_id}, {"query", request.query},
             {"path", request.path}, {"record", request.record}, {"snapshot", request.snapshot}});
     }
-    if (refresh && request.maintenance_progress) payload["diagnostics"] = true;
+    if (refresh) payload["diagnostics"] = true;
     const auto reaping = service_reaping();
     LocalWorkerProcess child(executable, refresh ? LocalWorkerRole::refresh : LocalWorkerRole::read);
     child.send(payload, Clock::now() + std::chrono::seconds(2), cancelled);
+    LocalRefreshDeadline budget;
+    bool deadline_expired = false;
+    const auto checked = [&] {
+        if (cancelled && cancelled()) return true;
+        deadline_expired = refresh && budget.expired();
+        return deadline_expired;
+    };
     std::function<void(const Json&)> progress;
-    if (refresh && request.maintenance_progress) progress = [&](const Json& frame) {
+    if (refresh) progress = [&](const Json& frame) {
+            if (frame.value("kind", "") != "progress" || !frame.value("elapsed_ms", Json()).is_number()) return;
             const auto stage = frame.value("stage", "");
-            const std::set<std::string> allowed{"admission", "observation", "candidate-build", "candidate-validation",
-                "publication", "qualification", "source-cache", "candidate-source-cache", "source-cache-transfer", "final-verification"};
-            if (allowed.contains(stage)) try { request.maintenance_progress(stage); } catch (...) { return; }
+            if (budget.observe(stage, frame.at("elapsed_ms").get<double>()) && request.maintenance_progress)
+                try { request.maintenance_progress(stage); } catch (...) { return; }
         };
-    const auto response = child.receive(Clock::now() + std::chrono::seconds(refresh ? 60 : 35), cancelled, progress);
+    Json response;
+    try { response = child.receive(refresh ? budget.operation_deadline() : Clock::now() + std::chrono::seconds(35), checked, progress); }
+    catch (const Error& error) {
+        if (refresh && (error.code == "service-timeout" || (deadline_expired && error.code == "service-request-cancelled")))
+            throw Error("refresh-timeout", "Refresh stalled for 60 seconds in one stage or exceeded its 3-minute operation deadline.");
+        throw;
+    }
     child.stop();
     if (!refresh) return local_rpc::project_response(response, id);
     if (!response.is_object() || !response.contains("ok") || !response.at("ok").is_boolean())

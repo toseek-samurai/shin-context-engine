@@ -2,6 +2,7 @@
 #include "shin/observer/local_worker.h"
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_rpc.h"
+#include "../src/local_refresh_deadline.h"
 #include <fstream>
 #include <iostream>
 #include <cmath>
@@ -21,6 +22,32 @@ using namespace shin::observer;
 
 void expect(bool value) {
     if (!value) throw std::runtime_error("local suspend observation");
+}
+
+void refresh_deadline() {
+    using namespace std::chrono;
+    const auto start = LocalRefreshDeadline::Clock::time_point{};
+    LocalRefreshDeadline moving(start);
+    expect(moving.observe("candidate-build", 59000, start + seconds(59)));
+    expect(!moving.expired(start + seconds(61)));
+    expect(moving.observe("candidate-build", 118000, start + seconds(118)));
+    expect(moving.expired(start + seconds(119))); // same-stage heartbeat cannot extend the stall
+    expect(!moving.observe("publication", 119000, start + seconds(119))); // no revival after expiry
+    LocalRefreshDeadline bounded(start);
+    expect(bounded.observe("candidate-build", 40000, start + seconds(40)));
+    expect(bounded.observe("candidate-validation", 80000, start + seconds(80)));
+    expect(bounded.observe("publication", 120000, start + seconds(120)));
+    expect(bounded.observe("source-cache-transfer", 160000, start + seconds(160)));
+    expect(!bounded.expired(start + seconds(179)) && bounded.expired(start + seconds(180)));
+    LocalRefreshDeadline invalid(start);
+    expect(!invalid.observe("unknown-stage", 59000, start + seconds(59)));
+    expect(!invalid.observe("publication", std::numeric_limits<double>::quiet_NaN(), start + seconds(59)));
+    expect(!invalid.observe("publication", 180001, start + seconds(59)));
+    expect(invalid.expired(start + seconds(60)));
+    LocalRefreshDeadline monotonic(start);
+    expect(monotonic.observe("candidate-build", 20000, start + seconds(20)));
+    expect(!monotonic.observe("publication", 19000, start + seconds(79)));
+    expect(monotonic.expired(start + seconds(80)));
 }
 
 LocalSuspendObservation scripted(std::vector<std::optional<SleepSample>> samples) {
@@ -365,6 +392,7 @@ int main(int argc, char** argv) {
         if (argc == 2 && std::string_view(argv[1]) == "_service-worker") return local_service_worker();
         if (argc != 1) return 2;
         suspend_observation();
+        refresh_deadline();
         scenario(); std::cout << "shared worker pump, isolation, refresh and RAM passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << error.what() << '\n'; return 1; }

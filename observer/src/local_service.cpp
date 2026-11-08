@@ -11,6 +11,7 @@
 #include "shin/observer/local_telemetry.h"
 #include "shin/observer/resident_retention.h"
 #include "local_startup.h"
+#include "local_refresh_deadline.h"
 #include "source_discovery.h"
 #include <algorithm>
 #include <cmath>
@@ -168,8 +169,6 @@ public:
         const auto wall_started = std::chrono::system_clock::now();
         LocalSuspendObservation suspension;
         Json work = Json::object();
-        const std::set<std::string> refresh_stages{"admission", "observation", "candidate-build", "candidate-validation",
-            "publication", "qualification", "source-cache", "candidate-source-cache", "source-cache-transfer", "final-verification"};
         Json phases = Json::object();
         std::string last_stage;
         auto last_progress = started;
@@ -214,7 +213,14 @@ public:
             {"root_identity", request.maintenance_root_identity},
             {"workspace_identity", request.maintenance_workspace_identity},
             {"worktree", request.maintenance_worktree}, {"diagnostics", true}};
-        const auto pump = [&] { poll(); return stopping || stopped(); };
+        LocalRefreshDeadline budget;
+        bool deadline_expired = false;
+        const auto pump = [&] {
+            poll();
+            if (stopping || stopped()) return true;
+            deadline_expired = budget.expired();
+            return deadline_expired;
+        };
         worker.send(payload, Clock::now() + std::chrono::seconds(2), pump);
         // Only one refresh is active. Keep accepting independent queries and stop
         // requests even when this project's Core call waits on an index lock.
@@ -223,20 +229,20 @@ public:
             if (!frame.is_object() || frame.value("kind", "") != "progress") return;
             const auto stage = frame.value("stage", "");
             const auto elapsed = frame.value("elapsed_ms", Json());
-            if (!refresh_stages.contains(stage) || !elapsed.is_number()) return;
+            if (!elapsed.is_number()) return;
             const auto value = elapsed.get<double>();
-            if (!std::isfinite(value) || value < last_elapsed_ms || value > 60000.0) return;
             const auto now = Clock::now();
+            if (!budget.observe(stage, value, now)) return;
             finish_stage(now, std::max(0.0, value - last_elapsed_ms));
             last_stage = stage;
             last_elapsed_ms = value;
             last_progress = now;
         };
-        const auto receive_deadline = Clock::now() + std::chrono::seconds(60);
         try {
-            result = worker.receive(receive_deadline, pump, receive_progress);
+            result = worker.receive(budget.operation_deadline(), pump, receive_progress);
         } catch (const Error& error) {
-            if (error.code == "service-timeout") throw Error("refresh-timeout", "Refresh exceeded its 60-second worker deadline.");
+            if (error.code == "service-timeout" || (deadline_expired && error.code == "service-request-cancelled"))
+                throw Error("refresh-timeout", "Refresh stalled for 60 seconds in one stage or exceeded its 3-minute operation deadline.");
             throw;
         }
         if (result.contains("error"))
@@ -286,10 +292,13 @@ public:
         const auto root = request.root.string();
         if (!error.empty()) {
             qualified.erase(root); discard_resident(root, error); enrollment_errors[root] = error;
-            project_state(request.root, {{"phase", "blocked"}, {"ticks", 0}, {"publications", 0}, {"failures", 1},
+            const bool pending = error == "writer-busy" || error == "project-busy";
+            const Json detail = pending ? Json{{"ok", false}, {"phase", "coalescing"}, {"retry_reason", error}} :
+                Json{{"ok", false}, {"error", {{"code", error}, {"message", "Registered project preparation requires attention."}}}};
+            project_state(request.root, {{"phase", pending ? "coalescing" : "blocked"},
+                {"ticks", 0}, {"publications", 0}, {"failures", pending ? 0 : 1},
                 {"refresh_authority", "unqualified"},
-                {"last_result", {{"ok", false}, {"error", {{"code", error},
-                    {"message", "Registered project preparation requires attention."}}}}}});
+                {"last_result", detail}});
             return;
         }
         bindings.emplace(root, std::pair{request.maintenance_root_identity, request.maintenance_workspace_identity});

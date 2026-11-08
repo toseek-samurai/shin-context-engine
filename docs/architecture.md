@@ -70,8 +70,13 @@ its identity and metadata before/after, without starting a native event stream.
 An idle observation reports `content_reverified: false` and
 `verification_level: source-inventory-and-metadata-observed`; it does not create
 a new full-audit receipt. Query/read still verify the selected source bytes.
-Each active refresh retains its 60-second deadline and suspend/cancellation
-checks. System sleep between completed operations starts a new operation clock.
+Current source bounds each active refresh to three minutes, with a 60-second
+deadline per stage. A recognized stage change renews the stage budget; repeated
+heartbeats, invalid stages and regressing elapsed times do not. Suspend and
+cancellation checks remain active. System sleep between completed operations
+starts a new operation clock. Bootstrap validation shares one independently
+generated expectation across its integrity gates, then transfers the validated
+candidate's admission and reader cache to the published generation.
 
 Quality gates combine source/profile validation, generated-index integrity,
 declared retrieval cases, Pack completion and resource checks. CTest separately

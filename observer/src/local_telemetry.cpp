@@ -115,7 +115,9 @@ void LocalTelemetry::detach(const fs::path& root) {
 
 void LocalTelemetry::record(const fs::path& root, const Json& state) {
     static const std::set<std::string> retry_reasons_allowed{"refresh-suspended", "refresh-superseded",
-        "file-changed-during-verification"};
+        "file-changed-during-verification", "writer-busy", "project-busy"};
+    const auto last = state.value("last_result", Json::object());
+    const auto retry = state.value("retry_reason", last.is_object() ? last.value("retry_reason", "") : std::string{});
     const auto key = root.string();
     if (!projects.contains(key) && projects.size() >= 16) return;
     auto& project = projects[key];
@@ -135,8 +137,7 @@ void LocalTelemetry::record(const fs::path& root, const Json& state) {
         {"preparations", state.value("preparations", std::uint64_t{0})}, {"failures", state.at("failures")},
         {"superseded_refreshes", state.value("superseded_refreshes", std::uint64_t{0})},
         {"suspended_refreshes", state.value("suspended_refreshes", std::uint64_t{0})},
-        {"retry_reason", retry_reasons_allowed.contains(state.value("retry_reason", ""))
-            ? state.value("retry_reason", "") : ""},
+        {"retry_reason", retry_reasons_allowed.contains(retry) ? retry : ""},
         {"recoveries", state.value("recoveries", std::uint64_t{0})},
         {"last_recovery", state.value("last_recovery", "")},
         {"retry_after_ms", state.value("retry_after_ms", 1000)},

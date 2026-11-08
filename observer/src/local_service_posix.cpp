@@ -3,6 +3,7 @@
 #include "shin/observer/local_worker.h"
 #include "shin/observer/local_rpc.h"
 #include "context_internal.h"
+#include "local_refresh_deadline.h"
 #include <algorithm>
 #include <array>
 #include <cerrno>
@@ -347,7 +348,7 @@ int local_refresh_worker() {
         if (available < 0 && errno == EINTR) continue;
         if (available < 0 || (input.revents & (POLLHUP | POLLERR | POLLNVAL))) return 0;
         if (!available) continue;
-        ::alarm(60);
+        ::alarm(static_cast<unsigned>(LocalRefreshDeadline::operation_limit.count()));
         Json result;
         try {
             require_peer(STDIN_FILENO);

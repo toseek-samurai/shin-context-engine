@@ -2,6 +2,8 @@
 #include "shin/observer/observer.h"
 #include "shin/windows/file.h"
 #include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 #include <array>
 #include <functional>
 #include <set>
@@ -9,6 +11,72 @@
 #include <algorithm>
 
 namespace shin::observer::windows_update {
+// Windows Installer reads the public MSI through its SYSTEM service. Keep the
+// private journal/helper ACLs intact and lend only this pinned payload read access.
+class InstallerReadAccess {
+    shin::windows::ReadFile pinned_;
+    std::wstring name_;
+    PSECURITY_DESCRIPTOR original_=nullptr;
+    bool granted_=false;
+    static void require(bool ok) {
+        if(!ok) throw Error("update-installer-access-unavailable","Windows Installer payload access could not be verified.");
+    }
+public:
+    explicit InstallerReadAccess(const fs::path& path):pinned_(path),name_(path.wstring()) {
+        pinned_.require_user_owned();
+        std::replace(name_.begin(),name_.end(),L'/',L'\\');
+        if(!name_.starts_with(L"\\\\?\\")) name_=L"\\\\?\\"+name_;
+        try {
+            PSID owner=nullptr;PACL original_acl=nullptr;
+            require(GetNamedSecurityInfoW(name_.data(),SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
+                &owner,nullptr,&original_acl,nullptr,&original_)==ERROR_SUCCESS);
+            SECURITY_DESCRIPTOR_CONTROL control{};DWORD revision=0;
+            require(GetSecurityDescriptorControl(original_,&control,&revision) && (control&SE_DACL_PROTECTED) &&
+                owner && original_acl && original_acl->AceCount==1);
+            void* entry=nullptr;require(GetAce(original_acl,0,&entry)!=FALSE);
+            const auto* ace=static_cast<const ACCESS_ALLOWED_ACE*>(entry);
+            require(ace->Header.AceType==ACCESS_ALLOWED_ACE_TYPE && ace->Header.AceFlags==0 &&
+                ace->Mask==FILE_ALL_ACCESS && EqualSid(owner,const_cast<DWORD*>(&ace->SidStart)));
+            LPWSTR sid=nullptr;require(ConvertSidToStringSidW(owner,&sid)!=FALSE);
+            std::wstring sddl;
+            try {sddl=L"D:P(A;;FA;;;"+std::wstring(sid)+L")(A;;FR;;;SY)";} catch(...) {LocalFree(sid);throw;}
+            LocalFree(sid);
+            PSECURITY_DESCRIPTOR readable=nullptr;
+            require(ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.c_str(),SDDL_REVISION_1,&readable,nullptr)!=FALSE);
+            PACL acl=nullptr;BOOL present=FALSE,defaulted=FALSE;
+            const bool valid=GetSecurityDescriptorDacl(readable,&present,&acl,&defaulted)!=FALSE && present && acl;
+            const DWORD result=valid?SetNamedSecurityInfoW(name_.data(),SE_FILE_OBJECT,
+                DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,nullptr,nullptr,acl,nullptr):ERROR_INVALID_ACL;
+            LocalFree(readable);require(result==ERROR_SUCCESS);
+            granted_=true;pinned_.require_user_owned();
+        } catch(...) {restore();if(original_) LocalFree(original_);original_=nullptr;throw;}
+    }
+    InstallerReadAccess(const InstallerReadAccess&)=delete;
+    InstallerReadAccess& operator=(const InstallerReadAccess&)=delete;
+    bool restore() noexcept {
+        if(!granted_) return true;
+        PACL acl=nullptr;BOOL present=FALSE,defaulted=FALSE;
+        if(!GetSecurityDescriptorDacl(original_,&present,&acl,&defaulted) || !present || !acl) return false;
+        if(SetNamedSecurityInfoW(name_.data(),SE_FILE_OBJECT,DACL_SECURITY_INFORMATION|PROTECTED_DACL_SECURITY_INFORMATION,
+            nullptr,nullptr,acl,nullptr)!=ERROR_SUCCESS) return false;
+        granted_=false;return true;
+    }
+    ~InstallerReadAccess() {restore();if(original_) LocalFree(original_);}
+};
+inline bool update_can_retry_without_install(const Json& saved) {
+    if(!saved.is_object() || !saved.contains("phase") || !saved.at("phase").is_string()) return false;
+    const auto& phase=saved.at("phase").get_ref<const std::string&>();
+    const std::set<std::string> before{"reviewed","checking","downloading","verifying","waiting-monitor"};
+    if(before.contains(phase)) return true;
+    if(phase!="review-required" || !saved.contains("error_code") || !saved.at("error_code").is_string()) return false;
+    const auto& error=saved.at("error_code").get_ref<const std::string&>();
+    const std::set<std::string> no_install{"update-uac-cancelled","update-offer-changed","update-download-invalid",
+        "update-helper-launch-failed","update-monitor-running"};
+    if(no_install.contains(error)) return true;
+    return error=="update-msi-failed" && saved.contains("installer_exit_code") &&
+        saved.at("installer_exit_code").is_number_integer() &&
+        saved.at("installer_exit_code").get<std::int64_t>()==ERROR_INSTALL_PACKAGE_OPEN_FAILED;
+}
 inline fs::path msi_install_root(fs::path path) {
     // Windows Installer directory properties end in a separator. Remove only
     // that spelling detail; native IO must still reject aliases and reparse paths.

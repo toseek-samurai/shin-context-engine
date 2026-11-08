@@ -152,7 +152,7 @@
     "docs/machine/hermes-agent-integration-v1.json",
     "docs/machine/static-analysis-v1.json",
     "docs/machine/shin-context-engine.manifest.json",
-    "docs/kb/generated/manifest.json"
+    "profiles/shin.json"
   ],
   "markdownMaxHeadingLevel": 4,
   "markdownChunkLines": 24,

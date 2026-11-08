@@ -106,6 +106,24 @@ never retries an unknown installation automatically. New package qualification
 also exercises the real registered MSI path and protected helper staging under a
 standard-user token, before the guarded publisher accepts the package receipt.
 
+### Review a failed Windows Installer launch
+
+An interrupted or failed update keeps **Download and install** disabled until
+**Review previous update** confirms its result. Keep its diagnostic report and
+Installer log. An unknown installation outcome must not trigger another install.
+
+The dev.107 source includes a correction for error `1619` (the MSI
+could not be opened). The verified, pinned MSI temporarily grants SYSTEM read
+access while Windows Installer runs; the journal, helper, project data and
+approvals keep their private permissions. The MSI's original permissions are
+restored when the handoff ends. Review can acknowledge this opening failure only
+when the original installed version and its complete inventory still verify.
+Other failed Installer outcomes continue to require review.
+
+For an affected published kit, install the complete published MSI with its
+matching checksum through Windows Installer, then finish project preparation.
+This correction is not present in the published dev.106 package.
+
 ## Monitor setup and updates
 
 The following behavior is included in preview dev.74.

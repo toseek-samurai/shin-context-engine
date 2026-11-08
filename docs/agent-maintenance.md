@@ -32,6 +32,8 @@ For release version changes, synchronize `developmentLane.coreVersion` and
 with the component version files. Before tagging, run both
 `shin-context-universality` and `shin-context-codex-skill`; the latter also checks
 the root agent-entry byte budget after maintenance-policy edits.
+Budgeted `AGENTS.md` and `SKILL.md` entrypoints use LF on every platform so
+checkout newline conversion cannot change those byte counts.
 
 Before tagging a Core or Observer change, also build the native Observer with
 source discovery and MCP enabled and run its complete CTest suite with
@@ -102,6 +104,14 @@ Profiles classify current product contracts and source by component. Preserve
 the declared source, byte, output and quality bounds. Fixture changes must retain
 the positive and negative behaviors that motivated each test. Historical
 measurements do not qualify a new source tree or binary.
+
+The Core self-profile's required agent entrypoints refer to current source files,
+including `profiles/shin.json` for input ownership, start paths and retrieval
+checks. They must validate before a self index exists. After building, inspect
+`docs/kb/generated/manifest.json` under the explicit external `CONTEXT_OUT` for
+generated counts and snapshot metadata. Do not copy that artifact into the
+checkout to satisfy source qualification. Profiles that explicitly require a
+generated start path still require it under their selected output root.
 
 Self-development scopes are declared by the
 [component profile contract](machine/shin-component-profiles-v1.json). UI work

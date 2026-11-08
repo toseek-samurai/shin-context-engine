@@ -3,6 +3,10 @@
 /observer/**/*.sh.in text eol=lf
 /tests/**/*.sh text eol=lf
 
+# Budgeted agent entrypoints have the same byte count on every checkout.
+AGENTS.md text eol=lf
+**/SKILL.md text eol=lf
+
 # Keep vendored syntax sources byte-identical to their pinned upstream releases.
 third_party/tree-sitter/** -whitespace linguist-vendored
 third_party/tree-sitter-java/** -whitespace linguist-vendored

@@ -338,7 +338,10 @@ if(SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
         add_executable(shin-resident-storage-bench tests/benchmarks/resident_storage_bench.cpp)
         target_link_libraries(shin-resident-storage-bench PRIVATE shin-source-discovery-provider)
         add_test(NAME shin-context-source-discovery COMMAND shin-source-discovery-tests ${CMAKE_CURRENT_BINARY_DIR})
-        set_tests_properties(shin-context-source-discovery PROPERTIES TIMEOUT 60)
+        # This suite launches eight readers internally and exercises shared
+        # storage. Reserve the four-slot qualification workload rather than
+        # nesting it beside three other full lifecycle/storage suites.
+        set_tests_properties(shin-context-source-discovery PROPERTIES TIMEOUT 60 PROCESSORS 4)
     endif()
 endif()
 if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)

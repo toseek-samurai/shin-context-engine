@@ -178,6 +178,7 @@ void install(const fs::path& folder) {
             shin::windows::ReadFile log(folder/"installer.log",shin::windows::ReadFile::Sharing::concurrent_writer);log.require_user_owned();
             if(pinned.stamp().bytes!=total || digest(pinned.read(static_cast<std::size_t>(total)))!=offer.at("sha256").get_ref<const std::string&>())
                 throw Error("update-stage-changed","The verified installer changed.");
+            windows_update::InstallerReadAccess installer_access(folder/"installer.msi");
             std::array<wchar_t,32768> system{};const UINT length=GetSystemDirectoryW(system.data(),static_cast<UINT>(system.size()));
             if(!length || length>=system.size()) throw Error("update-installer-unavailable","Windows Installer is unavailable.");
             const auto executable=fs::path(system.data())/"msiexec.exe";
@@ -188,6 +189,8 @@ void install(const fs::path& folder) {
             start.lpVerb=L"runas";start.lpFile=executable.c_str();start.lpParameters=arguments.c_str();start.nShow=SW_SHOWNORMAL;
             if(!ShellExecuteExW(&start) || !start.hProcess) throw Error(GetLastError()==ERROR_CANCELLED?"update-uac-cancelled":"update-installer-unavailable","Windows Installer did not start.");
             WaitForSingleObject(start.hProcess,INFINITE);GetExitCodeProcess(start.hProcess,&code);CloseHandle(start.hProcess);
+            receipt["installer_exit_code"]=code;state->save(receipt);
+            if(!installer_access.restore()) throw Error("update-installer-access-unavailable","Installer payload privacy could not be restored.");
         }
         receipt["installer_exit_code"]=code;
         if(code!=0 && code!=3010 && code!=1641) throw Error("update-msi-failed","Windows Installer did not confirm success. Review its result before retrying.");

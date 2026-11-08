@@ -125,11 +125,11 @@ class SelfProfileTests(unittest.TestCase):
         return json.loads((cls.root / path).read_text())
 
     @classmethod
-    def run_tool(cls, *arguments, profile="shin", expected=0):
+    def run_tool(cls, *arguments, profile="shin", expected=0, output=None, profiles=None):
         command = [
             str(TOOL), "--profile", profile,
-            "--profile-dir", str(cls.root / "profiles"),
-            "--root", str(cls.root), "--out-dir", str(cls.work / profile),
+            "--profile-dir", str(profiles or cls.root / "profiles"),
+            "--root", str(cls.root), "--out-dir", str(output or cls.work / profile),
             *arguments,
         ]
         result = subprocess.run(command, capture_output=True, text=True, timeout=60)
@@ -190,6 +190,61 @@ class SelfProfileTests(unittest.TestCase):
         self.assertFalse(self.companion_documents & indexed)
         self.assertEqual(self.manifest["source_fact_counts"]["capped_files"], 0)
         self.assertEqual(self.manifest["source_fact_counts"]["skipped_large_files"], 0)
+
+    def test_source_start_paths_validate_before_external_generation(self):
+        output = self.work / "unbuilt-source-profile"
+        self.assertFalse((self.root / "docs/kb/generated/manifest.json").exists())
+        self.assertFalse(output.exists())
+        self.assertIn("profiles/shin.json", self.profile["agentStartPaths"])
+        self.assertIn("profiles/shin.json", self.profile["rootFiles"])
+        self.assertFalse(any(path.startswith("docs/kb/generated/")
+                             for path in self.profile["agentStartPaths"]))
+        result = self.run_tool("profile-check", "--strict", output=output)
+        self.assertTrue(result["ok"], result)
+        self.assertEqual(result["counts"]["errors"], 0)
+        self.assertFalse(output.exists(), "Read-only source checking created output")
+
+    def test_missing_source_start_path_remains_a_strict_error(self):
+        # Load the same policy externally so removing its required source locator
+        # tests profile validation rather than failing earlier during JSON loading.
+        profiles = self.work / "source-start-check-profiles"
+        profiles.mkdir()
+        source = self.root / "profiles/shin.json"
+        (profiles / "shin.json").write_bytes(source.read_bytes())
+        hidden = self.work / "required-source-profile.json"
+        source.rename(hidden)
+        try:
+            result = self.run_tool("profile-check", "--strict", expected=1,
+                                   profiles=profiles, output=self.work / "missing-source-output")
+            self.assertFalse(result["ok"])
+            issues = {(item["id"], item["path"]) for item in result["issues"]}
+            self.assertIn(("missing-agent-start-path", "profiles/shin.json"), issues)
+            self.assertIn(("missing-root-file", "profiles/shin.json"), issues)
+        finally:
+            hidden.rename(source)
+
+    def test_explicit_generated_start_path_requires_external_generation(self):
+        profiles = self.work / "generated-start-check-profiles"
+        profiles.mkdir()
+        policy = json.loads(json.dumps(self.profile))
+        generated = "docs/kb/generated/manifest.json"
+        policy["agentStartPaths"].append(generated)
+        (profiles / "shin.json").write_text(json.dumps(policy))
+        output = self.work / "generated-start-output"
+        with self.changed_files({generated: b'{"summary":"Synthetic source-local decoy"}\n'}):
+            result = self.run_tool("profile-check", "--strict", expected=1,
+                                   profiles=profiles, output=output)
+            self.assertFalse(result["ok"])
+            self.assertIn(("missing-agent-start-path", generated),
+                          {(item["id"], item["path"]) for item in result["issues"]})
+            self.assertFalse(output.exists())
+            self.run_tool("build", profiles=profiles, output=output)
+            manifest = output / generated
+            self.assertTrue(manifest.is_file())
+            self.assertNotEqual(manifest.read_bytes(), (self.root / generated).read_bytes())
+            checked = self.run_tool("profile-check", "--strict", profiles=profiles, output=output)
+            self.assertTrue(checked["ok"], checked)
+            self.assertEqual(checked["counts"]["errors"], 0)
 
     def test_machine_document_inventory_has_explicit_owners(self):
         self.assertEqual(

@@ -7,12 +7,18 @@
 #include "../tray/windows_download.h"
 #include "../tray/windows_installation.h"
 #include <windows.h>
+#include <aclapi.h>
+#include <sddl.h>
 #include <sqlite3.h>
+#include <array>
+#include <cstring>
 #include <iostream>
 #include <fstream>
 #include <chrono>
 #include <ctime>
 #include <thread>
+#include <vector>
+#include "../../tests/core/windows_private_acl.h"
 using namespace shin::observer;
 namespace {
 std::wstring wide(const std::string& value) {return windows_update::wide_url(value);}
@@ -29,6 +35,151 @@ void wait_for_fixture_service_stop(const fs::path& home) {
     while(owner.writer_present()&&std::chrono::steady_clock::now()<deadline)
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     require(!owner.writer_present(),"fixture service did not finish shutdown");
+}
+struct InstallerAcl {
+    std::unique_ptr<void,decltype(&LocalFree)> descriptor{nullptr,LocalFree};
+    PACL acl=nullptr;PSID owner=nullptr;SECURITY_DESCRIPTOR_CONTROL control{};
+    explicit InstallerAcl(const fs::path& path) {
+        const auto file=CreateFileW(path.c_str(),READ_CONTROL,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+            nullptr,OPEN_EXISTING,FILE_FLAG_BACKUP_SEMANTICS|FILE_FLAG_OPEN_REPARSE_POINT,nullptr);
+        require(file!=INVALID_HANDLE_VALUE,"cannot inspect installer ACL fixture");
+        PSECURITY_DESCRIPTOR raw=nullptr;
+        const auto status=GetSecurityInfo(file,SE_FILE_OBJECT,OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,
+            &owner,nullptr,&acl,nullptr,&raw);
+        CloseHandle(file);descriptor.reset(raw);
+        require(status==ERROR_SUCCESS&&owner&&acl,"installer ACL was not available");
+        DWORD revision=0;
+        require(GetSecurityDescriptorControl(raw,&control,&revision)!=FALSE,"cannot inspect installer ACL protection");
+    }
+    ACCESS_MASK effective(PSID sid) const {
+        TRUSTEE_W trustee{};BuildTrusteeWithSidW(&trustee,sid);ACCESS_MASK rights=0;
+        require(GetEffectiveRightsFromAclW(acl,&trustee,&rights)==ERROR_SUCCESS,"cannot inspect installer effective rights");
+        return rights;
+    }
+    ACCESS_MASK effective(WELL_KNOWN_SID_TYPE type) const {
+        std::array<unsigned char,SECURITY_MAX_SID_SIZE> sid{};DWORD bytes=static_cast<DWORD>(sid.size());
+        require(CreateWellKnownSid(type,nullptr,sid.data(),&bytes)!=FALSE,"cannot create installer principal fixture");
+        return effective(sid.data());
+    }
+    std::wstring spelling() const {
+        // SetNamedSecurityInfo may mark even a protected DACL auto-inherited.
+        // Ignore only that OS bookkeeping bit; preserve owner, ACEs and every
+        // other control bit when comparing the restored security policy.
+        std::vector<unsigned char> copy(GetSecurityDescriptorLength(descriptor.get()));
+        require(!copy.empty(),"cannot copy installer ACL fixture");
+        std::memcpy(copy.data(),descriptor.get(),copy.size());
+        require(SetSecurityDescriptorControl(copy.data(),SE_DACL_AUTO_INHERITED,0)!=FALSE,
+            "cannot normalize installer ACL metadata");
+        LPWSTR text=nullptr;
+        require(ConvertSecurityDescriptorToStringSecurityDescriptorW(copy.data(),SDDL_REVISION_1,
+            OWNER_SECURITY_INFORMATION|DACL_SECURITY_INFORMATION,&text,nullptr)!=FALSE,"cannot encode installer ACL fixture");
+        std::unique_ptr<void,decltype(&LocalFree)> cleanup{text,LocalFree};return text;
+    }
+};
+template<class F> void installer_access_refused(F action) {
+    bool denied=false;try {action();}catch(const std::exception&) {denied=true;}
+    require(denied,"unsafe installer read grant succeeded");
+}
+void check_installer_system_read_access(const fs::path& root) {
+    const auto folder=root/"installer-system-read";ensure_private_directory(folder);
+    const auto payload=folder/"package.msi",sibling=folder/"private-state.json";
+    const std::string body="independent installer payload";
+    write_user_archive(payload,body);write_user_archive(sibling,"private synthetic operation");
+    const auto original=InstallerAcl(payload).spelling(),directory_acl=InstallerAcl(folder).spelling(),sibling_acl=InstallerAcl(sibling).spelling();
+    require(InstallerAcl(payload).effective(WinLocalSystemSid)==0,"fixture already grants SYSTEM access");
+    {
+        windows_update::InstallerReadAccess access(payload);
+        const InstallerAcl shared(payload);
+        require((shared.control&SE_DACL_PROTECTED)!=0&&shared.acl->AceCount==2,"installer ACL is inherited or grants an extra principal");
+        require(shared.effective(shared.owner)==FILE_ALL_ACCESS,"installer grant changed owner access");
+        require(shared.effective(WinLocalSystemSid)==FILE_GENERIC_READ,"SYSTEM must receive precisely read access");
+        require(shared.effective(WinWorldSid)==0,"installer grant exposed the payload to other users");
+        require(InstallerAcl(folder).spelling()==directory_acl&&InstallerAcl(sibling).spelling()==sibling_acl,"installer grant widened neighboring permissions");
+        const auto writer=CreateFileW(payload.c_str(),GENERIC_WRITE,FILE_SHARE_READ|FILE_SHARE_WRITE|FILE_SHARE_DELETE,
+            nullptr,OPEN_EXISTING,FILE_ATTRIBUTE_NORMAL,nullptr);
+        const auto write_error=GetLastError();if(writer!=INVALID_HANDLE_VALUE)CloseHandle(writer);
+        require(writer==INVALID_HANDLE_VALUE&&write_error==ERROR_SHARING_VIOLATION,"verified installer was writable while handed off");
+        require(!MoveFileExW(payload.c_str(),(folder/"replaced.msi").c_str(),0)&&GetLastError()==ERROR_SHARING_VIOLATION,
+            "verified installer could be replaced while handed off");
+    }
+    require(InstallerAcl(payload).spelling()==original,"scope completion did not restore the original installer ACL");
+    {
+        windows_update::InstallerReadAccess access(payload);
+        require(access.restore(),"explicit installer permission restoration failed");
+        require(access.restore(),"installer permission restoration is not idempotent");
+        require(InstallerAcl(payload).spelling()==original,"explicit restoration left SYSTEM access behind");
+    }
+    require(read_text(payload,body.size(),true)==body,"installer handoff changed payload bytes or private ownership");
+}
+void check_installer_system_read_access_restores_after_exception(const fs::path& root) {
+    const auto payload=root/"interrupted-installer.msi";write_user_archive(payload,"independent interrupted payload");
+    const auto original=InstallerAcl(payload).spelling();bool interrupted=false;
+    try {
+        windows_update::InstallerReadAccess access(payload);
+        require(InstallerAcl(payload).effective(WinLocalSystemSid)==FILE_GENERIC_READ,"interruption fixture never granted SYSTEM read access");
+        interrupted=true;throw std::runtime_error("synthetic installer interruption");
+    }catch(const std::runtime_error&) {}
+    require(interrupted,"installer interruption did not reach the protected scope");
+    require(InstallerAcl(payload).spelling()==original,"exception exit left installer permissions widened");
+}
+void installer_fixture_junction(const fs::path& link,const fs::path& target) {
+    std::array<wchar_t,32768> system{};const auto length=GetSystemDirectoryW(system.data(),static_cast<UINT>(system.size()));
+    require(length>0&&length<system.size(),"fixture system directory unavailable");
+    const auto executable=fs::path(system.data())/"cmd.exe";
+    auto command=L"cmd.exe /d /c mklink /J \""+link.wstring()+L"\" \""+target.wstring()+L"\"";
+    STARTUPINFOW startup{};startup.cb=sizeof(startup);PROCESS_INFORMATION child{};
+    require(CreateProcessW(executable.c_str(),command.data(),nullptr,nullptr,FALSE,CREATE_NO_WINDOW,nullptr,nullptr,&startup,&child)!=FALSE,
+        "cannot launch installer reparse fixture");
+    const auto waited=WaitForSingleObject(child.hProcess,10000);DWORD code=1;
+    if(waited!=WAIT_OBJECT_0)TerminateProcess(child.hProcess,1);
+    GetExitCodeProcess(child.hProcess,&code);CloseHandle(child.hThread);CloseHandle(child.hProcess);
+    require(waited==WAIT_OBJECT_0&&code==0,"installer reparse fixture failed");
+}
+void check_installer_system_read_access_rejects_unsafe_payloads(const fs::path& root) {
+    const auto folder=root/"installer-refusals";ensure_private_directory(folder);
+    const auto payload=folder/"package.msi";write_user_archive(payload,"independent refusal payload");
+    const auto original=InstallerAcl(payload).spelling();
+    installer_access_refused([&]{windows_update::InstallerReadAccess access(folder/"missing.msi");});
+    require(!fs::exists(folder/"missing.msi"),"missing installer refusal created a file");
+    const auto folder_acl=InstallerAcl(folder).spelling();
+    installer_access_refused([&]{windows_update::InstallerReadAccess access(folder);});
+    require(InstallerAcl(folder).spelling()==folder_acl,"directory refusal changed permissions");
+    const auto alias=folder/"hardlink.msi";
+    require(CreateHardLinkW(alias.c_str(),payload.c_str(),nullptr)!=FALSE,"installer hardlink fixture failed");
+    installer_access_refused([&]{windows_update::InstallerReadAccess access(alias);});
+    require(InstallerAcl(payload).spelling()==original,"hardlink refusal changed the shared file ACL");
+    require(DeleteFileW(alias.c_str())!=FALSE,"installer hardlink fixture cleanup failed");
+    const auto junction=root/"installer-junction";installer_fixture_junction(junction,folder);
+    installer_access_refused([&]{windows_update::InstallerReadAccess access(junction/"package.msi");});
+    require(InstallerAcl(payload).spelling()==original,"reparse refusal changed the target ACL");
+    require(RemoveDirectoryW(junction.c_str())!=FALSE,"installer reparse fixture cleanup failed");
+    fixture_private_acl(payload,true);
+    const auto shared=InstallerAcl(payload).spelling();
+    installer_access_refused([&]{windows_update::InstallerReadAccess access(payload);});
+    require(InstallerAcl(payload).spelling()==shared,"non-private installer refusal rewrote existing permissions");
+    fixture_private_acl(payload);
+    require(read_text(payload,128,true)=="independent refusal payload","installer refusals changed the original payload");
+}
+void check_failed_update_review_policy() {
+    const auto check=[](const Json& receipt,bool expected) {
+        const auto original=receipt.dump();
+        require(windows_update::update_can_retry_without_install(receipt)==expected,"unexpected retry classification for saved update");
+        require(receipt.dump()==original,"retry classification mutated the saved receipt");
+    };
+    for(const auto* phase:{"reviewed","checking","downloading","verifying","waiting-monitor"})check(Json{{"phase",phase}},true);
+    for(const auto* code:{"update-uac-cancelled","update-offer-changed","update-download-invalid","update-helper-launch-failed","update-monitor-running"})
+        check(Json{{"phase","review-required"},{"error_code",code}},true);
+    check(Json{{"phase","review-required"},{"error_code","update-msi-failed"},{"installer_exit_code",1619}},true);
+    for(const auto code:{0,1603,1618,1620,3010,1641})
+        check(Json{{"phase","review-required"},{"error_code","update-msi-failed"},{"installer_exit_code",code}},false);
+    for(const auto* phase:{"installing","preparing-projects","completed","acknowledged","unknown",""})
+        check(Json{{"phase",phase},{"error_code","update-msi-failed"},{"installer_exit_code",1619}},false);
+    check(Json{{"phase","review-required"},{"error_code","unknown"},{"installer_exit_code",1619}},false);
+    check(Json{{"phase","review-required"},{"error_code","update-msi-failed"}},false);
+    for(const auto& code:Json::array({"1619",1619.0,true,nullptr}))
+        check(Json{{"phase","review-required"},{"error_code","update-msi-failed"},{"installer_exit_code",code}},false);
+    for(const auto& malformed:Json::array({nullptr,Json::array(),Json::object(),Json{{"phase",7}},Json{{"phase",nullptr}},
+        Json{{"phase","review-required"},{"error_code",7},{"installer_exit_code",1619}}}))check(malformed,false);
 }
 int main(int argc,char** argv) {
     const char* phase="client configuration";
@@ -95,6 +246,10 @@ int main(int argc,char** argv) {
         const auto discovered=windows_command(commands/"shin-ce.exe",{"client-targets","--home",home.string()});
         require(discovered.value("ok",false) && discovered.at("targets").is_array(),"native command runner failed");
         phase="update payload validation";
+        check_installer_system_read_access(root);
+        check_installer_system_read_access_restores_after_exception(root);
+        check_installer_system_read_access_rejects_unsafe_payloads(root);
+        check_failed_update_review_policy();
         windows_update::verify_msi_install_root(commands,commands);
         windows_update::verify_msi_install_root(commands,fs::path(commands.wstring()+L"\\"));
         windows_update::verify_msi_install_root(commands,fs::path(commands.wstring()+L"/"));

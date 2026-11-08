@@ -169,11 +169,9 @@ Json review_windows_installation(const fs::path& folder,const std::string& ident
         saved["projects_pending"]=!prepared.value("ok",false);
         saved["phase"]="completed";saved["installed_version"]=version;saved.erase("error_code");
     } else {
-        const std::set<std::string> before_install{"reviewed","checking","downloading","verifying","waiting-monitor"};
-        const std::set<std::string> no_install{"update-uac-cancelled","update-offer-changed","update-download-invalid","update-helper-launch-failed","update-monitor-running"};
-        if(version!=saved.at("from_version").get_ref<const std::string&>() || (!before_install.contains(saved.value("phase","")) &&
-            !(saved.value("phase","")=="review-required" && no_install.contains(saved.value("error_code","")))))
+        if(version!=saved.at("from_version").get_ref<const std::string&>() || !windows_update::update_can_retry_without_install(saved))
             throw Error("update-outcome-unknown","Review Windows Installer before retrying. Its outcome could not be confirmed.");
+        windows_update::verify_installed(prefix,version);
         saved["phase"]="acknowledged";
     }
     store.save(saved);return saved;

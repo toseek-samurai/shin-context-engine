@@ -619,7 +619,8 @@ int main(int argc, char** argv) {
     try {
         check(argc == 2 || (argc == 4 && std::string(argv[2]) == "--group"), "profile registry and optional group required");
         const std::string group = argc == 4 ? argv[3] : "all";
-        check(group == "all" || group == "documentation" || group == "races" || group == "safety", "unknown test group");
+        check(group == "all" || group == "documentation" || group == "races" || group == "source-races" ||
+              group == "observations" || group == "safety", "unknown test group");
         const auto started = core::SteadyClock::now();
         const auto progress = [&](const char* phase) {
             std::cout << phase << ": " << core::elapsed_ms_since(started) << " ms\n" << std::flush;
@@ -637,10 +638,12 @@ int main(int argc, char** argv) {
             broken_document_links_remain_usable(profiles);
             progress("documentation regressions");
         }
-        if (group == "all" || group == "races") {
+        if (group == "all" || group == "races" || group == "source-races") {
             for (const auto* code : {"writer-busy", "project-busy"}) temporary_writer_contention(profiles, code);
             for (const auto* mode : {"core", "worker", "superseded", "source-binding", "stale-index", "qualification"}) source_race(profiles, mode);
             progress("source races");
+        }
+        if (group == "all" || group == "races" || group == "observations") {
             returned_observation_race_recovers(profiles);
             returned_observation_remains_blocked(profiles, "source-observation-failed", true);
             returned_observation_remains_blocked(profiles, "access-denied", false);

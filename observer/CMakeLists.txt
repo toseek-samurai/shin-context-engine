@@ -91,6 +91,9 @@ if(BUILD_TESTING AND SHIN_OBSERVER_SOURCE_DISCOVERY)
     add_test(NAME shin-windows-qualification-harness
         COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/../tools/test_qualify_windows.py)
     set_tests_properties(shin-windows-qualification-harness PROPERTIES TIMEOUT 30)
+    add_test(NAME shin-local-refresh-race-harness COMMAND ${Python3_EXECUTABLE} -B
+        ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_run_refresh_race_tests.py)
+    set_tests_properties(shin-local-refresh-race-harness PROPERTIES TIMEOUT 10)
 endif()
 if(BUILD_TESTING AND WIN32 AND SHIN_OBSERVER_SOURCE_DISCOVERY)
     add_subdirectory(platform/windows)

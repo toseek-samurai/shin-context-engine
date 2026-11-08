@@ -5,8 +5,7 @@ import sys
 import time
 
 
-def main():
-    executable, profiles = sys.argv[1:]
+def run_groups(executable, profiles):
     deadline = time.monotonic() + 40
 
     def run(group):
@@ -25,9 +24,16 @@ def main():
             return group, False, output + '\nShared refresh test deadline exceeded.\n'
 
     # Each executable owns its Core stdout capture and disposable fixtures.
-    # The three groups together retain the original suite's 45-second timeout.
+    # Split the two independent race families so their real coalescing waits do
+    # not serialize on one worker after the other workers have become idle.
+    # Keep three workers, one shared 40s deadline and the outer 45s CTest limit.
     with ThreadPoolExecutor(max_workers=3) as pool:
-        results = list(pool.map(run, ('documentation', 'races', 'safety')))
+        return list(pool.map(run, ('source-races', 'observations', 'documentation', 'safety')))
+
+
+def main():
+    executable, profiles = sys.argv[1:]
+    results = run_groups(executable, profiles)
     for group, passed, output in results:
         print(f'{group}: {"passed" if passed else "FAILED"}')
         if not passed:

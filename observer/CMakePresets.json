@@ -30,11 +30,33 @@
       "inherits": "windows-desktop",
       "binaryDir": "$env{SHIN_BUILD_ROOT}/kit",
       "cacheVariables": { "SHIN_OBSERVER_WINDOWS_KIT": true, "BUILD_TESTING": false }
+    },
+    {
+      "name": "windows-ci-desktop",
+      "displayName": "CI desktop with the selected MSVC environment",
+      "inherits": "windows-desktop",
+      "generator": "Ninja Multi-Config",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_C_COMPILER_LAUNCHER": "$env{SHIN_COMPILER_LAUNCHER}",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "$env{SHIN_COMPILER_LAUNCHER}",
+        "CMAKE_POLICY_DEFAULT_CMP0141": "NEW",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>"
+      }
+    },
+    {
+      "name": "windows-ci-kit",
+      "displayName": "CI ZIP/MSI reusing the desktop's tested objects",
+      "inherits": "windows-ci-desktop",
+      "cacheVariables": { "SHIN_OBSERVER_WINDOWS_KIT": true, "BUILD_TESTING": false }
     }
   ],
   "buildPresets": [
     { "name": "windows-desktop", "configurePreset": "windows-desktop", "configuration": "Release", "jobs": 4 },
-    { "name": "windows-kit", "configurePreset": "windows-kit", "configuration": "Release", "jobs": 4 }
+    { "name": "windows-kit", "configurePreset": "windows-kit", "configuration": "Release", "jobs": 4 },
+    { "name": "windows-ci-desktop", "configurePreset": "windows-ci-desktop", "configuration": "Release", "jobs": 4 }
   ],
   "testPresets": [
     {

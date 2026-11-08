@@ -81,11 +81,8 @@ class LocalServiceTests(unittest.TestCase):
                 'command': command, 'root': str(root or self.root), 'query': '', 'path': '', 'record': '',
                 'snapshot': '', **extra}
 
-    def test_previous_generator_is_rebuilt_before_the_first_read(self):
-        self.previous_generator_rebuild('shin-generator-v22-compact-lexical')
-
-    def test_previous_unicode_generator_is_rebuilt_before_the_first_read(self):
-        self.previous_generator_rebuild('shin-generator-v23-unicode-lexical')
+    def test_superseded_generator_is_rebuilt_from_source_without_an_allowlist(self):
+        self.previous_generator_rebuild('shin-generator-unlisted-fixture')
 
     def previous_generator_rebuild(self, previous_generator):
         workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
@@ -877,17 +874,27 @@ class LocalServiceTests(unittest.TestCase):
     def test_short_same_project_collision_waits_and_preserves_execution_capacity(self):
         other=self.base/'independent';other.mkdir()
         (other/'limits.js').write_text('export function readLimit() { return 99; }\n')
-        self.init(root=other);self.roots.append(other);self.start()
+        self.init(root=other);self.roots.append(other);service=self.start()
         pid=self.hold_reader()
         first=self.connect();first.sendall((json.dumps(self.frame('query',query='readLimit',request_id='first'))+'\n').encode())
         self.wait_service_state(lambda state:state['query_workers']==1)
-        second=self.connect();second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='second'))+'\n').encode())
-        waiting=self.wait_service_state(lambda state:state['waiting_requests']==1)
+        # Queue one status witness in the same controlled admission batch. A
+        # polling round trip must not spend the real 500 ms execution wait.
+        os.kill(service.pid,signal.SIGSTOP)
+        try:
+            second=self.connect();second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='second'))+'\n').encode())
+            probe=self.connect();probe.sendall((json.dumps(self.frame('service-status'))+'\n').encode())
+        finally:
+            os.kill(service.pid,signal.SIGCONT)
+        try:
+            waiting=self.receive(probe)['result']
+        finally:
+            probe.close();os.kill(pid,signal.SIGCONT)
         # A queued request has not consumed the second execution slot.
         self.assertEqual(waiting['query_workers'],1)
-        # Release immediately: completing an unrelated request first used to
-        # spend this waiter's real 500 ms execution-admission deadline.
-        os.kill(pid,signal.SIGCONT)
+        self.assertEqual(waiting['waiting_requests'],1)
+        # Read results only after releasing the reader; the witness above
+        # covers both queue presence and the unused second execution slot.
         original=self.receive(first);self.assertTrue(original['ok'],original)
         response=self.receive(second);self.assertTrue(response['ok'],response)
         self.assertEqual(original['result']['snapshot_id'],response['result']['snapshot_id'])

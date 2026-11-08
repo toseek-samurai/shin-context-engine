@@ -294,7 +294,39 @@ class ManagedInitTests(unittest.TestCase):
         self.assertEqual(status['enrollment_errors'][str(self.root)], 'registry-binding-changed')
         self.assertNotIn(str(self.root), status['projects'])
         self.assertEqual(self.registry.read_bytes(), before)
-        self.assertEqual(self.run_ce('query', 'readLimit', '--service', expected=2)['error']['code'], 'service-project-denied')
+        self.assertEqual(self.run_ce('query', 'readLimit', '--service', expected=2)['error']['code'], 'registry-binding-changed')
+
+    def test_failed_enrollment_stays_visible_and_recovers_without_registration_loss(self):
+        self.run_ce('init')
+        other = self.project('other')
+        self.run_ce('init', root=other)
+        self.stop()
+        registry = self.registry.read_bytes()
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        config = workspace / 'config/state.json'
+        original = config.read_bytes()
+        config.write_text(json.dumps({**json.loads(original), 'unauthorized_extra': True}))
+        self.run_ce('service-start')
+        status = self.await_status(lambda value:
+            value['enrollment_errors'].get(str(self.root)) == 'binding-config-conflict')
+        rows = {row['root']: row for row in status['telemetry']['project_states']}
+        self.assertIn(str(self.root), rows)
+        self.assertEqual(rows[str(self.root)]['phase'], 'blocked')
+        self.assertEqual(rows[str(self.root)]['error_code'], 'binding-config-conflict')
+        self.assertEqual(self.registry.read_bytes(), registry)
+        self.assertEqual(self.run_ce('query', 'readLimit', '--service', expected=2)['error']['code'],
+                         'binding-config-conflict')
+        unknown = self.project('not-enrolled')
+        self.assertEqual(self.run_ce('query', 'readLimit', '--service', root=unknown, expected=2)['error']['code'],
+                         'service-project-denied')
+        self.assertTrue(self.run_ce('query', 'readLimit', '--service', root=other)['ok'])
+        config.write_bytes(original)
+        self.await_status(lambda value: str(self.root) in value['projects'] and
+                          str(self.root) not in value['enrollment_errors'] and
+                          any(row['root'] == str(self.root) and row['phase'] == 'current'
+                              for row in value['telemetry']['project_states']))
+        self.assertTrue(self.run_ce('query', 'readLimit', '--service')['ok'])
+        self.assertEqual(self.registry.read_bytes(), registry)
 
     def test_corrupt_registry_does_not_break_admitted_reads(self):
         first = self.run_ce('init')

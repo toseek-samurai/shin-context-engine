@@ -270,10 +270,10 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         # Real process interruption while staging. The old payload remains intact.
         assert not (home / 'service/rpc.sock').exists()
         previous_fixture(owned=True, core_version='unsupported-core')
-        call(*update, error='installation-core-transition-unsupported')
-        # Existing format-preserving previews migrate without changing authority.
+        call(*update, error='installation-manifest-invalid')
+        # Source rebuilding does not depend on a list of previous engine versions.
         binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
-        for previous_core in ('2.0.5-dev.6',):
+        for previous_core in ('1.2.3-dev.4', '3.4.5'):
             previous_fixture(owned=True, version='2.0.5-dev.15', core_version=previous_core)
             old_patch_binding = json.loads(binding_path.read_text())
             old_patch_binding['core_version'] = previous_core
@@ -283,13 +283,12 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             assert current_binding['core_version'] == manifest['core_version']
             for key in old_patch_binding.keys() - {'core_version', 'prepared_snapshot'}:
                 assert current_binding[key] == old_patch_binding[key], key
-        # Future/reverse Core transitions are refused before touching bindings.
-        previous_fixture(owned=True, version='2.0.5-dev.15', core_version='2.0.5-dev.999')
-        binding_before_refusal = binding_path.read_bytes()
-        call(*update, error='installation-core-transition-unsupported')
-        assert binding_path.read_bytes() == binding_before_refusal
-        # This explicit format-preserving Core patch is admitted; unknown Core
-        # identities remain refused above, including before any payload swap.
+        # Core ordering is not a derived-data compatibility promise. The kit
+        # version must advance; its engine always builds current source anew.
+        previous_fixture(owned=True, version='2.0.5-dev.15', core_version='9.9.9')
+        binding_before_update = binding_path.read_bytes()
+        assert call(*update)['changed']
+        assert binding_path.read_bytes() == binding_before_update
         previous_fixture(owned=True, version='2.0.5-dev.1', core_version='2.0.5-dev.1')
         # New engine recovery must refresh the stale publication using its grant;
         # pre-admission must not demand that the old engine repair itself first.
@@ -446,8 +445,8 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             rejected = call(*update, error='installation-update-recovery-required')
             assert 'refresh-engine-changed' in json.dumps(rejected['error']['diagnostic']), rejected
             assert 'resume_runtime' in json.loads(state_file.read_text())
-            # Explicit legacy review cannot waive this Core transition.
-            call(*update, '--accept-degraded-rollback', error='installation-recovery-review-not-applicable')
+            # Removed historical recovery overrides cannot waive authority failures.
+            call(*update, '--accept-degraded-rollback', error='invalid-arguments')
             assert 'resume_runtime' in json.loads(state_file.read_text())
         finally:
             binding_path.write_bytes(binding_bytes)

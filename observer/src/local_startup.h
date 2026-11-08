@@ -2,10 +2,24 @@
 #include "shin/observer/local_project.h"
 #include <algorithm>
 #include <chrono>
+#include <optional>
 #include <set>
 #include <vector>
 
 namespace shin::observer {
+// Only probe a freshly spawned, still-owned child's read-only status endpoint.
+// The socket can be bound (and its lease held) before listen() starts. Keep
+// registry validation and admission outside this catch; they are not retries.
+template<class Probe>
+std::optional<Json> probe_starting_service(const Probe& probe) {
+    try { return probe(); }
+    catch (const Error& error) {
+        if (error.code != "service-unavailable" && error.code != "service-socket-unsafe" &&
+            error.code != "unsafe-directory" && error.code != "service-busy") throw;
+        return std::nullopt;
+    }
+}
+
 // Registry admission is serial. A healthy multi-project startup may exceed one
 // minute in total; only first admission/settlement of a selected root is progress.
 class LocalStartupAdmission {

@@ -1,0 +1,6 @@
+#include "shin/observer/build_version.h"
+
+namespace shin::observer {
+const char* const build_version = "@SHIN_OBSERVER_VERSION@";
+const char* const build_stability = "@SHIN_OBSERVER_STABILITY@";
+}

@@ -45,4 +45,15 @@ inline fs::path package_profile_registry(const fs::path& registry) {
     }
     return fs::canonical(registry);
 }
+
+inline std::optional<fs::path> bundled_profile_registry(const fs::path& executable) {
+    if (homebrew_managed())
+        return package_profile_registry(stable_package_path(executable, SHIN_OBSERVER_HOMEBREW_PREFIX, "share/shin-context/profiles"));
+    const auto bin = fs::canonical(executable).parent_path();
+    for (const auto& prefix : {bin, bin.parent_path()}) {
+        const auto registry = prefix / "share/shin-context/profiles";
+        if (fs::is_regular_file(registry / "generic-source.json")) return fs::canonical(registry);
+    }
+    return std::nullopt;
+}
 } // namespace shin::observer

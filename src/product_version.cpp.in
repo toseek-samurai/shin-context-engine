@@ -1,0 +1,6 @@
+#include "product_version.h"
+
+namespace shin::context {
+const char* const product_version_text = "@SHIN_VERSION@";
+constinit const std::string_view kProductVersion = "@SHIN_VERSION@";
+}

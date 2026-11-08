@@ -49,13 +49,7 @@ fs::path executable_path() {
     return current_executable_path();
 }
 std::optional<fs::path> bundled_profiles() {
-    if (homebrew_managed()) return stable_package_path(executable_path(), SHIN_OBSERVER_HOMEBREW_PREFIX, "share/shin-context/profiles");
-    const auto bin = executable_path().parent_path();
-    for (const auto& prefix : {bin, bin.parent_path()}) {
-        const auto registry = prefix / "share/shin-context/profiles";
-        if (fs::is_regular_file(registry / "generic-source.json")) return fs::canonical(registry);
-    }
-    return std::nullopt;
+    return bundled_profile_registry(executable_path());
 }
 
 int run(int argc, char** argv, char** environment) {
@@ -89,7 +83,6 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce update-install --revision HASH [--prefix DIR] installs an explicitly reviewed release (macOS).\n"
                      "shin-ce install [--prefix DIR] [--bin-dir DIR] [--home DIR] installs an extracted native kit.\n"
                      "shin-ce update [--prefix DIR] [--adopt-existing --home DIR --bin-dir DIR] updates from an extracted kit.\n"
-                     "shin-ce update --accept-degraded-rollback reviews a legacy same-Core rollback; it restores the previous kit only.\n"
                      "shin-ce installation|uninstall [--prefix DIR] verifies or removes owned kit files; project data stays.\n"
                      "shin-ce init [--root DIR]\nshin-ce project-add --root DIR [--home DIR] [--progress-json] connects a folder without changing its files.\nshin-ce storage-status [--home DIR] [--root DIR] previews external storage.\nshin-ce storage-clean --revision HASH [--home DIR] [--root DIR] clears verified detached caches.\nshin-ce storage-policy --auto-clean on|off [--home DIR] controls detached-cache cleanup.\n"
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"

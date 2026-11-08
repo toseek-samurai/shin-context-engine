@@ -22,10 +22,29 @@
         "SHIN_CONTEXT_BUILD_OBSERVER": true,
         "SHIN_OBSERVER_MCP": true
       }
+    },
+    {
+      "name": "windows-ci-native",
+      "displayName": "CI Core smoke targets with the selected MSVC environment",
+      "inherits": "windows-native",
+      "generator": "Ninja Multi-Config",
+      "architecture": { "value": "x64", "strategy": "external" },
+      "cacheVariables": {
+        "CMAKE_C_COMPILER": "cl",
+        "CMAKE_CXX_COMPILER": "cl",
+        "CMAKE_C_COMPILER_LAUNCHER": "$env{SHIN_COMPILER_LAUNCHER}",
+        "CMAKE_CXX_COMPILER_LAUNCHER": "$env{SHIN_COMPILER_LAUNCHER}",
+        "CMAKE_POLICY_DEFAULT_CMP0141": "NEW",
+        "CMAKE_MSVC_DEBUG_INFORMATION_FORMAT": "$<$<CONFIG:Debug,RelWithDebInfo>:Embedded>",
+        "SHIN_CONTEXT_BUILD_OBSERVER": false,
+        "SHIN_OBSERVER_MCP": false
+      }
     }
   ],
   "buildPresets": [
-    { "name": "windows-native", "configurePreset": "windows-native", "configuration": "Release", "jobs": 4 }
+    { "name": "windows-native", "configurePreset": "windows-native", "configuration": "Release", "jobs": 4 },
+    { "name": "windows-ci-native", "configurePreset": "windows-ci-native", "configuration": "Release", "jobs": 4,
+      "targets": ["shin-windows-ci-core"] }
   ],
   "testPresets": [
     {

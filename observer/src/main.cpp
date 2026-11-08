@@ -11,10 +11,10 @@ std::atomic_flag interrupted = ATOMIC_FLAG_INIT;
 void stop(int) { interrupted.test_and_set(std::memory_order_relaxed); }
 
 int failure() noexcept {
-    std::fputs("{\"schema_version\":\"shin.observer-response.v1\",\"tool\":\"shin-observer\","
-        "\"version\":\"" SHIN_OBSERVER_VERSION "\",\"core_version\":\"" SHIN_VERSION "\","
-        "\"stability\":\"" SHIN_OBSERVER_STABILITY "\",\"ok\":false,\"error\":{\"code\":\"observer-failed\","
-        "\"message\":\"Observer operation failed.\"}}\n", stderr);
+    std::fprintf(stderr, "{\"schema_version\":\"shin.observer-response.v1\",\"tool\":\"shin-observer\","
+        "\"version\":\"%s\",\"core_version\":\"%s\",\"stability\":\"%s\",\"ok\":false,"
+        "\"error\":{\"code\":\"observer-failed\",\"message\":\"Observer operation failed.\"}}\n",
+        SHIN_OBSERVER_VERSION, SHIN_VERSION, SHIN_OBSERVER_STABILITY);
     return 1;
 }
 

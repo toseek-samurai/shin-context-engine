@@ -128,47 +128,37 @@ with tempfile.TemporaryDirectory(prefix='shin-source-limit-update-', dir='/tmp')
         assert installed['last_rollback']['pending_projects'] == 1
         evidence['baseline_rollback_confirmed'] = True
 
-        # Legacy journals have no pre-update readiness baseline. Default recovery
-        # must retain review; explicit review cannot be reused for a normal update.
+        # Incomplete journals are not upgraded through historical overrides.
+        # Recovery still needs the real recorded readiness baseline.
         control = Path(json.loads((prefix / '.shin-installation.json').read_text())['control'])
         state_path = control / 'state.json'
-        legacy = json.loads(state_path.read_text())
-        legacy['resume_runtime'] = {'managed': False, 'running': True}
-        save(state_path, legacy)
+        recorded = json.loads(state_path.read_text())
+        incomplete = {**recorded, 'resume_runtime': {'managed': False, 'running': True}}
+        save(state_path, incomplete)
         call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, error='installation-service-not-ready')
         assert call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)['recovery_pending']
-        try:
-            changed = json.loads(binding); changed['generator_version'] = 'unsupported-generator'
-            save(binding_path, changed)
-            restart_previous_service()
-            refused_identity = ce('service-status')
-            assert refused_identity['enrollment_errors'].get(str(f.root)) == 'refresh-engine-changed', refused_identity
-            call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, '--accept-degraded-rollback',
-                 error='installation-service-not-ready')
-            assert call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)['recovery_pending']
-        finally:
-            binding_path.write_bytes(binding)
-            restart_previous_service()
-        evidence['legacy_review_preserves_identity_refusal'] = True
         call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, '--accept-degraded-rollback',
-             error='installation-update-rolled-back')
-        installed = call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)
-        assert not installed['recovery_pending'] and installed['version'] == previous['version']
-        assert json.loads(state_path.read_text())['last_rollback']['degraded_baseline_reviewed']
-        assert not installed['last_rollback']['all_projects_ready'] and installed['last_rollback']['pending_projects'] == 1
-        call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, '--accept-degraded-rollback',
-             error='installation-recovery-review-not-applicable')
-        evidence['legacy_recovery_requires_review'] = True
+             error='invalid-arguments')
+        save(state_path, recorded)
+        evidence['incomplete_recovery_preserves_review'] = True
 
         result = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
         assert result['changed'] and result['version'] == target['version'], result
         assert call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)['integrity_verified']
-        context = ce('query', 'readLimit', '--root', f.root)
-        assert context['retrieval_ready'] and not context['canonical_ready']
-        assert context['source_coverage']['reason'] == 'source-observation-limited'
-        selected = ce('read', 'src/limits.cpp', '--snapshot', context['snapshot_id'], '--root', f.root)
-        assert selected['native_read_complete'] and 'return 7;' in selected['source_context'], selected
-        assert not ce('read', 'src/zz-growth.cpp', '--snapshot', context['snapshot_id'], '--root', f.root)['native_read_complete']
+        # Old partial context is not evidence under a new kit's safety policy.
+        # The source limit remains intact and visible; it cannot lose enrollment
+        # or make the installer revive the previous kit's derived generation.
+        deadline = time.monotonic() + 15
+        while True:
+            status = ce('service-status')
+            rows = [row for row in status['telemetry']['project_states'] if row['root'] == str(f.root)]
+            if rows and rows[0]['phase'] == 'blocked':
+                break
+            assert time.monotonic() < deadline, status
+            time.sleep(.02)
+        assert rows[0]['error_code'] == 'incomplete-source-observation', rows
+        context = ce('query', 'readLimit', '--root', f.root, error='incomplete-source-observation')
+        assert 'source_context' not in context
         assert binding_path.read_bytes() == binding
         assert (workspace / 'publication/state.json').read_bytes() == grant
         assert (f.out / 'docs/kb/generated/manifest.json').read_bytes() == manifest
@@ -176,7 +166,7 @@ with tempfile.TemporaryDirectory(prefix='shin-source-limit-update-', dir='/tmp')
         assert (home / 'registry/state.json').read_bytes() == registry
         assert (home / 'identity/state.json').read_bytes() == identity
         assert history.stat().st_ino == history_inode
-        evidence.update(ok=True, previous=previous['version'], candidate=target['version'], partial_context_available=True,
+        evidence.update(ok=True, previous=previous['version'], candidate=target['version'], previous_context_withheld=True,
                         data_preserved=True, policy_and_snapshot_preserved=True)
     finally:
         if (home / 'service/rpc.sock').exists():

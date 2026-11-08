@@ -128,20 +128,17 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix,
                                       error='installation-marker-transition-conflict')
         elif args.scenario == 'profile-policy-rejected':
-            altered = work / 'unqualified-candidate'
-            shutil.copytree(candidate, altered)
-            candidate = altered
-            profile_path = candidate / 'share/shin-context/profiles/generic-source.json'
-            unqualified = json.loads(profile_path.read_text())
-            unqualified['sourceFactMaxFiles'] += 1
-            profile_path.write_text(json.dumps(unqualified) + '\n')
-            inventory_path = candidate / 'shin-kit.json'
-            inventory = json.loads(inventory_path.read_text())
-            entry = next(row for row in inventory['files'] if row['path'] == 'share/shin-context/profiles/generic-source.json')
-            entry.update(size=profile_path.stat().st_size, sha256=hashlib.sha256(profile_path.read_bytes()).hexdigest())
-            inventory_path.write_text(json.dumps(inventory) + '\n')
+            # New kit-owned defaults are authoritative. A project-owned
+            # canonical policy still needs its existing approval workflow.
+            original_policy = f.profile_path.read_bytes()
+            unapproved = json.loads(original_policy)
+            unapproved['sourceFactMaxFiles'] = unapproved.get('sourceFactMaxFiles', 1024) + 1
+            f.profile_path.write_text(json.dumps(unapproved) + '\n')
+            changed_policy = f.profile_path.read_bytes()
             evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix,
-                                      error='installation-profile-transition-unsupported')
+                error='installation-marker-transition-conflict' if marker and generator_changed else 'route-revision-conflict')
+            assert f.profile_path.read_bytes() == changed_policy, 'update overwrote unapproved owner edits'
+            f.profile_path.write_bytes(original_policy)
         elif args.scenario == 'forward':
             evidence['update'] = call(candidate / 'bin/shin-updater', 'install-local', '--kit', candidate, '--prefix', prefix) if args.fresh_updater else \
                 call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
@@ -219,22 +216,14 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             if before.get('profile_config_hash') != after.get('profile_config_hash'):
                 assert expected == new_manifest and before['schema_version'] == 'shin.local-project-binding.v1'
                 assert before['profile_dir'] == str(prefix / 'share/shin-context/profiles')
-                previous_profile = old / 'share/shin-context/profiles/generic-source.json'
                 target_profile = candidate / 'share/shin-context/profiles/generic-source.json'
-                old_policy, new_policy = json.loads(previous_profile.read_text()), json.loads(target_profile.read_text())
-                old_extensions, new_extensions = set(old_policy.pop('sourceFactExtensions')), set(new_policy.pop('sourceFactExtensions'))
-                old_files, new_files = old_policy.pop('sourceFactMaxFiles'), new_policy.pop('sourceFactMaxFiles')
-                assert old_files == new_files or (old_files, new_files) == (15000, 30000)
-                old_bytes, new_bytes = old_policy.pop('sourceFactMaxFileBytes'), new_policy.pop('sourceFactMaxFileBytes')
-                assert old_bytes == new_bytes or (old_bytes, new_bytes) == (1048576, 2097152)
-                assert old_policy == new_policy and old_extensions <= new_extensions
-                added = sorted(new_extensions - old_extensions)
-                assert set(added) <= {'.m', '.mm'}
+                new_policy = json.loads(target_profile.read_text())
+                assert new_policy['bootstrapOnly'] and not new_policy['evalCases'] and not new_policy['packEvalCases']
                 revision = 1469598103934665603
                 for byte in target_profile.read_bytes():
                     revision = ((revision ^ byte) * 1099511628211) & ((1 << 64) - 1)
                 assert after['profile_config_hash'] == f'fnv1a64:{revision:016x}'
-                profile_revisions.append({'from': before['profile_config_hash'], 'to': after['profile_config_hash'], 'added_extensions': added})
+                profile_revisions.append({'from': before['profile_config_hash'], 'to': after['profile_config_hash']})
                 rebuilt_fields.add('profile_config_hash')
             assert {k:v for k,v in before.items() if k not in rebuilt_fields} == {
                 k:v for k,v in after.items() if k not in rebuilt_fields}

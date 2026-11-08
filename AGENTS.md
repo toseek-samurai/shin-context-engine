@@ -18,8 +18,8 @@ do not import private repository history, objects, tags or refs.
   tracked source. Use explicit external or disposable output directories.
 - Do not alter running installations, enrolled projects, grants, bindings,
   histories or managed indexes as part of source preparation.
-- Qualify the prepared source and exact package independently. Existing internal
-  results are background evidence, not public release qualification.
+- Each kit rebuilds indexes; keep enrollment/settings/history. Auto-repair owned
+  derived state; offer actions for other blocks. Qualify source and exact packages.
 - Publish via guarded CI only after the platform's Core/Observer and exact archive
   gates pass, independently of other platforms. Preserve source/run/attempt proof
   and immutable assets. Never publish local binaries to bypass CI. "Do not wait"

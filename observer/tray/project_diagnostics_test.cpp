@@ -4,6 +4,7 @@
 #include <cassert>
 #include <iostream>
 #include <limits>
+#include <vector>
 
 void documentation_warning_overview() {
     using namespace shin::ui;
@@ -49,6 +50,21 @@ void search_warning_overview() {
 
 int check_language() try {
     using namespace shin::ui;
+    for (const auto& [code, action] : std::vector<std::pair<std::string, RecoveryAction>>{
+        {"refresh-timeout", RecoveryAction::report}, {"route-revision-conflict", RecoveryAction::profile},
+        {"refresh-validation-failed", RecoveryAction::search}, {"storage-free-space-low", RecoveryAction::storage},
+        {"access-denied", RecoveryAction::folder}, {"incomplete-source-observation", RecoveryAction::folder},
+        {"refresh-authority-changed", RecoveryAction::report}, {"unknown-code", RecoveryAction::report}}) {
+        Json row{{"phase", "blocked"}, {"active_issue", true}, {"error_code", code}};
+        const auto options = recovery_options(row, true);
+        assert(options.action == action && !options.title.empty() && !options.next.empty());
+        assert(options.automatic == (code == "refresh-timeout"));
+        assert(recovery_options(row, false).action == RecoveryAction::none);
+        row["active_issue"] = false; row["phase"] = "current";
+        assert(recovery_options(row, true).action == RecoveryAction::none);
+    }
+    assert(!recovery_options(Json{{"phase", "stopped"}, {"active_issue", true}, {"error_code", "refresh-timeout"}}, true).automatic);
+    assert(recovery_options(Json{{"phase", "coalescing"}, {"active_issue", false}}, true).automatic);
     documentation_warning_overview();
     search_warning_overview();
     MonitorTween tween;

@@ -7,6 +7,21 @@ skill. Avoid duplicating those procedures into this document.
 
 ## Source and state
 
+New kit installations rebuild managed indexes, reader caches and qualification
+state from current project sources using that kit's rules. Preserve enrollment,
+project-owned profiles and approvals, agent settings and history. Derived data
+from an earlier kit is disposable, even when its source files did not change.
+Do not add historical index readers, version allowlists or incremental migrations
+of old derived results. Keep source and authority fences and transactional
+installation recovery. Pending and blocked projects remain visible in Monitor.
+
+Recover owned derived-state damage and interrupted preparation automatically.
+Keep retry/coalescing bounds; never solve a block by discarding enrollment,
+approvals or history, raising project limits, or disabling safety checks.
+For operator-dependent failures, show the cause and an appropriate action:
+review settings/search checks, inspect project access, review storage, or copy
+a diagnostic report. Show the next step in compact Monitor and TUI as well.
+
 Use Core and Observer version files independently. Rebuild affected
 companions after shared Core changes. Keep test databases, generated publications,
 identities and telemetry outside source inputs. An explicit build does not
@@ -41,6 +56,28 @@ tag performs its platform tests, exact packaging and guarded publication once.
 Maintainers can use [Release preview](releasing.md) to prepare the next Observer
 version and dispatch that same pipeline for its immutable tag. Manual tag runs
 retain the source, attempt and exact-package gates; branch runs cannot publish.
+
+Compiler reuse is optional and never qualifies source or a package. Version
+strings are linked from generated `.cpp` files, rather than public compiler
+definitions; changing only a version must not recompile its consumers. CMake
+must also leave unchanged generated headers untouched.
+
+The CI compiler cache uses ccache on Linux/macOS and sccache with MSVC/Ninja
+Multi-Config on Windows. Interactive Windows Visual Studio presets remain
+available. The Windows Core job builds the executables required by its existing
+smoke suite; the desktop job independently qualifies Observer, Monitor and the
+exact ZIP/MSI.
+
+Ordinary [GitHub caches](https://docs.github.com/en/actions/reference/workflows-and-actions/dependency-caching#restrictions-for-accessing-a-cache)
+cannot be read by sibling tags. To reuse compiler data
+across releases, successful component jobs export bounded, seven-day artifacts
+after their source and package gates. Imports check the repository, immutable
+tag/SHA, workflow, run attempt, successful component job and toolchain identity.
+PR jobs never export these artifacts. Cache lookup, download or validation
+failure means a cold build. Keep per-platform publication independent and keep
+all source tests and exact-archive gates mandatory. Record cache hits and build
+time separately from test/package time; a warm local build is not hosted timing
+or Windows runtime proof.
 
 Installation examples must point to a published release with its complete kit,
 checksum and installer assets. Update those pins after publication, not when a
@@ -143,11 +180,11 @@ its real forward transition and interrupted rollback instead; synthetic same-Cor
 coverage remains in the native suite. The separate
 previous-generator suite remains mandatory for format transitions.
 
-On a generator cutover, retire its predecessor in the shared source-rebuild
-policy and update the pinned previous-generator kit fixture. Exact macOS archive
-qualification exercises that published format through forward update and resumed
-rollback. Bundled bootstrap profile changes have a separate journaled contract;
-changing generator identity does not approve arbitrary scope or budget changes.
+On a generator cutover, update the pinned previous-generator kit fixture and
+qualify a complete source rebuild across formats, including resumed rollback.
+The fixture is regression evidence, not a runtime list of supported old formats.
+Kit-owned bootstrap policy is prepared under the installation journal; a new kit
+never replaces project-owned canonical profiles or their approvals.
 
 Applying a qualified kit update also authorizes its bounded generator-pin
 transition for already approved managed project routes. The installer journals

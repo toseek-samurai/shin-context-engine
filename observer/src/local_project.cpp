@@ -215,7 +215,33 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
         if (gate.value("attempted", false) && gate.contains("elapsed_ms"))
             work["validation_" + gate.at("id").get<std::string>() + "_ms"] = gate.at("elapsed_ms");
     verify_authority();
+    remember_index_generation(workspace, candidate_snapshot);
     return RefreshQualification{std::move(admission), checked, work, true};
+}
+
+void prepare_source_cache(const core::RuntimeOptions& options, const fs::path& directory, bool fresh_kit) {
+    if (fresh_kit) {
+        // Recreate even a byte-identical cache: an unchanged source/snapshot is
+        // not evidence that a previous kit applied today's analysis rules.
+        core::SourceDiscoveryIndex prepared(options, {}, options.generation_admission.get());
+        prepared.persist_published_cache(options, directory);
+    } else {
+        core::SourceDiscoveryIndex prepared(options, directory, options.generation_admission.get());
+    }
+}
+
+bool source_generation_current(const fs::path& workspace, const fs::path& index, const std::string& prepared) {
+    if (current_index_generation(workspace, prepared)) return true;
+    if (!current_index_generation(workspace)) return false;
+    // An interrupted receipt can lag an already published current generation.
+    // A rollback can instead restore an older generation. Compare the manifest
+    // identity without decoding its historical data; normal readers still run
+    // all integrity, source and safety checks. The ordinary idle path stays tiny.
+    const auto manifest = index / core::kGeneratedDir / "manifest.json";
+    if (!present(manifest)) return false;
+    const auto publication = core::lock_index_for_read(index);
+    return current_index_generation(workspace,
+        core::fnv1a64(read_text(manifest, 256U * 1024U * 1024U, false)));
 }
 
 void verify_binding(const Json& binding, const fs::path& root, const std::string& identity,
@@ -227,6 +253,8 @@ void verify_binding(const Json& binding, const fs::path& root, const std::string
     for (const auto& key : fields)
         if (!binding.contains(key) || !binding.at(key).is_string())
             throw Error("binding-invalid", "Local binding fields are invalid.");
+    if (!source_engine_identity(binding.at("core_version")))
+        throw Error("refresh-engine-changed", "Project engine identity is malformed; preserve its binding for review.");
     if (binding.at("schema_version") != "shin.local-project-binding.v1" ||
         binding.at("root") != root.string() || binding.at("root_identity") != identity ||
         binding.at("workspace_identity") != directory_identity(workspace, true))
@@ -247,11 +275,15 @@ Json observer_configuration(const fs::path& workspace, const fs::path& root, con
         {"outbox", {{"enabled", false}, {"max_entries", 128}, {"max_bytes", 192 * 1024}}}};
 }
 
-bool matches_bootstrap_configuration(const Json& document, const Json& expected) {
+bool matches_bootstrap_configuration(const Json& document, const Json& expected, bool fresh_kit = false) {
     if (document == expected) return true;
-    auto previous_policy = expected;
-    previous_policy["max_file_bytes"] = 64U * 1024U * 1024U;
-    return document == previous_policy;
+    if (!fresh_kit || !document.is_object()) return false;
+    // The kit owns bootstrap operational defaults. Only their values may be
+    // replaced; project paths, identity and offline authority stay pinned.
+    auto identity = document;
+    for (const auto* field : {"poll_interval_ms", "max_snapshot_bytes", "max_file_bytes"})
+        if (identity.contains(field)) identity[field] = expected.at(field);
+    return identity == expected;
 }
 
 void add_query_context(Json& result, const core::RuntimeOptions& options, const Config& config,
@@ -430,7 +462,7 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                          const Config& config, const fs::path& workspace, const Json& binding,
                          const std::string& key,
                          const std::optional<RefreshQualification>& candidate = {}, RefreshMeasurements* metrics = nullptr,
-                         std::optional<core::VerifiedSnapshot>* reader_snapshot = nullptr) {
+                         std::optional<core::VerifiedSnapshot>* reader_snapshot = nullptr, bool fresh_generation = false) {
     RefreshMeasurements local;
     auto& m = metrics ? *metrics : local;
     options.generation_admission.reset();
@@ -451,7 +483,7 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
             {"qualified_at_ms", now_ms()}, {"resource", std::move(resource)},
             {"quality_warning", local_quality_warning(candidate->validation)}};
     }
-    try { if (!candidate) saved = load_qualification(workspace); }
+    try { if (!candidate && !fresh_generation) saved = load_qualification(workspace); }
     catch (const Error& error) {
         if (!damaged_derived_content(error) && error.code != "qualification-invalid") throw;
         invalid = true;
@@ -568,6 +600,8 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         for (const auto& key : fields)
             if (!loaded->contains(key) || !loaded->at(key).is_string())
                 throw Error("binding-invalid", "Attached route binding fields are invalid.");
+        if (!source_engine_identity(loaded->at("core_version")))
+            throw Error("refresh-engine-changed", "Canonical engine identity is malformed; preserve its binding for review.");
         if (loaded->at("root") != root.string() || loaded->at("root_identity") != directory_identity(root) ||
             loaded->at("workspace_identity") != directory_identity(workspace, true))
             throw Error("binding-identity-changed", "Attached directory identity changed.");
@@ -648,7 +682,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             throw Error("route-revision-conflict", "Canonical configuration changed; explicit config-accept after refresh-release is required.");
         binding = *loaded;
     }
-    // Old known indexes are rebuild inputs only, never retrieval candidates.
+    // The old generator is only an opaque binding identity, never input data.
     const bool rebuildable_binding = rebuildable_source_generator(binding.at("generator_version").get<std::string>());
     if (refresh && (!loaded || !rebuildable_binding))
         throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
@@ -762,6 +796,12 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     }
     if (grant.approved_marker_hash() != marker_hash)
         throw Error("route-revision-conflict", "Canonical marker revision changed; explicit marker-accept is required.");
+    if (!attach && !refresh && grant.active() &&
+        !current_index_generation(workspace, binding.at("prepared_snapshot").get<std::string>())) {
+        if (grant.approved_profile_hash() != options.profile.config_hash)
+            throw Error("route-revision-conflict", "Project profile changed; review it before preparing this kit.");
+        throw Error("project-updating", "This kit is building fresh project context from source.");
+    }
     const auto require_running = [&] {
         if (refresh && request.maintenance_stop && request.maintenance_stop())
             throw Error("refresh-stopped", "Local preparation was stopped.");
@@ -798,6 +838,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
                                                refresh && request.refresh_session);
     std::shared_ptr<LocalRefreshSession> idle_session;
     if (refresh && request.refresh_session && grant.active() && !grant.pending_snapshot() && loaded &&
+        current_index_generation(workspace, binding.at("prepared_snapshot").get<std::string>()) &&
         grant.last_snapshot() == binding.at("prepared_snapshot").get<std::string>() &&
         grant.approved_profile_hash() == options.profile.config_hash &&
         !shin::generated_io::publication_in_progress(config.out_dir)) {
@@ -848,7 +889,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     // rebuild. Retrieval independently requires the current generated format.
     if ((grant.active() && !rebuildable_binding) ||
         (refresh && !grant.active() && binding.at("core_version") != SHIN_VERSION))
-        throw Error("refresh-engine-changed", "The granted index format or external engine binding needs explicit migration.");
+        throw Error("refresh-engine-changed", "The granted generator identity is malformed or the external publisher uses another engine.");
     if (!attach && !refresh && !grant.active() && store.writer_present())
         throw Error("project-busy", "Project initialization is in progress.");
     if (refresh) recover_refresh_candidate(workspace);
@@ -863,6 +904,8 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         partial_allowed = source_limit_partial = !managed_observation.is_null();
     }
     const auto partial_response = [&](Json diagnostic = Json()) -> Json {
+        if (!current_index_generation(workspace, binding.at("prepared_snapshot").get<std::string>()))
+            throw Error("project-updating", "This kit requires a fresh generation before retaining partial context.");
         if (diagnostic.is_null() && !source_limit_partial) diagnostic = revision.rejection(options.profile.config_hash, "");
         if (!partial_allowed || !approved_text || !grant.active())
             throw Error("profile-baseline-invalid", "Partial context requires an approved profile baseline.");
@@ -912,8 +955,9 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     if (refresh && grant.active()) {
         const auto& authority = managed_authority;
         authority();
+        const bool fresh_kit = !current_index_generation(workspace, grant.last_snapshot());
         refresh_stage(request, "observation");
-        managed_observation = sample_worktree(config, binding.at("root_identity"), repair.has_value());
+        managed_observation = sample_worktree(config, binding.at("root_identity"), repair.has_value() || fresh_kit);
         if (!partial_allowed && !repair && approved_text &&
             options.profile.config_hash == grant.approved_profile_hash() && source_observation_limited(managed_observation))
             partial_allowed = source_limit_partial = true;
@@ -922,7 +966,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             {"rebuilt", false}, {"recovery_pending", repair.has_value()},
             {"refresh_authority", "local-canonical"}, {"workspace_identity", binding.at("workspace_identity")}});
         if (managed_observation.at("status") != "current" && managed_observation.at("status") != "stale" &&
-            !(repair && managed_observation.at("status") == "unpublished")) {
+            !((repair || fresh_kit) && managed_observation.at("status") == "unpublished")) {
             if (partial_allowed) {
                 const auto error = source_observation_error(managed_observation);
                 return partial_response(error.value("diagnostic", Json{{"schema_version", "shin.validation-diagnostic.v1"},
@@ -932,7 +976,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             pending_tick["error"] = source_observation_error(managed_observation);
             return pending_tick;
         }
-        if (managed_observation.at("snapshot_current") != true) {
+        if (fresh_kit || managed_observation.at("snapshot_current") != true) {
             if (request.maintenance_worktree != managed_observation.at("worktree_id").get<std::string>()) {
                 pending_tick["phase"] = "coalescing";
                 if (partial_allowed) return partial_response();
@@ -1133,6 +1177,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         accepted.enable(snapshot, options.profile.config_hash);
         if (profile_text.size() <= 96 * 1024)
             LocalProfileRevision(workspace, binding, accepted).remember(options.profile.config_hash, profile_text);
+        if (!loaded) remember_index_generation(workspace, snapshot);
         result["publication"] = "managed";
         result["refresh_management"] = "local-service";
     }
@@ -1368,11 +1413,15 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     if (overlaps(home, registry)) throw Error("unsafe-home", "Private state must be separate from the profile registry.");
     if (loaded && request.profile_dir_explicit && request.profile_dir && package_profile_registry(*request.profile_dir) != registry)
         throw Error("binding-profile-conflict", "An existing project cannot silently switch profile registries.");
-    // An explicit retry of an unfinished first import may use today's bootstrap
-    // template. A successfully prepared project keeps its pinned policy.
+    const bool fresh_kit = !loaded || !source_generation_current(workspace, workspace / "index",
+        loaded->at("prepared_snapshot").get<std::string>());
+    const auto bundled = bundled_profile_registry(current_executable_path());
+    const bool kit_policy = fresh_kit && (initialize || refresh) && bundled && *bundled == registry;
+    // Custom registries keep their pinned policy. A new kit owns its bundled
+    // bootstrap template; an unfinished first import can also use today's one.
     const bool unfinished_import = initialize && loaded && loaded->at("prepared_snapshot") == "";
     auto policy = core::inspect_profile_policy(root, registry, "generic-source",
-        loaded && !unfinished_import ? std::optional<std::string>(loaded->at("profile_config_hash").get<std::string>()) : std::nullopt);
+        loaded && !unfinished_import && !kit_policy ? std::optional<std::string>(loaded->at("profile_config_hash").get<std::string>()) : std::nullopt);
     if (policy.at("ok") != true) {
         auto result = envelope(request.command, false);
         result.update({{"local_ready", false}, {"state", "invalid-policy"}, {"policy", std::move(policy)}});
@@ -1386,7 +1435,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         {"workspace_identity", directory_identity(workspace, true)}, {"profile_dir", registry.string()},
         {"profile_config_hash", policy.at("revision").at("profile_config_hash")},
         {"core_version", SHIN_VERSION}, {"generator_version", core::kGeneratorVersion}, {"prepared_snapshot", ""}};
-    const bool bootstrap_policy_changed = unfinished_import &&
+    const bool bootstrap_policy_changed = (unfinished_import || kit_policy) &&
         binding.at("profile_config_hash") != policy.at("revision").at("profile_config_hash");
     if (bootstrap_policy_changed) binding["profile_config_hash"] = policy.at("revision").at("profile_config_hash");
     if (initialize) {
@@ -1396,19 +1445,25 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         StateStore config_store(workspace / "config", true);
         const auto previous = config_store.load();
         const auto expected = observer_configuration(workspace, root, registry);
-        if (previous && !matches_bootstrap_configuration(*previous, expected))
+        if (previous && !matches_bootstrap_configuration(*previous, expected, fresh_kit))
             throw Error("binding-config-conflict", "Existing Observer configuration differs; no automatic overwrite.");
         config_store.recover_pending();
         if (!previous) config_store.save(expected);
     }
     StateStore config_reader(workspace / "config", false);
-    const auto config_document = config_reader.load();
+    auto config_document = config_reader.load();
     const auto bootstrap_policy = observer_configuration(workspace, root, registry);
-    if (!config_document || !matches_bootstrap_configuration(*config_document, bootstrap_policy))
+    if (!config_document || !matches_bootstrap_configuration(*config_document, bootstrap_policy, fresh_kit))
         throw Error("binding-config-conflict", "Bound Observer configuration differs from local offline policy.");
-    // Older private templates remain byte-for-byte available to rollback. The
-    // current bootstrap policy admits each artifact within the total budget.
-    // Attached project-owned configurations retain their explicit file limits.
+    if (fresh_kit && (initialize || refresh) && *config_document != bootstrap_policy) {
+        (void)config_from_json(*config_document, workspace / "config/state.json");
+        StateStore configuration(workspace / "config", true);
+        if (configuration.load() != config_document)
+            throw Error("binding-config-conflict", "Bootstrap configuration changed before policy preparation.");
+        configuration.recover_pending();
+        configuration.save(bootstrap_policy);
+        config_document = bootstrap_policy;
+    }
     const auto config = config_from_json(bootstrap_policy, workspace / "config/state.json");
     core::RuntimeOptions options;
     options.root = root;
@@ -1427,7 +1482,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
         return qualified_readiness(options, {}, config, workspace, binding, quality_key,
-            {}, nullptr, request.query_session ? &reader_snapshot : nullptr);
+            {}, nullptr, request.query_session ? &reader_snapshot : nullptr, fresh_kit);
     };
     const auto qualify = [&](const Json& readiness) {
         if (readiness.at("ok") == true && readiness.at("quality_reuse").at("reused") == false)
@@ -1448,7 +1503,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
                 core::make_profile("generic-source", registry).config_hash != options.profile.config_hash)
                 throw Error("refresh-authority-changed", "Project, profile or configuration changed during refresh.");
         };
-        const bool rebuildable_index = retired_source_generator(binding.at("generator_version").get<std::string>());
+        const bool rebuildable_index = rebuildable_source_generator(binding.at("generator_version").get<std::string>());
+        authority();
         if (engine_changed && !rebuildable_index)
             throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
         recover_refresh_candidate(workspace);
@@ -1458,7 +1514,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             shin::generated_io::recover_snapshot(options.out_root, core::kGeneratedDir);
         }
         std::shared_ptr<LocalRefreshSession> idle_session;
-        if (request.refresh_session && !engine_changed) {
+        if (request.refresh_session && !engine_changed && !fresh_kit) {
             authority();
             if (!*request.refresh_session) *request.refresh_session = std::make_shared<LocalRefreshSession>();
             idle_session = *request.refresh_session;
@@ -1470,7 +1526,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             }
         }
         refresh_stage(request, "observation");
-        auto observation = sample_worktree(config, root_identity);
+        auto observation = sample_worktree(config, root_identity, fresh_kit);
         std::optional<SnapshotRepairBase> repair;
         if (observation.at("status") == "error" && observation.at("reason_code").is_string() &&
             repairable_snapshot_error(observation.at("reason_code"))) {
@@ -1483,12 +1539,12 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             {"rebuilt", false}, {"phase", "current"}, {"refresh_authority", "private-bootstrap"},
             {"workspace_identity", binding.at("workspace_identity")}, {"recovery_pending", repair.has_value()}});
         if (observation.at("status") != "current" && observation.at("status") != "stale" &&
-            !(repair && observation.at("status") == "unpublished")) {
+            !((repair || fresh_kit) && observation.at("status") == "unpublished")) {
             result.update({{"ok", false}, {"phase", "blocked"}});
             result["error"] = source_observation_error(observation);
             return result;
         }
-        if (observation.at("snapshot_current") == true &&
+        if (!fresh_kit && observation.at("snapshot_current") == true &&
             binding.at("prepared_snapshot") == observation.at("snapshot_id")) {
             const auto read = core::lock_index_for_read(options.out_root);
             const auto readiness = readiness_for_generation();
@@ -1508,7 +1564,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         }
         store.recover_pending();
         authority();
-        if (observation.at("snapshot_current") != true) {
+        if (fresh_kit || observation.at("snapshot_current") != true) {
             publish_refreshed(options, config, workspace, request.maintenance_worktree, authority, nullptr, repair, {}, request.maintenance_progress);
             result["rebuilt"] = true;
         }
@@ -1523,7 +1579,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             if (current.at("status") == "stale" && current.at("worktree_id") != observed.at("observation").at("worktree_id"))
                 throw Error("refresh-superseded", "Source changed during search preparation.");
         }, [&] {
-            core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache", options.generation_admission.get());
+            prepare_source_cache(options, config.state_dir / "source-cache", fresh_kit);
         });
         authority();
         const auto freshness = core::assess_index_freshness(options, true);
@@ -1533,6 +1589,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         binding["generator_version"] = core::kGeneratorVersion;
         store.save(binding);
         qualify(readiness);
+        remember_index_generation(workspace, freshness.snapshot_id);
         result["phase"] = "current";
         result["recovered"] = repair ? "primary-index" : "";
         result["recovery_pending"] = false;
@@ -1544,12 +1601,12 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     // Initial bootstrap may not have an index/lock yet; established readers
     // retain the same publication fence as attached projects.
     // Init can replace an owned outdated index; normal reads still refuse it.
-    const bool usable_index = initialize && engine_changed ? false : core::generated_index_available(options);
+    const bool usable_index = initialize && (engine_changed || fresh_kit) ? false : core::generated_index_available(options);
     auto publication = usable_index ? core::lock_index_for_read(options.out_root) : nullptr;
-    auto readiness = readiness_for_generation();
+    auto readiness = initialize && (engine_changed || fresh_kit) ? Json() : readiness_for_generation();
     bool rebuilt = false;
     if (initialize) {
-        if (engine_changed || readiness.at("ok") != true) {
+        if (engine_changed || fresh_kit || readiness.at("ok") != true) {
             publication.reset();
             refresh_progress(request.maintenance_progress, "candidate-build");
             const auto build = core_result([&] { return core::run_build(options); });
@@ -1565,7 +1622,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         readiness = readiness_for_generation();
         if (readiness.at("ok") == true) {
             refresh_progress(request.maintenance_progress, "source-cache");
-            core::SourceDiscoveryIndex prepared(options, config.state_dir / "source-cache", options.generation_admission.get());
+            prepare_source_cache(options, config.state_dir / "source-cache", fresh_kit);
             binding["core_version"] = SHIN_VERSION;
             binding["generator_version"] = core::kGeneratorVersion;
             const auto freshness = core::assess_index_freshness(options, true);
@@ -1574,6 +1631,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
                 throw Error("query-snapshot-changed", "Publication changed during search preparation.");
             binding["prepared_snapshot"] = freshness.snapshot_id;
             if (store.load() != std::optional<Json>(binding)) store.save(binding);
+            if (rebuilt) remember_index_generation(workspace, freshness.snapshot_id);
         }
     }
     const auto observer = observer_status(config);
@@ -1582,7 +1640,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         throw Error("binding-identity-changed", "Observer belongs to a different project directory.");
     const bool prepared = readiness.contains("freshness") &&
         binding.at("prepared_snapshot") == readiness.at("freshness").at("snapshot_id");
-    const bool ready = readiness.at("ok") == true && sampled && prepared && (!engine_changed || initialize);
+    const bool ready = readiness.at("ok") == true && sampled && prepared &&
+        (!engine_changed || initialize) && (!fresh_kit || initialize);
     auto result = envelope(request.command, ready);
     result.update({{"local_ready", ready}, {"state", ready ? "local-ready" : "needs-init"},
         {"canonical_ready", false}, {"project_quality", "not-configured"},
@@ -2118,8 +2177,8 @@ Json prepare_marker_generator_transition(const LocalProjectRequest& request) {
     const auto document = parse_json(text);
     const auto previous = document.at("engine").at("generatorIdentity").get<std::string>();
     if (previous == core::kGeneratorVersion) return nullptr;
-    if (!retired_source_generator(previous))
-        throw Error("installation-marker-transition-unsupported", "The marker does not name a qualified retired generator.");
+    if (!superseded_source_generator(previous))
+        throw Error("installation-marker-transition-unsupported", "The marker generator identity is malformed; review its source configuration.");
     const auto file = fs::path(binding->at("observer_config").get<std::string>());
     const auto config_text = read_text(file, 65536, true);
     const auto config = config_from_json(parse_json(config_text), file);
@@ -2167,7 +2226,7 @@ std::string stage_marker_generator_transition(const LocalProjectRequest& request
     auto previous_document = parse_json(before), next_document = parse_json(after);
     const auto previous = previous_document.at("engine").at("generatorIdentity").get<std::string>();
     previous_document["engine"]["generatorIdentity"] = core::kGeneratorVersion;
-    if (!retired_source_generator(previous) || next_document.at("engine").at("generatorIdentity") != core::kGeneratorVersion ||
+    if (!superseded_source_generator(previous) || next_document.at("engine").at("generatorIdentity") != core::kGeneratorVersion ||
         previous_document != next_document)
         throw Error("installation-marker-transition-conflict", "Journal exceeds the generator-only transition contract.");
     const auto file = fs::path(expected.at("observer_config").get<std::string>());

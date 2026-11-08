@@ -61,6 +61,18 @@ int main() {
                 {{"method", "query"}, {"purpose", "unclassified"}, {"reader_state", "warm"}, {"duration_ms", 10}, {"service_duration_ms", 100}}
             })}}}}}};
         const auto original = snapshot.service;
+        auto recovery_snapshot = snapshot;
+        recovery_snapshot.service["telemetry"]["project_states"] = Json::array({
+            {{"root", "/example/recovery"}, {"id", "recovery"}, {"name", "Recovery project"},
+             {"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-timeout"}}});
+        tui::State recovery_state; recovery_state.tab = 1; recovery_state.detail = true; recovery_state.project = "/example/recovery";
+        for (const auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
+            shin::ui::set_language(language);
+            const auto detail = render(recovery_snapshot, recovery_state);
+            require(detail.find(shin::ui::tr("Automatic recovery")) != std::string::npos);
+            require(detail.find("shin-ce status --root PATH") != std::string::npos);
+        }
+        shin::ui::set_language(shin::ui::Language::en);
         tui::State state; state.tab = 1;
         auto value = render(snapshot, state);
         require(value.find("[partial]") != std::string::npos && value.find("standby") != std::string::npos && value.find("blocked") != std::string::npos);

@@ -287,12 +287,20 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 out.push_back(status);
                 out.push_back({shin::ui::tr("Search: ") + state_name(row, connected) + shin::ui::tr(" | Observer: ") + shin::ui::tr(text(field(row, "phase")).c_str())});
                 const auto explanation = ui::diagnostic_overview(row, connected);
+                const auto recovery = ui::recovery_options(row, connected);
                 const auto project_state = ui::project_state(row, connected);
                 out.push_back({explanation.title, (project_state == ui::ProjectState::current ||
                     project_state == ui::ProjectState::standby) && (ui::count(row, "documentation_warnings") > 0 || ui::quality_warning(row)) ?
                     Tone::warning : status.tone});
                 out.push_back({explanation.summary});
-                out.push_back({explanation.next, Tone::muted});
+                if (!recovery.title.empty()) out.push_back({recovery.title, recovery.automatic ? Tone::info : Tone::warning});
+                out.push_back({recovery.next.empty() ? explanation.next : recovery.next, Tone::muted});
+                if (recovery.action == ui::RecoveryAction::profile)
+                    out.push_back({"shin-ce profile-review --root PATH", Tone::info});
+                else if (recovery.action == ui::RecoveryAction::storage)
+                    out.push_back({"shin-ce storage-status", Tone::info});
+                else if (recovery.action == ui::RecoveryAction::report)
+                    out.push_back({"shin-ce status --root PATH", Tone::info});
                 out.push_back({shin::ui::tr("Last successful check (at observation): ") + number(field(row, "last_success_age_ms"), 1000) + shin::ui::tr(" s ago")});
                 out.push_back({shin::ui::tr("Published updates: ") + number(field(row, "publications"))});
                 out.push_back({shin::ui::tr("Active issue: ") + std::string(ui::active_issue(row) ? shin::ui::tr("yes") : shin::ui::tr("no"))});

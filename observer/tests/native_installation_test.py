@@ -109,6 +109,33 @@ with tempfile.TemporaryDirectory(prefix='shin-ins-', dir='/tmp') as temporary:
     state_file = Path(receipt['control']) / 'state.json'
     assert status()['integrity_verified']
 
+    # Kit-owned policy follows each fresh generation, without a historical
+    # whitelist of permitted default edits. Project-owned registries stay pinned
+    # in local_project_test; this fixture uses the extracted kit's real locator.
+    probe_root, probe_home = user / 'bootstrap-policy', user / 'bootstrap-state'
+    probe_root.mkdir()
+    (probe_root / 'quota.cpp').write_text('int bootstrapQuota() { return 3; }\n')
+    probe_args = ('init', '--no-service', '--root', probe_root, '--home', probe_home)
+    call(*probe_args)
+    probe_workspace = probe_home / 'projects' / hashlib.sha256(str(probe_root).encode()).hexdigest()
+    before_binding = json.loads((probe_workspace / 'state.json').read_text())
+    generation_file = probe_workspace / 'index-generation/state.json'
+    previous_generation = json.loads(generation_file.read_text())
+    previous_generation['kit_version'] = '0.0.0'
+    generation_file.write_text(json.dumps(previous_generation))
+    changed_policy = json.loads(original)
+    changed_policy['sourceFactMaxFiles'] -= 137
+    try:
+        asset.write_text(json.dumps(changed_policy) + '\n')
+        assert call(*probe_args)['rebuilt']
+        after_binding = json.loads((probe_workspace / 'state.json').read_text())
+        assert before_binding['profile_config_hash'] != after_binding['profile_config_hash']
+        for key in before_binding.keys() - {'profile_config_hash', 'prepared_snapshot'}:
+            assert before_binding[key] == after_binding[key], key
+        assert (probe_root / 'quota.cpp').read_text() == 'int bootstrapQuota() { return 3; }\n'
+    finally:
+        asset.write_bytes(original)
+
     # The installed command must infer its owned prefix, including via its link.
     assert call('update-status', executable=bin_dir / 'shin-ce')['phase'] == 'idle'
 

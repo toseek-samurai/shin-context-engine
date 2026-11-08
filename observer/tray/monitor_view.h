@@ -1387,6 +1387,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         platform_version());
     const auto state = project_state(project, view.connected);
     const auto overview = diagnostic_overview(project, view.connected);
+    const auto recovery = recovery_options(project, view.connected);
     const bool partial_coverage = overview.title == shin::ui::tr("Context partially available");
     const bool documentation_warning = (state == ProjectState::current || state == ProjectState::standby) &&
         (count(project, "documentation_warnings") > 0 || quality_warning(project));
@@ -1402,7 +1403,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         return;
     }
     diagnostic_report_text = name + "\n\n" + overview.title + "\n" + explanation.cause +
-        shin::ui::tr("\n\nNext step\n") + explanation.next + shin::ui::tr("\n\nHistory\n") +
+        shin::ui::tr("\n\nNext step\n") + (recovery.next.empty() ? explanation.next : recovery.next) + shin::ui::tr("\n\nHistory\n") +
         diagnostic_history_status(project, view.connected) +
         (prior_code.empty() ? "" : shin::ui::tr("\nLast code: ") + prior_code + "\n" + explain(prior_code).cause) +
         shin::ui::tr("\n\nTechnical details of the last observation\n") + diagnostic_copy;
@@ -1443,10 +1444,10 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
         text(overview.title, color, 54);
         if (tiny) text(name, ink, 58);
         text(explanation.cause, ink, 55);
-        if (!compact && (active_issue(project) || documentation_warning || quality_warning(project) || partial_coverage || state != ProjectState::current)) {
+        if (active_issue(project) || documentation_warning || quality_warning(project) || partial_coverage || state != ProjectState::current) {
             ImGui::Spacing();
-            text(shin::ui::tr("Next step"), muted, 56);
-            text(explanation.next, ink, 57);
+            text(recovery.title.empty() ? shin::ui::tr("Next step") : recovery.title, muted, 56);
+            text(recovery.next.empty() ? explanation.next : recovery.next, ink, 57);
         }
         if (diagnostic_details_open) {
             ImGui::Separator();
@@ -1499,12 +1500,15 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
     }
     ImGui::EndChild();
     ImGui::SetCursorPosY(footer);
-    const bool review = current_code == "route-revision-conflict";
-    const bool search = quality_warning(project);
+    const bool review = recovery.action == RecoveryAction::profile;
+    const bool search = recovery.action == RecoveryAction::search;
     const bool healthy = !diagnostic_history_first && !partial_coverage && !documentation_warning &&
         (state == ProjectState::current || state == ProjectState::standby);
     if (review) primary_button(shin::ui::tr("Review changes"), 70);
     else if (search) action_button(shin::ui::tr(diagnostic_details_open ? "Hide search checks" : "Review search checks"), 120);
+    else if (recovery.action == RecoveryAction::storage) action_button(shin::ui::tr("Storage and cleanup…"), 83);
+    else if (recovery.action == RecoveryAction::folder) action_button(shin::ui::tr("Show project folder"), 38, 0, !root.empty());
+    else if (recovery.action == RecoveryAction::report) action_button(shin::ui::tr("Copy report"), 36, 0, !diagnostic_copy.empty());
     else if (!healthy) action_button(shin::ui::tr("Open full report"), 39);
     else if (compact) action_button(shin::ui::tr("Connect agent…"), 116, 0, view.connected && !root.empty());
     if (!tiny) {
@@ -1864,7 +1868,7 @@ void render_settings(const ViewState& view, const Json& telemetry, const Json& h
     ImGui::Spacing();
     begin_surface("update-settings");
     heading(shin::ui::tr("Updates"));
-    ImGui::TextColored(muted, "%s · %s", "v" SHIN_OBSERVER_VERSION, shin::ui::tr("Preview channel"));
+    ImGui::TextColored(muted, "v%s · %s", SHIN_OBSERVER_VERSION, shin::ui::tr("Preview channel"));
     primary_button(shin::ui::tr("Check for updates…"), 110);
 #if defined(__APPLE__) || defined(_WIN32)
     action_button(shin::ui::tr("Last update result…"), 111);
@@ -2047,7 +2051,7 @@ float render(const ViewState& view, float height_limit = 0) {
     ImGui::Separator();
     ImGui::Dummy({0, 6});
     ImGui::PushFont(nullptr, compact ? 11.0f : 13.0f);
-    const std::string version = "v" SHIN_OBSERVER_VERSION;
+    const std::string version = std::string("v") + SHIN_OBSERVER_VERSION;
     const auto origin = ImGui::GetCursorScreenPos();
     ImGui::AlignTextToFramePadding();
     ImGui::TextColored(muted, "%s", version.c_str());

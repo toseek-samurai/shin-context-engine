@@ -284,7 +284,14 @@ public:
     void enrollment_result(const LocalProjectRequest& request, const std::string& error) {
         if (request.root.empty()) { registry_error = error; return; }
         const auto root = request.root.string();
-        if (!error.empty()) { qualified.erase(root); discard_resident(root, error); enrollment_errors[root] = error; return; }
+        if (!error.empty()) {
+            qualified.erase(root); discard_resident(root, error); enrollment_errors[root] = error;
+            project_state(request.root, {{"phase", "blocked"}, {"ticks", 0}, {"publications", 0}, {"failures", 1},
+                {"refresh_authority", "unqualified"},
+                {"last_result", {{"ok", false}, {"error", {{"code", error},
+                    {"message", "Registered project preparation requires attention."}}}}}});
+            return;
+        }
         bindings.emplace(root, std::pair{request.maintenance_root_identity, request.maintenance_workspace_identity});
         enrollment_errors.erase(root);
     }
@@ -654,7 +661,14 @@ private:
             return;
         }
         const auto found = bindings.find(request.at("root").get<std::string>());
-        if (found == bindings.end()) throw Error("service-project-denied", "Project was not enrolled in this service.");
+        if (found == bindings.end()) {
+            if (const auto error = enrollment_errors.find(request.at("root").get<std::string>());
+                error != enrollment_errors.end())
+                throw Error(error->second, "Registered project preparation requires attention; inspect Shin Monitor.");
+            if (preparing_projects.contains(fs::path(request.at("root").get<std::string>())))
+                throw Error("project-updating", "Registered project context is being prepared.");
+            throw Error("service-project-denied", "Project was not enrolled in this service.");
+        }
         client.root = found->first; // Attribute only a validated, enrolled root.
         require_local_project_active(home / "projects" / digest(found->first));
         if (command == "query" && !client.admission_pending) {
@@ -942,7 +956,11 @@ Json serve_local_projects(const LocalProjectRequest& request, const std::vector<
     LocalEnrollmentHooks enrollment;
     enrollment.removed = [&](const auto& root) { service.retire_project(root); };
     enrollment.preparing = [&](const auto& root, bool active) {
-        if (active) service.preparing_projects.insert(root);
+        if (active) {
+            service.preparing_projects.insert(root);
+            service.project_state(root, {{"phase", "starting"}, {"ticks", 0}, {"publications", 0}, {"failures", 0},
+                {"refresh_authority", "unqualified"}});
+        }
         else service.preparing_projects.erase(root);
     };
     if (registered) {
@@ -1040,13 +1058,10 @@ Json start_local_service(const LocalProjectRequest& input, const fs::path& execu
     while (Clock::now() < deadline) {
         if (child->exited())
             throw Error("service-start-failed", "Native service exited during startup; review registry and project bindings.");
-        try {
-            auto status = probe();
-            require_registry(status);
+        if (auto status = probe_starting_service(probe)) {
+            require_registry(*status);
             child->release();
-            return compatible(std::move(status), true);
-        } catch (const Error& error) {
-            if (error.code != "service-unavailable" && error.code != "service-socket-unsafe" && error.code != "unsafe-directory") throw;
+            return compatible(std::move(*status), true);
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }

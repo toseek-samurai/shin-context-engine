@@ -323,18 +323,22 @@ class LocalProjectTests(unittest.TestCase):
                          "profile-policy-revision-conflict")
         self.assertEqual(self.init(profile_dir=REGISTRY, expected=2)["error"]["code"], "binding-profile-conflict")
 
-    def test_old_private_artifact_limit_preserves_config_and_total_budget(self):
+    def test_new_kit_reapplies_owned_bootstrap_limits_without_changing_route_identity(self):
         self.init()
         path = self.workspace() / "config/state.json"
         config = json.loads(path.read_text())
         self.assertEqual(config['max_file_bytes'], 256 * 1024 * 1024)
         self.assertEqual(config['max_snapshot_bytes'], 256 * 1024 * 1024)
-        config['max_file_bytes'] = 64 * 1024 * 1024
+        config['max_file_bytes'] //= 2
         self.write_private(path, config)
-        before = path.read_bytes()
-        self.assertTrue(self.run_ce('status')['local_ready'])
-        self.assertFalse(self.init()['rebuilt'])
-        self.assertEqual(path.read_bytes(), before)
+        self.assertEqual(self.init(expected=2)['error']['code'], 'binding-config-conflict')
+        generation = self.workspace() / 'index-generation/state.json'
+        prior = json.loads(generation.read_text())
+        prior['kit_version'] = '0.0.0'
+        self.write_private(generation, prior)
+        self.assertTrue(self.init()['rebuilt'])
+        current = json.loads(path.read_text())
+        self.assertEqual(current, {**config, 'max_file_bytes': config['max_snapshot_bytes']})
         config['max_snapshot_bytes'] *= 2
         self.write_private(path, config)
         self.assertEqual(self.init(expected=2)['error']['code'], 'binding-config-conflict')

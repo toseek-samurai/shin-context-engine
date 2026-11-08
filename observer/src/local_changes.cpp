@@ -100,8 +100,10 @@ public:
     void failed(const char* reason = "native-monitor-failed") noexcept {
         auto previous = failure.load(std::memory_order_acquire);
         if (*previous == '\0') failure.compare_exchange_strong(previous, reason, std::memory_order_acq_rel);
-        good.store(false, std::memory_order_release);
         changed();
+        // Publish the invalidated token before unhealthy becomes observable.
+        // A reader that acquires false health must not retain the old token.
+        good.store(false, std::memory_order_release);
     }
 
     void start() noexcept {

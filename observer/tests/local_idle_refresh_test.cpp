@@ -5,6 +5,7 @@
 #include "context_internal.h"
 #include "../src/local_refresh_guard.h"
 #include "../src/local_refresh_session.h"
+#include "../src/local_index_rebuild.h"
 #include <chrono>
 #include <fstream>
 #include <iostream>
@@ -65,6 +66,63 @@ LocalProjectRequest project(const fs::path& base, const fs::path& profiles, cons
     request.profile_dir = profiles; request.profile_dir_explicit = true; request.command = "init";
     check(local_project(request).at("local_ready") == true, "initial preparation failed");
     return request;
+}
+void fresh_kit_rebuild(const LocalProjectRequest& request, const fs::path& cache) {
+    const auto workspace = request.home / "projects" / digest(request.root.string());
+    LocalRefreshWorker worker;
+    const auto before = warm(worker, request);
+    const std::string snapshot = before.contains("snapshot_id") ? before.at("snapshot_id") :
+        before.at("observation").at("snapshot_id");
+    check(current_index_generation(workspace, snapshot), "initial generation policy was not recorded");
+    const auto sentinel = workspace / "retained-settings";
+    write(sentinel, "keep project settings and history");
+    const auto source = read_text(request.root / "quota.cpp", 4096, false);
+    std::vector<fs::path> artifacts;
+    const auto old_time = fs::file_time_type::clock::now() - std::chrono::hours(48);
+    for (const auto& entry : fs::directory_iterator(cache)) {
+        if (entry.path().extension() != ".sqlite") continue;
+        fs::last_write_time(entry.path(), old_time);
+        artifacts.push_back(entry.path());
+    }
+    check(!artifacts.empty(), "source cache fixture was not prepared");
+    auto prior = index_generation_policy(workspace, snapshot);
+    prior["kit_version"] = "0.0.0";
+    write(workspace / "index-generation/state.json", prior.dump());
+    auto read = request; read.command = "query"; read.query = "quotaLimit";
+    try {
+        const auto result = local_project(read);
+        check(!result.value("ok", false) && !result.contains("source_context"),
+            "a new kit delivered the previous kit's context before rebuilding");
+    } catch (const Error& error) {
+        check(error.code == "project-updating", "fresh generation hid an unrelated read failure");
+    }
+    const auto pending = worker.execute(payload(request), [] { return false; });
+    check(pending.value("ok", false) && pending.value("phase", "") == "coalescing" && !hit(pending),
+        "an earlier kit reused unchanged-source qualification");
+    check(!current_index_generation(workspace, snapshot), "observation stamped an index without rebuilding it");
+    const auto cancelled = worker.execute(payload(request), [] { return true; });
+    check(!cancelled.value("ok", false) && !current_index_generation(workspace, snapshot),
+        "cancelled generation stamped the old index");
+    const auto rebuilt = current(worker, request);
+    check(rebuilt.value("rebuilt", false) && rebuilt.at("snapshot_id") == snapshot,
+        "a new kit must rebuild even a byte-identical publication");
+    check(current_index_generation(workspace, snapshot), "fresh generation policy was not committed");
+    for (const auto& path : artifacts)
+        check(fs::last_write_time(path) != old_time, "fresh generation reused an earlier reader cache");
+    check(read_text(request.root / "quota.cpp", 4096, false) == source &&
+        read_text(sentinel, 4096, false) == "keep project settings and history", "rebuild changed permanent inputs");
+    const auto idle = warm(worker, request);
+    check(hit(idle) && !idle.value("rebuilt", true), "fresh generation caused an endless rebuild loop");
+    write(workspace / "index-generation/state.json", "{unfinished-derived-state");
+    const auto repaired = current(worker, request);
+    check(repaired.value("rebuilt", false) && current_index_generation(workspace, snapshot),
+        "damaged derived generation state did not recover automatically");
+    // A failed installation may have recorded its new generation before the
+    // previous payload restored another index. Its kit label alone is not proof.
+    auto rolled_back = index_generation_policy(workspace, "fnv1a64:0000000000000000");
+    write(workspace / "index-generation/state.json", rolled_back.dump());
+    check(current(worker, request).value("rebuilt", false) && current_index_generation(workspace, snapshot),
+        "a generation receipt for another snapshot bypassed source reconstruction");
 }
 void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
 #ifdef __APPLE__
@@ -188,6 +246,8 @@ void canonical_authority(const fs::path& base, const fs::path& profiles) {
     const auto initial = warm(worker, request);
     check(initial.at("canonical_ready") == true, "canonical checkpoint lost readiness");
     const auto workspace = request.home / "projects" / digest(request.root.string());
+    fresh_kit_rebuild(request, workspace / "source-cache");
+    (void)warm(worker, request);
     const auto receipt = workspace / "qualification/state.json", observer = state / "state.json";
     const auto saved_receipt = read_text(receipt, 256 * 1024, true), saved_observer = read_text(observer, 256 * 1024, true);
     const auto qualified_at = fs::last_write_time(receipt);
@@ -372,6 +432,8 @@ int main(int argc, char** argv) {
         LocalRefreshWorker worker;
         stage = "idle scopes";
         idle_and_scope_isolation(worker, first, second);
+        stage = "fresh kit";
+        fresh_kit_rebuild(first, first.home / "projects" / digest(first.root.string()) / "observer/source-cache");
         stage = "checkpoint eviction";
         checkpoint_eviction(worker, first);
         stage = "response budget";

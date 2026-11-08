@@ -24,6 +24,23 @@ void timed_out(LocalStartupAdmission& admission, const Json& value, int seconds)
 }
 }
 int main() try {
+    // A child can hold its lease and bind the socket before it calls listen().
+    // Keep it owned through that admission refusal, then accept the next status.
+    int probes = 0;
+    const auto endpoint = [&]() -> Json {
+        if (++probes == 1) throw Error("service-busy", "Bound socket is not listening yet.");
+        return status();
+    };
+    check(!probe_starting_service(endpoint), "bound/listen startup gap aborted the owned child");
+    const auto ready = probe_starting_service(endpoint);
+    check(ready && *ready == status() && probes == 2, "ready child status was not preserved");
+    for (const auto* code : {"service-endpoint-changed", "service-response-invalid", "service-mode-conflict", "access-denied"}) {
+        bool refused = false;
+        try { (void)probe_starting_service([&]() -> Json { throw Error(code, "Fixture refusal."); }); }
+        catch (const Error& error) { refused = error.code == code; }
+        check(refused, "startup retried an authority or protocol refusal");
+    }
+
     // Reproduce serial successful admission crossing the old global 60 seconds.
     auto names = roots(10);
     auto value = status();

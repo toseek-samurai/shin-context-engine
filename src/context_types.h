@@ -1,5 +1,7 @@
 #pragma once
 
+#include "product_version.h"
+
 #include <algorithm>
 #include <array>
 #include <atomic>
@@ -48,11 +50,6 @@ namespace shin::context {
 namespace fs = std::filesystem;
 using Json = nlohmann::json;
 
-#ifndef SHIN_VERSION
-#define SHIN_VERSION "0.0.0-dev"
-#endif
-
-inline constexpr std::string_view kProductVersion = SHIN_VERSION;
 inline const fs::path kGeneratedDir = fs::path("docs") / "kb" / "generated";
 inline const std::string kGeneratorVersion = "shin-generator-v24-objective-cpp";
 inline constexpr std::size_t kMaxSectionIndexedTextBytes = 16384;

@@ -1,5 +1,7 @@
 #pragma once
 
+#include "build_version.h"
+
 #include <nlohmann/json.hpp>
 #include <filesystem>
 #include <memory>

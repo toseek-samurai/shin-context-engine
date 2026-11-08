@@ -281,6 +281,55 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
         shin::ui::tr("Open the report for the cause and next step.")};
 }
 
+enum class RecoveryAction { none, profile, search, storage, folder, report };
+struct RecoveryOptions {
+    bool automatic = false;
+    RecoveryAction action = RecoveryAction::none;
+    std::string title, next;
+};
+
+inline RecoveryOptions recovery_options(const Json& project, bool connected) {
+    if (!connected) return {};
+    if (text_field(project, "phase") == "stopped") return {false, RecoveryAction::report,
+        tr("Action needed"), tr("Review the project connection in the full report.")};
+    const auto state = project_state(project, true);
+    const auto coverage = project.value("source_coverage", Json());
+    const bool limited = coverage.is_object() && text_field(coverage, "reason") == "source-observation-limited";
+    const bool quarantined = coverage.is_object() && count(coverage, "quarantined_files") > 0;
+    const bool secret_finding = shin::observer::validation_failure_reason(project.value("validation_diagnostic", Json())) == "secret-like-source-content";
+    if ((state == ProjectState::current || state == ProjectState::standby) &&
+        !active_issue(project) && !quality_warning(project) && !limited && !quarantined) return {};
+    auto code = error_code(project, "error_code");
+    if (code.empty() && active_issue(project)) code = historical_code(project);
+    const auto overview = diagnostic_overview(project, true);
+    if (code == "route-revision-conflict") return {false, RecoveryAction::profile,
+        tr("Review required"), tr("Review project changes before accepting them. Shin keeps the existing approvals until you decide.")};
+    if (code == "storage-quota-exceeded" || code == "storage-free-space-low" || code == "storage-full" || code == "storage-read-only")
+        return {false, RecoveryAction::storage, tr("Action needed"), explain(code).next};
+    if (code == "access-denied" || code == "root-unavailable" || code == "source-io-error" ||
+        code == "incomplete-source-observation" || code == "refresh-incomplete-source" || code == "refresh-source-budget" ||
+        limited || quarantined || secret_finding)
+        return {false, RecoveryAction::folder, tr("Action needed"),
+            code == "incomplete-source-observation" || code == "refresh-incomplete-source" || code == "refresh-source-budget" ?
+            tr("Review project coverage and the reported limits with the project agent. Keep safety and quality checks enabled; Shin will retry after correction.") :
+            code.empty() || secret_finding ? overview.next : explain(code).next};
+    if (quality_warning(project) || code == "refresh-validation-failed" || code == "project-check-failed")
+        return {false, RecoveryAction::search, tr("Review required"), overview.next};
+    // Only known technical retries qualify. An unfamiliar or authority-related
+    // refusal must never promise that a reset or repeated attempts can fix it.
+    const bool transient = code == "project-updating" || code == "refresh-timeout" || code == "refresh-suspended" ||
+        code == "refresh-superseded" || code == "file-changed-during-verification" || code == "refresh-not-current" ||
+        code == "stale-index" || code == "worktree-not-current" || code == "query-snapshot-changed" ||
+        code == "writer-busy" || code == "project-busy" || code == "service-busy";
+    if (state != ProjectState::stopped && (transient || state == ProjectState::pending ||
+        state == ProjectState::checking || state == ProjectState::recovering))
+        return {true, RecoveryAction::report, tr("Automatic recovery"),
+            tr("Shin is retrying in the background. You can keep working. If recovery keeps failing, copy the diagnostic report.")};
+    if (active_issue(project) || state == ProjectState::stopped)
+        return {false, RecoveryAction::report, tr("Action needed"), explain(code).next};
+    return {};
+}
+
 inline const Json* retained_project(const Json& project, const Json& history) {
     const auto rows = history.find("projects");
     if (history.value("status", "") != "ready" || rows == history.end() || !rows->is_array()) return nullptr;

@@ -34,6 +34,9 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
 endif()
 list(TRANSFORM SHIN_NATIVE_SOURCES PREPEND "${SHIN_OBSERVER_ROOT}/src/")
 list(TRANSFORM SHIN_NATIVE_SOURCES APPEND ".cpp")
+configure_file("${SHIN_OBSERVER_ROOT}/src/build_version.cpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/observer_build_version.cpp" @ONLY)
+list(APPEND SHIN_NATIVE_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/generated/observer_build_version.cpp")
 add_library(shin-observer-native STATIC ${SHIN_NATIVE_SOURCES})
 # Version-independent adapter contract. Service/Core/UI changes do not affect
 # this hash; changes to code that remains in a live MCP process require reload.
@@ -51,13 +54,12 @@ endforeach()
 file(SHA256 "${SHIN_OBSERVER_ROOT}/../shared/cmake/Mcp.cmake" hash)
 string(APPEND mcp_contract "sdk:${hash}\n")
 string(SHA256 SHIN_MCP_ADAPTER_CONTRACT "${mcp_contract}")
-file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/mcp_adapter_contract.h"
-    "#pragma once\n#define SHIN_MCP_ADAPTER_CONTRACT \"${SHIN_MCP_ADAPTER_CONTRACT}\"\n")
+configure_file("${SHIN_OBSERVER_ROOT}/cmake/mcp_adapter_contract.h.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated/mcp_adapter_contract.h" @ONLY)
 target_include_directories(shin-observer-native PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
 target_include_directories(shin-observer-native PUBLIC "${SHIN_OBSERVER_ROOT}/include")
 target_link_libraries(shin-observer-native PUBLIC shin-context-core shin-observer-protocol PRIVATE httplib::httplib)
-target_compile_definitions(shin-observer-native PUBLIC SHIN_OBSERVER_VERSION="${SHIN_OBSERVER_VERSION}"
-    SHIN_OBSERVER_STABILITY="${SHIN_OBSERVER_STABILITY}" SHIN_OBSERVER_SOURCE_DISCOVERY=$<BOOL:${SHIN_OBSERVER_SOURCE_DISCOVERY}>)
+target_compile_definitions(shin-observer-native PUBLIC SHIN_OBSERVER_SOURCE_DISCOVERY=$<BOOL:${SHIN_OBSERVER_SOURCE_DISCOVERY}>)
 target_compile_definitions(shin-observer-native PUBLIC SHIN_OBSERVER_HOMEBREW_PREFIX="${SHIN_OBSERVER_HOMEBREW_PREFIX}")
 target_compile_options(shin-observer-native PRIVATE ${SHIN_NATIVE_WARNINGS})
 if(WIN32)

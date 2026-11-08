@@ -151,6 +151,8 @@ set(SHIN_CONTEXT_CORE_SOURCES
     third_party/simdjson/simdjson.cpp
     third_party/pugixml/pugixml.cpp
 )
+configure_file(src/product_version.cpp.in generated/product_version.cpp @ONLY)
+list(APPEND SHIN_CONTEXT_CORE_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/generated/product_version.cpp")
 add_library(shin-context-core STATIC ${SHIN_CONTEXT_CORE_SOURCES})
 add_library(shin-unicode-vendor STATIC third_party/utf8proc/utf8proc.c)
 set_target_properties(shin-unicode-vendor PROPERTIES C_STANDARD 99 C_STANDARD_REQUIRED ON)
@@ -165,7 +167,6 @@ target_include_directories(shin-context-core SYSTEM PUBLIC ${CMAKE_CURRENT_SOURC
 target_link_libraries(shin-context-core PUBLIC Threads::Threads shin-syntax-vendor shin-unicode-vendor)
 include(shared/cmake/SecretScanner.cmake)
 target_link_libraries(shin-context-core PRIVATE re2::re2)
-target_compile_definitions(shin-context-core PUBLIC SHIN_VERSION="${SHIN_VERSION}")
 target_compile_options(shin-context-core PRIVATE ${SHIN_CXX_WARNINGS})
 include(shared/cmake/CoreAllocator.cmake)
 if(SHIN_CONTEXT_BUILD_CLI)
@@ -368,6 +369,9 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
         find_program(JQ_EXECUTABLE jq REQUIRED)
     endif()
     find_package(Python3 COMPONENTS Interpreter REQUIRED)
+    add_test(NAME shin-compiler-cache
+        COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/test_ci_compiler_cache.py)
+    set_tests_properties(shin-compiler-cache PROPERTIES TIMEOUT 30)
     if(WIN32)
         if(SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
             add_test(NAME shin-context-windows-source-cache
@@ -540,7 +544,7 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
     target_include_directories(shin-execution-report-tests PRIVATE src)
     target_include_directories(shin-execution-report-tests SYSTEM PRIVATE third_party)
     target_compile_options(shin-execution-report-tests PRIVATE ${SHIN_CXX_WARNINGS})
-    target_compile_definitions(shin-execution-report-tests PRIVATE SHIN_VERSION="${SHIN_VERSION}")
+    target_sources(shin-execution-report-tests PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated/product_version.cpp")
     add_test(NAME shin-context-execution-report
         COMMAND ${BASH_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/run_execution_report_tests.sh
                 $<TARGET_FILE:shin-execution-report-tests> ${CMAKE_CURRENT_SOURCE_DIR})
@@ -834,4 +838,12 @@ if(SHIN_ENABLE_SANITIZERS)
         target_compile_options(shin-execution-report-tests PRIVATE -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer)
         target_link_options(shin-execution-report-tests PRIVATE -fsanitize=address,undefined)
     endif()
+endif()
+
+# Match the Windows Core smoke preset's complete executable dependency set.
+# The desktop matrix independently builds and qualifies Observer and Monitor.
+if(WIN32 AND BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI AND SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
+    add_custom_target(shin-windows-ci-core DEPENDS
+        shin-context shin-source-discovery shin-source-discovery-tests shin-windows-file-tests
+        shin-publisher-ownership-tests shin-qualified-query-tests shin-source-read-tests)
 endif()

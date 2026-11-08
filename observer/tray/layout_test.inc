@@ -532,6 +532,13 @@ int main(int argc, char** argv) {
                         if (visible == ui_actions.end() || diagnostic_report_text.find(shin::ui::language() == shin::ui::Language::ru ? "сработала проверка секретов" : "secret detection triggered") == std::string::npos)
                             throw std::runtime_error("secret blocker not visible: " + context);
                     }
+                    if (kind == "blocked" || kind == "secret-blocked") {
+                        const auto expected = kind == "blocked" ? 120 : 38;
+                        const auto action = std::find_if(ui_actions.begin(), ui_actions.end(), [&](const auto& item) {
+                            return item.chart == expected && item.enabled;
+                        });
+                        if (action == ui_actions.end()) throw std::runtime_error("recovery action missing: " + context);
+                    }
                     if (kind == "route-review") {
                         const auto action = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) {
                             return item.chart == 70 && item.label == shin::ui::tr("Review changes");
@@ -599,7 +606,7 @@ int main(int argc, char** argv) {
                         }
                     }
                     if (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
-                        return action.chart == 87 && action.informational && action.label == "v" SHIN_OBSERVER_VERSION;
+                        return action.chart == 87 && action.informational && action.label == std::string("v") + SHIN_OBSERVER_VERSION;
                     })) throw std::runtime_error("installed version is not visible and accessible: " + context);
                     for (const auto& action : ui_actions) {
                         if (action.chart == 50) {

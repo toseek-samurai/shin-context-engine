@@ -665,7 +665,7 @@ class LocalRouteTests(unittest.TestCase):
         self.assertEqual(json.loads(grant_path.read_text())['route'], grant['route'])
         self.assertEqual(json.loads(grant_path.read_text())['token'], grant['token'])
         before_index = {p.relative_to(self.f.out): p.read_bytes() for p in self.f.out.rglob('*') if p.is_file()}
-        for generator in ('different-format', 'shin-generator-v999-future', 'shin-generator-v23-unknown'):
+        for generator in ('different-format', 'shin-generator-unsafe.value', 'shin-generator-unsafe\nvalue'):
             with self.subTest(generator=generator):
                 changed = json.loads(binding_path.read_text())
                 changed['generator_version'] = generator

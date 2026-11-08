@@ -8,7 +8,8 @@ Json fetch_windows_release() {
     const auto require = [](bool ok) {
         if (!ok) throw Error("update-check-failed", "The public release feed could not be read.");
     };
-    Internet session(WinHttpOpen(L"Shin-Monitor/" SHIN_OBSERVER_VERSION,
+    const auto user_agent = wide(std::string("Shin-Monitor/") + SHIN_OBSERVER_VERSION);
+    Internet session(WinHttpOpen(user_agent.c_str(),
         WINHTTP_ACCESS_TYPE_AUTOMATIC_PROXY, WINHTTP_NO_PROXY_NAME, WINHTTP_NO_PROXY_BYPASS, 0));
     require(session != nullptr);
     require(WinHttpSetTimeouts(session.get(), 3000, 3000, 3000, 3000) != FALSE);

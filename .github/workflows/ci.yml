@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: read
+  actions: read
 
 concurrency:
   group: source-qualification-${{ github.event.pull_request.number || github.ref }}
@@ -47,9 +48,41 @@ jobs:
           echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
           echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
       - name: Prepare compiler cache
+        timeout-minutes: 1
+        id: compiler-cache
+        continue-on-error: true
         shell: bash
-        run: echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
-      - name: Restore compiler cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
+          compiler="$(command -v c++)"
+          if [[ "$RUNNER_OS" == macOS ]]; then compiler="$(xcrun --find clang++)"; fi
+          python3 -B tools/ci_compiler_cache.py prepare --state "$RUNNER_TEMP/compiler-cache-state.json" \
+            --engine ccache --compiler "$compiler" --component '${{ matrix.component }}'
+      - name: Download cross-tag compiler cache
+        timeout-minutes: 2
+        id: cache-download
+        if: steps.compiler-cache.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.compiler-cache.outputs.artifact_id }}
+          run-id: ${{ steps.compiler-cache.outputs.source_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/compiler-cache-download
+      - name: Import cross-tag compiler cache
+        timeout-minutes: 1
+        id: cache-import
+        if: steps.cache-download.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 -B tools/ci_compiler_cache.py restore --state "$RUNNER_TEMP/compiler-cache-state.json" \
+            --cache "$CCACHE_DIR" --bundle "$RUNNER_TEMP/compiler-cache-download"
+      - name: Restore branch compiler cache
+        timeout-minutes: 2
+        if: steps.cache-import.outputs.restored != 'true'
+        continue-on-error: true
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ccache
@@ -119,6 +152,26 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+      - name: Export compiler cache
+        timeout-minutes: 2
+        id: cache-export
+        if: success() && github.ref_type == 'tag'
+        continue-on-error: true
+        run: |
+          python3 -B tools/ci_compiler_cache.py export --state "$RUNNER_TEMP/compiler-cache-state.json" \
+            --cache "$CCACHE_DIR" --bundle "$RUNNER_TEMP/compiler-cache-upload"
+      - name: Upload compiler cache
+        timeout-minutes: 2
+        if: success() && steps.cache-export.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.compiler-cache.outputs.artifact_name }}
+          path: ${{ runner.temp }}/compiler-cache-upload/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -166,9 +219,41 @@ jobs:
           echo "$(brew --prefix python@3.14)/libexec/bin" >> "$GITHUB_PATH"
           echo "CMAKE_PREFIX_PATH=$(brew --prefix openssl@3)" >> "$GITHUB_ENV"
       - name: Prepare compiler cache
+        timeout-minutes: 1
+        id: compiler-cache
+        continue-on-error: true
         shell: bash
-        run: echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
-      - name: Restore compiler cache
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          echo "CCACHE_DIR=$RUNNER_TEMP/ccache" >> "$GITHUB_ENV"
+          compiler="$(command -v c++)"
+          if [[ "$RUNNER_OS" == macOS ]]; then compiler="$(xcrun --find clang++)"; fi
+          python3 -B tools/ci_compiler_cache.py prepare --state "$RUNNER_TEMP/compiler-cache-state.json" \
+            --engine ccache --compiler "$compiler" --component '${{ matrix.component }}'
+      - name: Download cross-tag compiler cache
+        timeout-minutes: 2
+        id: cache-download
+        if: steps.compiler-cache.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.compiler-cache.outputs.artifact_id }}
+          run-id: ${{ steps.compiler-cache.outputs.source_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/compiler-cache-download
+      - name: Import cross-tag compiler cache
+        timeout-minutes: 1
+        id: cache-import
+        if: steps.cache-download.outcome == 'success'
+        continue-on-error: true
+        run: |
+          python3 -B tools/ci_compiler_cache.py restore --state "$RUNNER_TEMP/compiler-cache-state.json" \
+            --cache "$CCACHE_DIR" --bundle "$RUNNER_TEMP/compiler-cache-download"
+      - name: Restore branch compiler cache
+        timeout-minutes: 2
+        if: steps.cache-import.outputs.restored != 'true'
+        continue-on-error: true
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
         with:
           path: ${{ runner.temp }}/ccache
@@ -242,6 +327,26 @@ jobs:
           retention-days: 14
 
           compression-level: 0
+      - name: Export compiler cache
+        timeout-minutes: 2
+        id: cache-export
+        if: success() && github.ref_type == 'tag'
+        continue-on-error: true
+        run: |
+          python3 -B tools/ci_compiler_cache.py export --state "$RUNNER_TEMP/compiler-cache-state.json" \
+            --cache "$CCACHE_DIR" --bundle "$RUNNER_TEMP/compiler-cache-upload"
+      - name: Upload compiler cache
+        timeout-minutes: 2
+        if: success() && steps.cache-export.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.compiler-cache.outputs.artifact_name }}
+          path: ${{ runner.temp }}/compiler-cache-upload/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
       - name: Upload test reports
         if: always()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -268,11 +373,11 @@ jobs:
         include:
           - component: native
             directory: .
-            preset: windows-native
+            preset: windows-ci-native
             tests: windows-native-smoke
           - component: desktop
             directory: observer
-            preset: windows-desktop
+            preset: windows-ci-desktop
             tests: windows-desktop-smoke
     defaults:
       run:
@@ -295,6 +400,9 @@ jobs:
           python -B ../tools/test_qualify_windows.py
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           ../tools/qualify_windows.ps1 -Probe -Output "$env:SHIN_BUILD_ROOT/user-probe"
+      - name: MSVC and compiler cache toolchain
+        working-directory: .
+        run: ./tools/setup_windows_compiler.ps1
       - name: Packaging toolchain
         if: matrix.component == 'desktop'
         run: |
@@ -316,30 +424,71 @@ jobs:
         run: |
           cmake --version
           python --version
+          python -B "$env:GITHUB_WORKSPACE/tools/test_ci_compiler_cache.py"
+      - name: Prepare compiler cache
+        timeout-minutes: 1
+        id: compiler-cache
+        if: env.SHIN_COMPILER_LAUNCHER != ''
+        continue-on-error: true
+        working-directory: .
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          python -B tools/ci_compiler_cache.py prepare --state "$env:RUNNER_TEMP/compiler-cache-state.json" `
+            --engine sccache --compiler (Get-Command cl.exe).Source --component '${{ matrix.component }}'
+      - name: Download cross-tag compiler cache
+        timeout-minutes: 2
+        id: cache-download
+        if: steps.compiler-cache.outputs.artifact_id != ''
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          artifact-ids: ${{ steps.compiler-cache.outputs.artifact_id }}
+          run-id: ${{ steps.compiler-cache.outputs.source_run }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/compiler-cache-download
+      - name: Import cross-tag compiler cache
+        timeout-minutes: 1
+        if: steps.cache-download.outcome == 'success'
+        continue-on-error: true
+        working-directory: .
+        run: |
+          python -B tools/ci_compiler_cache.py restore --state "$env:RUNNER_TEMP/compiler-cache-state.json" `
+            --cache "$env:SCCACHE_DIR" --bundle "$env:RUNNER_TEMP/compiler-cache-download"
+      - name: Initialize compiler cache statistics
+        if: env.SHIN_COMPILER_LAUNCHER != ''
+        continue-on-error: true
+        run: sccache --zero-stats
       - name: Configure
         run: cmake --preset ${{ matrix.preset }}
       - name: Build
-        run: cmake --build --preset ${{ matrix.preset }}
+        run: python -B "$env:GITHUB_WORKSPACE/tools/ci_progress.py" build -- cmake --build --preset ${{ matrix.preset }}
+      - name: Compiler cache statistics
+        if: always() && env.SHIN_COMPILER_LAUNCHER != ''
+        continue-on-error: true
+        run: |
+          sccache --show-stats
+          sccache --show-stats --stats-format json > "$env:SHIN_BUILD_ROOT/sccache-stats.json"
       - name: Tests
         run: |
           if ('${{ matrix.component }}' -eq 'desktop') {
             # Native client history and post-MSI preparation use a standard
             # desktop token. The hosted build runner itself is elevated.
-            ctest --preset ${{ matrix.tests }} -E '^shin-windows-client-features$' --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+            python -B "$env:GITHUB_WORKSPACE/tools/ci_progress.py" tests -- ctest --preset ${{ matrix.tests }} -E '^shin-windows-client-features$' --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
             if ($LASTEXITCODE) { exit $LASTEXITCODE }
             ../tools/qualify_windows.ps1 -Output "$env:SHIN_BUILD_ROOT/source-user-proof" `
               -FeatureTest "$env:SHIN_BUILD_ROOT/desktop/tray/Release/shin-windows-client-features-tests.exe" `
               -Cli "$env:SHIN_BUILD_ROOT/desktop/Release/shin-ce.exe" `
               -Profiles "$env:GITHUB_WORKSPACE/profiles"
           } else {
-            ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
+            python -B "$env:GITHUB_WORKSPACE/tools/ci_progress.py" tests -- ctest --preset ${{ matrix.tests }} --output-junit "$env:SHIN_BUILD_ROOT/tests.xml"
           }
       - name: Build Windows packages
         if: matrix.component == 'desktop'
         run: |
           # Source tests have completed. Reuse their objects with the production
           # preset; BUILD_TESTING=OFF keeps POSIX-only Core gates out of packaging.
-          cmake --preset windows-kit -B "$env:SHIN_BUILD_ROOT/desktop"
+          cmake --preset windows-ci-kit -B "$env:SHIN_BUILD_ROOT/desktop"
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
           cmake --build "$env:SHIN_BUILD_ROOT/desktop" --config Release --parallel 4
           if ($LASTEXITCODE) { exit $LASTEXITCODE }
@@ -364,6 +513,29 @@ jobs:
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
+      - name: Export compiler cache
+        timeout-minutes: 2
+        id: cache-export
+        if: success() && github.ref_type == 'tag' && env.SHIN_COMPILER_LAUNCHER != ''
+        continue-on-error: true
+        working-directory: .
+        run: |
+          sccache --stop-server
+          if ($LASTEXITCODE) { exit $LASTEXITCODE }
+          python -B tools/ci_compiler_cache.py export --state "$env:RUNNER_TEMP/compiler-cache-state.json" `
+            --cache "$env:SCCACHE_DIR" --bundle "$env:RUNNER_TEMP/compiler-cache-upload"
+      - name: Upload compiler cache
+        timeout-minutes: 2
+        if: success() && steps.cache-export.outputs.ready == 'true'
+        continue-on-error: true
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: ${{ steps.compiler-cache.outputs.artifact_name }}
+          path: ${{ runner.temp }}/compiler-cache-upload/*
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+          overwrite: true
       - name: Upload test reports
         if: always() && steps.paths.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -371,6 +543,7 @@ jobs:
           name: windows-source-${{ matrix.component }}-${{ github.run_id }}-${{ github.run_attempt }}
           path: |
             ${{ steps.paths.outputs.build_root }}/tests.xml
+            ${{ steps.paths.outputs.build_root }}/sccache-stats.json
             ${{ steps.paths.outputs.build_root }}/proof/**
             ${{ steps.paths.outputs.build_root }}/user-probe/**
             ${{ steps.paths.outputs.build_root }}/source-user-proof/**

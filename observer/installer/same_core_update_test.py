@@ -71,12 +71,12 @@ with tempfile.TemporaryDirectory(prefix='shin-same-core-', dir='/tmp') as direct
         (roots[0] / 'quota.cpp').write_text('int quota() { return 2; }\n')
         result = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
         assert result['changed'] and result['version'] == target['version'], result
-        assert result['projects_pending'] == 1 and not result['all_projects_ready'], result
+        assert result['projects_pending'] == len(roots) and not result['all_projects_ready'], result
         assert (home / 'registry/state.json').read_bytes() == registry
         assert binding.read_bytes() == original_binding
         installed = call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)
         assert installed['integrity_verified'] and not installed['recovery_pending']
-        assert installed['project_preparation']['pending_projects'] == 1
+        assert installed['project_preparation']['pending_projects'] == len(roots)
         call(prefix / 'bin/shin-ce', 'service-start', '--home', home)
         for root in roots:
             assert call(prefix / 'bin/shin-ce', 'status', '--home', home, '--root', root)['local_ready']

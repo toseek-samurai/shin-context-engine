@@ -6,6 +6,8 @@
 #include <fstream>
 #include <functional>
 #include <iostream>
+#include <memory>
+#include <optional>
 #include <stdexcept>
 #include <string>
 #include <vector>
@@ -84,6 +86,50 @@ void owner_only_acl(const fs::path& path) {
         EqualSid(owner, reinterpret_cast<TOKEN_USER*>(user.data())->User.Sid), "snapshot owner is not this process user");
 }
 
+std::optional<std::wstring> temporary_environment_value(const wchar_t* name) {
+    SetLastError(ERROR_SUCCESS);
+    const auto size = GetEnvironmentVariableW(name, nullptr, 0);
+    if (size == 0) {
+        const auto error = GetLastError();
+        require(error == ERROR_SUCCESS || error == ERROR_ENVVAR_NOT_FOUND, "cannot inspect temporary environment");
+        if (error == ERROR_ENVVAR_NOT_FOUND) return std::nullopt;
+        return std::wstring{};
+    }
+    std::vector<wchar_t> value(size);
+    SetLastError(ERROR_SUCCESS);
+    const auto length = GetEnvironmentVariableW(name, value.data(), size);
+    require(length < size && (length != 0 || GetLastError() == ERROR_SUCCESS), "temporary environment changed during inspection");
+    return std::wstring(value.data(), length);
+}
+
+class ScopedTemporaryEnvironment {
+    std::optional<std::wstring> original_tmp_ = temporary_environment_value(L"TMP");
+    std::optional<std::wstring> original_temp_ = temporary_environment_value(L"TEMP");
+    bool restored_ = false;
+public:
+    explicit ScopedTemporaryEnvironment(const fs::path& directory) {
+        require(fs::is_directory(directory), "scoped temporary directory must exist");
+        try {
+            require(SetEnvironmentVariableW(L"TMP", directory.c_str()) != FALSE &&
+                    SetEnvironmentVariableW(L"TEMP", directory.c_str()) != FALSE, "cannot scope temporary environment");
+            require(fs::equivalent(fs::temp_directory_path(), directory), "native temporary path ignored scoped environment");
+        } catch (...) { restore(); throw; }
+    }
+    ScopedTemporaryEnvironment(const ScopedTemporaryEnvironment&) = delete;
+    ScopedTemporaryEnvironment& operator=(const ScopedTemporaryEnvironment&) = delete;
+    bool restore() noexcept {
+        if (restored_) return true;
+        const bool tmp = SetEnvironmentVariableW(L"TMP", original_tmp_ ? original_tmp_->c_str() : nullptr) != FALSE;
+        const bool temp = SetEnvironmentVariableW(L"TEMP", original_temp_ ? original_temp_->c_str() : nullptr) != FALSE;
+        restored_ = tmp && temp;
+        return restored_;
+    }
+    bool original_values_restored() const {
+        return temporary_environment_value(L"TMP") == original_tmp_ && temporary_environment_value(L"TEMP") == original_temp_;
+    }
+    ~ScopedTemporaryEnvironment() { restore(); }
+};
+
 DWORD cache_child(const fs::path& root, const wchar_t* mode = L"--probe-cache") {
     std::vector<wchar_t> executable(32768);
     const auto length = GetModuleFileNameW(nullptr, executable.data(), static_cast<DWORD>(executable.size()));
@@ -106,6 +152,7 @@ int main(int argc, char** argv) {
     try {
         if (argc == 3) {
             const auto directory = fs::path(std::u8string(argv[2], argv[2] + std::strlen(argv[2])));
+            require(fs::equivalent(fs::temp_directory_path(), directory.parent_path()), "cache child did not inherit its process temporary root");
             try {
                 shin::windows::PrivateCache cache(directory, "0123456789abcdef");
                 if (std::string_view(argv[1]) == "--interrupt-cache") {
@@ -122,18 +169,44 @@ int main(int argc, char** argv) {
             }
             return 0;
         }
-        const auto root = fs::temp_directory_path() / (L"shin-file-" + std::to_wstring(GetCurrentProcessId()) +
+        const auto original_temporary_root = fs::temp_directory_path();
+        const auto root = original_temporary_root / (L"shin-file-" + std::to_wstring(GetCurrentProcessId()) +
                                           L"-" + std::to_wstring(GetTickCount64()));
         require(fs::create_directory(root), "temporary directory collision");
         struct Cleanup { fs::path root; ~Cleanup() {
             std::error_code ec; fs::remove_all(fs::path(L"\\\\?\\" + root.native()), ec);
         } } cleanup{root};
+        fixture_private_acl(root);
+        ScopedTemporaryEnvironment temporary(root);
         const auto path = root / L"Report.txt";
         write(path, "bounded bytes");
         unsigned passed = 0;
         const auto test = [&](const char* name, const std::function<void()>& action) {
             action(); ++passed; std::cout << "PASS " << name << '\n';
         };
+        test("scoped temporary environment restores after exception", [&] {
+            const auto before_tmp = temporary_environment_value(L"TMP"), before_temp = temporary_environment_value(L"TEMP");
+            bool interrupted = false;
+            try {
+                ScopedTemporaryEnvironment foreign(original_temporary_root);
+                interrupted = true;
+                throw std::runtime_error("synthetic temporary-environment interruption");
+            } catch (const std::runtime_error&) {}
+            require(interrupted && temporary_environment_value(L"TMP") == before_tmp &&
+                    temporary_environment_value(L"TEMP") == before_temp, "nested temporary scope did not restore exact environment");
+            require(fs::equivalent(fs::temp_directory_path(), root), "nested temporary scope changed the native temporary root");
+        });
+        test("scoped temporary environment preserves unset and empty values", [&] {
+            ScopedTemporaryEnvironment restore_current(root);
+            require(SetEnvironmentVariableW(L"TMP", nullptr) != FALSE && SetEnvironmentVariableW(L"TEMP", L"") != FALSE,
+                    "cannot construct unset/empty temporary environment fixture");
+            const auto before_tmp = temporary_environment_value(L"TMP"), before_temp = temporary_environment_value(L"TEMP");
+            require(!before_tmp && before_temp && before_temp->empty(), "unset/empty fixture states collapsed");
+            { ScopedTemporaryEnvironment nested(root); }
+            require(temporary_environment_value(L"TMP") == before_tmp && temporary_environment_value(L"TEMP") == before_temp,
+                    "nested temporary scope collapsed unset and empty values");
+            require(restore_current.restore() && restore_current.original_values_restored(), "temporary fixture environment was not restored");
+        });
         test("bounded repeatable read and native identity", [&] {
             File file(path);
             require(file.read(13) == "bounded bytes" && file.read(13) == "bounded bytes", "read mismatch");
@@ -200,6 +273,7 @@ int main(int argc, char** argv) {
         });
         test("private file-backed read-only mapping and ACL", [&] {
             const auto before = snapshot_files();
+            std::unique_ptr<shin::windows::PrivateMapping> foreign;
             {
                 shin::windows::PrivateMapping mapping(1024 * 1024);
                 const auto files = snapshot_files();
@@ -207,6 +281,14 @@ int main(int argc, char** argv) {
                 for (const auto& file : files) if (!before.contains(file)) created.push_back(file);
                 require(created.size() == 1, "private snapshot file missing");
                 owner_only_acl(created.front());
+                // A different Core process may allocate after our enumeration.
+                // Keep a real backing in the original shared TEMP alive until
+                // our exact cleanup assertion; it is not part of this fixture.
+                {
+                    ScopedTemporaryEnvironment shared(original_temporary_root);
+                    foreign = std::make_unique<shin::windows::PrivateMapping>(128);
+                    foreign->append("unrelated live snapshot");
+                }
                 mapping.append("prefix:");
                 const std::string payload(180000, 'x');
                 mapping.append(payload);
@@ -226,6 +308,8 @@ int main(int argc, char** argv) {
                 require(reopened == INVALID_HANDLE_VALUE, "sealed private backing remains externally readable");
             }
             require(snapshot_files() == before, "temporary backing leaked");
+            foreign->seal();
+            require(foreign->view(0, 23) == "unrelated live snapshot", "own mapping cleanup changed an unrelated live backing");
         });
         test("mapping budget, empty view and unsealed cleanup", [&] {
             const auto before = snapshot_files();
@@ -338,6 +422,7 @@ int main(int argc, char** argv) {
             }
             require(GetProcessHandleCount(GetCurrentProcess(), &after) != 0 && after <= before, "handle leak");
         });
+        require(temporary.restore() && temporary.original_values_restored(), "process temporary environment was not restored exactly");
         std::cout << passed << " native Windows file checks passed\n";
         return 0;
     } catch (const std::exception& error) { std::cerr << "FAIL " << error.what() << '\n'; return 1; }

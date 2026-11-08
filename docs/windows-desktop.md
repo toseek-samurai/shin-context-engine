@@ -112,7 +112,7 @@ An interrupted or failed update keeps **Download and install** disabled until
 **Review previous update** confirms its result. Keep its diagnostic report and
 Installer log. An unknown installation outcome must not trigger another install.
 
-The dev.107 source includes a correction for error `1619` (the MSI
+The dev.108 source includes a correction for error `1619` (the MSI
 could not be opened). The verified, pinned MSI temporarily grants SYSTEM read
 access while Windows Installer runs; the journal, helper, project data and
 approvals keep their private permissions. The MSI's original permissions are

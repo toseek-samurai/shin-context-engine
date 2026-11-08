@@ -2267,10 +2267,13 @@ bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Jso
     StateStore configuration(workspace / "config", false);
     const auto document = configuration.load();
     const auto bootstrap_policy = observer_configuration(workspace, root, profiles);
-    if (!document || !matches_bootstrap_configuration(*document, bootstrap_policy) ||
+    // Rollback reads the saved kit-owned operational values, rather than
+    // requiring this candidate's defaults. Paths, identity and offline
+    // authority must still match; config_from_json validates the saved limits.
+    if (!document || !matches_bootstrap_configuration(*document, bootstrap_policy, true) ||
         core::make_profile("generic-source", profiles).config_hash != expected.at("profile_config_hash").get<std::string>())
         throw Error("binding-config-conflict", "Rollback cannot change project policy or configuration.");
-    const auto config = config_from_json(bootstrap_policy, workspace / "config/state.json");
+    const auto config = config_from_json(*document, workspace / "config/state.json");
     recover_refresh_candidate(workspace);
     shin::generated_io::IndexLock writer(config.out_dir, shin::generated_io::LockMode::exclusive,
                                          shin::generated_io::LockTarget::writer);

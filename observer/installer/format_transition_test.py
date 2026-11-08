@@ -218,7 +218,9 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 assert before['profile_dir'] == str(prefix / 'share/shin-context/profiles')
                 target_profile = candidate / 'share/shin-context/profiles/generic-source.json'
                 new_policy = json.loads(target_profile.read_text())
-                assert new_policy['bootstrapOnly'] and not new_policy['evalCases'] and not new_policy['packEvalCases']
+                # Pack cases are optional in the profile schema; omission is
+                # the empty suite. Null/malformed/nonempty values still fail.
+                assert new_policy['bootstrapOnly'] and not new_policy['evalCases'] and new_policy.get('packEvalCases', []) == []
                 revision = 1469598103934665603
                 for byte in target_profile.read_bytes():
                     revision = ((revision ^ byte) * 1099511628211) & ((1 << 64) - 1)

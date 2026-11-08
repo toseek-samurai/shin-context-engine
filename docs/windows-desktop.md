@@ -42,9 +42,37 @@ exercise Linux and do not substitute for native Windows tests. Mixed-monitor
 moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
 
-### Desktop layout
+### Windows window behavior in development
 
-The current preview uses the original dark Sand palette with the
+The source under development separates the notification-area quick status panel
+from the full Monitor. This host change is not included in the published dev.108
+kit or in the older captures below.
+
+- Click the notification icon for a short status panel with **Open Monitor** and
+  **Check for updates…**. It anchors to the icon, stays inside the selected
+  display's work area, and dismisses on an outside click or Escape. Its native
+  buttons support Tab and Enter.
+- **Open Monitor**, the Start-menu shortcut and an explicit executable launch
+  open an ordinary desktop window. It has a Windows title bar, move/resize,
+  minimize/maximize and taskbar/Alt+Tab presence. It remains open when focus moves
+  to another application. Projects, history, settings and updates use this window.
+- Closing the window hides Monitor to the notification area; **Quit Monitor**
+  exits it. Neither action stops the independently managed Observer service.
+  Escape returns from a detail page without closing the desktop window.
+- Monitor remembers its normal position, size and maximized state. Reopening or
+  switching pages preserves the user's layout; a changed display/DPI configuration
+  restores it into the available work area.
+- Windows sign-in starts Monitor in the background. Opening it again restores
+  the existing window rather than starting a second Monitor.
+
+The quick panel uses standard Win32 text and button controls. The full Monitor
+keeps the shared Sand presentation inside its native desktop frame. Native window
+and keyboard tests complement the render checks; they do not substitute for
+interactive accessibility and multiple-display verification.
+
+### Published desktop layout
+
+The published preview uses the original dark Sand palette with the
 **Overview**, **Projects**, **History** and **Settings** navigation. Project
 connections remain under Projects, the journal opens first in History, and
 technical reports stay in details. Body text is 14 px, with compact labeled

@@ -34,6 +34,8 @@ with the component version files. Before tagging, run both
 the root agent-entry byte budget after maintenance-policy edits.
 Budgeted `AGENTS.md` and `SKILL.md` entrypoints use LF on every platform so
 checkout newline conversion cannot change those byte counts.
+The large shared `observer/tray/monitor_view.h` header also uses LF so a Windows
+checkout remains within the same source-file byte budget as the canonical input.
 
 Before tagging a Core or Observer change, also build the native Observer with
 source discovery and MCP enabled and run its complete CTest suite with

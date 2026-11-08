@@ -172,7 +172,7 @@ def check_msi(path):
         assert sequence['InstallFiles'] < sequence['ShinScmInstall']
         assert sequence['ShinScmUndoInstall'] < sequence['ShinScmInstall']
         startup = rows("SELECT `Name`, `Value` FROM `Registry` WHERE `Key` = 'Software\\Microsoft\\Windows\\CurrentVersion\\Run'", 2)
-        assert ['ShinMonitor', '"[#CM_FP_bin.shin_tray.exe]"'] in startup, startup
+        assert ['ShinMonitor', '"[#CM_FP_bin.shin_tray.exe]" --background'] in startup, startup
         check_msi_ui(rows, properties)
         print('MSI metadata: per-machine, Program Files, HKLM, native SCM actions/rollback, separate Monitor startup passed')
         return properties
@@ -245,7 +245,19 @@ def main():
         assert rendered['update_frames'] == 124 and rendered['update_launch_attempts'] == 3, rendered
         assert rendered['shell_integration'] is (not args.headless_render)
         assert rendered['taskbar_recreated_event'] is (None if args.headless_render else True)
-        assert rendered['focus_dismissal'] and rendered['escape']
+        assert rendered['desktop_focus_preserved'] and rendered['desktop_escape_preserved'] and rendered['close_to_tray']
+        run([kit / 'bin/shin-tray.exe', '--window-shell-test', base / 'windows-shell'])
+        shell = json.loads((base / 'windows-shell/result.json').read_text())
+        assert shell['ok'] and shell['source_fixture_only'], shell
+        assert {'desktop_native_frame_and_task_switching', 'desktop_survives_focus_loss_and_escape',
+                'desktop_close_and_placement_round_trip', 'desktop_minimize_maximize_and_reopen',
+                'quick_panel_is_independent_and_dismisses_only_itself', 'quick_panel_keyboard_and_native_controls',
+                'quick_update_opens_persistent_desktop_without_repositioning',
+                'single_instance_reopen_restores_hidden_desktop',
+                'second_process_reuses_existing_desktop', 'background_start_keeps_both_surfaces_hidden',
+                'qualification_lock_collision_fails_closed',
+                'malformed_placement_falls_back_to_visible_desktop', 'quick_actions_remain_visible_in_short_work_area',
+                'quick_panel_en_ru_and_content_size_stability'} <= set(shell['checks']), shell
         root = base / 'project'
         root.mkdir()
         (root / 'quota.cpp').write_text('int quotaLimit() { return 42; }\n', encoding='utf-8')

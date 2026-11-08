@@ -17,7 +17,7 @@
       </Component>
       <Component Id="ShinMonitorStartup" Guid="*">
         <RegistryValue Root="HKLM" Key="Software\Microsoft\Windows\CurrentVersion\Run"
-          Name="ShinMonitor" Type="string" Value="&quot;[#CM_FP_bin.shin_tray.exe]&quot;" KeyPath="yes"/>
+          Name="ShinMonitor" Type="string" Value="&quot;[#CM_FP_bin.shin_tray.exe]&quot; --background" KeyPath="yes"/>
       </Component>
     </DirectoryRef>
   </Fragment>

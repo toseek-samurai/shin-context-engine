@@ -2,6 +2,8 @@
 #include <shellapi.h>
 #include <shlobj.h>
 #include <d3d11.h>
+#include <dwmapi.h>
+#include <commctrl.h>
 #include <wincodec.h>
 #include <wrl/client.h>
 #include <winhttp.h>
@@ -11,6 +13,7 @@
 #include "windows_installation.h"
 #include "imgui_impl_win32.h"
 #include "windows_dpi.h"
+#include "windows_shell.h"
 #include "imgui_impl_dx11.h"
 #include "monitor_view.h"
 #include <fstream>
@@ -40,13 +43,15 @@ ComPtr<ID3D11ShaderResourceView> brand_texture;
 ImFont* symbols = nullptr;
 NOTIFYICONDATAW tray{};
 UINT taskbar_created = 0;
-bool compact = false, modal = false, test_mode = false;
+bool compact = false, modal = false, test_mode = false, preview_mode = false;
 bool updates_page = false;
 float test_dpi_scale = 1.0f;
 void open_updates(bool check=true);
 bool management_page = false;
 void open_management(int code);
 void show_panel();
+void refresh_quick_panel();
+ViewState synthetic_view();
 void render_management();
 
 void checked(HRESULT result, const char* message) {
@@ -239,7 +244,7 @@ HICON logo() {
     return result;
 }
 void register_icon() {
-    if (test_mode) return;
+    if (test_mode && !preview_mode) return;
     tray.cbSize=sizeof(tray); tray.hWnd=panel; tray.uID=1;
     tray.uFlags=NIF_MESSAGE|NIF_ICON|NIF_TIP|NIF_SHOWTIP; tray.uCallbackMessage=tray_message;
     if (!tray.hIcon) tray.hIcon=logo();
@@ -247,18 +252,7 @@ void register_icon() {
     if (!Shell_NotifyIconW(NIM_ADD,&tray)) return; // Explorer may be restarting; the timer retries.
     tray.uVersion=NOTIFYICON_VERSION_4; Shell_NotifyIconW(NIM_SETVERSION,&tray);
 }
-void close_panel() { ShowWindow(panel,SW_HIDE); monitor_motion.initialized=false; if(monitor) monitor->visible=false; }
-void show_panel() {
-    POINT point{}; GetCursorPos(&point); MONITORINFO info{sizeof(info)};
-    GetMonitorInfoW(MonitorFromPoint(point,MONITOR_DEFAULTTONEAREST),&info);
-    const float scale = ImGui_ImplWin32_GetDpiScaleForMonitor(MonitorFromPoint(point, MONITOR_DEFAULTTONEAREST));
-    const int width=std::min(static_cast<int>((management_page || updates_page?620:compact?400:520)*scale),static_cast<int>(info.rcWork.right-info.rcWork.left)-24);
-    const int height=std::min(static_cast<int>((management_page?720:updates_page?640:compact?560:680)*scale),static_cast<int>(info.rcWork.bottom-info.rcWork.top)-24);
-    const int x=std::clamp(static_cast<int>(point.x)-width/2,static_cast<int>(info.rcWork.left)+12,static_cast<int>(info.rcWork.right)-width-12);
-    const int y=std::clamp(static_cast<int>(point.y)-height,static_cast<int>(info.rcWork.top)+12,static_cast<int>(info.rcWork.bottom)-height-12);
-    SetWindowPos(panel,management_page || updates_page ? HWND_NOTOPMOST : HWND_TOPMOST,x,y,width,height,SWP_SHOWWINDOW); SetForegroundWindow(panel);
-    if(monitor) monitor->visible=true;
-}
+#include "windows_host.h"
 #include "windows_command.h"
 #include "windows_management.h"
 #include "windows_updates.h"
@@ -268,23 +262,6 @@ float dashboard_height_limit(float dpi) {
     if(!GetMonitorInfoW(MonitorFromWindow(panel,MONITOR_DEFAULTTONEAREST),&info)) return 0;
     const float available=static_cast<float>(info.rcWork.bottom-info.rcWork.top-24)/dpi;
     return std::max(1.0f,std::min(compact?560.0f:680.0f,available));
-}
-void fit_dashboard_height(float requested,bool allow_test=false) {
-    if((test_mode&&!allow_test) || management_page || updates_page || modal ||
-        (!test_mode&&!IsWindowVisible(panel)) || !std::isfinite(requested) || requested<=0) return;
-    const float dpi=test_mode?test_dpi_scale:static_cast<float>(GetDpiForWindow(panel))/96.0f;
-    MONITORINFO info{sizeof(info)};RECT bounds{};
-    if(dpi<=0 || !GetWindowRect(panel,&bounds) || !GetMonitorInfoW(MonitorFromWindow(panel,MONITOR_DEFAULTTONEAREST),&info)) return;
-    const int maximum=static_cast<int>(std::floor(dashboard_height_limit(dpi)*dpi));
-    if(maximum<=0) return;
-    const auto bounded=std::min(requested,static_cast<float>(maximum)/dpi);
-    const int height=std::clamp(static_cast<int>(std::ceil(bounded*dpi)),std::min(static_cast<int>(280*dpi),maximum),maximum);
-    if(std::abs(static_cast<int>(bounds.bottom-bounds.top)-height)<=1) return;
-    const int bottom=std::clamp(static_cast<int>(bounds.bottom),static_cast<int>(info.rcWork.top)+12+height,static_cast<int>(info.rcWork.bottom)-12);
-    // Keep the tray edge anchored. Resizing must not activate the popup or
-    // promote it above another native window opened by an action this frame.
-    SetWindowPos(panel,nullptr,bounds.left,bottom-height,bounds.right-bounds.left,height,
-        SWP_NOZORDER|SWP_NOACTIVATE|SWP_NOOWNERZORDER);
 }
 float render_frame(const ViewState& state,bool automatic=false,float test_height_limit=0) {
     const float dpi = test_mode ? test_dpi_scale : static_cast<float>(GetDpiForWindow(panel))/96.0f;
@@ -296,7 +273,7 @@ float render_frame(const ViewState& state,bool automatic=false,float test_height
     if (management_page) render_management();
     else if (updates_page && release_check) render_windows_updates(release_check->snapshot());
     else {
-        float height_limit=(!test_mode||automatic)?dashboard_height_limit(dpi):0;
+        float height_limit=(test_mode&&automatic)?dashboard_height_limit(dpi):0;
         if(test_mode&&automatic&&test_height_limit>0) height_limit=std::min(height_limit,test_height_limit);
         preferred_height=render(state,height_limit);
     }
@@ -328,6 +305,7 @@ LRESULT CALLBACK report_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
 LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lparam) {
     if (message == language_message) {
         if (report) SetWindowTextW(report, wide(shin::ui::tr("Shin · Diagnostics")).c_str());
+        refresh_quick_panel();
         return 0;
     }
     try {
@@ -348,16 +326,36 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             if(swap_chain && wparam!=SIZE_MINIMIZED) {
                 context->OMSetRenderTargets(0,nullptr,nullptr); target.Reset();
                 checked(swap_chain->ResizeBuffers(0,LOWORD(lparam),HIWORD(lparam),DXGI_FORMAT_UNKNOWN,0),"Cannot resize Monitor."); make_target();
-            } return 0;
+            }
+            capture_desktop_placement(false); update_monitor_visibility(); return 0;
+        case WM_EXITSIZEMOVE: capture_desktop_placement(true); return 0;
+        case WM_GETMINMAXINFO: {
+            const auto dpi = static_cast<int>(GetDpiForWindow(window));
+            auto* limits = reinterpret_cast<MINMAXINFO*>(lparam);
+            MONITORINFO info{sizeof(info)}; GetMonitorInfoW(MonitorFromWindow(window,MONITOR_DEFAULTTONEAREST),&info);
+            limits->ptMinTrackSize = {std::min(MulDiv(480,dpi,96),static_cast<int>(info.rcWork.right-info.rcWork.left)),
+                std::min(MulDiv(360,dpi,96),static_cast<int>(info.rcWork.bottom-info.rcWork.top))};
+            return 0;
+        }
         case WM_DPICHANGED: {
             const auto* rect = reinterpret_cast<const RECT*>(lparam);
             SetWindowPos(window,nullptr,rect->left,rect->top,rect->right-rect->left,rect->bottom-rect->top,SWP_NOZORDER|SWP_NOACTIVATE); return 0;
         }
-        case WM_ACTIVATE:
-            if(LOWORD(wparam)==WA_INACTIVE && !modal && !management_page && !updates_page) close_panel(); return 0;
-        case WM_KEYDOWN: if(wparam==VK_ESCAPE) {close_panel();return 0;} break;
+        // Let DefWindowProc perform normal activation and keyboard-focus work.
+        // Only the independent quick popup dismisses on focus loss.
+        case WM_ACTIVATE: break;
+        case WM_KEYDOWN:
+            if(wparam==VK_ESCAPE && !modal) {
+                if(management_page || updates_page) management_page=updates_page=false;
+                else selected.clear();
+                return 0;
+            }
+            if(wparam=='W' && (GetKeyState(VK_CONTROL)&0x8000)) {close_panel();return 0;}
+            break;
         case WM_CLOSE: close_panel(); return 0;
-        case WM_DESTROY: PostQuitMessage(0);return 0;
+        case WM_QUERYENDSESSION: return TRUE;
+        case WM_ENDSESSION: if(wparam) capture_desktop_placement(true); return 0;
+        case WM_DESTROY: close_quick_panel(); PostQuitMessage(0);return 0;
         case WM_SETTINGCHANGE:
             if(!test_mode) {
                 const auto next=logo(), previous=tray.hIcon;
@@ -369,15 +367,19 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                 const auto state=monitor->snapshot();
                 wcscpy_s(tray.szTip,state.connected?wide(shin::ui::tr("Shin: service connected")).c_str():wide(shin::ui::tr("Shin: no fresh service response")).c_str());
                 if(!Shell_NotifyIconW(NIM_MODIFY,&tray)) register_icon();
+                if(IsWindowVisible(quick_popup)) refresh_quick_panel();
             } return 0;
         case tray_message:
             if(LOWORD(lparam)==NIN_SELECT || LOWORD(lparam)==NIN_KEYSELECT) {
-                if(IsWindowVisible(window)) close_panel();else show_panel();
+                if(IsWindowVisible(quick_popup)) close_quick_panel();else show_quick_panel();
+            } else if(LOWORD(lparam)==WM_LBUTTONDBLCLK) {
+                show_panel();
             } else if(LOWORD(lparam)==WM_CONTEXTMENU) {
-                const auto choice=menu_choice({{1,wide(shin::ui::tr("Open panel")).c_str()},{4,wide(shin::ui::tr("Check for updates…")).c_str()},{2,wide(shin::ui::tr("Compact view")).c_str()},{3,wide(shin::ui::tr("Quit Monitor")).c_str()}},compact?2:0);
+                close_quick_panel();
+                const auto choice=menu_choice({{1,wide(shin::ui::tr("Open Monitor")).c_str()},{4,wide(shin::ui::tr("Check for updates…")).c_str()},{2,wide(shin::ui::tr("Compact view")).c_str()},{3,wide(shin::ui::tr("Quit Monitor")).c_str()}},compact?2:0);
                 if(choice==1) show_panel();
                 else if(choice==2) {compact=!compact;settings["compact"]=compact;save_settings();if(IsWindowVisible(window))show_panel();}
-                else if(choice==3) DestroyWindow(window);
+                else if(choice==3) {capture_desktop_placement(true);DestroyWindow(window);}
                 else if(choice==4) open_updates();
             } return 0;
         default: break;
@@ -663,76 +665,29 @@ void management_and_dpi_test(const fs::path& output,const ViewState& state) {
     management_page=false;management.root.clear();shin::ui::set_language(language);dashboard_view=0;
 }
 
-void adaptive_height_test(const fs::path& output,const ViewState& state) {
-    RECT unchanged{};GetWindowRect(panel,&unchanged);
-    const auto require_unchanged=[&] {
-        RECT actual{};GetWindowRect(panel,&actual);
-        if(!EqualRect(&unchanged,&actual)) throw std::runtime_error("Guarded auto-fit resized Monitor.");
-    };
-    fit_dashboard_height(280);require_unchanged(); // Fixed test fixtures stay fixed.
-    for(bool* blocked:{&management_page,&updates_page,&modal}) {
-        *blocked=true;fit_dashboard_height(280,true);require_unchanged();*blocked=false;
-    }
-    for(float invalid:{0.0f,-1.0f,std::numeric_limits<float>::infinity(),std::numeric_limits<float>::quiet_NaN()}) {
-        fit_dashboard_height(invalid,true);require_unchanged();
-    }
+void desktop_size_test(const fs::path& output,const ViewState& state) {
     const auto previous_language=shin::ui::language();
     const auto foreground=GetForegroundWindow();
     const bool visible=IsWindowVisible(panel)!=FALSE;
-    Json cases=Json::array();bool shortened=false;
-    SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(-100,-100));
+    unsigned cases=0;
     for(float scale:{1.0f,1.5f,2.0f}) for(bool compact_size:{false,true}) {
         test_dpi_scale=scale;compact=compact_size;
-        MONITORINFO info{sizeof(info)};
-        if(!GetMonitorInfoW(MonitorFromWindow(panel,MONITOR_DEFAULTTONEAREST),&info)) throw std::runtime_error("Cannot locate auto-fit test monitor.");
-        const int maximum=static_cast<int>(std::floor(dashboard_height_limit(scale)*scale));
-        const int width=static_cast<int>((compact_size?400:520)*scale);
         for(const auto language:{shin::ui::Language::en,shin::ui::Language::ru}) for(const int view:{0,1,3,2}) {
             shin::ui::set_language(language);dashboard_view=view;selected.clear();monitor_motion=MonitorMotion{};
-            SetWindowPos(panel,nullptr,info.rcWork.left+12,info.rcWork.top+12,width,maximum,SWP_NOZORDER|SWP_NOACTIVATE);
+            const int width=static_cast<int>((compact_size?480:720)*scale),height=static_cast<int>(560*scale);
+            SetWindowPos(panel,nullptr,0,0,width,height,SWP_NOZORDER|SWP_NOACTIVATE);
             RECT before{};GetWindowRect(panel,&before);
-            for(int frame=0;frame<8;++frame) {
-                const auto preferred=render_frame(state,true);
-                checked(swap_chain->Present(0,0),"Cannot present auto-fit test frame.");fit_dashboard_height(preferred,true);
-            }
-            RECT fitted{};GetWindowRect(panel,&fitted);
             for(int frame=0;frame<3;++frame) {
-                const auto preferred=render_frame(state,true);
-                checked(swap_chain->Present(0,0),"Cannot present stable auto-fit test frame.");fit_dashboard_height(preferred,true);
+                render_frame(state);checked(swap_chain->Present(0,0),"Cannot present desktop layout frame.");
             }
-            RECT stable{};GetWindowRect(panel,&stable);
-            const int height=static_cast<int>(fitted.bottom-fitted.top);
-            if(!EqualRect(&fitted,&stable) || fitted.bottom!=before.bottom || fitted.right-fitted.left!=width ||
-                height>maximum || fitted.top<info.rcWork.top+12 || fitted.bottom>info.rcWork.bottom-12 ||
-                GetForegroundWindow()!=foreground || (IsWindowVisible(panel)!=FALSE)!=visible)
-                throw std::runtime_error("Auto-fit lost its stable size, screen bound, bottom anchor or focus.");
-            if(view==2 && height!=maximum) throw std::runtime_error("History must retain the full layout height.");
-            if(view==1 && height<maximum) shortened=true;
-            check_action_bounds({static_cast<float>(width)/scale,static_cast<float>(height)/scale});check_action_ids();
-            cases.push_back({{"dpi",static_cast<int>(scale*100)},{"compact",compact_size},{"language",language==shin::ui::Language::ru?"ru":"en"},
-                {"view",view},{"height",height},{"maximum",maximum}});
+            RECT after{};GetWindowRect(panel,&after);
+            if(!EqualRect(&before,&after) || GetForegroundWindow()!=foreground || (IsWindowVisible(panel)!=FALSE)!=visible)
+                throw std::runtime_error("Desktop content changed the user's size, position, visibility or focus.");
+            check_action_bounds({static_cast<float>(width)/scale,static_cast<float>(height)/scale});check_action_ids();++cases;
         }
     }
-    if(!shortened) throw std::runtime_error("Short project lists never fit their natural height.");
-    test_dpi_scale=1;compact=false;shin::ui::set_language(shin::ui::Language::en);
-    SetWindowPos(panel,nullptr,0,0,520,420,SWP_NOZORDER|SWP_NOACTIVATE);dashboard_view=1;
-    const auto capped_frame=[&](const ViewState& view) {
-        const auto preferred=render_frame(view,true,420);
-        checked(swap_chain->Present(0,0),"Cannot present small-cap auto-fit frame.");fit_dashboard_height(preferred,true);
-    };
-    for(int frame=0;frame<8;++frame) capped_frame(state);
-    RECT short_page{};GetClientRect(panel,&short_page);
-    if(short_page.bottom>=400) throw std::runtime_error("Small-cap warning fixture did not start from a short page.");
-    auto warning=state;warning.data["telemetry"]["project_states"][0]["documentation_warnings"]=1;dashboard_view=0;
-    for(int frame=0;frame<8;++frame) capped_frame(warning);
-    RECT warning_page{};GetClientRect(panel,&warning_page);
-    if(warning_page.bottom>420 || std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& action){return action.chart==121;}))
-        throw std::runtime_error("Auto-fit lost the warning after leaving a short page at the 420px height cap.");
-    check_action_bounds({520,static_cast<float>(warning_page.bottom)});check_action_ids();
-    std::ofstream(output/"adaptive-result.json")<<Json{{"cases",cases},{"stable",true},{"bottom_anchor",true},{"screen_bounds",true},
-        {"fixed_mode_guard",true},{"management_updates_modal_guards",true},{"invalid_height_guards",true},{"focus_preserved",true},
-        {"small_cap_warning",true}}.dump(2);
     test_dpi_scale=1;compact=false;shin::ui::set_language(previous_language);dashboard_view=0;
+    std::ofstream(output/"desktop-size-result.json")<<Json{{"cases",cases},{"user_size_preserved",true},{"focus_preserved",true}}.dump(2);
 }
 
 void documentation_main_views(ViewState state,const fs::path& output) {
@@ -774,8 +729,8 @@ void documentation_main_views(ViewState state,const fs::path& output) {
             dashboard_view=view;monitor_motion=MonitorMotion{};
             SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(-100,-100));
             for(int frame=0;frame<8;++frame) {
-                const auto preferred=render_frame(state,true);
-                checked(swap_chain->Present(0,0),"Cannot present documentation frame.");fit_dashboard_height(preferred,true);
+                render_frame(state);
+                checked(swap_chain->Present(0,0),"Cannot present documentation frame.");
             }
             RECT client{};GetClientRect(panel,&client);
             const ImVec2 size{static_cast<float>(client.right),static_cast<float>(client.bottom)};
@@ -788,15 +743,20 @@ void documentation_main_views(ViewState state,const fs::path& output) {
     apply_language_preference(previous_preference);shin::ui::set_language(previous_language);selected.clear();dashboard_view=0;
 }
 
-int render_test(const fs::path& output, bool shell) {
-    fs::create_directories(output);
-    check_update_worker();
-    const auto launch_attempts=check_update_launch_errors();
+ViewState synthetic_view() {
     ViewState state; state.connected=true;
     const Json project{{"id","shin"},{"name","Shin Context Engine"},{"root","C:\\Projects\\Shin"},
         {"phase","current"},{"active_issue",false},{"error_code",""},{"publications",12},{"preparations",12},{"last_tick_ms",42},{"authority","local"},{"query_ready",true}};
     state.data={{"version",SHIN_OBSERVER_VERSION},{"registry_error",""},{"enrollment_errors",Json::object()},
         {"query_workers",0},{"telemetry",{{"project_states",Json::array({project})},{"history",{{"status","ready"}}}}}};
+    state.received=Clock::now();return state;
+}
+
+int render_test(const fs::path& output, bool shell) {
+    fs::create_directories(output);
+    check_update_worker();
+    const auto launch_attempts=check_update_launch_errors();
+    auto state=synthetic_view();
     unsigned frames=0;
     unsigned cold_frames=0;
     unsigned documentation_frames=0;
@@ -830,7 +790,7 @@ int render_test(const fs::path& output, bool shell) {
         update_frames+=updates_render(output,size);
     }
     management_and_dpi_test(output,state);
-    adaptive_height_test(output,state);
+    desktop_size_test(output,state);
     documentation_main_views(state,output);
     const auto icon=logo();DestroyIcon(icon);
     {
@@ -846,18 +806,21 @@ int render_test(const fs::path& output, bool shell) {
             Shell_NotifyIconW(NIM_DELETE,&tray);
         }
         ShowWindow(panel,SW_SHOWNOACTIVATE);SendMessageW(panel,WM_ACTIVATE,WA_INACTIVE,0);
-        if(IsWindowVisible(panel)) throw std::runtime_error("Popover did not dismiss on focus loss.");
+        if(!IsWindowVisible(panel)) throw std::runtime_error("Desktop dismissed on focus loss.");
         ShowWindow(panel,SW_SHOWNOACTIVATE);SendMessageW(panel,WM_KEYDOWN,VK_ESCAPE,0);
-        if(IsWindowVisible(panel)) throw std::runtime_error("Popover did not dismiss on Escape.");
+        if(!IsWindowVisible(panel)) throw std::runtime_error("Desktop dismissed on Escape.");
+        SendMessageW(panel,WM_CLOSE,0,0);
+        if(IsWindowVisible(panel) || !IsWindow(panel)) throw std::runtime_error("Desktop close did not hide the live host.");
     }
     std::ofstream(output/"result.json")<<Json{{"frames",frames},{"cold_frames",cold_frames},{"documentation_frames",documentation_frames},{"update_frames",update_frames},
         {"dpi_scales",Json::array({100,150,200})},{"dpi_physical_clicks",true},{"management_en_ru",true},
         {"unique_action_ids",true},{"update_controls",true},{"update_worker",true},{"update_launch_attempts",launch_attempts},
         {"nonblank",true},{"action_bounds",true},{"logo",true},
         {"shell_integration",shell},{"taskbar_recreated_event",shell ? Json(true) : Json(nullptr)},
-        {"focus_dismissal",true},{"escape",true}}.dump(2);
+        {"desktop_focus_preserved",true},{"desktop_escape_preserved",true},{"close_to_tray",true}}.dump(2);
     return 0;
 }
+#include "windows_host_test.h"
 }
 
 int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
@@ -885,26 +848,33 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         }
         fs::path home=known_folder(FOLDERID_Profile)/".shin-ce", output;
         std::wstring caption=L"Shin Monitor test";
-        bool test_shell=true;
+        bool test_shell=true, shell_mode=false, background_start=false;
         if(args.size()==3 && (args[1]==L"--render-test" || args[1]==L"--render-headless-test")) {
             test_mode=true;output=args[2];test_shell=args[1]==L"--render-test";
         }
+        else if(args.size()==3 && args[1]==L"--window-shell-test") { test_mode=true;shell_mode=true;output=args[2]; }
+        else if(args.size()==3 && args[1]==L"--desktop-preview") { test_mode=true;preview_mode=true;output=args[2]; }
+        else if(args.size()==2 && args[1]==L"--background") background_start=true;
         else if(args.size()==3 && args[1]==L"--home") home=args[2];
         else if(args.size()!=1) throw std::runtime_error(shin::ui::tr("Use shin-tray [--home DIRECTORY]."));
-        if(!test_mode) {
-            if(const auto installed=installed_local_home(current_executable_path())) {
-                if(args.size()!=1 && fs::absolute(home)!=*installed) throw std::runtime_error(shin::ui::tr("Monitor belongs to another installed home."));
+        if(!test_mode || preview_mode || shell_mode) {
+            if(!test_mode) if(const auto installed=installed_local_home(current_executable_path())) {
+                if(args.size()==3 && args[1]==L"--home" && fs::absolute(home)!=*installed) throw std::runtime_error(shin::ui::tr("Monitor belongs to another installed home."));
                 home=*installed;
             }
+            if(test_mode) {output=fs::absolute(output).lexically_normal();fs::create_directories(output);home=output/"synthetic-home";}
             home=fs::absolute(home).lexically_normal();
             caption=L"Shin Monitor "+wide(digest(home.string()).substr(0,24));
-            const auto base=known_folder(FOLDERID_LocalAppData)/"Shin";ensure_private_directory(base);
+            const auto base=test_mode?output:known_folder(FOLDERID_LocalAppData)/"Shin";
+            if(!test_mode) ensure_private_directory(base);
             const auto folder=base/("monitor-"+digest(home.string()).substr(0,24));ensure_private_directory(folder);
             try { preferences=std::make_unique<StateStore>(folder,true); }
             catch(const Error& error) {
                 if(error.code=="writer-busy") {
-                    if(const auto existing=FindWindowW(window_class,caption.c_str())) {
-                        PostMessageW(existing,reopen_message,0,0);CoUninitialize();return 0;
+                    if(shell_mode) throw Error("window-shell-fixture-busy","Window shell qualification output is already in use.");
+                    if(activate_existing_monitor(caption,background_start)) {
+                        if(test_mode) std::cout<<Json{{"ok",true},{"existing_instance",true}}.dump()<<'\n';
+                        CoUninitialize();return 0;
                     }
                 }
                 throw;
@@ -914,17 +884,29 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             apply_language_preference(settings.value("language",0));
             dashboard_view=std::clamp(settings.value("view",0),0,3);compact=settings.value("compact",false);
             model_project=settings.value("model_project","");
-            management.home=home;
-            monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")));
+            if(!test_mode) {
+                management.home=home;
+                monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")));
+            }
         }
         // Render in logical coordinates into a physical-resolution framebuffer.
         // Mouse coordinates use the same DPI transform; no DWM bitmap scaling.
         SetThreadDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+        INITCOMMONCONTROLSEX controls{sizeof(controls),ICC_STANDARD_CLASSES};
+        if(!InitCommonControlsEx(&controls)) throw std::runtime_error("Cannot initialize Windows controls.");
         WNDCLASSEXW wc{sizeof(wc)};wc.lpfnWndProc=window_proc;wc.hInstance=instance;wc.lpszClassName=window_class;wc.hCursor=LoadCursorW(nullptr,IDC_ARROW);
+        desktop_icon=logo();wc.hIcon=desktop_icon;wc.hIconSm=desktop_icon;
         if(!RegisterClassExW(&wc)) throw std::runtime_error(shin::ui::tr("Cannot register Monitor window."));
         wc.lpfnWndProc=report_proc;wc.lpszClassName=L"ShinMonitorReport";RegisterClassExW(&wc);
-        panel=CreateWindowExW(WS_EX_TOOLWINDOW|WS_EX_TOPMOST,window_class,caption.c_str(),WS_POPUP,0,0,520,680,nullptr,nullptr,instance,nullptr);
+        const bool render_fixture=test_mode && !shell_mode && !preview_mode;
+        panel=CreateWindowExW(render_fixture?WS_EX_TOOLWINDOW:shin::tray::windows_shell::desktop_extended_style,
+            window_class,preview_mode?L"Shin Monitor · Windows preview":L"Shin Monitor",
+            render_fixture?WS_POPUP:shin::tray::windows_shell::desktop_style,0,0,720,760,nullptr,nullptr,instance,nullptr);
         if(!panel) throw std::runtime_error(shin::ui::tr("Cannot create Monitor window."));
+        // Opt into the documented system dark frame when available. Older
+        // Windows versions keep their standard frame if the attribute is absent.
+        const BOOL dark_frame=TRUE;
+        (void)DwmSetWindowAttribute(panel,DWMWA_USE_IMMERSIVE_DARK_MODE,&dark_frame,sizeof(dark_frame));
         DXGI_SWAP_CHAIN_DESC desc{};desc.BufferCount=2;desc.BufferDesc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;
         desc.BufferUsage=DXGI_USAGE_RENDER_TARGET_OUTPUT;desc.OutputWindow=panel;desc.SampleDesc.Count=1;desc.Windowed=TRUE;desc.SwapEffect=DXGI_SWAP_EFFECT_DISCARD;
         const auto driver=test_mode?D3D_DRIVER_TYPE_WARP:D3D_DRIVER_TYPE_HARDWARE;
@@ -942,19 +924,23 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
         symbols=ImGui::GetIO().Fonts->AddFontFromFileTTF((known_folder(FOLDERID_Fonts)/"segmdl2.ttf").string().c_str(),14);
         if(!symbols) throw std::runtime_error(shin::ui::tr("Windows icon font is unavailable."));
         ImGui_ImplWin32_Init(panel);ImGui_ImplDX11_Init(device.Get(),context.Get());
-        if(test_mode) exit_code=render_test(output,test_shell);
+        if(!render_fixture) initialize_quick_panel(instance,caption);
+        if(preview_mode) release_check=std::make_unique<WindowsReleaseCheck>([] {return Json{{"ok",true},{"available",false}};});
+        if(test_mode && !preview_mode) exit_code=shell_mode?window_shell_test(output):render_test(output,test_shell);
         else {
             taskbar_created=RegisterWindowMessageW(L"TaskbarCreated");register_icon();SetTimer(panel,1,2000,nullptr);
+            present_monitor_start(background_start);
             MSG message{};bool running=true;
             while(running) {
                 while(PeekMessageW(&message,nullptr,0,0,PM_REMOVE)) {
                     if(message.message==WM_QUIT) {running=false;break;}
+                    if(route_quick_keyboard(message)) continue;
                     TranslateMessage(&message);DispatchMessageW(&message);
                 }
                 if(!running) break;
-                poll_windows_installation();
+                if(!preview_mode) poll_windows_installation();
                 static auto update_due=Clock::now()+std::chrono::seconds(5);
-                if(settings.value("automatic_update_checks",true) && Clock::now()>=update_due) {
+                if(!preview_mode && settings.value("automatic_update_checks",true) && Clock::now()>=update_due) {
                     if(!release_check) release_check=std::make_unique<WindowsReleaseCheck>();
                     release_check->check();update_due=Clock::now()+std::chrono::hours(6);
                 }
@@ -962,23 +948,30 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                     const auto update=release_check->snapshot();
                     release_update_version=update.state==WindowsUpdateState::offer ? update.offer.value("version","") : "";
                 }
-                if(IsWindowVisible(panel)) {
-                    const auto preferred_height=render_frame(monitor->snapshot());
+                if(desktop_renderable()) {
+                    render_frame(preview_mode?synthetic_view():monitor->snapshot());
                     checked(swap_chain->Present(1,0),shin::ui::tr("Monitor graphics device was lost."));
-                    fit_dashboard_height(preferred_height);
                 }
-                MsgWaitForMultipleObjectsEx(0,nullptr,IsWindowVisible(panel)?(monitor_motion.active?16:50):INFINITE,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
+                MsgWaitForMultipleObjectsEx(0,nullptr,desktop_renderable()?(monitor_motion.active?16:50):INFINITE,QS_ALLINPUT,MWMO_INPUTAVAILABLE);
             }
             exit_code=0;
         }
         ImGui_ImplDX11_Shutdown();ImGui_ImplWin32_Shutdown();ImGui::DestroyContext();
     } catch(const std::exception& error) {
-        if(test_mode) std::cerr << error.what() << '\n';
+        if(test_mode) {
+            const auto* typed=dynamic_cast<const Error*>(&error);
+            std::cerr<<Json{{"ok",false},{"error",typed?error_json(*typed):Json{{"code","window-test-failed"},{"message",error.what()}}}}.dump()<<'\n';
+        }
         else MessageBoxW(nullptr,wide(error.what()).c_str(),L"Shin Monitor",MB_OK|MB_ICONERROR);
     }
     if(tray.hIcon) {Shell_NotifyIconW(NIM_DELETE,&tray);DestroyIcon(tray.hIcon);}
     release_check.reset();monitor.reset();preferences.reset();
     if(report) DestroyWindow(report);
+    if(quick_popup) DestroyWindow(quick_popup);
+    if(quick_font) DeleteObject(quick_font);
+    if(quick_heading_font) DeleteObject(quick_heading_font);
+    if(quick_brush) DeleteObject(quick_brush);
+    if(desktop_icon) DestroyIcon(desktop_icon);
     target.Reset();swap_chain.Reset();context.Reset();device.Reset();
     if(panel && IsWindow(panel)) DestroyWindow(panel);
     if(SUCCEEDED(com)) CoUninitialize();

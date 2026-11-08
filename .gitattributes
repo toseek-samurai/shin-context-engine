@@ -6,6 +6,7 @@
 # Budgeted agent entrypoints have the same byte count on every checkout.
 AGENTS.md text eol=lf
 **/SKILL.md text eol=lf
+observer/tray/monitor_view.h text eol=lf
 
 # Keep vendored syntax sources byte-identical to their pinned upstream releases.
 third_party/tree-sitter/** -whitespace linguist-vendored

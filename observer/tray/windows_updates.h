@@ -299,7 +299,7 @@ void render_windows_updates(const WindowsUpdateSnapshot& state) {
         const auto phase=windows_update_result.value("phase","");
         const bool download = update_button(tr("Download and install"), 202,!windows_update_review.valid() && (phase.empty() || phase=="completed" || phase=="acknowledged"));
         ImGui::PopStyleColor(4);
-        if (download) run_windows_update_action([&] {install_windows_update(state.offer);});
+        if (download && !test_mode) run_windows_update_action([&] {install_windows_update(state.offer);});
         if (update_button(tr("Release notes"), 204)) open_update_link(state.offer, "release_url");
         if (update_button(tr("Technical details"), 209)) windows_update_details_open = !windows_update_details_open;
         if (windows_update_details_open && update_button(tr("Download checksum"), 203)) open_update_link(state.offer, "checksum_url");

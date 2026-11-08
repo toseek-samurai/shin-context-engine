@@ -8,7 +8,7 @@
 // jobs; an intentionally detached service must survive completion of this command.
 Json windows_command(const fs::path& executable, const std::vector<std::string>& arguments,
                      std::chrono::seconds timeout = std::chrono::seconds(120),
-                     const std::function<void(int)>& progress = {}) {
+                     const std::function<void(int)>& progress = {}, DWORD* completion_code = nullptr) {
     struct Handle {
         HANDLE value = nullptr;
         ~Handle() { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
@@ -76,6 +76,7 @@ Json windows_command(const fs::path& executable, const std::vector<std::string>&
     }
     drain(out_read.value, output, false); drain(err_read.value, errors, true);
     DWORD code = 1; GetExitCodeProcess(process.value, &code);
+    if (completion_code) *completion_code = code;
     Json result = parse_json(output.empty() ? (progress ? project_progress.finish() : errors) : output);
     if (!result.is_object() || !result.contains("ok") || !result.at("ok").is_boolean())
         throw Error("monitor-response-invalid", "Native command returned an invalid response.");

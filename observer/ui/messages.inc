@@ -554,6 +554,7 @@
     {"Only part of the request history is available.", "Доступна только часть истории обращений."},
     {"Only part of the session history is available.", "Доступна только часть истории сессий."},
     {"Only the latest three observed episodes are shown.", "Показаны три последних наблюдаемых эпизода."},
+    {"Open Monitor", "Открыть Monitor"},
     {"Open Shin → Storage to review caches outside projects.", "Откройте меню Shin → Хранилище и проверьте кеши вне проектов."},
     {"Open Shin → Storage to review free space and caches outside projects.", "Откройте меню Shin → Хранилище и проверьте свободное место и кеши вне проектов."},
     {"Open Shin → Storage to review free space and search caches outside projects.", "Откройте меню Shin → Хранилище и проверьте свободное место и объём поисковых кешей вне проектов."},

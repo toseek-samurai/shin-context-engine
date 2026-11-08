@@ -18,6 +18,10 @@ std::optional<Version> version(const std::string& text) {
 }
 void require(bool ok) { if (!ok) throw Error("update-release-invalid", "The release metadata or archive is not a complete supported kit."); }
 }
+bool release_is_newer(const std::string& candidate, const std::string& current) {
+    const auto next=version(candidate), before=version(current);
+    return next && before && *next>*before;
+}
 namespace {
 Json select_release(const Json& releases, const std::string& current, bool updater, bool windows = false) {
     const auto installed=version(current);

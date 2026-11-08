@@ -101,6 +101,14 @@ Ctrl-D and Ctrl-C do not cancel it; the screen stays available until the native
 operation settles. Forced process termination still relies on the updater's
 durable recovery journal.
 
+The current source candidate recognizes a successful saved attempt as
+`superseded` only when an independently verified installation is newer than both
+its starting and target versions, has a different manifest, has no pending native
+recovery, and no updater writer is active. Monitor and TUI allow a fresh offer in
+that case while retaining the historical result. Explicit `outcome` takes
+precedence over the raw saved `phase`; an installed phase cannot hide a review
+action. Unknown operations and current recovery journals still require review.
+
 The same twelve-step plan shows observed completed steps, current stage, elapsed
 time, real download/staging bytes and project counts. There is no estimated
 overall percentage. Completion comes from the native receipt, independently of

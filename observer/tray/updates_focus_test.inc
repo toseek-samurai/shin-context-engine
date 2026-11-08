@@ -4,7 +4,7 @@
 #include <fstream>
 #include "cli_handoff_test.inc"
 
-@interface UpdateWindowHarness : ShinApp
+@interface UpdateWindowHarness : ShinApp { Json _checkStatus; }
 @property(nonatomic, copy) NSString* pendingCommand;
 @property(nonatomic, copy) NSArray<NSString*>* pendingArguments;
 @property(nonatomic, copy) void (^pendingReply)(Json, NSString*);
@@ -16,13 +16,15 @@
 @property(nonatomic) BOOL loginFailure;
 - (void)reply:(const Json&)result failure:(NSString*)failure;
 - (void)replaceBackgroundOffer:(const Json&)offer;
+- (void)useCheckStatus:(const Json&)status;
 @end
 @implementation UpdateWindowHarness
+- (void)useCheckStatus:(const Json&)status { _checkStatus=status; }
 - (void)applicationDidFinishLaunching:(NSNotification*)notification { (void)notification; }
 
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion {
     if ([command isEqualToString:@"update-status"] && self.updateScreen == UpdateScreen::checking) {
-        completion({{"ok", true}, {"phase", "idle"}}, nil); return;
+        completion(_checkStatus.is_object() ? _checkStatus : Json{{"ok", true}, {"phase", "idle"}}, nil); return;
     }
     if (self.pendingReply) throw std::runtime_error("concurrent native update commands");
     self.pendingCommand = command; self.pendingArguments = arguments; self.pendingReply = completion;
@@ -290,6 +292,19 @@ int native_update_tests(int argc, char** argv) {
             [app reply:{{"ok", true}, {"phase", "reviewed"}} failure:nil];
             update_require(app.updateScreen == UpdateScreen::resultReady && app.updateCopyButton.hidden &&
                 app.updateAcknowledgeButton.hidden && window.visible, "verified result did not settle in same window");
+            [app useCheckStatus:{{"ok",true},{"phase","installed"},{"outcome","superseded"}}];
+            [app checkForUpdates:nil];[app reply:offer failure:nil];
+            update_require(app.updateScreen==UpdateScreen::offer && !app.updateInstallButton.hidden,
+                "superseded result hid the new release offer");
+            [app useCheckStatus:{{"ok",true},{"phase","installed"},{"outcome","review-required"},{"can_acknowledge",true}}];
+            [app checkForUpdates:nil];[app reply:offer failure:nil];
+            update_require(app.updateScreen==UpdateScreen::resultReady && !app.updateAcknowledgeButton.hidden && app.updateInstallButton.hidden,
+                "raw installed phase hid the acknowledgement or bypassed review");
+            [app useCheckStatus:{{"ok",true},{"phase","installed"},{"outcome","installed"},{"native_recovery_pending",true}}];
+            [app checkForUpdates:nil];[app reply:offer failure:nil];
+            update_require(app.updateScreen==UpdateScreen::resultReady && app.updateInstallButton.hidden,
+                "pending native recovery allowed a new offer");
+            [app useCheckStatus:Json()];
             [app checkForUpdates:nil]; [app reply:{{"ok", true}, {"available", false}} failure:nil];
             save_update_window(app, output, "current");
             [app checkForUpdates:nil]; [app reply:{{"ok", false}} failure:@"offline"];

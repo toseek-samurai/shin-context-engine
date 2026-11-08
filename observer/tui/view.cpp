@@ -1,5 +1,6 @@
 #include "view.h"
 #include "shin/observer/local_package.h"
+#include "shin/observer/local_updates.h"
 #include "../ui/update_progress.h"
 
 #include "../ui/project_diagnostics.h"
@@ -202,9 +203,10 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
         else {
             const auto& result = update.result;
             const auto phase = field(result, "outcome").is_string() ? field(result, "outcome") : field(result, "phase");
-            const bool installed = field(result, "outcome") == "installed" || (phase == "installed" && field(result, "ok") == true);
-            out.push_back({installed ? shin::ui::tr("Shin was updated") : phase == "idle" || phase == "reviewed" ?
+            const bool installed = update_result_installed(result);
+            out.push_back({phase == "superseded" ? shin::ui::tr("Older update result") : installed ? shin::ui::tr("Shin was updated") : phase == "idle" || phase == "reviewed" ?
                 shin::ui::tr("No pending update result") : shin::ui::tr("Update needs review"), installed ? Tone::good : Tone::warning});
+            if (phase == "superseded") out.push_back({shin::ui::tr("A newer installation has been verified. This saved result does not block checking for updates."), Tone::info});
             if (installed) out.push_back({shin::ui::tr("Restart this terminal dashboard to load the new version. Compatible MCP connections resume automatically; older integrations may need one reconnection.")});
             else if (!update.error.empty()) out.push_back({update.error, Tone::error});
             if (installed && field(result, "projects_pending").is_number() && field(result, "projects_pending").get<int>() > 0)

@@ -118,8 +118,7 @@
     const bool acknowledging = self.updateScreen == UpdateScreen::acknowledging;
     const bool offer = self.updateScreen == UpdateScreen::offer;
     const bool result = self.updateScreen == UpdateScreen::resultReady || self.updateScreen == UpdateScreen::acknowledgeFailed;
-    const bool installed = _updateResult.is_object() && (_updateResult.value("outcome", "") == "installed" ||
-        (_updateResult.value("phase", "") == "installed" && _updateResult.value("ok", false)));
+    const bool installed = _updateResult.is_object() && shin::observer::update_result_installed(_updateResult);
     self.updateReviewButton.hidden = self.updateScreen != UpdateScreen::startFailed ||
         cli_error_code(_updateResult) != "update-outcome-unknown";
     self.updateCheckButton.enabled = !checking && !loading && !self.updateActionBusy;
@@ -163,7 +162,10 @@
     case UpdateScreen::acknowledgeFailed:
         title = ui_text("Update needs review"); detail = self.updateFailure; break;
     case UpdateScreen::resultReady:
-        if (_updateResult.value("phase", "") == "idle" || _updateResult.value("phase", "") == "reviewed") {
+        if (_updateResult.value("outcome", "") == "superseded") {
+            title = ui_text("Older update result");
+            detail = ui_text("A newer installation has been verified. This saved result does not block checking for updates.");
+        } else if (_updateResult.value("phase", "") == "idle" || _updateResult.value("phase", "") == "reviewed") {
             title = ui_text("No pending update result"); self.updateCopyButton.hidden = YES;
         } else if (_updateResult.value("phase", "") == "failed" && _updateResult.contains("error")) {
             title = ui_text("Update was not started"); detail = update_failure_text(_updateResult, nil);
@@ -322,8 +324,7 @@
                     [self runCLI:@"update-status" arguments:@[] completion:^(Json saved, NSString* problem) {
                         self.updateChecking = NO;
                         if (epoch != self.updateWindowEpoch && self.updateScreen != UpdateScreen::checking) return;
-                        const auto phase = saved.value("outcome", saved.value("phase", ""));
-                        if (problem || phase.empty() || (phase != "idle" && phase != "reviewed" && phase != "installed")) {
+                        if (problem || !shin::observer::update_result_allows_offer(saved)) {
                             _updateResult = saved;
                             if (problem) _updateResult = {{"ok", false}, {"error", {{"message", problem.UTF8String}}}};
                             self.updateScreen = UpdateScreen::resultReady; [self renderUpdateWindow];

@@ -6,6 +6,15 @@ namespace shin::observer {
 // Match the existing HTTP feed budget without expanding local state limits.
 inline constexpr std::size_t kMaximumReleaseFeedBytes = 1024U * 1024U;
 Json parse_release_feed(const std::string& text);
+bool release_is_newer(const std::string& candidate, const std::string& current);
+inline bool update_result_installed(const Json& result) {
+    return result.value("outcome",result.value("phase",""))=="installed" && result.value("ok",false);
+}
+inline bool update_result_allows_offer(const Json& result) {
+    if (!result.value("ok",false) || result.value("native_recovery_pending",false) || result.value("updater_active",false)) return false;
+    const auto outcome=result.value("outcome",result.value("phase",""));
+    return outcome=="idle" || outcome=="reviewed" || outcome=="installed" || outcome=="superseded";
+}
 Json select_local_release(const Json& releases, const std::string& current);
 // Windows offers a reviewed MSI download; this never installs or launches it.
 Json select_windows_release(const Json& releases, const std::string& current);

@@ -71,7 +71,7 @@ std::string update_review_revision(const Json& state,const Json& installed,const
 }
 // Classify only after an independent, integrity-checked native readback. A
 // known project refusal is not an interrupted installation transaction.
-std::string update_disposition(const Json& state, const Json& installed, const std::string& receipt) {
+std::string update_disposition(const Json& state, const Json& installed, const std::string& receipt, bool updater_active=false) {
     if (!installed.value("integrity_verified",false)) return "review-required";
     if (installed.value("recovery_pending",true)) return "recovery-required";
     const auto phase=state.value("phase","");
@@ -80,6 +80,13 @@ std::string update_disposition(const Json& state, const Json& installed, const s
     if(phase=="installed" && state.value("ok",false) && state.value("version","")==installed.value("version",""))return "installed";
     if (installed.value("version","")==state.value("version", "") && state.contains("target_manifest_sha256") &&
         installed.value("manifest_sha256","")==state.at("target_manifest_sha256").get<std::string>()) return "installed";
+    // A successful terminal attempt cannot describe a later independently
+    // verified kit. Never infer this from version alone or for an active writer.
+    if (!updater_active && phase=="installed" && state.value("ok",false) &&
+        !installed.value("manifest_sha256","").empty() && !state.value("target_manifest_sha256","").empty() &&
+        installed.value("manifest_sha256","")!=state.value("target_manifest_sha256","") &&
+        release_is_newer(installed.value("version",""),state.value("version","")) &&
+        release_is_newer(installed.value("version",""),state.value("from_version",""))) return "superseded";
     if (installed.value("version","")!=state.value("from_version", "")) return "review-required";
     const auto result=state.value("result",Json::object());
     const auto error=result.value("error",state.value("error",Json::object()));
@@ -303,12 +310,13 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
             describe_affected_projects(state,home);
             state["current_version"]=current;state["installation_verified"]=true;
             state["native_recovery_pending"]=installed.value("recovery_pending",true);
-            const auto disposition=update_disposition(state,installed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)));
             const bool terminal=!saved.writer_present();
+            state["updater_active"]=!terminal;
+            const auto disposition=update_disposition(state,installed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)),!terminal);
             state["can_retry"]=terminal && disposition=="retryable";
             state["can_resume"]=terminal && disposition=="recovery-required" && state.contains("version");
             state["outcome"]=disposition;
-            if(disposition=="installed")state["ok"]=true;
+            if(disposition=="installed" || disposition=="superseded")state["ok"]=true;
             else if(disposition=="recovery-required" || disposition=="retryable")state["ok"]=false;
             state["can_acknowledge"]=!installed.value("recovery_pending",true) && !saved.writer_present() &&
                 (acknowledgeable_update(state) || disposition=="installed" || disposition=="retryable");

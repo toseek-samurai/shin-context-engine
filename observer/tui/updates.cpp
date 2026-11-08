@@ -1,4 +1,5 @@
 #include "updates.h"
+#include "shin/observer/local_updates.h"
 
 namespace shin::observer::tui {
 UpdateController::UpdateController(UpdateOperation operation) : operation_(std::move(operation)) {
@@ -51,8 +52,7 @@ void UpdateController::work(std::stop_token stop) {
             if (!result.is_object()) throw Error("update-response-invalid", "Unexpected update response.");
             if (command == "update-check" && result.value("ok", false) && result.value("available", false)) {
                 auto saved = operation_("update-status", "", observe, stop);
-                const auto phase = saved.value("outcome", saved.value("phase", ""));
-                if (phase != "idle" && phase != "reviewed" && phase != "installed") {
+                if (!update_result_allows_offer(saved)) {
                     std::lock_guard lock(state_->mutex);
                     state_->value.result = std::move(saved); state_->value.phase = UpdatePhase::result; continue;
                 }

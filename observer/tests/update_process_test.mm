@@ -46,6 +46,32 @@ int main(int argc, char** argv) {
     check(update_disposition(attempt,changed,"receipt")=="review-required");
     attempt["target_manifest_sha256"]="target";changed["manifest_sha256"]="target";
     check(update_disposition(attempt,changed,"new-receipt")=="installed");
+    Json old{{"phase","installed"},{"ok",true},{"from_version","2.0.5-dev.98"},
+        {"version","2.0.5-dev.100"},{"target_manifest_sha256","earlier-manifest"}};
+    auto newer=installed;newer["version"]="2.0.5-dev.104";
+    check(update_disposition(old,newer,"new-receipt")=="superseded");
+    check(update_disposition(old,newer,"new-receipt",true)=="review-required");
+    auto bad=newer;bad["integrity_verified"]=false;
+    check(update_disposition(old,bad,"receipt")=="review-required");
+    bad=newer;bad["recovery_pending"]=true;
+    check(update_disposition(old,bad,"receipt")=="recovery-required");
+    for(const auto* phase:{"downloading","installing","review-required"}) {
+        auto active=old;active["phase"]=phase;
+        check(update_disposition(active,newer,"receipt")=="review-required");
+    }
+    for(const auto* ver:{"2.0.5-dev.99","invalid"}) {
+        auto other=newer;other["version"]=ver;
+        check(update_disposition(old,other,"receipt")=="review-required");
+    }
+    auto same=newer;same["version"]="2.0.5-dev.100";
+    check(update_disposition(old,same,"receipt")=="installed");
+    Json result{{"ok",true},{"phase","installed"},{"outcome","superseded"}};
+    check(update_result_allows_offer(result) && !update_result_installed(result));
+    result["outcome"]="review-required";
+    check(!update_result_allows_offer(result) && !update_result_installed(result));
+    result["outcome"]="installed";check(update_result_installed(result));
+    result["native_recovery_pending"]=true;check(!update_result_allows_offer(result));
+    result["native_recovery_pending"]=false;result["updater_active"]=true;check(!update_result_allows_offer(result));
     // A substituted temporary directory cannot be reused or cleaned.
     Json retained{{"staging",work.string()},{"stage_identity","wrong"}};
     bool unsafe=false;

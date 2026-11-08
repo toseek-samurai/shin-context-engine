@@ -74,6 +74,16 @@ void model_tests() {
     wait_for([&] { return !pending.snapshot().busy(); });
     require(resumes == 1 && pending.snapshot().result.at("phase") == "installed" &&
         pending.snapshot().result.at("projects_pending") == 1, "pending projects hid installation success");
+    for(const auto* disposition:{"superseded","review-required","recovery-required"}) {
+        UpdateController probe([&](const std::string& command,const std::string&,const ReleaseUpdateProgressSink&,std::stop_token)->Json {
+            if(command=="update-check")return {{"ok",true},{"available",true},{"revision","new-offer"}};
+            require(command=="update-status","status review triggered a mutation");
+            return {{"ok",true},{"phase","installed"},{"outcome",disposition}};
+        });
+        require(probe.check(),"check was refused");wait_for([&]{return !probe.snapshot().busy();});
+        require(probe.snapshot().phase==(std::string_view(disposition)=="superseded" ? UpdatePhase::offer : UpdatePhase::result),
+            "terminal result classification lost the offer or bypassed recovery");
+    }
     std::promise<void> started;
     auto start = started.get_future();
     {

@@ -42,11 +42,11 @@ exercise Linux and do not substitute for native Windows tests. Mixed-monitor
 moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
 
-### Windows window behavior in development
+### Windows window behavior in dev.110
 
-The source under development separates the notification-area quick status panel
-from the full Monitor. This host change is not included in the published dev.108
-kit or in the older captures below.
+The dev.110 Windows host separates the notification-area quick status panel
+from the full Monitor. Each platform's package is published after its source and
+exact archive pass CI qualification. The older captures below describe dev.98.
 
 - Click the notification icon for a short status panel with **Open Monitor** and
   **Check for updates…**. It anchors to the icon, stays inside the selected

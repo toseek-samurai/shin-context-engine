@@ -1,5 +1,5 @@
 #pragma once
-#include "../ui/client_connections.h"
+// client_connections.h belongs at translation-unit scope in the native host.
 // Sand management pages reuse the native CLI's authority and revision contracts.
 struct WindowsManagement {
     enum class Page { setup, storage, project, login } page = Page::setup;

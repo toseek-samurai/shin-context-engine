@@ -220,8 +220,11 @@ int main(int argc,char** argv) {
             require(!local_client_connect(fs::path(argv[1]),project,home,client,config,"").at("changed").get<bool>(),"connection not idempotent");
             const auto protected_config=folder/"linked-source",alias=folder/"hardlink";
             write_user_archive(protected_config,original);
-            require(CreateHardLinkW(alias.c_str(),protected_config.c_str(),nullptr)!=FALSE,"hardlink fixture failed");
+            write_user_archive(alias,original);
             const auto linked_review=local_client_connect(fs::path(argv[1]),project,home,client,alias,"");
+            require(DeleteFileW(alias.c_str())!=FALSE,"reviewed config replacement failed");
+            require(CreateHardLinkW(alias.c_str(),protected_config.c_str(),nullptr)!=FALSE,"hardlink fixture failed");
+            refused([&]{local_client_connect(fs::path(argv[1]),project,home,client,alias,"");});
             refused([&]{local_client_connect(fs::path(argv[1]),project,home,client,alias,linked_review.at("revision"));});
             require(DeleteFileW(alias.c_str())!=FALSE,"hardlink fixture cleanup failed");
             require(read_text(protected_config,kMaximumStateBytes,false)==original,"hardlink refusal changed settings");

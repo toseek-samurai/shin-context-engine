@@ -48,6 +48,9 @@ if(BUILD_TESTING)
     target_link_libraries(shin-windows-shell-tests PRIVATE user32)
     add_test(NAME shin-tray-windows-shell-geometry COMMAND shin-windows-shell-tests)
     set_tests_properties(shin-tray-windows-shell-geometry PROPERTIES TIMEOUT 15)
-    add_test(NAME shin-tray-windows-shell COMMAND shin-tray --window-shell-test "${CMAKE_CURRENT_BINARY_DIR}/shell-check")
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    add_test(NAME shin-tray-windows-shell COMMAND ${Python3_EXECUTABLE} -B
+        "${CMAKE_CURRENT_SOURCE_DIR}/../tests/windows_shell_qualification.py"
+        $<TARGET_FILE:shin-tray> "${CMAKE_CURRENT_BINARY_DIR}/shell-check")
     set_tests_properties(shin-tray-windows-shell PROPERTIES TIMEOUT 30 RESOURCE_LOCK shin-windows-desktop)
 endif()

@@ -127,8 +127,7 @@ icon to a visible position. An explicit Quit exits Monitor.
 
 The current native preview uses dark Sand with **Overview**, **Projects**,
 **History** and **Settings**. Short pages fit their contents; longer views scroll
-within the panel. Earlier desktop previews, including the Homebrew dev.70
-package, use **Activity** as their third section.
+within the panel. Earlier desktop previews use **Activity** as their third section.
 Overview summarizes current project readiness and leads to a project needing
 review. Projects groups folder and agent connections with their current context
 status. Project explanations expose a labeled next action, with search-check

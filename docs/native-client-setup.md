@@ -12,9 +12,8 @@ On Windows, **Review connections** precedes the final connection confirmation.
 
 Native Monitor shows project preparation stages and elapsed time.
 macOS keeps setup visible from folder selection through
-the result; failures remain inline for review and retry. Windows shows the same
-stages in its management page. The older Homebrew dev.70 package does not include
-this progress view.
+the result, with failures displayed inline for review and retry. Windows shows
+preparation stages in its management page.
 
 1. On a fresh installation, open **Set up Shin…**. Otherwise use
    **Settings → Connect projects and agents…**. Choose a project folder. Shin connects it

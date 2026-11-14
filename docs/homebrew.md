@@ -1,13 +1,12 @@
 # Homebrew installation
 
-The published tap currently pins **dev.70**. It is an older preview than the
-[native dev.111 download](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111),
-so its interface and update behavior follow dev.70. `brew upgrade` installs the
-version offered by the formula, not the newest native-kit release automatically.
+The [Homebrew tap](https://github.com/toseek-samurai/homebrew-tap) builds
+**2.0.5-dev.111**. The formula pins a published source tag. `brew upgrade`
+installs the version selected by the formula.
 
 The project-owned tap distributes the complete macOS preview: Core, Observer,
-CLI, MCP, usage collector, Sand TUI and Shin Monitor. The first package builds
-from a pinned source release on your Mac. It needs Homebrew's build tools and
+CLI, MCP, usage collector, Sand TUI and Shin Monitor. It builds from the pinned
+source release on your Mac. It needs Homebrew's build tools and
 can take several minutes; no Python or Node runtime is required afterward.
 The selected Apple toolchain must provide C++20 `std::jthread` and `std::stop_token`:
 use Command Line Tools for Xcode 26 or newer, or a current full Xcode installation.
@@ -16,12 +15,10 @@ checks this before compiling the engine and explains how to update an older tool
 If Homebrew requests full Xcode while older CLT are installed, updating the CLT to
 version 26 or newer also satisfies the requirements. With older CLT and current
 Xcode installed together, the formula selects the current Xcode SDK.
-Local compilation does not require an Apple Developer Program membership.
-The current package targets macOS 15 or newer. Its installation, reinstall and
-removal checks passed on Apple Silicon. Intel installation qualification is
-incomplete: the Intel CI job did not complete installation, so the formula's
-source availability is not proof of a working Intel package. The first version
-has no prebuilt bottles; Homebrew may also build dependencies from source.
+Local compilation needs no Apple Developer Program membership. The package
+targets macOS 15 or newer. The tap supplies source archives and Homebrew can use
+available bottles for dependencies. See the tap's [installation workflow](https://github.com/toseek-samurai/homebrew-tap/actions/workflows/tests.yml)
+for the current Apple Silicon and Intel results.
 
 ## Install and start
 
@@ -39,9 +36,8 @@ to select detected agents and connect them, or follow the
 [CLI connection procedure](native-client-setup.md#automatic-setup).
 Existing agent settings are preserved by the native review/apply flow.
 
-Homebrew may ask you to trust this third-party formula. Trust the requested
-formula rather than an entire tap when that is sufficient. The tap is maintained
-by the Shin project and is not an official Homebrew catalog entry.
+The fully qualified install command selects the individual formula from the
+project's tap. See [Homebrew's tap trust guide](https://docs.brew.sh/Tap-Trust).
 
 The installed commands are `shin-context`, `shin-ce`, `shin-observer`, `shin-mcp`,
 `shin-usage` and `shin-monitor`. MCP configurations and default profile bindings
@@ -63,7 +59,8 @@ it would bind a versioned application path. No login item is added by installati
 
 ## Upgrade
 
-Close Monitor before upgrading:
+Quit Monitor and TUI before upgrading. If you run a session service, stop it
+first with `shin-ce service-stop`.
 
 ```sh
 brew update
@@ -77,10 +74,9 @@ brew services restart toseek-samurai/tap/shin-context-engine
 shin-monitor
 ```
 
-For a session service, stop it before upgrading and run `shin-ce service-start`
-afterward. Reconnect persistent MCP clients after an upgrade so they start the
-new adapter. Their saved executable path remains stable; copying JSON again is
-unnecessary.
+For a session service, run `shin-ce service-start` afterward. Reconnect an older
+MCP integration if the client reports a version mismatch. Its saved executable
+path stays under the stable Homebrew opt prefix.
 
 Homebrew owns package files. Monitor explains the Homebrew command instead of
 invoking the native Updater, and `shin-ce update-*`, native installation and
@@ -124,10 +120,7 @@ Do not run a native installer from formula hooks, start services or edit client
 settings during installation, fetch dependencies from moving branches, or
 silently change project approval policy during `brew upgrade`.
 
-The RE2 source candidate also requires formula resources named `shin_re2` and
-`shin_abseil`, using the exact URLs and SHA-256 pins in
-[SecretScanner.cmake](../shared/cmake/SecretScanner.cmake). Stage them through
-`FETCHCONTENT_SOURCE_DIR_SHIN_RE2` and `FETCHCONTENT_SOURCE_DIR_SHIN_ABSEIL`
-before configuring with `FETCHCONTENT_FULLY_DISCONNECTED=ON`. Include both
-licenses in install checks. The published dev.70 formula remains pinned to its
-existing source; update that recipe only after the new preview is qualified.
+Keep the `shin_re2` and `shin_abseil` source tags and SHA-256 pins aligned with
+[SecretScanner.cmake](../shared/cmake/SecretScanner.cmake). The
+formula stages them before offline CMake configuration. `brew test` checks
+that both licenses ship with the package.

@@ -12,8 +12,8 @@ Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
 
-The native packages include RE2-based secret scanning. The Homebrew tap
-pins **dev.70**, with that preview's UI and its Homebrew-managed updates.
+The native packages and the **dev.111** Homebrew formula include RE2-based
+secret scanning. See [Homebrew installation](homebrew.md) for its build and update steps.
 
 Source identities are maintained in [VERSION](../VERSION),
 [observer/VERSION](../observer/VERSION) and the
@@ -45,7 +45,7 @@ dashboard does not imply that every platform has the same setup and update tools
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 terminal tools | Windows x64 ZIP / MSI |
 | --- | --- | --- | --- | --- |
 | Core, local Observer, CLI and MCP | Yes | Yes | Yes | Yes |
-| Dark Sand desktop Monitor, EN/RU | Overview, Projects, History, Settings | Included; dev.70 retains Activity navigation | No native desktop host | Overview, Projects, History, Settings |
+| Dark Sand desktop Monitor, EN/RU | Overview, Projects, History, Settings | Overview, Projects, History, Settings | No native desktop host | Overview, Projects, History, Settings |
 | TUI `shin-ce stats`, line charts and EN/RU | Yes | Yes | Yes | Not implemented |
 | Add a project from Monitor | Yes | Yes | Use CLI | Yes |
 | Automatic MCP client configuration | Reviewed CLI / Monitor setup | Reviewed CLI / Monitor setup | Reviewed CLI setup | Reviewed CLI / Monitor setup |

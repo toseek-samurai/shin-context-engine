@@ -138,11 +138,9 @@ brew install toseek-samurai/tap/shin-context-engine
 shin-monitor
 ```
 
-**The tap currently pins dev.70**, an older preview than the native download above.
-Its UI and update behavior follow that version. The first installation builds
-from source and can take several minutes; Apple Silicon installation has been
-qualified, while Intel qualification is incomplete. Homebrew owns updates through
-`brew upgrade`. [Homebrew setup and lifecycle](docs/homebrew.md).
+The tap builds **dev.111** from source. The first installation can take several
+minutes. Homebrew owns updates through `brew upgrade`.
+[Homebrew setup and lifecycle](docs/homebrew.md).
 
 ## Choose the component you need
 

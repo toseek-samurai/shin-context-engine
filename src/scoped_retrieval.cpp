@@ -642,8 +642,29 @@ BriefResult collect_brief_from_index_document_owner_scope(const RuntimeOptions& 
             std::find(request.allowed_evidence_types.begin(), request.allowed_evidence_types.end(), type) !=
                 request.allowed_evidence_types.end();
     };
+    const auto has_qualifier = [&](std::vector<FieldMatchInput> fields) {
+        if (qualifier_groups.empty()) return true;
+        for (auto& field : fields) {
+            if (!field.primary) continue;
+            for (int group : qualifier_groups) {
+                if (std::any_of(owner_match_groups[group].begin(), owner_match_groups[group].end(),
+                    [&](const auto& term) { return field_contains_term(field, term); })) return true;
+            }
+        }
+        return false;
+    };
+    const auto fact_type_allowed = [&](const FactRow& fact) {
+        const auto group = brief_fact_group(fact);
+        return type_allowed(group.substr(0, group.size() - 1));
+    };
+    const bool topical = !qualifier_groups.empty() &&
+        ((type_allowed("section") && std::any_of(probe.sections.begin(), probe.sections.end(),
+            [&](const auto& section) { return has_qualifier(section_match_fields(section)); })) ||
+         std::any_of(probe.facts.begin(), probe.facts.end(),
+            [&](const auto& fact) { return fact_type_allowed(fact) && has_qualifier(fact_match_fields(fact)); }));
     ScopedBriefPath owner_entry;
     for (const SectionRow& section : probe.sections) {
+        if (topical && (!type_allowed("section") || !has_qualifier(section_match_fields(section)))) continue;
         MatchScore match = score_section_match(section, owner_match_groups, 1);
         if (match.total <= 0) {
             continue;
@@ -663,6 +684,7 @@ BriefResult collect_brief_from_index_document_owner_scope(const RuntimeOptions& 
                              request.per_doc_limit);
     }
     for (const FactRow& fact : probe.facts) {
+        if (topical && (!fact_type_allowed(fact) || !has_qualifier(fact_match_fields(fact)))) continue;
         MatchScore match = score_fact_match(fact, owner_match_groups, 1);
         if (match.total <= 0) {
             continue;

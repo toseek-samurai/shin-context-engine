@@ -236,7 +236,8 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
                                                              bool missing_documents_only,
                                                              const std::vector<CandidateRows>* prepared_groups,
                                                              const Json* manifest,
-                                                             bool include_near_complete_sections) {
+                                                             bool include_near_complete_sections,
+                                                             int minimum_document_groups) {
     BriefResult result;
     result.fallback_used = true;
     result.planner_attempted = true;
@@ -292,20 +293,32 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
     }
     result.planner_document_paths = whole_document_paths(options, manifest);
     const std::size_t ordinary_candidate_count = candidate_row_count(strict_candidates);
-    if (preserve_row_ranking || capped_group) {
-        const auto threshold = preserve_row_ranking
-            ? (supplement_near ? required_group_matches - 1 : required_group_matches) : 1;
+    {
+        const auto threshold = !preserve_row_ranking && capped_group ? 1 :
+            std::max(minimum_document_groups,
+                     supplement_near ? required_group_matches - 1 : required_group_matches);
         const auto* ordinary = missing_documents_only ? &strict_candidates : nullptr;
         auto qualified = capped_group
             ? recover_document_coverage_candidates(options, request.prepared_term_groups, threshold,
                                                    result.planner_document_paths, ordinary)
             : filter_document_coverage_candidates(options, group_rows, threshold,
-                                                  result.planner_document_paths, ordinary);
+                                                  result.planner_document_paths, ordinary,
+                                                  !preserve_row_ranking);
         if (!qualified.has_value()) {
             result.planner_rejection_reason = "document-postings-incomplete";
             return result;
         }
-        group_rows = std::move(*qualified);
+        // Partial documents can collectively answer a question even when no
+        // single document reaches the ordinary threshold. Only narrow a sparse
+        // plan when every originally available posting group stays represented.
+        bool coverage_preserved = true;
+        if (!preserve_row_ranking && !capped_group) {
+            for (std::size_t group = 0; group < group_rows.size(); ++group) {
+                if (group_rows[group].discovered_row_count > 0 &&
+                    (*qualified)[group].discovered_row_count == 0) coverage_preserved = false;
+            }
+        }
+        if (coverage_preserved) group_rows = std::move(*qualified);
         for (const auto& group : group_rows) {
             if (!group.from_terms_index) {
                 result.candidate_rows = group.discovered_row_count;

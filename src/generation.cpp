@@ -1,5 +1,6 @@
 #include "validation_generation.h"
 #include "context_internal.h"
+#include "document_lifecycle.h"
 #include "compact_terms.h"
 #include "generated_io.h"
 #include "snapshot_verification.h"
@@ -571,7 +572,8 @@ static std::string manifest_json(const Profile& profile,
                           const SourceFactBuildResult& source_facts,
                           const StructuredDataCounts& structured_data,
                           const std::map<std::string, std::string>& generated_files,
-                          int broken_local_link_count) {
+                          int broken_local_link_count,
+                          const Json& document_lifecycle) {
     const auto quarantined_count = std::count_if(source_facts.sources.begin(), source_facts.sources.end(),
         [](const auto& source) { return !source.quarantine_reason.empty(); });
     std::ostringstream out;
@@ -586,6 +588,7 @@ static std::string manifest_json(const Profile& profile,
         << "  \"profile_config\": " << json_string(manifest_profile_config_identity(profile)) << ",\n"
         << "  \"profile_config_hash\": " << json_string(profile_config_hash(profile)) << ",\n"
         << "  \"bootstrap_only\": " << (profile.bootstrap_only ? "true" : "false") << ",\n"
+        << "  \"document_lifecycle\": " << document_lifecycle.dump() << ",\n"
         << "  \"required_root_files\": " << json_string_array(profile.root_files) << ",\n"
         << "  \"optional_root_files\": " << json_string_array(profile.optional_root_files) << ",\n"
         << "  \"source_count\": " << docs.size() << ",\n"
@@ -1026,6 +1029,7 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
                                    "contract");
     rows.runbooks = build_typed_reference_rows(rows.docs, {"runbook", "deployment", "operations"}, "runbook");
     append_markdown_authority_rows(rows.docs, rows.sections, rows.decisions, rows.contracts, rows.runbooks);
+    rows.document_lifecycle = prepare_document_lifecycle(rows);
     validate_generated_evidence_provenance(rows);
     if (timings != nullptr) {
         timings->authority_rows_ms += elapsed_ms_since(phase_start);
@@ -1133,7 +1137,7 @@ static GeneratedOutput render_generated_output(const Profile& profile,
                       generated.term_count, generated.decision_count, generated.contract_count,
                       generated.runbook_count, generated.fact_count, rows.source_facts, rows.structured_data,
                       generated.files,
-                      generated.broken_local_link_count);
+                      generated.broken_local_link_count, rows.document_lifecycle);
     if (timings != nullptr) {
         timings->json_render_ms += elapsed_ms_since(phase_start);
     }

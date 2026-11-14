@@ -200,7 +200,8 @@ namespace {
 template<class LoadGroup>
 std::optional<std::vector<CandidateRows>> filter_document_groups(
     const RuntimeOptions& options, std::size_t group_count, LoadGroup&& load_group, int required,
-    const std::set<std::string>& documents, const CandidateRows* ordinary) {
+    const std::set<std::string>& documents, const CandidateRows* ordinary,
+    bool include_independent = false) {
     const auto index = read_owner_index(options);
     std::set<std::size_t> admitted;
     if (ordinary != nullptr) {
@@ -231,12 +232,14 @@ std::optional<std::vector<CandidateRows>> filter_document_groups(
         selected.term_index_coverage_complete = true;
         selected.from_terms_index = true;
         for (std::size_t store = 0; store < kStores.size(); ++store) {
-            if (store == 1) continue;
+            if (store == 1 && !include_independent) continue;
             for (const int row : rows.*kMembers[store]) {
                 const auto owner = row_owner(index.stores[store], row);
                 const auto& document = covered[owner];
-                if (store != 1 && !admitted.contains(owner) && documents.contains(index.paths[owner]) &&
-                    document.size() >= static_cast<std::size_t>(required)) {
+                const bool independent = store == 1 || !documents.contains(index.paths[owner]);
+                if ((include_independent && independent) ||
+                    (!independent && !admitted.contains(owner) &&
+                     document.size() >= static_cast<std::size_t>(required))) {
                     (selected.*kMembers[store]).insert(row);
                     ++selected.discovered_row_count;
                     if (selected.discovered_row_count > kMaxIndexedCandidateRows) {
@@ -253,12 +256,14 @@ std::optional<std::vector<CandidateRows>> filter_document_groups(
 
 std::optional<std::vector<CandidateRows>> filter_document_coverage_candidates(
     const RuntimeOptions& options, const std::vector<CandidateRows>& groups, int required,
-    const std::set<std::string>& documents, const CandidateRows* ordinary) {
+    const std::set<std::string>& documents, const CandidateRows* ordinary,
+    bool include_independent) {
     if (std::any_of(groups.begin(), groups.end(), [](const auto& group) {
             return !group.from_terms_index || !group.term_index_coverage_complete;
         })) return std::nullopt;
     return filter_document_groups(options, groups.size(),
-        [&](std::size_t group) -> const CandidateRows& { return groups[group]; }, required, documents, ordinary);
+        [&](std::size_t group) -> const CandidateRows& { return groups[group]; }, required, documents,
+        ordinary, include_independent);
 }
 
 std::optional<std::vector<CandidateRows>> filter_document_coverage_postings(

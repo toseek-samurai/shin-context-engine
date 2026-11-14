@@ -2,43 +2,39 @@
 
 ## Project Profile Maintenance
 
-Applies only when Shin Context Engine is installed and this exact project is
-already enrolled. The agent performing an authorized code/document refactor owns
-the accompanying profile review. Without installed Shin, continue ordinary work;
-do not install or enroll it, or add a build/CI dependency, to satisfy this rule.
+Applies only when Shin is installed and this exact project is enrolled. The
+project owns source selection and product scenarios; Shin owns retrieval algorithms,
+execution budgets, regression fixtures and diagnostics. Ordinary code/document
+edits do not create a separate Shin maintenance task.
 
-At a relevant refactor checkpoint, not on every read, review the project-owned
-profile when documents, rules, source roots, packages or contracts move or change.
-Check enrolled roots/files, exclusions, `agentStartPaths`, expected paths and
-affected `evalCases`/`packEvalCases`. Prepare equivalent updates in the same task;
-do not wait for the owner to notice a search warning.
+Review the profile when a selected root, owning path or product contract actually
+moves or changes. Update affected paths and scenario assertions alongside that
+refactor; retain useful natural-language queries, negative assertions, rank/coverage
+requirements and resource limits. Do not reorganize otherwise sound documentation,
+repeat query wording in headings, or split files to reduce search counters.
+`mustEvidence` and `mustNotEvidence` can describe the selected fragment, statement
+and lifecycle status; matching a file alone does not establish a useful answer.
 
-Diagnose a failed query against current source before editing expectations.
-Distinguish an intentional owner/path/contract change from a retrieval regression.
-Map moved paths to their current owners and retain the original task intent,
-natural-language queries, negative assertions, rank/coverage requirements and
-resource limits. If terminology changes, add the current wording while retaining
-useful broad wording as a regression case. An exact identifier query is additional
-coverage, not a replacement for a failing broad query. Retire a genuinely obsolete
-scenario only with an explained owner-reviewed contract change.
+When current sources still satisfy the intended scenario and Shin misses it,
+continue authorized product work with direct sources. Preserve the original query,
+expected fragment/owner, version and bounded diagnostic for Shin's backlog. Engine
+regressions and resource-counter warnings belong to Shin maintainers; consumers do
+not tune algorithms, limits or wording until the indicator turns green. Keep
+private source, profiles and diagnostics out of public reports.
 
-Never remove a failing case, relax rank/coverage requirements, increase limits,
-enroll evaluation answers, or move a required check into an advisory/history suite
-just to make status green. A confirmed engine miss stays visible with its original
-query, expected owner, versions and bounded diagnostic for Shin maintainers.
-Keep private source and diagnostics out of public reports.
+Never remove failures, weaken assertions, raise limits, enroll evaluation answers
+or move required checks into advisory/history suites to hide an engine miss.
+Retire obsolete scenarios only for an explained, owner-reviewed product change.
+Scope, safety and approval rules still apply: a prepared profile edit is not
+runtime acceptance. Use native `shin-ce profile-review`; act on existing explicit
+authority only for the exact reviewed change. MCP grants no approval authority.
+Never re-enroll, switch indexes or manually rebuild a managed index.
 
-Preparing a profile edit is not accepting it. Follow [Profile Change Review](#profile-change-review);
-changes to scope, limits, safety or quality policy require explicit owner authority
-for the exact reviewed change. Existing authorization may cover acceptance; do not
-ask again when it does. MCP reads grant no approval authority.
-
-Use the installed kit and canonical route for affected strict eval/Pack checks,
-then the full applicable profile suite before claiming quality restored. Never
-manually rebuild a managed index: after acceptance let the service refresh, verify
-current status and a representative query/read with its fresh snapshot. If the
-tool is unavailable, report pending validation. Handoff states what changed,
-which checks passed and any remaining warning; profile text alone is not recovery.
+After an approved profile change, let the service refresh on its canonical route.
+Run the affected checks and the applicable full suite before claiming quality
+restored, then verify a representative query/read with the fresh snapshot. If
+unavailable, record pending validation and continue product work. Handoff records
+remaining engine misses; application tests do not prove Shin recovery.
 
 ## Profile Change Review
 
@@ -258,3 +254,10 @@ serial/parallel identity. Run `pack-eval --strict` after engine or permanent
 profile changes; do not move those expectations into C++ Core.
 
 Do not fork Shin, embed consumer business semantics in its core, or replace source verification with generated context.
+
+## Documentation organization
+
+Authorized documentation organization follows `project-adoption-v1.json`'s
+`informationArchitecture`. Use contracts from the selected kit
+(`<prefix>/share/shin-context/contracts`) or active source (`<shin-home>/docs/machine`),
+never another installation. Read-only work cannot change installed guidance.

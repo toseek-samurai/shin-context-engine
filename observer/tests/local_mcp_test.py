@@ -620,6 +620,29 @@ class McpTests(unittest.TestCase):
             'session_id': args['session_id'], 'parent_request_id': 'x' * 64})
         self.assertFalse(bad['ok'])
 
+    def test_followup_uses_only_same_session_query_and_preserves_explicit_snapshot(self):
+        self.start()
+        child = self.adapter()
+        identity = {'session_id': 'actual-followup-test-chat'}
+        args = {'path': 'limits.js', **identity}
+        missing = self.tool(child, 'shin_read', args)
+        self.assertEqual(missing['error']['code'], 'mcp-query-binding-required')
+        query = self.tool(child, 'shin_query', {'query': 'readLimit', **identity})
+        self.assertTrue(query['ok'])
+        self.assertTrue(self.tool(child, 'shin_inspect', args)['ok'])
+        read = self.tool(child, 'shin_read', args)
+        self.assertTrue(read['ok'])
+        self.assertEqual(read['snapshot_id'], query['snapshot_id'])
+        other = self.tool(child, 'shin_read', {'path': 'limits.js', 'session_id': 'other-actual-chat'})
+        self.assertEqual(other['error']['code'], 'mcp-query-binding-required')
+        self.assertFalse(self.tool(child, 'shin_read', {'path': 'limits.js'})['ok'])
+        # Explicit stale input must never be replaced by a cached successful query.
+        stale = self.tool(child, 'shin_read', {**args, 'snapshot': 'fnv1a64:0000000000000000'})
+        self.assertFalse(stale['ok'])
+        self.assertTrue(self.tool(child, 'shin_read', args)['ok'])
+        other_connection = self.adapter()
+        self.assertFalse(self.tool(other_connection, 'shin_read', args)['ok'])
+
     def test_explicit_checkpoint_resume_is_bound_private_and_revision_checked(self):
         self.start()
         child = self.adapter()
@@ -1563,6 +1586,10 @@ class McpTests(unittest.TestCase):
         self.assertFalse(warning['canonical_ready'])
         self.assertTrue(warning['local_ready'])
         self.assertEqual(warning['project_quality'], 'degraded')
+        self.assertEqual(warning['context_result']['availability'], 'ready')
+        self.assertEqual(warning['context_result']['diagnostic_owner'], 'shin')
+        self.assertEqual(warning['context_result']['search_checks'], 'warning')
+        self.assertFalse(warning['context_result']['answer_assessed'])
         diagnostic = warning['quality_warning']['diagnostic']
         self.assertEqual(diagnostic['schema_version'], 'shin.validation-diagnostic.v1')
         eval_gate = next(g for g in diagnostic['gates'] if g['id'] == 'eval')

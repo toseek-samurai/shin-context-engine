@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "evidence_expectations.h"
 
 namespace shin::context {
 
@@ -127,7 +128,7 @@ static std::vector<PackEvalCase> extract_pack_eval_cases(
         "expectedComplete", "expected_complete",
         "requireSerialParallelIdentity", "require_serial_parallel_identity",
         "maxEvidenceBytes", "max_evidence_bytes", "maxRecords", "max_records",
-        "maxCompactBytes", "max_compact_bytes"
+        "maxCompactBytes", "max_compact_bytes", "mustEvidence", "mustNotEvidence"
     };
 
     for (std::size_t case_index = 0; case_index < array->size(); ++case_index) {
@@ -219,6 +220,8 @@ static std::vector<PackEvalCase> extract_pack_eval_cases(
         };
 
         PackEvalCase item;
+        item.must_evidence = parse_evidence_expectations(object, "mustEvidence", location, configuration_errors);
+        item.must_not_evidence = parse_evidence_expectations(object, "mustNotEvidence", location, configuration_errors);
         const Json* id = field_any({"id", "name"}, "id");
         if (id != nullptr && id->is_string()) {
             item.id = id->get<std::string>();

@@ -211,35 +211,38 @@ routes; preserve native review failures and interrupted rollback coverage.
 
 ## Project profile maintenance
 
-Applies only when Shin Context Engine is installed and this exact project is
-already enrolled. During an authorized refactor, the project agent also reviews
-the project-owned Shin profile; do not wait for a user-reported search warning.
-Without installed Shin, continue ordinary work without installing/enrolling it
-or adding a build/CI dependency.
+Applies only when Shin is installed and this exact project is enrolled. The
+project owns source selection and product scenarios; Shin owns retrieval algorithms,
+execution budgets, regression fixtures and diagnostics. Ordinary code/document
+edits do not create a separate Shin maintenance task.
 
-When documents, rules, packages, source roots or contracts change, check affected
-inclusions/exclusions, agentStartPaths, expected paths and eval/Pack cases.
-Prepare equivalent profile updates with the refactor. Diagnose failures against
-current source first: distinguish a moved/obsolete owner or changed contract
-from a retrieval regression. Preserve natural-language task intent, useful broad
-queries, negative assertions, rank/coverage requirements and resource limits.
-Add current terminology as coverage; an exact identifier query does not replace
-a failing broad query. Explain any owner-reviewed retirement of obsolete cases.
+Review the profile when a selected root, owning path or product contract actually
+moves or changes. Update affected paths and scenario assertions alongside that
+refactor; retain useful natural-language queries, negative assertions, rank/coverage
+requirements and resource limits. Do not reorganize otherwise sound documentation,
+repeat query wording in headings, or split files to reduce search counters.
+`mustEvidence` and `mustNotEvidence` can describe the selected fragment, statement
+and lifecycle status; matching a file alone does not establish a useful answer.
 
-Never delete failures, relax checks, raise limits, index evaluation answers or
-move required cases into advisory/history suites just to make status green.
-Keep confirmed engine misses visible with original queries, expected owners,
-versions and bounded diagnostics; exclude private source/secrets from reports.
+When current sources still satisfy the intended scenario and Shin misses it,
+continue authorized product work with direct sources. Preserve the original query,
+expected fragment/owner, version and bounded diagnostic for Shin's backlog. Engine
+regressions and resource-counter warnings belong to Shin maintainers; consumers do
+not tune algorithms, limits or wording until the indicator turns green. Keep
+private source, profiles and diagnostics out of public reports.
 
-A profile edit is not runtime approval. Review its exact native
-shin-ce profile-review diff; scope, limits, safety and quality policy need
-explicit owner authority for that change. Existing explicit authorization may
-cover acceptance; do not ask again when it does. Do not approve through MCP or
-re-enroll, switch indexes or manually rebuild a managed index.
+Never remove failures, weaken assertions, raise limits, enroll evaluation answers
+or move required checks into advisory/history suites to hide an engine miss.
+Retire obsolete scenarios only for an explained, owner-reviewed product change.
+Scope, safety and approval rules still apply: a prepared profile edit is not
+runtime acceptance. Use native `shin-ce profile-review`; act on existing explicit
+authority only for the exact reviewed change. MCP grants no approval authority.
+Never re-enroll, switch indexes or manually rebuild a managed index.
 
-After approval, let the service refresh on the canonical route. Run affected
-strict eval/Pack checks and the full applicable profile suite before claiming
-quality restored; verify current status and a representative query/read with
-its fresh snapshot. If Shin is unavailable, report pending validation. Handoff
-records profile changes, checks and unresolved warnings; edits alone prove no recovery.
+After an approved profile change, let the service refresh on its canonical route.
+Run the affected checks and the applicable full suite before claiming quality
+restored, then verify a representative query/read with the fresh snapshot. If
+unavailable, record pending validation and continue product work. Handoff records
+remaining engine misses; application tests do not prove Shin recovery.
+
 <!-- shin-profile-maintenance-end -->

@@ -272,7 +272,8 @@ RetrievalUnitKey retrieval_unit_key(const SectionRow& row, const std::set<std::s
 RetrievalUnitKey retrieval_unit_key(const FactRow& row, const std::set<std::string>& documents);
 std::optional<std::vector<CandidateRows>> filter_document_coverage_candidates(
     const RuntimeOptions& options, const std::vector<CandidateRows>& groups, int required,
-    const std::set<std::string>& documents, const CandidateRows* ordinary = nullptr);
+    const std::set<std::string>& documents, const CandidateRows* ordinary = nullptr,
+    bool include_independent = false);
 // Recovery reads one complete group at a time, before the ordinary row cutoff.
 // The loader omits independent source facts; only declared document units qualify.
 std::optional<std::vector<CandidateRows>> filter_document_coverage_postings(
@@ -359,7 +360,8 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
                                                              bool missing_documents_only,
                                                              const std::vector<CandidateRows>* prepared_groups = nullptr,
                                                              const Json* manifest = nullptr,
-                                                             bool include_near_complete_sections = false);
+                                                             bool include_near_complete_sections = false,
+                                                             int minimum_document_groups = 0);
 BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options,
                                                     const QueryRequest& request,
                                                     const Json* manifest = nullptr);

@@ -88,6 +88,7 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/extraction.cpp
     src/identifier_extraction.cpp
     src/evidence.cpp
+    src/evidence_expectations.cpp
     src/retool_extraction.cpp
     src/generation.cpp
     src/compact_terms.cpp
@@ -96,6 +97,7 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/retrieval.cpp
     src/lexical_matching.cpp
     src/document_candidates.cpp
+    src/document_lifecycle.cpp
     src/scoped_retrieval.cpp
     src/source_relations.cpp
     src/source_syntax.cpp
@@ -528,6 +530,10 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/lexical-retrieval/test_lexical_retrieval.py
                 $<TARGET_FILE:shin-context>)
     set_tests_properties(shin-context-lexical-retrieval PROPERTIES TIMEOUT 90)
+    add_test(NAME shin-context-outcomes
+        COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/context-outcomes/test_context_outcomes.py
+                $<TARGET_FILE:shin-context>)
+    set_tests_properties(shin-context-outcomes PROPERTIES TIMEOUT 90)
     add_test(NAME shin-context-query-parity
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/query-parity/test_query_parity.py
                 $<TARGET_FILE:shin-context>)

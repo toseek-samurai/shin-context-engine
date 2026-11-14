@@ -1,5 +1,6 @@
 #include "context_internal.h"
 #include "profile_quality.h"
+#include "evidence_expectations.h"
 #include <span>
 #ifdef SHIN_EXPERIMENT_EVAL_BATCH
 #include "eval_batch_experiment.h"
@@ -31,12 +32,14 @@ struct EvalCaseResult {
     std::vector<std::string> missing_top_paths;
     std::vector<std::string> unexpected_paths;
     std::vector<std::string> missing_record_types;
+    EvidenceAssessment evidence;
     std::vector<std::string> ceiling_violations;
     std::vector<EvalCeilingViolation> ceiling_violation_details;
     Json path_ranks = Json::object();
     Json rank_violations = Json::array();
     QueryCoverage query_coverage;
     BriefRetrievalDecision decision;
+    Json query_plan = Json::object();
     int matched_sections = 0;
     int matched_facts = 0;
     int returned_sections = 0;
@@ -176,6 +179,7 @@ static EvalCaseResult run_eval_query(const RetrievalSession& session,
     const BriefResult& brief = execution.retrieval;
     EvalCaseResult result;
     result.decision = execution.decision;
+    result.query_plan = brief.query_plan;
     result.item = item;
     result.item.query = query;
     result.variant_index = variant_index;
@@ -212,6 +216,7 @@ static EvalCaseResult run_eval_query(const RetrievalSession& session,
         result.returned_paths.push_back(path.path);
     }
     result.returned_record_types = execution.returned_record_types;
+    result.evidence = assess_evidence(selected_brief_records(selection), item.must_evidence, item.must_not_evidence);
     std::set<std::string> returned(result.returned_paths.begin(), result.returned_paths.end());
     std::map<std::string, int> returned_ranks;
     for (std::size_t index = 0; index < result.returned_paths.size(); ++index) {
@@ -330,7 +335,7 @@ static EvalCaseResult run_eval_query(const RetrievalSession& session,
              static_cast<std::size_t>(query_coverage_covered_groups(result.query_coverage)),
              item.min_covered_groups, ">=", "coverage"});
     }
-    result.quality_passed = result.missing_paths.empty() && result.missing_top_paths.empty() &&
+    result.quality_passed = result.evidence.passed() && result.missing_paths.empty() && result.missing_top_paths.empty() &&
                     result.unexpected_paths.empty() && result.missing_record_types.empty() &&
                     (item.min_covered_groups < 0 ||
                      query_coverage_covered_groups(result.query_coverage) >= item.min_covered_groups) &&
@@ -452,6 +457,7 @@ static void emit_eval_case_json(std::ostream& out, const EvalCaseResult& result)
         << ",\"topic_match_policy\":\"booster-only\""
         << "}"
         << ",\"query_coverage\":" << query_coverage_json(result.query_coverage).dump()
+        << ",\"query_plan\":" << result.query_plan.dump()
         << ",\"matched_sections\":" << result.matched_sections
         << ",\"matched_facts\":" << result.matched_facts
         << ",\"returned_sections\":" << result.returned_sections
@@ -468,6 +474,8 @@ static void emit_eval_case_json(std::ostream& out, const EvalCaseResult& result)
         << ",\"missing_top_paths\":" << json_string_array(result.missing_top_paths)
         << ",\"unexpected_paths\":" << json_string_array(result.unexpected_paths)
         << ",\"missing_record_types\":" << json_string_array(result.missing_record_types)
+        << ",\"missing_evidence\":" << result.evidence.missing.dump()
+        << ",\"forbidden_evidence\":" << result.evidence.forbidden.dump()
         << ",\"max_matched_sections\":" << result.item.max_matched_sections
         << ",\"max_matched_facts\":" << result.item.max_matched_facts
         << ",\"max_candidate_rows\":" << result.item.max_candidate_rows
@@ -501,6 +509,8 @@ static void emit_eval_case_json(std::ostream& out, const EvalCaseResult& result)
 
 static std::vector<std::string> eval_failure_reasons(const EvalCaseResult& result) {
     std::vector<std::string> reasons;
+    if (!result.evidence.missing.empty()) reasons.push_back("missing-required-evidence");
+    if (!result.evidence.forbidden.empty()) reasons.push_back("forbidden-evidence-returned");
     if (!result.missing_paths.empty()) {
         reasons.push_back("missing-required-path");
     }
@@ -567,6 +577,8 @@ static Json eval_failure_json(const RuntimeOptions& options, const EvalCaseResul
                     {"missing_top_paths", result.missing_top_paths},
                     {"unexpected_paths", result.unexpected_paths},
                     {"missing_record_types", result.missing_record_types},
+                    {"missing_evidence", result.evidence.missing},
+                    {"forbidden_evidence", result.evidence.forbidden},
                     {"ceiling_violations", result.ceiling_violations},
                     {"ceiling_violation_details", ceiling_violation_details_json(result)},
                     {"rank_violations", result.rank_violations},

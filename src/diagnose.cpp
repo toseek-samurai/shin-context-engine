@@ -381,6 +381,7 @@ int run_diagnose(const RuntimeOptions& options, const std::vector<std::string>& 
             {"related_documents", ranked_paths},
             {"selected_by_planner", planner_selected}
         };
+        if (!retrieval.query_plan.empty()) output["retrieval"]["query_plan"] = retrieval.query_plan;
         if (retrieval.identifier_probe_rows > 0) {
             output["retrieval"]["identifier_scope_used"] = retrieval.identifier_scope_used;
             output["retrieval"]["identifier_scope_key"] = retrieval.identifier_scope_key;

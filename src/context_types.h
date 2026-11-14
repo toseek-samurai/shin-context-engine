@@ -155,6 +155,8 @@ struct EvalCase {
     std::vector<std::string> must_not_paths;
     std::vector<std::string> expected_record_types;
     std::vector<RankBeforeExpectation> must_rank_before;
+    Json must_evidence = Json::array();
+    Json must_not_evidence = Json::array();
     int must_top_n = 3;
     int limit = 8;
     int per_doc_limit = 2;
@@ -170,6 +172,8 @@ struct PackEvalCase {
     Json request_document;
     std::vector<std::string> must_paths;
     std::vector<std::string> must_not_paths;
+    Json must_evidence = Json::array();
+    Json must_not_evidence = Json::array();
     bool expected_complete = true;
     bool require_serial_parallel_identity = true;
     int max_evidence_bytes = -1;
@@ -449,6 +453,7 @@ struct GeneratedOutput {
 };
 
 struct GeneratedRows {
+    Json document_lifecycle = Json::object();
     std::vector<SourceDoc> docs;
     std::vector<SectionRow> sections;
     std::vector<LinkRow> links;
@@ -635,6 +640,8 @@ struct RetrievalUnitKey {
 };
 
 struct BriefResult {
+    Json query_plan = Json::object();
+    Json document_lifecycle = Json::object();
     std::map<std::string, std::vector<ContextHit>> section_hits_by_doc;
     std::vector<FactHit> decisions;
     std::vector<FactHit> contracts;

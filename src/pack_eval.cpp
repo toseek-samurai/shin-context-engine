@@ -1,6 +1,7 @@
 #include "agent_context_pack.h"
 #include "context_internal.h"
 #include "profile_quality.h"
+#include "evidence_expectations.h"
 
 namespace shin::context {
 namespace {
@@ -27,6 +28,7 @@ struct PackEvalCaseResult {
     bool serial_parallel_identity = false;
     std::vector<std::string> missing_paths;
     std::vector<std::string> unexpected_paths;
+    EvidenceAssessment evidence;
     std::vector<std::string> failure_reasons;
     std::size_t evidence_bytes = 0;
     std::size_t evidence_records = 0;
@@ -128,6 +130,7 @@ PackEvalCaseResult run_pack_eval_case(const RuntimeOptions& options,
     result.parallel_jobs = parallel.jobs;
     result.receipt_id = serial.receipt_id;
     result.evidence_set_fingerprint = serial.evidence_set_fingerprint;
+    result.evidence = assess_evidence(serial.evidence, config.must_evidence, config.must_not_evidence);
     for (const TaskRequirement& requirement : prepared.request.requirements) {
         result.requirement_queries.push_back(
             {{"id", requirement.id},
@@ -160,6 +163,8 @@ PackEvalCaseResult run_pack_eval_case(const RuntimeOptions& options,
     if (result.actual_complete != result.expected_complete) {
         result.failure_reasons.push_back("completion-mismatch");
     }
+    if (!result.evidence.missing.empty()) result.failure_reasons.push_back("missing-required-evidence");
+    if (!result.evidence.forbidden.empty()) result.failure_reasons.push_back("forbidden-evidence-returned");
     if (!result.missing_paths.empty()) {
         result.failure_reasons.push_back("missing-required-path");
     }
@@ -252,6 +257,8 @@ Json pack_eval_case_json(const PackEvalCaseResult& result) {
         {"evidence_set_fingerprint", result.evidence_set_fingerprint},
         {"missing_paths", result.missing_paths},
         {"unexpected_paths", result.unexpected_paths},
+        {"missing_evidence", result.evidence.missing},
+        {"forbidden_evidence", result.evidence.forbidden},
         {"failure_reasons", result.failure_reasons},
         {"limits", {
             {"evidence_bytes", result.evidence_bytes},
@@ -343,7 +350,8 @@ int run_pack_eval(const RuntimeOptions& options, const std::vector<std::string>&
     const bool quality_failure_only = !ok && total > 0 && freshness.current && freshness.fully_verified &&
         std::all_of(results.begin(), results.end(), [](const PackEvalCaseResult& row) {
             return std::all_of(row.failure_reasons.begin(), row.failure_reasons.end(), [](const std::string& reason) {
-                return reason == "missing-required-path" || reason == "completion-mismatch";
+                return reason == "missing-required-path" || reason == "completion-mismatch" ||
+                       reason == "missing-required-evidence" || reason == "forbidden-evidence-returned";
             });
         });
     Json output = make_result_document(

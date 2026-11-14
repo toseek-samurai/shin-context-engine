@@ -14,6 +14,7 @@
 #include "worktree_state.h"
 #include "validation_generation.h"
 #include "local_refresh_guard.h"
+#include "local_context_result.h"
 #include "local_profile_revision.h"
 #include "local_partial_context.h"
 #include "local_route_guard.h"
@@ -293,6 +294,7 @@ bool matches_bootstrap_configuration(const Json& document, const Json& expected,
 
 void add_query_context(Json& result, const core::RuntimeOptions& options, const Config& config,
                        const std::string& query, const fs::path& cache = {}) {
+    const auto started = core::SteadyClock::now();
     auto brief = core_result([&] { return core::run_brief(options,
         {"--projection", "compact", "--limit", "4", "--require-current", "--", query}); });
     const auto source = query_source(config, query, true, cache, options.generation_admission);
@@ -306,6 +308,7 @@ void add_query_context(Json& result, const core::RuntimeOptions& options, const 
     result["document_context"] = std::move(brief);
     result["answer_complete"] = false;
     result["query_persisted"] = false;
+    add_context_result(result, core::elapsed_ms_since(started));
 }
 
 void add_followup_context(Json& result, const Config& config, const LocalProjectRequest& request,
@@ -1171,6 +1174,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     verify_route(loaded);
     result["phase_ms"] = {{"admission", admission_ms}, {"retrieval", retrieval_ms},
         {"final_verification", core::elapsed_ms_since(verification_started)}};
+    add_context_result(result);
     if (result.dump(2).size() + 1 > 65536) throw Error("output-limit", "Attached route response exceeds the bounded view.");
     guard_ancestor_bindings(root, home);
     require_running();

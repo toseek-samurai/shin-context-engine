@@ -222,6 +222,13 @@ class LocalResidentTests(unittest.TestCase):
         original = self.ready_request('query', first, query='readLimit')
         self.assert_contract(original, first)
         self.assert_body(original, 'return 7107;', 'return 9909;')
+        summary = original['context_result']
+        self.assertEqual(summary['availability'], 'ready')
+        self.assertEqual(summary['evidence'], 'found')
+        self.assertFalse(summary['answer_assessed'])
+        self.assertGreater(summary['source_fragments_shown'], 0)
+        self.assertEqual(summary['performance']['retrieval_ms'], original['phase_ms']['retrieval'])
+        self.assertIn('not-query-allocation', summary['performance']['memory_scope'])
         snapshot = original['snapshot_id']
         self.assertEqual(snapshot, preparation['snapshot_id'])
         self.assertEqual(original['document_context']['snapshot_id'], snapshot)

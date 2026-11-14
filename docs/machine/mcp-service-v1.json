@@ -6,8 +6,18 @@
   "scope": "Persistent stdio adapter to the current local service. Native macOS payload replacement is locally qualified; Windows MSI continuous-process replacement is not qualified.",
   "runtimeInventory": {
     "path": "share/shin-context/mcp-runtime.json",
-    "fields": ["schema_version", "adapter_contract_sha256", "observer_version", "core_version", "files"],
-    "fileFields": ["path", "sha256", "size"],
+    "fields": [
+      "schema_version",
+      "adapter_contract_sha256",
+      "observer_version",
+      "core_version",
+      "files"
+    ],
+    "fileFields": [
+      "path",
+      "sha256",
+      "size"
+    ],
     "coverage": "Installed bin executables/libraries and both component VERSION files, after dependency fixups. Project code, profiles, indexes and history are not code-cohort members.",
     "bounds": "128 files, 128 MiB per file, 512 MiB total. Relative normalized paths, exact portable spelling, unique names, no links or shared writable code. Homebrew's shin-monitor launcher is not service runtime code.",
     "ownership": "The original prefix locator and data-home identity remain pinned. Native installations also retain the same owned control directory, recorded home, complete installation state and receipt-bound outer manifest. Only the declared Homebrew opt locator can change its physical package prefix.",
@@ -15,7 +25,10 @@
   },
   "request": {
     "transport": "Existing private shin.local-rpc.v1 socket or pipe with peer/endpoint identity checks.",
-    "mcp_runtime": {"protocol": "shin.mcp-service.v1", "runtime_sha256": "SHA-256 of the verified runtime inventory"},
+    "mcp_runtime": {
+      "protocol": "shin.mcp-service.v1",
+      "runtime_sha256": "SHA-256 of the verified runtime inventory"
+    },
     "versions": "Requests and responses must exactly match Observer and Core versions from the verified current runtime, not values supplied by a model or learned from an untrusted service refusal.",
     "service": "At startup the service verifies its runtime inventory against its compiled versions and captures its digest. It rejects any different mcp_runtime before project execution. Normal CLI, resident workers and installer-control version fences remain unchanged.",
     "admission": "An opaque verified-runtime object is created only by the bridge. Tool arguments cannot choose versions, runtime digests, roots or homes. The handoff path cannot stop or control the service.",
@@ -46,5 +59,10 @@
     "revocation": "Observed removal, disabling, or unverifiable settings revoke cached grants. Re-granted roots receive fresh selectors. Post-request verification withholds responses after access revocation. Unrelated client/profile configurations remain isolated.",
     "cutover": "The adapter fingerprint includes its config readers. Older adapters/static command lines need one host MCP reload/reconnect to adopt the mode. Initial host activation remains host-owned. Manual exports retain startup-only scopes.",
     "presentation": "client-targets --root reports configured, not-configured, reconnect-required or review-required per settings destination. These are configuration states, not verified host activation or model use."
+  },
+  "sessionFollowups": {
+    "scope": "Optional snapshot omission only after a successful same-project query with the same real caller session_id on this exact MCP connection. The adapter retains the native snapshot and parent request correlation privately in memory; at most 128 entries, 15-minute lifetime. Unknown identities, other projects/connections, failed or overlapping queries and expired/evicted bindings require an explicit snapshot or a fresh query.",
+    "authority": "Explicit snapshots are never replaced. Native service, route, lifecycle, source and snapshot checks remain mandatory. No implicit requery, stale fallback, enrollment or approval. Reconnect clears convenience bindings.",
+    "delivery": "context_result separates availability from found/empty/partial evidence and never assesses answer correctness. It reports actual displayed fragments, retrieval/verification durations and reader-process lifetime peak RSS, not per-query allocation. Search warnings name Shin as diagnostic owner while preserving full diagnostics."
   }
 }

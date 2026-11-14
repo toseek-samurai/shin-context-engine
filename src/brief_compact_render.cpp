@@ -176,6 +176,7 @@ Json make_compact_brief_json(const RuntimeOptions& options,
     output["snapshot_id"] = freshness.snapshot_id.empty() ? Json(nullptr) : Json(freshness.snapshot_id);
     output["query"] = request.query;
     output["retrieval_mode"] = execution.decision.mode;
+    if (!result.document_lifecycle.empty()) output["document_lifecycle"] = result.document_lifecycle;
     output["query_coverage"] = compact_brief_coverage_json(execution.coverage);
     if (result.identifier_scope_used) {
         output["identifier_scope"] = {{"key", result.identifier_scope_key},

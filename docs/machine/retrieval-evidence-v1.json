@@ -350,7 +350,9 @@
       "queryVariants": "Zero to eight normalized-distinct meaningful alternative phrasings. Every variant runs the same path, type, negative-path, breadth, candidate, and coverage assertions as the base query. This is a robustness gate, not a claim that arbitrary formulations are semantically equivalent.",
       "maxCandidateRows": "Optional inclusive upper bound for retrieval candidate work; -1 or omission disables it.",
       "minCoveredGroups": "Optional inclusive lower bound for evidence-backed normalized query groups; -1 or omission disables it.",
-      "mustRankBefore": "Zero to 64 reviewed higher/lower path constraints over the emitted global unique-path rank."
+      "mustRankBefore": "Zero to 64 reviewed higher/lower path constraints over the emitted global unique-path rank.",
+      "mustEvidence": "Zero to 32 conjunctive predicates over individual selected display records. Optional path is exact and project-relative; heading (or typed title), status and authorityLevel compare normalized exact values; contains is a Unicode-casefolded whitespace-normalized literal substring of displayed heading/title and excerpt/preview/summary. At least one nonempty field; at most 4096 bytes per field. No regular expressions or hidden indexed_text matching.",
+      "mustNotEvidence": "Zero to 32 predicates with the same grammar. Every required predicate must match one final selected record and every forbidden predicate must match none. No predicate may borrow fields from another record."
     },
     "validation": [
       "variant text must be meaningful after normalization",
@@ -372,14 +374,16 @@
       "query_variants": "Nested concrete result objects with zero-based variant_index values.",
       "rank_assertions": "Concrete higher/lower ranks and pass state for every mustRankBefore pair.",
       "rank_violations": "higher-missing or order-violated diagnostics with nullable concrete ranks.",
-      "rank_summary": "Suite MRR and recall grouped by the exact configured N."
+      "rank_summary": "Suite MRR and recall grouped by the exact configured N.",
+      "evidenceAssertions": "missing_evidence and forbidden_evidence preserve failed predicates. Both are semantic quality failures: strict eval/Pack-eval stay red, readiness retains a bounded quality warning and safe context remains available. Resource advisory cannot make these assertions pass. Source selection, grants, explicit mustNotPaths, freshness, integrity, runtime and output gates retain their hard decisions. Pack-eval uses the same matcher after final byte/record selection."
     },
     "violationNames": [
       "matched_sections",
       "matched_facts",
       "candidate_rows",
       "covered_groups"
-    ]
+    ],
+    "ownership": "Consumers own product scenarios and source selection. Engine misses and resource regression diagnosis belong to Shin. Do not rewrite normal documents, repeat query vocabulary or raise limits to make counters green. Preserve original scenarios and reproduce engine failures in neutral Shin fixtures."
   },
   "resourceAndPerformanceBoundary": {
     "queryVariantLimit": 8,

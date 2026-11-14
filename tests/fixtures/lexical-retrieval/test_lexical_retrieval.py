@@ -100,6 +100,75 @@ class LexicalRetrievalTests(unittest.TestCase):
         prefix = ["--source-scan"] if source_scan else []
         return self.invoke(*prefix, "context", query, "--require-current", "--limit", "100", "--per-doc", "8")
 
+    def test_complete_narrowed_fallback_avoids_common_pair_noise(self):
+        query = "alpha beta gamma delta epsilon zeta"
+        self.document("primary.md", "# Primary\n\nalpha beta gamma delta epsilon.\n")
+        self.document("companion.md", "# Companion\n\ndelta epsilon zeta.\n")
+        for index in range(100):
+            self.document(f"noise-{index}.md", "# Unrelated\n\nalpha beta.\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+        self.assertEqual({row["path"] for row in result["ranked_paths"]},
+                         {"docs/primary.md", "docs/companion.md"})
+        self.assertEqual(result["query_coverage"]["covered_groups"], 6)
+        self.assertLessEqual(result["query_diagnostics"]["candidate_rows"], 4)
+        self.assertLessEqual(result["matched_sections"], 4)
+
+    def test_narrowed_fallback_preserves_a_low_overlap_complement(self):
+        query = "alpha beta gamma delta epsilon zeta"
+        self.document("primary.md", "# Primary\n\nalpha beta gamma delta.\n")
+        self.document("companion.md", "# Companion\n\nepsilon zeta.\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+        self.assertEqual({row["path"] for row in result["ranked_paths"]},
+                         {"docs/primary.md", "docs/companion.md"})
+        self.assertEqual(result["query_coverage"]["covered_groups"], 6)
+        self.assertEqual(result["query_diagnostics"]["required_group_matches"], 2)
+
+    def test_narrowed_fallback_still_supplements_a_complete_split_document(self):
+        query = "alpha beta gamma delta epsilon zeta eta theta iota"
+        self.document("left.md", "# Left\n\nalpha beta gamma delta epsilon zeta.\n")
+        self.document("right.md", "# Right\n\ndelta epsilon zeta eta theta iota.\n")
+        self.document("manual.md", "# Manual\n\n## First\n\nalpha beta gamma.\n\n"
+                      "## Second\n\ndelta epsilon zeta.\n\n## Third\n\neta theta iota.\n")
+        self.invoke("build")
+        for spelling in (query, query + " absentword"):
+            with self.subTest(query=spelling):
+                result = self.invoke("brief", spelling, "--require-current", "--limit", "8", "--per-doc", "2")
+                self.assertTrue({"docs/left.md", "docs/right.md", "docs/manual.md"}.issubset(
+                    {row["path"] for row in result["ranked_paths"]}))
+                self.assertEqual(result["query_coverage"]["covered_groups"], 9)
+                self.assertEqual(result["retrieval_mode"], "planned")
+
+    def test_planner_qualifies_whole_documents_before_scoring_rows(self):
+        query = "alpha beta gamma delta epsilon zeta eta theta"
+        self.document("manual.md", "# Manual\n\n## First\n\nalpha beta.\n\n"
+                      "## Second\n\ngamma delta.\n\n## Third\n\nepsilon zeta.\n\n"
+                      "## Fourth\n\neta theta.\n")
+        for index in range(100):
+            self.document(f"noise-{index}.md", "# Unrelated\n\nalpha beta.\n")
+        self.invoke("build")
+        result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+        self.assertEqual(result["retrieval_mode"], "planned")
+        self.assertEqual([row["path"] for row in result["ranked_paths"]], ["docs/manual.md"])
+        self.assertEqual(result["query_coverage"]["selected_document_covered_groups"], 8)
+        self.assertLessEqual(result["query_diagnostics"]["candidate_rows"], 4)
+        self.assertLessEqual(result["matched_sections"], 4)
+
+    def test_owner_prefilters_qualifiers_before_scoring_unrelated_sections(self):
+        self.document("reference.md", "# Reference\n\n" + "\n".join(
+            f"## Detail {index}\n\nOrdinary background.\n" for index in range(80)
+        ) + "\n## Alpha\n\nFirst boundary.\n\n## Beta\n\nSecond boundary.\n")
+        self.invoke("build")
+        result = self.invoke("brief", "docs/reference.md alpha beta", "--require-current",
+                             "--limit", "8", "--per-doc", "2")
+        self.assertEqual(result["retrieval_mode"], "owner-scoped")
+        self.assertEqual({row["heading"] for row in result["sections"]}, {"Alpha", "Beta"})
+        self.assertEqual(result["query_coverage"]["covered_groups"], 3)
+        self.assertLessEqual(result["matched_sections"], 2)
+        # Sparse owner discovery still truthfully reports examining the whole owner.
+        self.assertGreaterEqual(result["query_diagnostics"]["candidate_rows"], 83)
+
     def test_owner_lifecycle_qualifiers_keep_matching_sections_and_provenance(self):
         self.document("mixed-contract.md", (
             "# Mixed contract\n\nStatus: accepted\n\n"
@@ -1267,8 +1336,10 @@ class LexicalRetrievalTests(unittest.TestCase):
         self.assertIn('"waiting"', result["sections"][0]["preview"])
         self.assertIn('"remove"', result["sections"][1]["preview"])
         self.assertEqual(result["query_coverage"]["returned_evidence_covered_groups"], 4)
-        self.assertEqual(result["matched_sections"], 7)
-        self.assertEqual(result["matched_facts"], 1)
+        self.assertEqual(result["matched_sections"], 2)
+        self.assertEqual(result["matched_facts"], 0)
+        # All eight owner rows are still discovered; only matching qualifiers
+        # reach scoring, without changing either key's evidence or coverage.
         self.assertEqual(result["query_diagnostics"]["candidate_rows"], 8)
         compact = self.invoke("brief", query, *args, "--projection", "compact")
         self.assertEqual([(row["type"], row["heading"]) for row in compact["evidence"]],

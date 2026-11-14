@@ -17,9 +17,10 @@ RESOURCE_METRICS = {
     "matched_sections": ("max_matched_sections", "scored-matches"),
     "matched_facts": ("max_matched_facts", "scored-matches"),
 }
-QUALITY_FIELDS = ("missing_paths", "missing_top_paths", "unexpected_paths", "missing_record_types", "rank_violations")
+QUALITY_FIELDS = ("missing_paths", "missing_top_paths", "unexpected_paths", "missing_record_types", "rank_violations",
+                  "missing_evidence", "forbidden_evidence")
 QUALITY_REASONS = {"missing-required-path", "missing-top-path", "forbidden-path-returned",
-                   "missing-record-type", "rank-order-violated"}
+                   "missing-record-type", "rank-order-violated", "missing-required-evidence", "forbidden-evidence-returned"}
 
 
 def require(value):

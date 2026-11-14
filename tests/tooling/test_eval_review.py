@@ -22,7 +22,7 @@ def query(identity="fixture", candidates=802, cap=850, passed=True):
             "matched_facts": 0, "max_candidate_rows": cap, "max_matched_sections": 100, "max_matched_facts": -1,
             "query_coverage": {"covered_groups": 4}, "min_covered_groups": 4,
             "missing_paths": [], "missing_top_paths": [], "unexpected_paths": [], "missing_record_types": [],
-            "rank_violations": [], "ceiling_violations": []}
+            "rank_violations": [], "ceiling_violations": [], "missing_evidence": [], "forbidden_evidence": []}
 
 
 def full(rows=None, ok=True):
@@ -38,6 +38,7 @@ def full(rows=None, ok=True):
 def failed_only():
     row = {"id": "fixture", "variant_index": 2, "query": "why empty documents are hidden", "detail_level": "full",
            "failure_reasons": ["retrieval-ceiling-violated"], "missing_paths": [], "missing_top_paths": [],
+           "missing_evidence": [], "forbidden_evidence": [],
            "unexpected_paths": [], "missing_record_types": [], "rank_violations": [],
            "ceiling_violations": ["candidate_rows"], "ceiling_violation_details": [
                {"metric": "candidate_rows", "actual": 802, "allowed": 800, "comparator": "<=", "stage": "candidate-discovery"}]}
@@ -103,7 +104,9 @@ class ReviewTests(unittest.TestCase):
     def test_quality_negatives_cannot_be_reclassified_as_resources(self):
         for field, failure in (("missing_paths", "missing.md"), ("missing_top_paths", "required.md"),
                                ("unexpected_paths", "forbidden.md"), ("missing_record_types", "contract"),
-                               ("rank_violations", {"reason": "order-violated"})):
+                               ("rank_violations", {"reason": "order-violated"}),
+                               ("missing_evidence", {"contains": "current statement"}),
+                               ("forbidden_evidence", {"status": "history"})):
             with self.subTest(field=field):
                 row = query(passed=False)
                 row[field] = [failure]

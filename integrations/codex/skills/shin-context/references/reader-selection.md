@@ -37,3 +37,12 @@ query while `local_ready=false`. `project_state=qualified` with
 background qualification is pending. Submit the useful query once; it waits
 automatically for up to 20 seconds. Status polling and manual sleeps add no
 readiness proof. Real blockers keep their typed error and recovery guidance.
+
+## Snapshot convenience
+
+When the advertised schema permits it, omit a follow-up snapshot only after a
+successful query with the same real session_id and project on this connection.
+The adapter pins it; explicit snapshots stay strict. Concurrent queries or a new
+connection require the exact returned snapshot. Inspect context_result when
+available: found evidence is not an assessed answer. Engine misses do not require
+restructuring project documentation.

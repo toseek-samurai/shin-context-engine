@@ -254,6 +254,12 @@ The native `shin-ce` CLI can query the same enrolled project without changing cl
   --snapshot SNAPSHOT_ID --root /path/to/project --home /path/to/private-data
 ```
 
+Current development source also permits omitting `snapshot` after a successful
+query with the same real `session_id` and project on the same MCP connection. The
+adapter pins it privately for 15 minutes; concurrent queries, reconnects or an
+unknown identity require an explicit snapshot or a fresh query. Existing published
+kits keep their advertised schema. Explicit snapshots are always checked.
+
 Use the snapshot returned by the query for `inspect` and `read`. Paths are project-relative. Check project and service status before relying on results. Missing or stale evidence is not permission to enroll, rebuild, or replace a project index; ask its owner before changing an existing binding or publication authority.
 
 For installation, package contents, and the local service lifecycle, see the [local kit guide](local-kit.md).

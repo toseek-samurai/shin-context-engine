@@ -138,6 +138,14 @@ Json run_prefix_brief(RetrievalSession& session, const Profile& profile, bool ca
 }
 
 Json normalized_brief(Json value) {
+    const auto& plan = value.at("query_plan");
+    std::size_t visits = 0;
+    for (const auto& stage : plan.at("stages")) visits += stage.at("candidate_rows").get<std::size_t>();
+    expect(visits == plan.at("candidate_row_visits").get<std::size_t>(),
+           "retrieval plan lost rejected or repeated candidate work");
+    // The experiment changes discovery work, not delivered evidence. Keep its
+    // accounted work separate from the unchanged ranking/provenance comparison.
+    value.erase("query_plan");
     auto& diagnostics = value.at("query_diagnostics");
     diagnostics.erase("candidate_rows");
     diagnostics.erase("candidate_index_used");

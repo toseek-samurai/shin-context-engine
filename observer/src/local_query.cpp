@@ -8,6 +8,7 @@
 #include "local_source_relevance.h"
 #include "source_discovery.h"
 #include "source_read.h"
+#include "local_context_result.h"
 
 namespace shin::observer {
 Json source_coverage_summary(const Json& manifest) {
@@ -39,7 +40,8 @@ void collect_paths(const Json& value, const std::map<std::string, Json>& sources
         for (const auto& entry : value) collect_paths(entry, sources, selected);
     } else if (value.is_object()) {
         for (const auto& [key, entry] : value.items()) {
-            if ((key == "path" || key == "source_path" || key == "target_path") && entry.is_string() &&
+            if ((key == "path" || key == "source_path" || key == "target_path" ||
+                 key == "declared_in" || key == "older" || key == "newer") && entry.is_string() &&
                 sources.contains(entry.get_ref<const std::string&>())) selected.insert(entry.get<std::string>());
             else if (entry.is_structured()) collect_paths(entry, sources, selected);
         }
@@ -233,13 +235,18 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
                 collect_paths(row, state.sources, selected);
                 bool safe = !selected.empty();
                 for (const auto& path : selected) if (!verified_file(path)) safe = false;
+                for (const auto& relation : state.snapshot->manifest().value("document_lifecycle", Json::object())
+                        .value("relations", Json::array())) {
+                    if (relation.value("older", "") == row.value("path", "") &&
+                        (!verified_file(relation.at("declared_in")) || !verified_file(relation.at("newer")))) safe = false;
+                }
                 if (safe) retained.push_back(row);
             }
             evidence = std::move(retained);
             auto& document = result["document_context"];
             // These projections describe the unfiltered historical selection.
             // Omit them rather than claiming coverage or ranks for excluded files.
-            for (const auto* key : {"ranked_paths", "verification_paths", "query_coverage", "identifier_scope"})
+            for (const auto* key : {"ranked_paths", "verification_paths", "query_coverage", "identifier_scope", "document_lifecycle"})
                 document.erase(key);
             document["evidence_budget"]["returned_records"] = evidence.size();
             document["query_coverage"] = {{"state", "partial"}, {"scope", "verified-retained-evidence"}};
@@ -334,6 +341,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
     result["phase_ms"] = {{"admission", admission_ms}, {"retrieval", retrieval_ms},
         {"documents", document_ms}, {"source", source_ms}, {"source_collection", collection_ms},
         {"final_verification", core::elapsed_ms_since(verification_started)}};
+    add_context_result(result);
     if (result.dump().size() + 1 > 65536) throw Error("output-limit", "Resident response exceeds the bounded local view.");
     return result;
 }

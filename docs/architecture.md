@@ -44,6 +44,25 @@ Agent integration uses native MCP or an explicit CLI adapter. The agent still ow
 task execution and conversation memory; a retrieved instruction cannot grant it
 publication or filesystem authority.
 
+Current development source keeps consumer profiles focused on source selection
+and product scenarios. Shin owns algorithm/resource regressions; consumers should
+not split or rewrite sound documentation to optimize internal counters. Optional
+`mustEvidence`/`mustNotEvidence` checks inspect the selected display fragments in
+both Eval and Pack-eval. Paths and lexical coverage alone do not prove an answer.
+
+A request-owned retrieval plan accounts for repeated and rejected attempts and
+bounds optional work. Declared document replacements/amendments qualify individual
+fragments and add related current owners under existing output and safety budgets.
+Cycles, drafts and incomplete relation inventories remain explicit uncertainty.
+The [lexical contract](machine/lexical-retrieval-v1.json) owns these rules.
+
+The MCP adapter can pin a follow-up snapshot for one real session and project after
+a successful query. An explicit snapshot remains strict; overlapping queries,
+unknown identities and a new connection require a snapshot or fresh query.
+`context_result` distinguishes delivered evidence from availability, with measured
+latency and process-scoped memory. These development-source additions require a
+future qualified kit; current download pins are unchanged.
+
 ## Quality gates and performance limitations
 
 Observer dev.75 adds an idle refresh path shared by Windows, macOS and Linux.

@@ -1,6 +1,6 @@
 ---
 name: shin-context
-description: Retrieve verified Shin project context after context loss or before broad investigation; maintain enrolled project profiles after refactors. Read known files directly.
+description: Retrieve verified Shin project context after context loss or before broad investigation; review source ownership after product refactors. Read known files directly.
 version: 2.0.0
 platforms: [macos, linux]
 metadata:

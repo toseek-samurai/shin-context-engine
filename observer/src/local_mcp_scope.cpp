@@ -111,7 +111,7 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "correct-request-arguments"},
             {"message", "Correct the tool arguments using the documented bounds, then retry the corrected request."}};
-    if (code == "mcp-snapshot-scope-mismatch" || code == "source-snapshot-mismatch" || code == "source-read-snapshot-mismatch" || code == "mcp-snapshot-invalid")
+    if (code == "mcp-snapshot-scope-mismatch" || code == "source-snapshot-mismatch" || code == "source-read-snapshot-mismatch" || code == "mcp-snapshot-invalid" || code == "mcp-query-binding-required")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "query-same-project-for-fresh-snapshot"}, {"same_project_required", true},
             {"fresh_snapshot_required", true},

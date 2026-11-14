@@ -5,6 +5,7 @@
 #include "shin/observer/local_mcp_scope.h"
 #include "mcp_activity_tracker.h"
 #include "mcp_session_tools.h"
+#include "mcp_followups.h"
 #include <mcp/server/McpServer.hpp>
 #include <mcp/Transport.hpp>
 #include <atomic>
@@ -264,6 +265,7 @@ int run(int argc, char** argv, char** environment) {
         next(message);
         admission.finish(message);
     }));
+    McpFollowups followups;
     auto server = mcp::McpServer::Create(transport, options);
     for (const auto& command : {"query", "inspect", "read", "status", "projects", "help", "checkpoint", "resume"}) {
         if (std::string_view(command) == "projects" && !scopes) continue;
@@ -277,7 +279,11 @@ int run(int argc, char** argv, char** environment) {
         };
         if (scopes && project_operation) field("project", 65);
         if (method == "query") field("query", 4096);
-        if (method == "inspect" || method == "read") { field("path", 4096); field("snapshot", scopes ? 128 : 32); }
+        if (method == "inspect" || method == "read") {
+            field("path", 4096);
+            properties["snapshot"] = {{"type", "string"}, {"minLength", 1}, {"maxLength", scopes ? 128 : 32},
+                {"description", "Exact snapshot from the same project's query. May be omitted after a successful query with the same real session_id on this connection; the adapter pins it automatically. Concurrent queries require an explicit snapshot."}};
+        }
         if (method == "query" || method == "inspect" || method == "read")
             properties["diagnostic"] = {{"type", "boolean"}, {"description", "Label an explicit diagnostic probe. Omit for normal task context retrieval."}};
         if (method == "help")
@@ -353,8 +359,10 @@ int run(int argc, char** argv, char** environment) {
                     }
                     if (method == "inspect" || method == "read") {
                         request.path = argument(args, "path", 4096);
-                        request.snapshot = argument(args, "snapshot", scopes ? 128 : 32);
-                        if (scopes) request.snapshot = scopes->native_snapshot(selected, request.snapshot);
+                        if (args.contains("snapshot")) {
+                            request.snapshot = argument(args, "snapshot", scopes ? 128 : 32);
+                            if (scopes) request.snapshot = scopes->native_snapshot(selected, request.snapshot);
+                        }
                     }
                     // Explicit per-call identity works with multiplexed clients. A
                     // process identity is not a chat and must never substitute for it.
@@ -389,6 +397,12 @@ int run(int argc, char** argv, char** environment) {
                             return (c >= '0' && c <= '9') || (c >= 'a' && c <= 'f');
                         })) throw Error("invalid-arguments", "Parent request must be the returned opaque query request ID.");
                     }
+                    const auto followup_key = request.session_id.empty() ? std::string{} : digest(request.root.string() + ":" + selected + ":" + request.session_id);
+                    if ((method == "inspect" || method == "read") && request.snapshot.empty()) {
+                        const auto binding = followups.resolve(followup_key);
+                        request.snapshot = binding.snapshot;
+                        if (request.parent_request_id.empty()) request.parent_request_id = binding.parent;
+                    }
                     const auto verify = [&] {
                         if (scopes) { if (method != "projects") scopes->verify(selected); return; }
                         if (directory_identity(base.root) != root_identity || directory_identity(base.home, true) != home_identity ||
@@ -396,6 +410,7 @@ int run(int argc, char** argv, char** environment) {
                             throw Error("binding-identity-changed", "MCP project binding changed; restart after review.");
                     };
                     verify();
+                    auto query_binding = method == "query" ? followups.begin(followup_key) : nullptr;
                     if (method == "query") request.readiness_wait_ms = 20000;
                     if (project_operation) activity.attribute(context.GetRequest().id, request);
                     request.observe_request_id = [&](const std::string& id) { activity.service_request(context.GetRequest().id, id); };
@@ -436,6 +451,9 @@ int run(int argc, char** argv, char** environment) {
                             result["mcp_snapshot"] = scopes->snapshot(selected, result.at("snapshot_id").get<std::string>());
                     }
                     if (cancelled()) throw Error("service-request-cancelled", "Local request was cancelled.");
+                    if (query_binding && result.value("ok", false) && result.contains("snapshot_id") && result.at("snapshot_id").is_string())
+                        query_binding->complete({result.at("snapshot_id").get<std::string>(),
+                            result.value("request_trace", Json::object()).value("request_id", std::string{})});
                 }
             } catch (const Error& error) {
                 result = {{"ok", false}, {"error", error_json(error)}};

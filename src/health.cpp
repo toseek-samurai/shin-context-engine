@@ -710,6 +710,7 @@ static void validate_profile_eval_cases(const RuntimeOptions& options,
         }
         validate_query_shape(item.query, item.id, "empty-eval-query");
         const bool has_assertions = !item.must_paths.empty() || !item.must_top_paths.empty() ||
+                                    !item.must_evidence.empty() || !item.must_not_evidence.empty() ||
                                     !item.must_not_paths.empty() || !item.expected_record_types.empty() ||
                                     item.max_matched_sections >= 0 || item.max_matched_facts >= 0 ||
                                     item.max_candidate_rows >= 0 || item.min_covered_groups >= 0 ||

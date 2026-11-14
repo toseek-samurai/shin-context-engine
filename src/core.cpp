@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "evidence_expectations.h"
 
 #ifdef _WIN32
 #include "shin/windows/file.h"
@@ -780,7 +781,8 @@ std::vector<EvalCase> extract_eval_cases(const Json& root,
         "topN", "top_n", "limit", "perDocLimit", "per_doc_limit",
         "maxMatchedSections", "max_matched_sections", "maxMatchedFacts",
         "max_matched_facts", "maxCandidateRows", "max_candidate_rows",
-        "minCoveredGroups", "min_covered_groups", "mustRankBefore", "must_rank_before"
+        "minCoveredGroups", "min_covered_groups", "mustRankBefore", "must_rank_before",
+        "mustEvidence", "mustNotEvidence"
     };
 
     std::size_t case_index = 0;
@@ -919,6 +921,8 @@ std::vector<EvalCase> extract_eval_cases(const Json& root,
         });
 
         EvalCase item;
+        item.must_evidence = parse_evidence_expectations(object, "mustEvidence", location, configuration_errors);
+        item.must_not_evidence = parse_evidence_expectations(object, "mustNotEvidence", location, configuration_errors);
         item.id = json_string_any(object, {"id", "name"});
         item.query = json_string_value(object, "query");
         item.query_variants = json_string_array_any(object, {"queryVariants", "query_variants"});
@@ -959,6 +963,7 @@ std::vector<EvalCase> extract_eval_cases(const Json& root,
             {"minCoveredGroups", "min_covered_groups"}, "minCoveredGroups",
             item.min_covered_groups);
         const bool has_assertions = !item.must_paths.empty() || !item.must_top_paths.empty() ||
+                                    !item.must_evidence.empty() || !item.must_not_evidence.empty() ||
                                     !item.must_not_paths.empty() || !item.expected_record_types.empty() ||
                                     item.max_matched_sections >= 0 || item.max_matched_facts >= 0 ||
                                     item.max_candidate_rows >= 0 || item.min_covered_groups >= 0 ||

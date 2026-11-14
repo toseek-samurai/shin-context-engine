@@ -1,4 +1,6 @@
 #include "context_internal.h"
+#include "retrieval_plan.h"
+#include "document_lifecycle.h"
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
 #include "aggregate_recovery_experiment.h"
 #endif
@@ -326,6 +328,8 @@ static Json make_brief_json(const RuntimeOptions& options,
     output["snapshot_id"] = freshness.snapshot_id.empty() ? Json(nullptr) : Json(freshness.snapshot_id);
     output["query"] = request.query;
     output["retrieval_mode"] = execution.decision.mode;
+    if (!result.query_plan.empty()) output["query_plan"] = result.query_plan;
+    if (!result.document_lifecycle.empty()) output["document_lifecycle"] = result.document_lifecycle;
     output["query_diagnostics"] = {
         {"fallback_used", result.fallback_used},
         {"scope_fallback_used", result.scope_fallback_used},
@@ -613,9 +617,9 @@ static bool brief_has_only_diffuse_deep_body_matches(const BriefResult& result,
 }
 
 #ifdef SHIN_EXPERIMENT_EVAL_BATCH
-#define SHIN_PROBE_ROUTE(route, ...) experiment::probe_route(experiment::ProbeRoute::route, [&] { return __VA_ARGS__; })
+#define SHIN_PROBE_ROUTE(route, ...) plan.run(#route, [&] { return experiment::probe_route(experiment::ProbeRoute::route, [&] { return __VA_ARGS__; }); })
 #else
-#define SHIN_PROBE_ROUTE(route, ...) (__VA_ARGS__)
+#define SHIN_PROBE_ROUTE(route, ...) plan.run(#route, [&] { return __VA_ARGS__; })
 #endif
 
 static CandidateRows select_prepared_brief_candidates(const RuntimeOptions& options,
@@ -667,10 +671,11 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
                                                     const QueryRequest& request,
                                                     const Json* manifest) {
 #endif
+    RetrievalPlan plan;
     BriefResult owner_scoped =
         SHIN_PROBE_ROUTE(owner, collect_brief_from_index_document_owner_scope(options, request, manifest));
     if (brief_returned_count(owner_scoped, request) > 0) {
-        SHIN_STAGE_RETURN owner_scoped;
+        SHIN_STAGE_RETURN plan.finish(owner_scoped);
     }
     const bool explicit_directory_scope =
         !request.terms.empty() &&
@@ -683,12 +688,12 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
     if (scoped_policy) {
         BriefResult scoped = SHIN_PROBE_ROUTE(directory, collect_brief_from_index_first_term_scope(options, request, manifest));
         if (scoped.directory_owner_scope_used || brief_returned_count(scoped, request) > 0) {
-            SHIN_STAGE_RETURN scoped;
+            SHIN_STAGE_RETURN plan.finish(scoped);
         }
     }
 
     BriefResult identifier = SHIN_PROBE_ROUTE(identifier, collect_confirmed_identifier(options, request));
-    if (identifier.identifier_scope_used && brief_returned_count(identifier, request) > 0) SHIN_STAGE_RETURN identifier;
+    if (identifier.identifier_scope_used && brief_returned_count(identifier, request) > 0) SHIN_STAGE_RETURN plan.finish(identifier);
     const auto identifier_probe_rows = identifier.identifier_probe_rows;
     std::optional<std::vector<CandidateRows>> prepared_groups;
     if (strict_required_group_matches(request) >= kCompoundQueryCoverageThreshold) {
@@ -706,6 +711,7 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
 #endif
     };
     BriefResult result = SHIN_STAGE_AWAIT collect(strict_required_group_matches(request), false);
+    plan.record("strict", result);
     result.identifier_probe_rows = identifier_probe_rows;
     const bool has_results = brief_returned_count(result, request) > 0;
     const int groups = strict_required_group_matches(request);
@@ -725,10 +731,11 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
         // With no facts, the section map retains all matching paths before global selection.
         // This supplemental pass is indexed and bounded, never a generated-row scan.
         if (candidates.from_terms_index && candidates.term_index_coverage_complete &&
-            candidates.discovered_row_count <= kMaxIndexedCandidateRows) {
+            candidates.discovered_row_count <= kMaxIndexedCandidateRows && plan.admits(candidates.discovered_row_count)) {
             auto expanded = SHIN_STAGE_AWAIT SHIN_STAGE_COLLECT(options, request, candidates, required, true);
+            plan.record("supplement", expanded);
             expanded.identifier_probe_rows = identifier_probe_rows;
-            if (indexed_body_only) SHIN_STAGE_RETURN expanded;
+            if (indexed_body_only) SHIN_STAGE_RETURN plan.finish(expanded);
             const auto before = select_brief_evidence(result, 1, 1, request.allowed_evidence_types);
             const auto after = select_brief_evidence(expanded, 1, 1, request.allowed_evidence_types);
             // Incidental primary words justify replacing a missed leading owner,
@@ -736,7 +743,7 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
             if (!before.ordered.empty() && !after.ordered.empty() &&
                 brief_evidence_path(before, before.ordered.front()) !=
                     brief_evidence_path(after, after.ordered.front())) {
-                SHIN_STAGE_RETURN expanded;
+                SHIN_STAGE_RETURN plan.finish(expanded);
             }
         }
     }
@@ -744,6 +751,7 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
         !can_relax_query(request)) {
         if (has_results && groups >= 4 &&
             brief_distinct_path_count(result) >= 2 &&
+            plan.admits(kMaxIndexedCandidateRows) &&
             (groups >= kCompoundQueryCoverageThreshold ||
              brief_returned_count(result, request) < request.limit)) {
             // A saturated row budget does not prove document coverage. Compound
@@ -758,21 +766,88 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
             auto execution = make_brief_execution(request, std::move(planned));
             if (!execution.selection.ordered.empty() &&
                 query_coverage_covered_groups(execution.coverage) >= groups) {
-                SHIN_STAGE_RETURN std::move(execution.retrieval);
+                SHIN_STAGE_RETURN plan.finish(std::move(execution.retrieval));
             }
             retain_rejected_planner_diagnostics(result, execution.retrieval,
                 !execution.retrieval.planner_rejection_reason.empty() ?
                     execution.retrieval.planner_rejection_reason : "insufficient-document-coverage");
         }
-        SHIN_STAGE_RETURN result;
+        SHIN_STAGE_RETURN plan.finish(result);
     }
-    BriefResult relaxed = SHIN_STAGE_AWAIT collect(relaxed_required_group_matches(request), true);
+    const int relaxed_required = relaxed_required_group_matches(request);
+    const int narrowed_required = (groups + relaxed_required + 1) / 2;
+    if (narrowed_required > relaxed_required && narrowed_required < groups) {
+        if (!prepared_groups)
+            prepared_groups = load_generated_query_group_candidates(options, request.prepared_term_groups);
+        // Try a more selective posting intersection before admitting the common
+        // two-word/half-query tail. Accept it only when final selected evidence
+        // covers every query group that has complete indexed postings. A sparse
+        // complementary source therefore keeps the ordinary fallback available.
+        const bool complete = std::all_of(prepared_groups->begin(), prepared_groups->end(),
+            [](const auto& group) { return group.from_terms_index && group.term_index_coverage_complete; });
+        if (complete) {
+            const auto ordinary = select_prepared_brief_candidates(
+                options, request, *prepared_groups, relaxed_required);
+            int previous_required = groups;
+            for (int required : {narrowed_required, relaxed_required + 1}) {
+                if (required == previous_required) continue;
+                previous_required = required;
+                const auto candidates = select_prepared_brief_candidates(
+                    options, request, *prepared_groups, required);
+                // Coverage alone is insufficient when a complete declaration would
+                // hide independently qualifying implementation evidence (or vice
+                // versa). Preserve the ordinary evidence families before narrowing.
+                const bool families_preserved = ordinary.from_terms_index &&
+                    ordinary.term_index_coverage_complete &&
+                    (ordinary.sections.empty() || !candidates.sections.empty()) &&
+                    (ordinary.facts.empty() || !candidates.facts.empty());
+                if (candidates.from_terms_index && candidates.term_index_coverage_complete &&
+                    candidates.discovered_row_count > 0 && families_preserved &&
+                    ordinary.discovered_row_count > static_cast<std::size_t>(request.limit) &&
+                    plan.admits(candidates.discovered_row_count)) {
+                    auto narrowed = SHIN_STAGE_AWAIT SHIN_STAGE_COLLECT(
+                        options, request, candidates, required, true);
+                    plan.record("narrowed", narrowed);
+                    narrowed.identifier_probe_rows = identifier_probe_rows;
+                    auto execution = make_brief_execution(request, std::move(narrowed));
+                    bool covered = !execution.selection.ordered.empty() && execution.ranked_paths.size() >= 2;
+                    for (std::size_t group = 0; group < prepared_groups->size() && covered; ++group) {
+                        const auto& coverage = execution.coverage.groups[group];
+                        if ((*prepared_groups)[group].discovered_row_count > 0 &&
+                            coverage.returned_evidence_paths.empty() &&
+                            coverage.selected_document_paths.empty()) covered = false;
+                    }
+                    if (covered) {
+                        if (groups >= kCompoundQueryCoverageThreshold && plan.admits(kMaxIndexedCandidateRows)) {
+                            const int available_groups = query_coverage_covered_groups(execution.coverage);
+                            auto planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
+                                options, request, true, required, true, &*prepared_groups, manifest,
+                                false, available_groups));
+                            planned.identifier_probe_rows = identifier_probe_rows;
+                            auto supplemented = make_brief_execution(request, std::move(planned));
+                            if (!supplemented.selection.ordered.empty() &&
+                                query_coverage_covered_groups(supplemented.coverage) >=
+                                    available_groups)
+                                SHIN_STAGE_RETURN plan.finish(std::move(supplemented.retrieval));
+                            retain_rejected_planner_diagnostics(execution.retrieval, supplemented.retrieval,
+                                supplemented.retrieval.planner_rejection_reason.empty()
+                                    ? "insufficient-document-coverage"
+                                    : supplemented.retrieval.planner_rejection_reason);
+                        }
+                        SHIN_STAGE_RETURN plan.finish(std::move(execution.retrieval));
+                    }
+                }
+            }
+        }
+    }
+    BriefResult relaxed = SHIN_STAGE_AWAIT collect(relaxed_required, true);
+    plan.record("relaxed", relaxed);
     relaxed.identifier_probe_rows = identifier_probe_rows;
     const bool relaxed_has_results = brief_returned_count(relaxed, request) > 0;
     const bool planner_candidate = strict_required_group_matches(request) >= kCompoundQueryCoverageThreshold &&
         (!relaxed_has_results || brief_distinct_path_count(relaxed) < 2 ||
          brief_returned_count(relaxed, request) < request.limit);
-    if (planner_candidate) {
+    if (planner_candidate && plan.admits(kMaxIndexedCandidateRows)) {
         const bool preserve_row_ranking = relaxed_has_results && brief_distinct_path_count(relaxed) >= 2;
         BriefResult planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
             options, request, preserve_row_ranking, relaxed_required_group_matches(request), false,
@@ -782,7 +857,7 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
         auto planned_execution = make_brief_execution(request, std::move(planned));
         const bool planned_has_results = !planned_execution.selection.ordered.empty();
         if (planned_has_results && query_coverage_covered_groups(planned_execution.coverage) >= minimum_coverage) {
-            SHIN_STAGE_RETURN std::move(planned_execution.retrieval);
+            SHIN_STAGE_RETURN plan.finish(std::move(planned_execution.retrieval));
         }
         BriefResult& fallback = relaxed_has_results ? relaxed : (has_results ? result : relaxed);
         retain_rejected_planner_diagnostics(
@@ -791,9 +866,9 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
             (planned_has_results ? "insufficient-document-coverage" : "no-returned-evidence"));
     }
     if (relaxed_has_results) {
-        SHIN_STAGE_RETURN relaxed;
+        SHIN_STAGE_RETURN plan.finish(relaxed);
     }
-    SHIN_STAGE_RETURN has_results ? result : relaxed;
+    SHIN_STAGE_RETURN plan.finish(has_results ? result : relaxed);
 }
 
 #undef SHIN_PROBE_ROUTE
@@ -908,7 +983,8 @@ std::vector<BriefExecution> experiment::batch_brief_executions(
     std::vector<BriefExecution> executions;
     executions.reserve(requests.size());
     for (std::size_t i = 0; i < requests.size(); ++i)
-        executions.push_back(make_brief_execution(requests[i], std::move(results.at(i))));
+        executions.push_back(make_brief_execution(requests[i], supplement_document_lifecycle(session.options(),
+            requests[i], session.manifest(), std::move(results.at(i)))));
     return executions;
 }
 
@@ -934,8 +1010,8 @@ static int run_brief_from_index(const RuntimeOptions& options,
 
 BriefExecution RetrievalSession::brief_execution(const QueryRequest& request) const {
     if (request.require_current) require_current_index_or_throw(freshness_);
-    return make_brief_execution(request,
-                                collect_brief_from_index_with_fallback(options_, request, &manifest()));
+    return make_brief_execution(request, supplement_document_lifecycle(options_, request, manifest(),
+                                collect_brief_from_index_with_fallback(options_, request, &manifest())));
 }
 
 Json RetrievalSession::brief(const QueryRequest& request, BriefProjection projection) const {

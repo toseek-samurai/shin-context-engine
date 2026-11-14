@@ -1,7 +1,7 @@
 # Homebrew installation
 
 The published tap currently pins **dev.70**. It is an older preview than the
-[native dev.110 download](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110),
+[native dev.111 download](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111),
 so its interface and update behavior follow dev.70. `brew upgrade` installs the
 version offered by the formula, not the newest native-kit release automatically.
 

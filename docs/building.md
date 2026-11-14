@@ -109,7 +109,7 @@ The project folder stays separate from that home. A source build does not
 install the commands, replace another kit or enable login startup. In WSL, use
 a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
 native desktop Monitor. A prebuilt Ubuntu 24.04 x86_64 terminal archive is also
-available from the [current preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110).
+available from the [current preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111).
 The TUI's Updates guidance links to Releases; there is no automatic Linux installer.
 Replace the archive or rebuild the source tools, restart the service and reconnect
 persistent MCP clients.

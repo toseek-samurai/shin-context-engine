@@ -11,10 +11,10 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-The [dev.110 preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110) provides these Windows downloads.
+The [dev.111 preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111) provides these Windows downloads.
 
-- `shin-desktop-2.0.5-dev.110-windows-AMD64.msi` for desktop installation.
-- `shin-desktop-2.0.5-dev.110-windows-AMD64.zip` for portable use.
+- `shin-desktop-2.0.5-dev.111-windows-AMD64.msi` for desktop installation.
+- `shin-desktop-2.0.5-dev.111-windows-AMD64.zip` for portable use.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
@@ -387,9 +387,6 @@ from replacing one version with another.
 
 ### Installation and project readiness
 
-Current development source records a successful, independently verified MSI
-installation separately from project preparation. If preparation reports pending
-projects, Monitor shows the installed version and those diagnostics, and offers
-**Retry project preparation** without requiring another MSI download or UAC.
-Project policy, ownership and retrieval checks remain in force. This behavior is
-source-only until the updated Windows package is qualified and published.
+Since dev.111, Monitor shows the verified MSI result and project preparation
+separately. If projects are pending, use **Retry project preparation** to prepare
+them under the installed kit with the existing project approvals.

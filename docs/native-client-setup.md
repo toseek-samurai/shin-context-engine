@@ -198,8 +198,8 @@ as well as Shin. Restoring client settings does not remove a project from Shin.
 
 The kit includes `bin/shin-mcp`, a native stdio MCP server. Manual exports serve
 only the explicit startup roots and use local project bindings under the selected
-data home. Automatic writers in the current source candidate instead bind the
-adapter to that selected agent's live settings. Neither mode provides login,
+data home. Since dev.109, automatic writers bind the adapter to the selected
+agent's live settings. Neither mode provides login,
 selects a project implicitly or authorizes publication.
 
 For a default per-user installation, use the installed binary and an absolute

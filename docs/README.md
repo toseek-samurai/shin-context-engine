@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.110](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110).
-It contains Core **2.0.5-dev.22** and Observer/CLI/MCP/Monitor **2.0.5-dev.110**.
+The current published preview is [dev.111](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111).
+It contains Core **2.0.5-dev.22** and Observer/CLI/MCP/Monitor **2.0.5-dev.111**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,

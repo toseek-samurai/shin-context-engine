@@ -1,6 +1,6 @@
 # <img src="docs/images/shin-logo.png" align="absmiddle" width="48" height="48" alt="Shin logo"> Shin Context Engine
 
-[![Published dev.110 qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.110)](https://github.com/toseek-samurai/shin-context-engine/actions/runs/42536688388)
+[![Published dev.111 qualification](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.111)](https://github.com/toseek-samurai/shin-context-engine/actions/runs/43584087450)
 
 **Fresh code and documentation context for coding agents.**
 
@@ -12,7 +12,7 @@ the whole repository into every conversation.
 Local retrieval needs no account, model download, embedding service or cloud
 inference API. Your coding agent keeps its own model and workflow.
 
-[Download preview dev.110](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110) ·
+[Download preview dev.111](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111) ·
 [macOS setup](#get-started-on-macos) · [Windows setup](docs/windows-desktop.md#download-a-preview) ·
 [Linux / WSL2](docs/building.md#linux-and-wsl2-terminal-tools) ·
 [Connect your coding agent](docs/native-client-setup.md)
@@ -92,10 +92,10 @@ These native FTXUI captures also use synthetic data; terminal fonts and colors v
 
 ## Get started on macOS
 
-Install the [current native preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110):
+Install the [current native preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111):
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.110/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.111/install.sh | sh
 ```
 
 The installer downloads a versioned binary kit, verifies SHA-256 and installs it

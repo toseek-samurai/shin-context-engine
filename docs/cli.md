@@ -58,8 +58,8 @@ The default bootstrap route keeps serving verified context when local links are
 broken; `documentation_warnings` counts these warnings in readiness and service
 project rows. Strict Core audits still report the documentation defect.
 
-The current source candidate separates available projects, blocked projects and
-coverage/documentation notices in Monitor and TUI. A secret-scanner match can
+Monitor and TUI separate available projects, blocked projects and
+coverage and documentation notices. A secret-scanner match can
 exclude a file while search over the remaining verified files keeps working.
 Project details list the excluded paths without exposing matched values.
 Reconnecting the project is not a remedy for a scanner finding. Review a listed
@@ -101,7 +101,7 @@ Ctrl-D and Ctrl-C do not cancel it; the screen stays available until the native
 operation settles. Forced process termination still relies on the updater's
 durable recovery journal.
 
-The current source candidate recognizes a successful saved attempt as
+The native macOS kit recognizes a successful saved attempt as
 `superseded` only when an independently verified installation is newer than both
 its starting and target versions, has a different manifest, has no pending native
 recovery, and no updater writer is active. Monitor and TUI allow a fresh offer in

@@ -1,4 +1,5 @@
 #pragma once
+#include "local_refresh_stages.h"
 #include <algorithm>
 #include <chrono>
 #include <cmath>
@@ -22,9 +23,7 @@ public:
         if (expired(now) || !std::isfinite(elapsed_ms) || elapsed_ms < elapsed_ms_ ||
             elapsed_ms > std::chrono::duration<double, std::milli>(operation_limit).count())
             return false;
-        constexpr std::string_view stages[]{"admission", "observation", "candidate-build", "candidate-validation",
-            "publication", "qualification", "source-cache", "candidate-source-cache", "source-cache-transfer", "final-verification"};
-        if (std::find(std::begin(stages), std::end(stages), stage) == std::end(stages)) return false;
+        if (!local_refresh_stage(stage)) return false;
         if (stage != last_stage_) {
             last_stage_ = stage;
             stage_ = std::min(operation_, now + stage_limit);

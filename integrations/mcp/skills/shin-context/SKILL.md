@@ -29,7 +29,7 @@ not an archived source checkout or an older project helper that builds indexes.
 1. If `shin_projects` is available, choose the exact host-allowed workspace
    and pass its `project` handle on every project call. Otherwise MCP pins one root.
    Call `shin_status` and verify the returned root. Hosts may prefix tool names.
-2. For a ready route, use `shin_query` for a focused question. Check profile
+2. For a ready or preparing route, use `shin_query` for a focused question. Check profile
    scope, omissions and evidence. A passing gate is not whole-repository coverage.
 3. Follow SOURCE locators with `shin_inspect`/`shin_read`, retaining the exact
    project-relative path and snapshot: `mcp_snapshot` plus the same `project`
@@ -126,8 +126,10 @@ review. MCP cannot approve it. Do not retry or reconnect as a substitute for
 approval. After acceptance, let the service qualify the index, then make a fresh
 same-project query and use its new snapshot; acceptance alone is not readiness.
 
-A status with `state=preparing` is pending, not a failed project. Submit the
-useful `shin_query`: it waits for readiness within the same call for up to
+A status with `state=preparing` and `query_available=true` permits the useful
+`shin_query`, even while `local_ready=false`. `project_state=qualified` with
+`reader_state=warming` identifies reader startup; `project_state=refreshing`
+means qualification is pending. The query waits within the same call for up to
 20 seconds and supports cancellation and client progress tokens. Do not poll
 status or sleep manually. If that bounded wait expires, or permission, identity,
 policy or validation blocks the project, report the reason and use direct sources.

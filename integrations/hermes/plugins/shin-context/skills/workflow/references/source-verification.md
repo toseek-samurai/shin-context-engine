@@ -74,3 +74,13 @@ previous turn, default setting, title or process. Omit unknown values. These lab
 are caller-reported statistics, not verified model identity or task success. For
 read/inspect following a query, also pass its `request_trace.request_id` as
 `parent_request_id` when supported. Never persist a chat ID into shared MCP config.
+
+## Pending reader status
+
+A status with `query_available=true` and `next_action=shin_query` permits one useful
+query while `local_ready=false`. `project_state=qualified` with
+`reader_state=warming` means its in-memory reader is starting.
+`project_state=refreshing` with `reader_state=waiting-for-qualification` means
+background qualification is pending. Submit the useful query once; it waits
+automatically for up to 20 seconds. Status polling and manual sleeps add no
+readiness proof. Real blockers keep their typed error and recovery guidance.

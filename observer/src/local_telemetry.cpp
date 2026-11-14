@@ -2,6 +2,7 @@
 #include "shin/observer/observer.h"
 #include <algorithm>
 #include "shin/observer/local_project.h"
+#include "local_refresh_stages.h"
 #include <array>
 #include <cmath>
 #include <set>
@@ -339,9 +340,6 @@ void LocalTelemetry::request_result(const fs::path& root, const std::string& met
 }
 
 void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
-    static const std::set<std::string> allowed{"admission", "observation", "candidate-build", "candidate-validation",
-        "publication", "qualification", "source-cache", "candidate-source-cache", "source-cache-transfer",
-        "final-verification"};
     static const std::set<std::string> phases_allowed{"current", "partial", "coalescing", "blocked", "paused", "unknown"};
     constexpr double max_refresh_ms = 7.0 * 24.0 * 60.0 * 60.0 * 1000.0;
     const auto outcome = report.value("outcome", "error");
@@ -350,7 +348,7 @@ void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
     Json phases = Json::object();
     if (report.contains("phases") && report.at("phases").is_object()) {
         for (const auto& [stage, duration] : report.at("phases").items()) {
-            if (allowed.contains(stage) && duration.is_number() && std::isfinite(duration.get<double>()) &&
+            if (local_refresh_stage(stage) && duration.is_number() && std::isfinite(duration.get<double>()) &&
                 duration.get<double>() >= 0.0 && duration.get<double>() <= max_refresh_ms)
                 phases[stage] = duration.get<double>();
         }
@@ -364,11 +362,12 @@ void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
         const auto number = value.get<double>();
         return std::isfinite(number) && number >= 0.0 && number <= max_refresh_ms ? value : Json(nullptr);
     };
-    static const std::array<const char*, 30> work_fields{{"source_files", "source_bytes", "source_chunks",
+    static const std::array<const char*, 32> work_fields{{"source_files", "source_bytes", "source_chunks",
         "source_cache_builds", "source_read_scan_ms", "source_chunking_ms", "source_index_ms", "source_persist_ms",
         "qualification_reused_output_bytes", "qualification_reused_output_files",
         "qualification_snapshot_ms", "qualification_generation_ms", "qualification_profile_ms",
         "qualification_doctor_ms", "qualification_adoption_ms",
+        "qualification_fingerprint_ms", "qualification_ready_ms",
         "validation_profile-check_ms", "validation_check_ms", "validation_doctor_ms", "validation_vacuum_ms",
         "validation_eval_ms", "validation_pack-eval_ms", "validation_adoption-check_ms",
         "source_transfer_ms", "source_transfer_verify_ms", "source_transfer_snapshot_ms",
@@ -398,7 +397,7 @@ void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
         {"active_ms", optional_duration("active_ms")}, {"sleep_ms", optional_duration("sleep_ms")},
         {"work", std::move(work)},
         {"error_code", diagnostic_code(report.value("error_code", ""))},
-        {"last_stage", allowed.contains(report.value("last_stage", "")) ? report.value("last_stage", "") : ""},
+        {"last_stage", local_refresh_stage(report.value("last_stage", "")) ? report.value("last_stage", "") : ""},
         {"phases", std::move(phases)}};
     if (refresh_results.size() == 32) refresh_results.pop_front();
     refresh_results.push_back(row);

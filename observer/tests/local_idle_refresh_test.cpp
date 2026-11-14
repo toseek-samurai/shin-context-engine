@@ -5,6 +5,7 @@
 #include "context_internal.h"
 #include "../src/local_refresh_guard.h"
 #include "../src/local_refresh_session.h"
+#include "../src/local_refresh_deadline.h"
 #include "../src/local_index_rebuild.h"
 #include <atomic>
 #include <chrono>
@@ -172,7 +173,7 @@ void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
     }
     std::cout << "checkpoint reuse under descriptor pressure: " << reused << "/18 warm visits, "
               << dropped << " retention refusals\n";
-    check(reused > 0, "round-robin refresh evicted every unchanged checkpoint");
+    check(reused >= 6, "overlapping native roots exhausted the unchanged checkpoint working set");
     check(dropped > 0, "descriptor pressure was not recorded");
     // Evicted optimization state must requalify real edits, not retain old proof.
     write(projects.front().root / "quota.cpp", "int quotaLimit() { return 909; }\n");
@@ -182,6 +183,50 @@ void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
 #else
     (void)base; (void)profiles;
 #endif
+}
+void qualification_progress(const LocalProjectRequest& request) {
+    LocalRefreshWorker worker;
+    auto frame = payload(request); frame["diagnostics"] = true;
+    // A worker's first pass verifies qualification before admitting an idle
+    // checkpoint. Capture the real progress protocol, including error boundaries.
+    std::vector<std::string> stages;
+    const auto result = worker.execute(frame, [] { return false; }, [&](const Json& progress) {
+        stages.push_back(progress.at("stage"));
+    });
+    check(result.value("ok", false), "diagnostic qualification failed");
+    for (const auto* stage : {"qualification-cache", "qualification-snapshot", "qualification-generation",
+                              "qualification-profile", "qualification-doctor"})
+        check(std::find(stages.begin(), stages.end(), stage) != stages.end(), "qualification substage was not emitted");
+    check(stages.size() <= 32, "qualification exceeded its progress frame bound");
+    using namespace std::chrono_literals;
+    const auto start = LocalRefreshDeadline::Clock::now();
+    LocalRefreshDeadline budget(start);
+    check(budget.observe("qualification-profile", 0, start), "qualification substage rejected by deadline");
+    check(budget.observe("qualification-doctor", 59000, start + 59s), "genuine qualification progress was lost");
+    check(!budget.expired(start + 61s), "a completed substage consumed the next substage's stall budget");
+    check(budget.observe("qualification-doctor", 118000, start + 118s), "repeated stage heartbeat rejected");
+    check(budget.expired(start + 119s), "repeated heartbeat extended a stalled qualification");
+    LocalRefreshDeadline bounded(start);
+    check(bounded.observe("qualification-profile", 0, start), "qualification stage rejected");
+    check(!bounded.observe("/private/untrusted-stage", 1000, start + 1s), "arbitrary stage entered diagnostics");
+    check(bounded.observe("qualification-doctor", 59000, start + 59s), "doctor stage rejected");
+    check(bounded.observe("qualification-adoption", 118000, start + 118s), "adoption stage rejected");
+    check(bounded.observe("qualification-ready", 177000, start + 177s), "full qualification stage rejected");
+    check(bounded.expired(start + 180s), "substage progress escaped the operation deadline");
+}
+
+void monitor_root_replacement(const fs::path& base, const fs::path& profiles) {
+    auto request = project(base, profiles, "replaced-root", 31);
+    LocalRefreshWorker worker; (void)warm(worker, request);
+    const auto moved = base / "original-root";
+    fs::rename(request.root, moved);
+    ensure_private_directory(request.root, true);
+    write(request.root / "README.md", read_text(moved / "README.md", 4096, false));
+    write(request.root / "quota.cpp", read_text(moved / "quota.cpp", 4096, false));
+    const auto refused = worker.execute(payload(request), [] { return false; });
+    check(!refused.value("ok", false) && !hit(refused), "coalesced monitor admitted a replaced project root");
+    fs::remove_all(request.root); fs::rename(moved, request.root);
+    check(warm(worker, request).value("ok", false), "restored project root did not requalify");
 }
 void image_digest_is_fenced(const fs::path& base) {
     for (const bool retain : {false, true}) {
@@ -353,6 +398,12 @@ void idle_and_scope_isolation(LocalRefreshWorker& worker, const LocalProjectRequ
     check(other.at("index") != before.at("index"), "refresh scopes were mixed");
     const auto again = current(worker, first);
     check(hit(again) && again.at("observation").at("snapshot_id") == before.at("observation").at("snapshot_id"), "project switch lost its independent checkpoint");
+    // The macOS stream may cover a shared ancestor, but another project's
+    // source edits and file bursts must not invalidate this checkpoint.
+    write(second.root / "quota.cpp", "int quotaLimit() { return 103; }\n");
+    for (unsigned i = 0; i < 64; ++i)
+        write(second.root / ("unrelated-" + std::to_string(i) + ".txt"), "unrelated output\n");
+    check(hit(current(worker, first)), "unrelated subtree events invalidated a coalesced checkpoint");
 }
 void checkpoint_eviction(LocalRefreshWorker& worker, const LocalProjectRequest& request) {
     (void)warm(worker, request);
@@ -482,6 +533,10 @@ int main(int argc, char** argv) {
         if (argc == 3 && std::string_view(argv[2]) == "--image-digest") return 0;
         stage = "project setup";
         const auto first = project(fixture.path, profiles, "first", 17), second = project(fixture.path, profiles, "second", 99);
+        stage = "qualification progress";
+        qualification_progress(first);
+        stage = "monitor root replacement";
+        monitor_root_replacement(fixture.path, profiles);
         stage = "persistent process";
         persistent_process_and_suspend_boundary(first, fixture.path);
         LocalRefreshWorker worker;

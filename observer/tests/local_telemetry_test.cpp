@@ -429,8 +429,8 @@ int telemetry_scenario() {
             diagnostics.refresh_result("/private/project", repeated);
             diagnostics.refresh_result("/private/project", repeated);
             diagnostics.refresh_result("/private/project", {{"outcome", "error"}, {"phase", "unknown"}, {"duration_ms", 60087.0},
-                {"error_code", "refresh-timeout"}, {"last_stage", "candidate-validation"},
-                {"phases", {{"candidate-validation", 60080.0}}}});
+                {"error_code", "refresh-timeout"}, {"last_stage", "qualification-doctor"},
+                {"phases", {{"qualification-snapshot", 7.0}, {"qualification-doctor", 60080.0}}}});
             diagnostics.refresh_result("/private/project", {{"outcome", "success"}, {"phase", "coalescing"},
                 {"duration_ms", 60090.0}, {"active_ms", 90.0}, {"sleep_ms", 60000.0},
                 {"work", {{"source_files", 12}, {"source_bytes", 4096}, {"source_chunks", 4},
@@ -460,8 +460,9 @@ int telemetry_scenario() {
             if (!unknown_duration.at("duration_ms").is_null() || unknown_duration.at("error_code") != "refresh-timeout") return 46;
             const auto current = diagnostics.snapshot().at("refresh_diagnostics");
             if (current.size() != 4 || current[0]["error_code"] != current[1]["error_code"] ||
-                current[2]["last_stage"] != "candidate-validation" ||
-                current[2]["duration_ms"] != 60087.0 || current[2]["phases"]["candidate-validation"] != 60080.0 ||
+                current[2]["last_stage"] != "qualification-doctor" ||
+                current[2]["duration_ms"] != 60087.0 || current[2]["phases"]["qualification-doctor"] != 60080.0 ||
+                current[2]["phases"]["qualification-snapshot"] != 7.0 ||
                 current[0]["phases"]["candidate-source-cache"] != 13.0 || current[0]["phases"]["source-cache-transfer"] != 17.0 ||
                 current[0]["phase"] != "blocked" || current[2]["phase"] != "unknown" || current[3]["phase"] != "coalescing" ||
                 !current[0]["active_ms"].is_null() || !current[0]["sleep_ms"].is_null() ||
@@ -488,7 +489,8 @@ int telemetry_scenario() {
                 persisted["refresh_diagnostics"][0]["sleep_ms"] != 60000.0 ||
                 persisted["refresh_diagnostics"][0]["work"] != current[3]["work"] ||
                 persisted["refresh_diagnostics"][1]["error_code"] != "refresh-timeout" ||
-                persisted["refresh_diagnostics"][1]["last_stage"] != "candidate-validation" ||
+                persisted["refresh_diagnostics"][1]["last_stage"] != "qualification-doctor" ||
+                persisted["refresh_diagnostics"][1]["phases"]["qualification-doctor"] != 60080.0 ||
                 persisted["refresh_diagnostics"][2]["error_code"] != persisted["refresh_diagnostics"][3]["error_code"]) return 45;
             diagnostics.close_history();
             std::error_code ignored;

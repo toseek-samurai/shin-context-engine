@@ -7,6 +7,23 @@
 #include <utility>
 
 namespace shin::observer {
+inline std::vector<fs::path> local_refresh_monitor_roots(std::vector<fs::path> roots) {
+#ifdef __APPLE__
+    // FSEvents WatchRoot pins every ancestor of each selected path. One common
+    // ancestor covers these recursive event streams with far fewer handles.
+    // The predicate still filters to the original source/output/control scope;
+    // authority and GenerationAdmission recheck every selected root on reuse.
+    if (!roots.empty()) {
+        auto common = roots.front();
+        for (const auto& root : roots)
+            while (!local_path_below(root, common) && common != common.root_path()) common = common.parent_path();
+        // Do not subscribe to the entire volume for unrelated source/state roots.
+        if (!common.empty() && common != common.root_path()) return {common};
+    }
+#endif
+    return roots;
+}
+
 // Ephemeral process-owned continuation of a full background qualification. It is
 // never serialized, accepted from RPC, or used as request/source-read authority.
 class LocalRefreshSession {
@@ -30,8 +47,11 @@ public:
             core::RuntimeOptions watched;
             watched.root = options.root; watched.out_root = options.out_root;
             watched.profile = options.profile;
-            changes_ = std::make_unique<LocalChanges>(std::vector<fs::path>{options.root, options.out_root, workspace},
+            changes_ = std::make_unique<LocalChanges>(local_refresh_monitor_roots({options.root, options.out_root, workspace}),
                 [watched = std::move(watched), workspace](const fs::path& path, bool directory) {
+                    // A coalesced macOS stream also delivers uncertain ancestor
+                    // events. They must invalidate the selected source subtree.
+                    if (directory && local_path_below(watched.root, path)) return true;
                     const auto generated = watched.out_root / core::kGeneratedDir;
                     if (local_path_below(path, generated) || (directory && local_path_below(generated, path))) return true;
                     const auto control = generated.parent_path();

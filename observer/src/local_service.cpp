@@ -724,8 +724,10 @@ private:
                 reader_requests.try_emplace(found->first, client.received + std::chrono::seconds(30));
             if (!wait_for_ready) {
                 client.waited_for_resident = true;
+                auto diagnostic = admission_diagnostic("reader-preparing");
+                diagnostic["context_qualified"] = qualified.contains(found->first);
                 throw Error("project-updating","The project reader is preparing in the background. A useful query can wait briefly for readiness.",
-                    admission_diagnostic("reader-preparing"));
+                    diagnostic);
             }
             wait_for_admission(client,AdmissionWait::preparation,true);
             if (!client.waited_for_resident) ++resident_warm_requests;

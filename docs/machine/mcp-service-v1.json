@@ -33,6 +33,12 @@
     "observer/tests/local_mcp_test.py: controlled cross-version service, foreign success, restored-mtime tamper, in-flight cohort change and incompatible protocol",
     "observer/tests/local_rpc_test.cpp: ordinary request and installer-control version fences"
   ],
+  "readiness": {
+    "pendingStatus": "shin.mcp-readiness.v1: ok=true and state=preparing are a successful pending assessment, without a snapshot or source evidence. local_ready and retrieval_ready stay false until the reader independently qualifies.",
+    "readerWarmup": "project_state=qualified and reader_state=warming distinguish a qualified project whose in-memory reader was released or is starting from project_state=refreshing and reader_state=waiting-for-qualification.",
+    "nextAction": "query_available=true and next_action=shin_query explicitly permit one useful query while the reader or qualification is pending. The call waits up to 20 seconds with optional progress and cancellation. This does not promise eventual success, approve project changes or bypass a blocker. Do not poll status or sleep manually.",
+    "blockers": "Actual authority, integrity, access and validation refusals remain ok=false with their original typed error and recovery guidance. A pending assessment never changes qualification or grants source access."
+  },
   "clientCatalog": {
     "status": "source-candidate",
     "authority": "Automatic connection writers add --client-config and --client-format alongside the existing explicit roots/home. The selected private client settings file is the sole live allowlist; service enrollment does not grant MCP access.",

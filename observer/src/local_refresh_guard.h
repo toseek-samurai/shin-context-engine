@@ -2,6 +2,7 @@
 #include "context_internal.h"
 #include "shin/observer/io.h"
 #include "shin/observer/local_changes.h"
+#include "local_refresh_stages.h"
 #include <functional>
 #include <mutex>
 
@@ -167,7 +168,14 @@ inline std::string qualification_key(Json binding, const std::string& profile_ha
 
 struct RefreshMeasurements {
     Json values = Json::object();
+    std::function<void(const std::string&)> progress;
     template<class F> auto measure(const char* name, F&& action) {
+        std::string stage(name);
+        if (stage.starts_with("qualification_") && stage.ends_with("_ms")) {
+            stage.resize(stage.size() - 3);
+            std::replace(stage.begin(), stage.end(), '_', '-');
+            if (local_refresh_stage(stage)) refresh_progress(progress, stage.c_str());
+        }
         struct Finish {
             Json& values; const char* name; shin::context::SteadyClock::time_point start;
             ~Finish() noexcept {

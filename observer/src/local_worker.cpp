@@ -148,11 +148,9 @@ Json execute_local_worker_refresh(const Json& payload, const std::function<bool(
         request.maintenance_stop = stopped;
         request.refresh_session = session;
         const auto started = Clock::now();
-        const std::set<std::string> stages{"admission", "observation", "candidate-build", "candidate-validation",
-            "publication", "qualification", "source-cache", "candidate-source-cache", "source-cache-transfer", "final-verification"};
         std::size_t progress_count = 0;
         if (diagnostics) request.maintenance_progress = [&, started](const std::string& stage) {
-            if (!progress || !stages.contains(stage) || progress_count >= 32) return;
+            if (!progress || !local_refresh_stage(stage) || progress_count >= 32) return;
             ++progress_count;
             try {
                 progress(Json{{"kind", "progress"}, {"stage", stage},

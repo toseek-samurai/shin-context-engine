@@ -110,6 +110,17 @@ catalog. `tray/` adapts these results to macOS and Windows and `tui/` adapts the
 to the terminal. Both desktop hosts use the same native review and apply
 operation for selected agent settings. Language preferences never change
 protocol fields or project data.
+Background refresh keeps an optional in-process qualification checkpoint. On
+macOS its FSEvents stream coalesces source, output and private control roots to
+their common ancestor, filtering events back to the selected scope. This reduces
+WatchRoot ancestor descriptors; source inventory/metadata, root identities,
+publication and authority checks still fence reuse. Resource pressure discards
+only the optional checkpoint and restores the full qualification path.
+Refresh progress records qualification cache, snapshot, generation, profile,
+doctor, adoption, fingerprint and full-readiness stages. These fixed identifiers
+and their durations survive a worker timeout in bounded service/history
+diagnostics. Each stage retains a 60-second stall limit, with a separate
+180-second operation limit; repeated same-stage heartbeats extend neither.
 The macOS/Linux Sand TUI uses statically linked FTXUI for layout, input and line charts.
 It reads the existing local service, usage snapshot and storage inventory; opening
 it does not enroll projects, start another service or publish an index.

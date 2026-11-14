@@ -221,10 +221,14 @@ class McpTests(unittest.TestCase):
             started = time.monotonic()
             status = self.tool(child, 'shin_status', {}, timeout=2)
             elapsed = time.monotonic() - started
-            self.assertTrue(status['ok'])
+            self.assertTrue(status['ok'], status)
             self.assertEqual(status['state'], 'preparing')
             self.assertFalse(status['local_ready'])
             self.assertFalse(status['retrieval_ready'])
+            self.assertTrue(status['query_available'])
+            self.assertEqual(status['project_state'], 'refreshing')
+            self.assertEqual(status['reader_state'], 'waiting-for-qualification')
+            self.assertEqual(status['next_action'], 'shin_query')
             for field in ['error', 'snapshot_id', 'mcp_snapshot', 'source_context']:
                 self.assertNotIn(field, status)
             self.assertEqual(status['recovery']['kind'], 'transient')
@@ -241,6 +245,45 @@ class McpTests(unittest.TestCase):
         rows = self.activity_rows()
         self.assertEqual(len(rows), 2)
         self.assertEqual(next(r for r in rows if r['method'] == 'status')['error_code'], '')
+
+    def test_qualified_project_status_distinguishes_reader_warmup(self):
+        # Evict a qualified reader through the real bounded resident cache.
+        others = []
+        for i in range(5):
+            root = self.base / f'other-warmup-{i}'
+            root.mkdir()
+            (root / 'limits.js').write_text(f'export function readLimit() {{ return {20+i}; }}\n')
+            self.init(root=root); self.roots.append(root); others.append(root)
+        self.start(ready=False)
+        self.wait_service_state(lambda s: len(s['qualified_projects']) == len(self.roots), timeout=10)
+        self.assertTrue(self.raw('query', query='readLimit')['ok'])
+        for root in others:
+            self.assertTrue(self.raw('query', query='readLimit', root=root)['ok'])
+        state = self.raw('service-status')['result']
+        self.assertIn(str(self.root), [p['root'] for p in state['qualified_projects']])
+        self.assertNotIn(str(self.root), [p['root'] for p in state['resident_projects']])
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        child = self.adapter()
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            status = self.tool(child, 'shin_status', {}, timeout=2)
+            self.assertTrue(status['ok'], status)
+            self.assertEqual(status['state'], 'preparing')
+            self.assertEqual(status['project_state'], 'qualified')
+            self.assertEqual(status['reader_state'], 'warming')
+            self.assertTrue(status['query_available'])
+            self.assertFalse(status['retrieval_ready'])
+            self.assertEqual(status['next_action'], 'shin_query')
+            self.assertNotIn('error', status)
+            self.assertNotIn('snapshot_id', status)
+            request_id = self.send(child, 'tools/call', {'name': 'shin_query', 'arguments': {'query': 'readLimit'}})
+            self.wait_service_state(lambda s: s['waiting_requests'] == 1)
+        response = self.response(child, request_id, timeout=20)['result']
+        self.assertFalse(response['isError'], response)
+        result = json.loads(response['content'][0]['text'])
+        self.assertTrue(result['ok'], result)
+        self.assertTrue(result['local_ready'])
+        self.assertIn('return 7;', json.dumps(result))
 
     def test_query_waits_in_one_call_with_progress_and_fresh_context(self):
         import fcntl

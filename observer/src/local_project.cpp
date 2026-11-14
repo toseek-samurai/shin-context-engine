@@ -467,9 +467,12 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                          const Config& config, const fs::path& workspace, const Json& binding,
                          const std::string& key,
                          const std::optional<RefreshQualification>& candidate = {}, RefreshMeasurements* metrics = nullptr,
-                         std::optional<core::VerifiedSnapshot>* reader_snapshot = nullptr, bool fresh_generation = false) {
+                         std::optional<core::VerifiedSnapshot>* reader_snapshot = nullptr, bool fresh_generation = false,
+                         const std::function<void(const std::string&)>& progress = {}) {
     RefreshMeasurements local;
     auto& m = metrics ? *metrics : local;
+    m.progress = progress;
+    refresh_progress(progress, "qualification-cache");
     options.generation_admission.reset();
     if (reader_snapshot) reader_snapshot->reset();
     std::optional<Json> saved;
@@ -544,15 +547,15 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
     if (options.validation_checkpoint) options.validation_checkpoint();
     std::string before;
     std::exception_ptr capture_error;
-    try { before = core::generation_fingerprint(options); }
+    try { before = m.measure("qualification_fingerprint_ms", [&] { return core::generation_fingerprint(options); }); }
     catch (const core::CliError&) { capture_error = std::current_exception(); }
-    auto result = options.profile.bootstrap_only ? bootstrap_readiness(options) :
-        core_result([&] { return core::run_ready(options, config.profile_dir, args); });
+    auto result = m.measure("qualification_ready_ms", [&] { return options.profile.bootstrap_only ? bootstrap_readiness(options) :
+        core_result([&] { return core::run_ready(options, config.profile_dir, args); }); });
     if (options.profile.bootstrap_only) result["ready"] = result.at("ok");
     result["quality_warning"] = local_quality_warning(result);
     if (local_retrieval_ready(result)) {
         if (capture_error) std::rethrow_exception(capture_error);
-        options.generation_admission = core::GenerationAdmission::reuse(options, before);
+        options.generation_admission = m.measure("qualification_generation_ms", [&] { return core::GenerationAdmission::reuse(options, before); });
         if (!options.generation_admission)
             throw Error("qualification-inputs-changed", "Generation inputs changed during full qualification.");
     }
@@ -1041,7 +1044,8 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     std::optional<core::VerifiedSnapshot> reader_snapshot;
     if (refresh && grant.active()) options.validation_checkpoint = verify_refresh_source;
     auto readiness = qualified_readiness(options, args, config, workspace, quality_binding, quality_key,
-        published_qualification, &qualification_metrics, request.query_session ? &reader_snapshot : nullptr);
+        published_qualification, &qualification_metrics, request.query_session ? &reader_snapshot : nullptr, false,
+        refresh ? request.maintenance_progress : std::function<void(const std::string&)>{});
     options.validation_checkpoint = {};
     const double admission_ms = core::elapsed_ms_since(admission_started);
     const auto observer = observer_status(config);
@@ -1488,7 +1492,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
         return qualified_readiness(options, {}, config, workspace, binding, quality_key,
-            published_qualification, nullptr, request.query_session ? &reader_snapshot : nullptr, fresh_kit);
+            published_qualification, nullptr, request.query_session ? &reader_snapshot : nullptr, fresh_kit,
+            refresh ? request.maintenance_progress : std::function<void(const std::string&)>{});
     };
     const auto qualify = [&](const Json& readiness) {
         if (readiness.at("ok") == true && readiness.at("quality_reuse").at("reused") == false)

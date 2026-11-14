@@ -284,6 +284,10 @@ implementation. Retain relevant code names in a Russian question; the UI languag
 does not control the search language.
 
 When `shin_status` reports `state=preparing`, submit the useful `shin_query`.
+`query_available=true` explicitly permits that call while `local_ready=false`.
+`project_state=qualified` and `reader_state=warming` mean the verified context
+remains available for an on-demand reader. `project_state=refreshing` and
+`reader_state=waiting-for-qualification` mean background qualification is pending.
 The query waits automatically for up to 20 seconds for a current reader. There
 is no manual sleep or status polling. Clients that supply a progress token can
 display elapsed-time notifications; cancellation releases the pending request.

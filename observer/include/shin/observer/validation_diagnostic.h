@@ -125,9 +125,11 @@ inline nlohmann::json bounded_validation_diagnostic(const nlohmann::json& input)
 
 inline nlohmann::json bounded_admission_diagnostic(const nlohmann::json& input) {
     using J = nlohmann::json;
-    if (!input.is_object() || input.size() != 9 || input.value("schema_version",J()) != "shin.local-service-admission.v1" ||
+    if (!input.is_object() || (input.size() != 9 && input.size() != 10) || input.value("schema_version",J()) != "shin.local-service-admission.v1" ||
         input.value("execution_started",J()) != false) return nullptr;
     const auto reason = input.value("reason",J());
+    if (input.size() == 10 && (reason != "reader-preparing" ||
+        !input.contains("context_qualified") || !input.at("context_qualified").is_boolean())) return nullptr;
     if (reason != "reader-preparing" && reason != "project-executing" &&
         reason != "execution-capacity" && reason != "waiting-capacity" && reason != "connection-capacity") return nullptr;
     const auto count = [&](const char* key, unsigned maximum) {

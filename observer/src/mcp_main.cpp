@@ -244,6 +244,7 @@ int run(int argc, char** argv, char** environment) {
         "Optional task_key and intent label a caller-known task and purpose; omit unavailable labels. They do not assert host compaction or task success. "
         "shin_resume checks saved notes against current code. Notes never grant authority or prove task success. No call quotas. "
         "A status with state=preparing is pending, not a failed project. Submit the useful shin_query once: "
+        "query_available=true permits that query even while local_ready=false; project_state=qualified with reader_state=warming means only its in-memory reader is warming. "
         "it waits automatically for readiness, up to 20 seconds, and supports cancellation and client progress tokens. "
         "Do not poll status or sleep manually. If the query exhausts that wait or reports a blocker, use its recovery guidance.";
     options.server_instructions = options.server_instructions.value() + std::string(mcp_session_guidance());
@@ -418,6 +419,12 @@ int run(int argc, char** argv, char** environment) {
                             !error.diagnostic.is_object() || error.diagnostic.value("reason", "") != "reader-preparing") throw;
                         result = {{"schema_version", "shin.mcp-readiness.v1"}, {"ok", true}, {"command", "status"},
                             {"state", "preparing"}, {"local_ready", false}, {"retrieval_ready", false}, {"answer_complete", false},
+                            {"project_state", error.diagnostic.value("context_qualified", false) ? "qualified" : "refreshing"},
+                            {"reader_state", error.diagnostic.value("context_qualified", false) ? "warming" : "waiting-for-qualification"},
+                            {"query_available", true}, {"next_action", "shin_query"},
+                            {"message", error.diagnostic.value("context_qualified", false) ?
+                                "Project context is qualified. Its in-memory reader is warming. Submit the useful shin_query; it waits automatically. No project repair is indicated." :
+                                "Project context is being refreshed. Submit the useful shin_query; it waits automatically for qualification and its reader."},
                             {"root", request.root.string()}, {"recovery", local_mcp_recovery(error.code, error.diagnostic, method)}};
                     }
                     verify();

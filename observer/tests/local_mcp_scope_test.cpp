@@ -50,6 +50,13 @@ int main() {
             {"waiting_requests",1},{"max_waiting_requests",4},{"wait_limit_ms",5000},{"execution_wait_limit_ms",500}};
         const auto busy = local_mcp_recovery("service-busy",admission,"status");
         check(busy.at("diagnostic") == admission && !busy.contains("failure_reason"),"admission metadata must not become project validation evidence");
+        auto warming = admission; warming["reason"] = "reader-preparing"; warming["context_qualified"] = true;
+        check(Error("project-updating", "pending", warming).diagnostic == warming,
+            "typed reader warmup evidence was lost at the error boundary");
+        auto invalid_warming = warming; invalid_warming["context_qualified"] = "/private/untrusted";
+        check(bounded_admission_diagnostic(invalid_warming).is_null(), "reader warmup admitted an untyped diagnostic");
+        invalid_warming = warming; invalid_warming["raw_path"] = "/private/untrusted";
+        check(bounded_admission_diagnostic(invalid_warming).is_null(), "reader warmup admitted extra fields");
         check(busy.at("retry_after_ms") == 0 && busy.at("next_action") == "query-once-with-bounded-readiness-wait","busy status must stay nonblocking");
         auto connection_busy = admission; connection_busy["reason"] = "connection-capacity";
         check(local_mcp_recovery("service-busy", connection_busy).at("diagnostic") == connection_busy,

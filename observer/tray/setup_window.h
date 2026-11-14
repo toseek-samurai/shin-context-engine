@@ -309,53 +309,62 @@
     if (!self.setupConnect.enabled) return;
     bool expected = false;
     if (!project_management_busy.compare_exchange_strong(expected, true)) return;
-    self.setupPlans = [NSMutableArray array];
-    NSMutableSet* paths = [NSMutableSet set];
+    NSMutableArray<NSMutableDictionary*>* selected = [NSMutableArray array];
     for (NSButton* button in self.setupTargetButtons) if (button.state == NSControlStateValueOn) {
-        NSDictionary* target = self.setupTargets[static_cast<NSUInteger>(button.tag)];
-        if ([paths containsObject:target[@"config"]]) {
-            release_project_operation(); live_text(self.setupStatus, @"stringValue", "Choose a different settings file for each target."); return;
-        }
-        [paths addObject:target[@"config"]];
-        [self.setupPlans addObject:[@{@"client": target[@"client"], @"label": target[@"label"], @"config": target[@"config"]} mutableCopy]];
+        [selected addObject:self.setupTargets[static_cast<NSUInteger>(button.tag)]];
     }
     ++self.setupEpoch;
-    self.setupConnectRoot = self.setupRoot; self.setupReport = [NSMutableString string];
     self.setupConnecting = YES; live_text(self.setupStatus, @"stringValue", "Checking existing settings…");
-    [self continueSetupConnection:0 applying:NO];
+    [self connectSetupSelection:selected root:self.setupRoot reviews:Json()];
 }
-- (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying {
-    if (index == self.setupPlans.count) {
-        if (!applying) { [self continueSetupConnection:0 applying:YES]; return; }
-        bool reconnect = false;
-        for (NSDictionary* plan in self.setupPlans) if ([plan[@"reconnect"] boolValue]) reconnect = true;
-        self.setupStatus.stringValue = [self.setupReport stringByAppendingString:reconnect ?
-            ui_text("Access saved. Reconnect older MCP connections once; subsequent projects appear without restarting the agent.") :
-            ui_text("Access saved. Connected agents see this project on their next shin_projects call; no restart is needed.")];
-        self.setupConnecting = NO; return;
+- (void)connectSetupSelection:(NSArray<NSMutableDictionary*>*)selected root:(NSString*)root reviews:(const Json&)reviews {
+    const bool applying = reviews.is_array();
+    Json targets = Json::array();
+    for (NSUInteger i = 0; i < selected.count; ++i) {
+        NSDictionary* target = selected[i];
+        Json entry{{"client", [target[@"client"] UTF8String]}, {"config", [target[@"config"] UTF8String]}};
+        if (applying) entry["revision"] = reviews.at(i).at("revision");
+        targets.push_back(std::move(entry));
     }
-    NSMutableDictionary* plan = self.setupPlans[index];
-    NSMutableArray* args = [@[@"--root", self.setupConnectRoot, @"--client", plan[@"client"], @"--config", plan[@"config"]] mutableCopy];
-    if (applying) [args addObjectsFromArray:@[@"--revision", plan[@"revision"]]];
-    [self runCLI:@"client-connect" arguments:args completion:^(Json result, NSString* failure) {
-        if (failure || !result.value("ok", false)) {
-            NSString* reason = failure;
-            if (!reason && result.contains("error") && result.at("error").is_object())
-                reason = [NSString stringWithUTF8String:result.at("error").value("message", "").c_str()];
-            if (!reason.length) reason = ui_text("Could not update agent settings.");
-            NSString* prefix = applying ? self.setupReport : ui_text("No agent settings were changed.\n");
-            self.setupStatus.stringValue = [NSString stringWithFormat:@"%@%@: %@", prefix, plan[@"label"], reason];
-            self.setupConnecting = NO; return;
+    NSMutableArray* args = [@[@"--root", root] mutableCopy];
+    if (applying) [args addObject:@"--apply"];
+    const auto bytes = targets.dump();
+    NSData* input = [NSData dataWithBytes:bytes.data() length:bytes.size()];
+    [self runCLI:@"client-connect-batch" arguments:args input:input progress:nil completion:^(Json result, NSString* failure) {
+        const auto rows = result.value("results", Json::array());
+        if (!failure && !applying && result.value("ok", false) && rows.size() == selected.count) {
+            [self connectSetupSelection:selected root:root reviews:rows];
+            return;
         }
-        if (!applying) plan[@"revision"] = [NSString stringWithUTF8String:result.at("revision").get<std::string>().c_str()];
-        else {
-            plan[@"reconnect"] = @(result.value("restart_required", true));
-            [self.setupReport appendFormat:@"%@: %@\n", plan[@"label"], ui_text(shin::ui::client_access_label(result.value("access_state", "review-required")))];
-            for (NSMutableDictionary* target in self.setupTargets) if ([target[@"config"] isEqualToString:plan[@"config"]]) {
-                [self showSetupAccess:target state:diagnostic_text_content(result.value("access_state", "review-required"))];
+        NSMutableString* report = [NSMutableString string];
+        if (!applying) [report appendString:ui_text("No agent settings were changed.\n")];
+        for (NSUInteger i = 0; i < rows.size() && i < selected.count; ++i) {
+            const auto& row = rows.at(i);
+            NSMutableDictionary* target = selected[i];
+            const auto access = row.value("access_state", "review-required");
+            [self showSetupAccess:target state:diagnostic_text_content(access)];
+            if (row.value("ok", false)) {
+                if (applying) [report appendFormat:@"%@: %@\n", target[@"label"], ui_text(shin::ui::client_access_label(access))];
+            } else {
+                const auto reason = row.at("error").value("message", "");
+                [report appendFormat:@"%@: %@\n", target[@"label"], reason.empty() ?
+                    ui_text("Could not update agent settings.") : diagnostic_text_content(reason)];
             }
         }
-        [self continueSetupConnection:index + 1 applying:applying];
+        if (!failure && applying && result.value("ok", false) && rows.size() == selected.count) {
+            [report appendString:ui_text(result.value("restart_required", false) ?
+                "Access saved. Reconnect older MCP connections once; subsequent projects appear without restarting the agent." :
+                "Access saved. Connected agents see this project on their next shin_projects call; no restart is needed.")];
+        } else if (failure || rows.empty() || rows.back().value("ok", false)) {
+            const auto error = result.value("error", Json::object());
+            const auto reason = error.value("message", "");
+            if (!failure) failure = error.value("code", "") == "client-config-duplicate" ?
+                ui_text("Choose a different settings file for each target.") :
+                reason.empty() ? ui_text("Could not update agent settings.") : diagnostic_text_content(reason);
+            [report appendString:failure];
+        }
+        self.setupStatus.stringValue = report;
+        self.setupConnecting = NO;
     }];
 }
 - (void)checkSetup:(id)sender {

@@ -86,14 +86,6 @@ void layout_update_window(HWND target) {
     }
 }
 #include "windows_command.h"
-Json prepare_projects(const fs::path& prefix,const fs::path& home,const Json& manifest) {
-    shin::windows::ReadFile cli(prefix/"bin/shin-ce.exe");cli.require_machine_owned();
-    const auto result=windows_command(prefix/"bin/shin-ce.exe",{"prepare-projects","--home",home.string()},std::chrono::seconds(1105));
-    if(result.value("version","")!=manifest.at("version").get_ref<const std::string&>() ||
-        result.value("core_version","")!=manifest.at("core_version").get_ref<const std::string&>())
-        throw Error("update-installation-changed","Project preparation belongs to another installation.");
-    return result;
-}
 void update(const char* text,unsigned progress=0,bool done=false) {
     {std::lock_guard lock(mutex);description=shin::ui::tr(text);percent=progress;terminal=done;
      for(std::size_t i=0;i<steps.size();++i) if(text==std::string_view(steps[i])) active_step=i;
@@ -115,9 +107,9 @@ void install(const fs::path& folder) {
     std::unique_ptr<StateStore> state;
     Json receipt;
     fs::path installation;
-    bool restore_pending=false,monitor_closed=false;
+    bool owns_attempt=false,restore_pending=false,monitor_closed=false;
     std::exception_ptr failure;
-    std::string restore_error;
+    std::string restore_error, preparation_error;
     const HRESULT com=CoInitializeEx(nullptr,COINIT_APARTMENTTHREADED);
     struct Com {HRESULT result;~Com(){if(SUCCEEDED(result)) CoUninitialize();}} apartment{com};
     try {
@@ -127,6 +119,7 @@ void install(const fs::path& folder) {
         receipt=state->load().value();
         if(receipt.value("schema_version","")!="shin.windows-update.v1" || receipt.value("phase","")!="reviewed")
             throw Error("update-review-invalid","Update review is unavailable.");
+        owns_attempt=true;
         const auto prefix=installed_root();
         if(!prefix || *prefix!=fs::canonical(fs::path(receipt.at("prefix").get<std::string>())))
             throw Error("update-installation-changed","The MSI installation changed after review.");
@@ -193,37 +186,44 @@ void install(const fs::path& folder) {
             if(!installer_access.restore()) throw Error("update-installer-access-unavailable","Installer payload privacy could not be restored.");
         }
         receipt["installer_exit_code"]=code;
-        if(code!=0 && code!=3010 && code!=1641) throw Error("update-msi-failed","Windows Installer did not confirm success. Review its result before retrying.");
-        receipt["restart_required"]=code==3010 || code==1641;
+        const auto outcome=windows_update::msi_outcome(code);
+        if(outcome==windows_update::MsiOutcome::unconfirmed)
+            throw Error("update-msi-failed","Windows Installer did not confirm success. Review its result before retrying.");
+        receipt["restart_required"]=outcome==windows_update::MsiOutcome::reboot_required;
         // Independently inspect the installed manifest, never infer success from
         // progress or from the absence of an Installer dialog.
         const auto manifest=windows_update::verify_installed(*prefix,offer.at("version").get<std::string>());
         const fs::path home=folder.parent_path().parent_path().parent_path();
         if(folder.parent_path()!=home/"updates/windows") throw Error("update-stage-changed","Update home changed.");
-        save("preparing-projects");update("Preparing projects…");
-        receipt["project_preparation"]=prepare_projects(*prefix,home,manifest);
-        // MSI and the verified payload have completed. Project readiness has its
-        // own result and retry; it cannot turn a successful MSI into a failed update.
-        receipt["projects_pending"]=!receipt.at("project_preparation").value("ok",false);
-        receipt["installed_version"]=manifest.at("version");save("completed");
+        const auto& version=manifest.at("version").get_ref<const std::string&>();
+        // Persist the verified MSI outcome before preparing projects. If the
+        // helper is interrupted, Monitor can retry preparation from this receipt.
+        windows_update::record_installed_update(receipt,version,{{"ok",false}});
+        state->save(receipt);
+        update("Preparing projects…");
+        try {
+            auto prepared=prepare_installed_windows_projects(*prefix,home,manifest);
+            windows_update::record_installed_update(receipt,version,std::move(prepared));
+        } catch(const Error& error) {
+            preparation_error=error.code;
+        } catch(const std::exception&) {
+            preparation_error="installation-preparation-unavailable";
+        }
+        if(!preparation_error.empty())
+            windows_update::record_installed_update(receipt,version,
+                {{"ok",false},{"error",{{"code",preparation_error}}}});
         try {directory.remove("installer.msi",static_cast<std::size_t>(total),payload);} catch(...) { /* Verified installation remains successful; keep the staged file for review. */ }
     } catch(const std::exception& error) {
         failure=std::current_exception();
         const auto* typed=dynamic_cast<const Error*>(&error);
-        if(state) try {receipt["phase"]="review-required";receipt["error_code"]=typed?typed->code:"update-failed";state->save(receipt);} catch(...) {}
+        if(owns_attempt) try {receipt["phase"]="review-required";receipt["error_code"]=typed?typed->code:"update-failed";state->save(receipt);} catch(...) {}
         if(restore_pending) {std::lock_guard lock(mutex);monitor_path.clear();}
     }
     try {
         fs::path restored;
         windows_update::restore_update_monitor(restore_pending,[&] {
             {std::lock_guard lock(mutex);monitor_path.clear();}
-            shin::windows::ReadFile inventory(installation/"shin-kit.json");inventory.require_machine_owned();
-            const auto current=parse_json(inventory.read(kMaximumStateBytes));
-            const auto version=current.at("version").get<std::string>();
-            if(version!=receipt.at("from_version").get_ref<const std::string&>() &&
-                version!=receipt.at("offer").at("version").get_ref<const std::string&>())
-                throw Error("update-outcome-unknown","Monitor belongs to an unconfirmed installation.");
-            windows_update::verify_installed(installation,version);
+            windows_update::verify_saved_update_installation(installation,receipt);
             restored=installation/"bin/shin-tray.exe";
         },[&] {
             {std::lock_guard lock(mutex);monitor_path=restored;}
@@ -244,6 +244,7 @@ void install(const fs::path& folder) {
         update("Update completed. Restart persistent MCP clients.",100,true);
         if(receipt.value("projects_pending",false)) {
             std::lock_guard lock(mutex);description+="\n"+std::string(shin::ui::tr("Project preparation needs attention."));
+            if(!preparation_error.empty()) description+="\n"+preparation_error;
         }
     }
     if(!restore_error.empty()) {
@@ -268,7 +269,7 @@ void finish_setup() {
         const fs::path home=fs::path(profile)/".shin-ce";CoTaskMemFree(profile);
         {std::lock_guard lock(mutex);monitor_path=*prefix/"bin/shin-tray.exe";}
         update("Preparing projects…");
-        const auto result=prepare_projects(*prefix,home,manifest);
+        const auto result=prepare_installed_windows_projects(*prefix,home,manifest);
         if(!result.value("ok",false)) throw Error("installation-project-not-ready","Some projects require review.",result);
         update("Update completed. Restart persistent MCP clients.",100,true);
         // Opening Monitor is the MSI wizard's explicit, checked completion action.

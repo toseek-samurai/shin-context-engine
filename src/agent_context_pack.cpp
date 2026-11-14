@@ -161,35 +161,6 @@ Json stable_fact_record(const FactHit& hit) {
     return record;
 }
 
-std::string retrieval_mode(const BriefResult& result) {
-    if (result.identifier_scope_used) return "identifier-scoped";
-    if (result.directory_owner_scope_used) {
-        return "directory-scoped";
-    }
-    if (result.document_owner_scope_used) {
-        return "owner-scoped";
-    }
-    if (result.query_planner_used) {
-        return "planned";
-    }
-    return result.fallback_used ? "relaxed" : "strict";
-}
-
-std::string matching_policy(const BriefResult& result) {
-    if (result.identifier_scope_used) return "confirmed-identifier-scope-v1";
-    if (result.directory_owner_scope_used) {
-        return "directory-owner-scope-v1";
-    }
-    if (result.document_owner_scope_used) {
-        return "document-owner-scope-v1";
-    }
-    if (result.query_planner_used) {
-        return "document-coverage-planner-v1";
-    }
-    return result.scope_fallback_used ? "first-term-must-rest-should-v1"
-                                      : "required-groups-v1";
-}
-
 bool evidence_type_allowed(const TaskRequest& request, const std::string& type) {
     return std::find(request.evidence_types.begin(), request.evidence_types.end(), type) !=
            request.evidence_types.end();
@@ -644,7 +615,7 @@ Json requirement_diagnostics(const TaskRequirement& requirement,
             {"covered_group_indices", std::move(covered_group_indices)},
             {"uncovered_group_indices", std::move(uncovered_group_indices)}
         }},
-        {"retrieval_mode", retrieval_mode(result)},
+        {"retrieval_mode", execution.decision.mode},
         {"query_diagnostics", {
             {"fallback_used", result.fallback_used},
             {"scope_fallback_used", result.scope_fallback_used},
@@ -655,7 +626,7 @@ Json requirement_diagnostics(const TaskRequirement& requirement,
             {"planner_rejection_reason", result.planner_rejection_reason.empty()
                                              ? Json(nullptr)
                                              : Json(result.planner_rejection_reason)},
-            {"matching_policy", matching_policy(result)},
+            {"matching_policy", execution.decision.matching_policy},
             {"candidate_rows", result.candidate_rows},
             {"candidate_index_used", result.candidate_index_used},
             {"required_group_matches", result.required_group_matches},

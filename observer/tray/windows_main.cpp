@@ -30,6 +30,7 @@ using Microsoft::WRL::ComPtr;
 constexpr UINT tray_message = WM_APP + 1;
 constexpr UINT reopen_message = WM_APP + 2;
 constexpr UINT language_message = WM_APP + 3;
+constexpr UINT update_handoff_message = WM_APP + 4;
 constexpr wchar_t window_class[] = L"ShinMonitorWindow";
 HWND panel = nullptr, report = nullptr, report_edit = nullptr;
 HFONT report_font = nullptr;
@@ -321,7 +322,11 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
             FillRect(dc,&client,reinterpret_cast<HBRUSH>(GetStockObject(DC_BRUSH)));
             SetDCBrushColor(dc,previous); return 1;
         }
-        case WM_APP+4: DestroyWindow(window); return 0;
+        case update_handoff_message:
+            // A failed preference write must not keep the installation waiting.
+            try { capture_desktop_placement(true); } catch (const std::exception&) {}
+            DestroyWindow(window);
+            return 0;
         case reopen_message: show_panel(); return 0;
         case WM_SIZE:
             if(swap_chain && wparam!=SIZE_MINIMIZED) {
@@ -568,23 +573,42 @@ unsigned updates_render(const fs::path& output, ImVec2 size) {
         save_frame(output/(std::string("update-launch-error-")+(language==shin::ui::Language::ru?"ru-":"en-")+
             std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+".png"));
         ++frames;windows_update_launch_error.clear();
-        windows_update_result=windows_setup_result({{"phase","review-required"},{"ok",false},
+        windows_setup_status={{"phase","review-required"},{"ok",false},
             {"error",{{"code","installation-project-not-ready"}}},
-            {"projects",Json::array({{{"root","C:/Synthetic/Project"},{"ok",false},{"error_code","profile-policy-revision-conflict"}}})}});
-        for(int frame=0;frame<3;++frame) {
-            ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
-            render_windows_updates({});ImGui::Render();
-            constexpr float clear[]{background.x,background.y,background.z,1};
-            context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr);context->ClearRenderTargetView(target.Get(),clear);
-            ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
-        }
+            {"projects",Json::array({{{"root","C:/Synthetic/Project"},{"ok",false},{"error_code","profile-policy-revision-conflict"}}})}};
+        const auto paint_setup_result = [&] {
+            for(int frame=0;frame<3;++frame) {
+                ImGui_ImplDX11_NewFrame();ImGui_ImplWin32_NewFrame();ImGui::NewFrame();
+                render_windows_updates(retry);ImGui::Render();
+                constexpr float clear[]{background.x,background.y,background.z,1};
+                context->OMSetRenderTargets(1,target.GetAddressOf(),nullptr);context->ClearRenderTargetView(target.Get(),clear);
+                ImGui_ImplDX11_RenderDrawData(ImGui::GetDrawData());
+            }
+        };
+        paint_setup_result();
         check_action_bounds(size);check_action_ids();
-        if(size.y>=600) for(const int action:{206,207})
-            if(std::none_of(ui_actions.begin(),ui_actions.end(),[=](const auto& item){return item.chart==action;}))
-                throw std::runtime_error("MSI project preparation has no visible report or retry action.");
+        if(size.y>=600 && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& action){return action.chart==202 && action.enabled;}))
+            throw std::runtime_error("A finished project preparation failure blocked the next update.");
+        if(size.y>=440) {
+            SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(2,2));
+            paint_setup_result();
+            SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(static_cast<int>(size.x/2),static_cast<int>(size.y/2)));
+            const auto available = [](int id) {
+                return std::any_of(ui_actions.begin(),ui_actions.end(),[=](const auto& action){return action.chart==id && action.enabled;});
+            };
+            for(int attempt=0;attempt<8 && !available(207);++attempt) {
+                SendMessageW(panel,WM_MOUSEWHEEL,MAKEWPARAM(0,static_cast<SHORT>(-3*WHEEL_DELTA)),0);
+                paint_setup_result();
+            }
+            if(!available(206) || !available(207))
+                throw std::runtime_error("Project preparation report and retry could not be reached by scrolling.");
+            check_action_bounds(size);check_action_ids();
+        }
         save_frame(output/(std::string("setup-result-")+(language==shin::ui::Language::ru?"ru-":"en-")+
             std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+".png"));
-        ++frames;windows_update_result=Json::object();
+        ++frames;windows_setup_status=Json::object();
+        SendMessageW(panel,WM_MOUSEWHEEL,MAKEWPARAM(0,static_cast<SHORT>(20*WHEEL_DELTA)),0);
+        paint_setup_result();
     }
     shin::ui::set_language(previous_language);
     return frames;
@@ -939,7 +963,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
                     TranslateMessage(&message);DispatchMessageW(&message);
                 }
                 if(!running) break;
-                if(!preview_mode) poll_windows_installation();
+                if(!preview_mode) {
+                    poll_windows_installation();
+                    if(windows_update_waits_for_monitor()) { SendMessageW(panel,update_handoff_message,0,0); continue; }
+                }
                 static auto update_due=Clock::now()+std::chrono::seconds(5);
                 if(!preview_mode && settings.value("automatic_update_checks",true) && Clock::now()>=update_due) {
                     if(!release_check) release_check=std::make_unique<WindowsReleaseCheck>();

@@ -15,6 +15,11 @@ notes, and commits only those release files. Core keeps its independently declar
 version. Existing tags and notes are never overwritten. A concurrent `main` update
 refuses the handoff; start a fresh run against the updated main.
 
+Release preparation checks that the platform job names, qualification and upload
+steps, and artifact names in the workflow match the publisher's expectations.
+Run `python3 -B tools/test_publish_preview.py` locally to catch a rename before
+creating a tag.
+
 The preparation run then starts **Build, test and publish** for that exact tag.
 Its green preparation step means the platform checks have started, not that all
 downloads are ready. Each platform publishes after its own Core, Observer and

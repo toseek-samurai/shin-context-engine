@@ -14,7 +14,7 @@ CLI/MCP contracts, with `.exe` binaries. The terminal dashboard, automatic clien
 setup, agent-history collection and update installation have platform limits;
 see the [capability matrix](README.md#capabilities-by-platform).
 
-Native preview dev.98 supports
+The native preview supports
 `shin-ce project-add --root /path/to/project --progress-json` for integrations.
 It emits bounded `shin.project-progress.v1`
 stage frames on stderr; stdout remains the final JSON receipt. Stages describe
@@ -187,15 +187,15 @@ publisher. It neither extends the caller's wait nor overrides failure backoff.
 
 ## Monitor and CLI
 
-The table maps Monitor to CLI/TUI actions. Windows dev.74 includes project
-onboarding and storage management in Monitor; its terminal dashboard remains
-unimplemented. See [Windows scope](windows-desktop.md#monitor-setup-and-updates).
+The table maps Monitor to CLI/TUI actions. On Windows, project onboarding and
+storage management are available in the desktop Monitor and CLI. See
+[Windows scope](windows-desktop.md#monitor-setup-and-updates).
 
 Desktop Monitor uses **Overview**, **Projects**, **History** and **Settings**.
-The current native preview uses dark Sand, compact spacing and a panel that fits
-short pages. History opens with the recorded-call journal;
-timing and agent token usage remain secondary views. Technical reports are
-disclosed from project details. Earlier desktop previews and the TUI keep
+The macOS Monitor panel fits short pages. Windows uses a resizable desktop window
+and a quick status panel in the notification area. History opens with the
+recorded-call journal. Timing and agent token usage remain secondary views.
+Project details provide technical reports. Earlier desktop previews and the TUI keep
 **Activity** as their third section, with the journal under **Activity → Journal**.
 
 | In Monitor | In the CLI today |
@@ -237,7 +237,7 @@ See [installation](local-kit.md) and [MCP setup](native-client-setup.md).
 
 Shin's usage collector observes supported local client usage records. It is not
 required for indexing or retrieval. On macOS and Linux, adding a project enables
-automatic collection for that project. Windows dev.74 collects supported client
+automatic collection for that project. Windows collects supported client
 history through the registered user service with the same availability and
 measurement boundaries.
 Counters depend on readable client history; missing history is
@@ -473,7 +473,7 @@ missing, interrupted or outdated completion. It does not approve profiles or
 re-enroll detached projects. See the [Windows guide](windows-desktop.md#monitor-setup-and-updates)
 for the MSI completion action and unattended installation boundaries.
 
-### Agent access and live catalogs (source candidate)
+### Agent access and live catalogs
 
 `shin-ce client-targets --root /path/to/project` adds an `access_state` for each
 detected settings destination: `configured`, `not-configured`,

@@ -309,23 +309,6 @@ static Json make_brief_json(const RuntimeOptions& options,
     const int returned_sections = static_cast<int>(selection.sections.size());
     const int returned_facts = static_cast<int>(selection.decisions.size() + selection.contracts.size() +
                                                 selection.runbooks.size() + selection.facts.size());
-    const std::string retrieval_mode = result.directory_owner_scope_used
-                                           ? "directory-scoped"
-                                           : (result.document_owner_scope_used
-                                                  ? "owner-scoped"
-                                           : (result.query_planner_used
-                                                  ? "planned"
-                                                  : (result.fallback_used ? "relaxed" : "strict")));
-    const std::string matching_policy = result.directory_owner_scope_used
-                                            ? "directory-owner-scope-v1"
-                                            : (result.document_owner_scope_used
-                                                   ? "document-owner-scope-v1"
-                                            : (result.query_planner_used
-                                                   ? "document-coverage-planner-v1"
-                                                   : (result.scope_fallback_used
-                                                          ? "first-term-must-rest-should-v1"
-                                                          : "required-groups-v1")));
-
     std::vector<std::string> related_documents;
     related_documents.reserve(execution.ranked_paths.size());
     Json ranked_paths = Json::array();
@@ -342,7 +325,7 @@ static Json make_brief_json(const RuntimeOptions& options,
     output["index_freshness"] = index_freshness_json(freshness);
     output["snapshot_id"] = freshness.snapshot_id.empty() ? Json(nullptr) : Json(freshness.snapshot_id);
     output["query"] = request.query;
-    output["retrieval_mode"] = result.identifier_scope_used ? "identifier-scoped" : retrieval_mode;
+    output["retrieval_mode"] = execution.decision.mode;
     output["query_diagnostics"] = {
         {"fallback_used", result.fallback_used},
         {"scope_fallback_used", result.scope_fallback_used},
@@ -354,7 +337,7 @@ static Json make_brief_json(const RuntimeOptions& options,
                                          ? Json(nullptr)
                                          : Json(result.planner_rejection_reason)},
         {"scope_group_index", result.scope_group_index},
-        {"matching_policy", result.identifier_scope_used ? "confirmed-identifier-scope-v1" : matching_policy},
+        {"matching_policy", execution.decision.matching_policy},
         {"candidate_rows", result.candidate_rows},
         {"candidate_index_used", result.candidate_index_used},
         {"required_group_matches", result.required_group_matches},
@@ -866,9 +849,19 @@ static std::vector<std::string> returned_record_types_for_brief(const BriefSelec
     return record_types;
 }
 
+static BriefRetrievalDecision brief_retrieval_decision(const BriefResult& retrieval) {
+    if (retrieval.identifier_scope_used) return {"identifier-scoped", "confirmed-identifier-scope-v1"};
+    if (retrieval.directory_owner_scope_used) return {"directory-scoped", "directory-owner-scope-v1"};
+    if (retrieval.document_owner_scope_used) return {"owner-scoped", "document-owner-scope-v1"};
+    if (retrieval.query_planner_used) return {"planned", "document-coverage-planner-v1"};
+    return {retrieval.fallback_used ? "relaxed" : "strict",
+        retrieval.scope_fallback_used ? "first-term-must-rest-should-v1" : "required-groups-v1"};
+}
+
 static BriefExecution make_brief_execution(const QueryRequest& request,
                                             BriefResult retrieval) {
     BriefExecution execution;
+    execution.decision = brief_retrieval_decision(retrieval);
     execution.retrieval = std::move(retrieval);
     execution.selection =
         select_brief_evidence(execution.retrieval, request.limit, request.per_doc_limit,

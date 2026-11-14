@@ -14,4 +14,8 @@ Json local_client_connections(const fs::path& executable, const fs::path& root,
 Json local_client_connect(const fs::path& executable, const fs::path& root,
                           const fs::path& home, const std::string& client,
                           const fs::path& config, const std::string& revision);
+// Review each selected file, or apply the exact reviewed revisions in order.
+// A failed row preserves earlier results and leaves later files untouched.
+Json local_client_connect_batch(const fs::path& executable, const fs::path& root,
+                                const fs::path& home, const Json& targets, bool apply);
 }

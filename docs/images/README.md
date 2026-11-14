@@ -1,11 +1,10 @@
 # UI screenshots
 
 The gallery was refreshed on **2026-11-07**. macOS PNGs and terminal SVGs come
-from the current source build (Observer dev.98, Core dev.19); the depicted UI is
-available in native preview dev.98. The unreleased RE2 scanner is an engine change,
-not a new UI capability. Windows PNGs come from the published dev.98 ZIP
-(Core dev.18), rendered on a signed-in Windows Mini-PC. All displayed project
-names, activity, paths and measurements are independent synthetic examples.
+from an Observer dev.98 and Core dev.19 source build. Windows PNGs come from the
+published dev.98 ZIP (Core dev.18) rendered in a signed-in session. All displayed
+project names, activity, paths and measurements are synthetic examples. For the
+current Windows tray and desktop window, see [Windows Monitor](../windows-desktop.md#windows-quick-status-and-desktop-monitor).
 
 ## macOS Monitor
 

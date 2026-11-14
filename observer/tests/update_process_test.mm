@@ -25,46 +25,46 @@ int main(int argc, char** argv) {
     check(arguments("2.0.5-preview")=="installation-not-owned");
     check(arguments("bad\nversion")=="invalid-arguments");
     const Json installed{{"integrity_verified",true},{"recovery_pending",false},{"version","2.0.5-dev.85"},{"manifest_sha256","old-manifest"}};
-    check(update_disposition({{"phase","idle"}},installed,"receipt")=="idle");
-    check(update_disposition({{"phase","reviewed"},{"acknowledged_version","2.0.5-dev.85"}},installed,"receipt")=="reviewed");
-    check(update_disposition({{"phase","installed"},{"ok",true},{"version","2.0.5-dev.85"}},installed,"receipt")=="installed");
+    check(update_disposition({{"phase","idle"}},{installed,"receipt"})=="idle");
+    check(update_disposition({{"phase","reviewed"},{"acknowledged_version","2.0.5-dev.85"}},{installed,"receipt"})=="reviewed");
+    check(update_disposition({{"phase","installed"},{"ok",true},{"version","2.0.5-dev.85"}},{installed,"receipt"})=="installed");
     Json attempt{{"phase","review-required"},{"from_version","2.0.5-dev.85"},{"version","2.0.5-dev.86"},
         {"result",{{"ok",false},{"error",{{"code","installation-project-not-ready"}}}}}};
-    check(update_disposition(attempt,installed,"receipt")=="retryable");
+    check(update_disposition(attempt,{installed,"receipt"})=="retryable");
     auto pending=installed;pending["recovery_pending"]=true;
-    check(update_disposition(attempt,pending,"receipt")=="recovery-required");
+    check(update_disposition(attempt,{pending,"receipt"})=="recovery-required");
     auto changed=installed;changed["version"]="2.0.5-dev.84";
-    check(update_disposition(attempt,changed,"receipt")=="review-required");
+    check(update_disposition(attempt,{changed,"receipt"})=="review-required");
     attempt["result"]["error"]["code"]="installation-ownership-changed";
-    check(update_disposition(attempt,installed,"receipt")=="review-required");
+    check(update_disposition(attempt,{installed,"receipt"})=="review-required");
     attempt.erase("result");attempt["error"]={{"code","update-outcome-unknown"}};
-    check(update_disposition(attempt,installed,"receipt")=="review-required");
+    check(update_disposition(attempt,{installed,"receipt"})=="review-required");
     attempt["before_receipt_sha256"]="receipt";
-    check(update_disposition(attempt,installed,"receipt")=="retryable");
-    check(update_disposition(attempt,installed,"different-receipt")=="review-required");
+    check(update_disposition(attempt,{installed,"receipt"})=="retryable");
+    check(update_disposition(attempt,{installed,"different-receipt"})=="review-required");
     changed["version"]="2.0.5-dev.86";
-    check(update_disposition(attempt,changed,"receipt")=="review-required");
+    check(update_disposition(attempt,{changed,"receipt"})=="review-required");
     attempt["target_manifest_sha256"]="target";changed["manifest_sha256"]="target";
-    check(update_disposition(attempt,changed,"new-receipt")=="installed");
+    check(update_disposition(attempt,{changed,"new-receipt"})=="installed");
     Json old{{"phase","installed"},{"ok",true},{"from_version","2.0.5-dev.98"},
         {"version","2.0.5-dev.100"},{"target_manifest_sha256","earlier-manifest"}};
     auto newer=installed;newer["version"]="2.0.5-dev.104";
-    check(update_disposition(old,newer,"new-receipt")=="superseded");
-    check(update_disposition(old,newer,"new-receipt",true)=="review-required");
+    check(update_disposition(old,{newer,"new-receipt"})=="superseded");
+    check(update_disposition(old,{newer,"new-receipt"},true)=="review-required");
     auto bad=newer;bad["integrity_verified"]=false;
-    check(update_disposition(old,bad,"receipt")=="review-required");
+    check(update_disposition(old,{bad,"receipt"})=="review-required");
     bad=newer;bad["recovery_pending"]=true;
-    check(update_disposition(old,bad,"receipt")=="recovery-required");
+    check(update_disposition(old,{bad,"receipt"})=="recovery-required");
     for(const auto* phase:{"downloading","installing","review-required"}) {
         auto active=old;active["phase"]=phase;
-        check(update_disposition(active,newer,"receipt")=="review-required");
+        check(update_disposition(active,{newer,"receipt"})=="review-required");
     }
     for(const auto* ver:{"2.0.5-dev.99","invalid"}) {
         auto other=newer;other["version"]=ver;
-        check(update_disposition(old,other,"receipt")=="review-required");
+        check(update_disposition(old,{other,"receipt"})=="review-required");
     }
     auto same=newer;same["version"]="2.0.5-dev.100";
-    check(update_disposition(old,same,"receipt")=="installed");
+    check(update_disposition(old,{same,"receipt"})=="installed");
     Json result{{"ok",true},{"phase","installed"},{"outcome","superseded"}};
     check(update_result_allows_offer(result) && !update_result_installed(result));
     result["outcome"]="review-required";

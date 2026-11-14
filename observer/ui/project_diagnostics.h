@@ -7,10 +7,16 @@
 #include <cctype>
 #include <optional>
 #include <string>
+#include "shin/observer/local_status.h"
 #include "shin/observer/validation_diagnostic.h"
 
 namespace shin::ui {
 using Json = nlohmann::json;
+using observer::ProjectState;
+using observer::active_issue;
+using observer::partial_coverage;
+using observer::project_state;
+using observer::quality_warning;
 
 inline std::string text_field(const Json& row, const char* key, std::size_t limit = 160) {
     const auto value = row.find(key);
@@ -55,14 +61,6 @@ inline std::string age_text(std::optional<double> age) {
     return std::to_string(static_cast<long long>(*age / 86400000)) + shin::ui::tr(" d ago");
 }
 
-inline bool active_issue(const Json& project) {
-    const auto value = project.find("active_issue");
-    if (value != project.end() && value->is_boolean()) return value->get<bool>();
-    return text_field(project, "phase") == "blocked";
-}
-
-enum class ProjectState { offline, checking, pending, recovering, blocked, current, standby, stopped, unknown };
-
 struct ProjectTableLayout {
     static constexpr float row_height = 26;
     static constexpr float max_row_height = 68;
@@ -94,22 +92,6 @@ inline std::optional<double> resident_memory(const Json& residents, const std::s
             return bytes->get<double>() / 1048576;
     }
     return {};
-}
-
-inline ProjectState project_state(const Json& project, bool connected) {
-    if (!connected) return ProjectState::offline;
-    if (active_issue(project)) return ProjectState::blocked;
-    if (project.contains("recovering") && project.at("recovering") == true) return ProjectState::recovering;
-    if (text_field(project, "query_phase") == "standby") return ProjectState::standby;
-    if (project.contains("query_ready") && project.at("query_ready").is_boolean())
-        return project.at("query_ready").get<bool>() ? ProjectState::current : ProjectState::pending;
-    const auto phase = text_field(project, "phase");
-    if (phase == "coalescing" || (phase == "checking" && text_field(project, "last_completed_phase") == "coalescing"))
-        return ProjectState::pending;
-    if (phase == "checking") return ProjectState::checking;
-    if (phase == "current") return ProjectState::current;
-    if (phase == "stopped") return ProjectState::stopped;
-    return ProjectState::unknown;
 }
 
 inline const char* state_text(ProjectState state) {
@@ -205,19 +187,6 @@ inline std::uint64_t count(const Json& row, const char* key) {
 }
 
 struct DiagnosticOverview { std::string title, summary, next; };
-
-inline bool quality_warning(const Json& project) {
-    const auto warning = project.find("quality_warning");
-    return warning != project.end() && warning->is_object() && text_field(*warning, "state") == "degraded";
-}
-
-inline bool partial_coverage(const Json& project) {
-    const auto coverage = project.find("source_coverage");
-    return coverage != project.end() && coverage->is_object() &&
-        (text_field(*coverage, "state") == "partial" || count(*coverage, "quarantined_files") > 0 ||
-         text_field(*coverage, "reason") == "source-observation-limited" ||
-         text_field(*coverage, "reason") == "profile-revision-pending");
-}
 
 struct ProjectAvailability { std::size_t ready = 0, blocked = 0, notices = 0; };
 

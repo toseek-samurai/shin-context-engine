@@ -30,18 +30,7 @@ std::string mean(const ui::TimingMean& value) { return value.value() ? number(*v
 const Json& projects(const Snapshot& snapshot) { return field(field(snapshot.service, "telemetry"), "project_states"); }
 std::string key(const Json& project) { return text(field(project, "root")); }
 std::string state_name(const Json& row, bool connected) {
-    using ui::ProjectState;
-    switch (ui::project_state(row, connected)) {
-    case ProjectState::offline: return shin::ui::tr("offline");
-    case ProjectState::checking: return shin::ui::tr("checking");
-    case ProjectState::pending: return shin::ui::tr("preparing");
-    case ProjectState::recovering: return shin::ui::tr("recovering");
-    case ProjectState::blocked: return shin::ui::tr("blocked");
-    case ProjectState::current: return shin::ui::tr("ready");
-    case ProjectState::standby: return shin::ui::tr("standby");
-    case ProjectState::stopped: return shin::ui::tr("stopped");
-    default: return shin::ui::tr("unknown");
-    }
+    return ui::tr(project_state_name(project_state(row, connected)));
 }
 }
 
@@ -270,7 +259,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 std::ostringstream line;
                 line << std::left << terminal_text(state_name(row, connected), 15, true)
                     << terminal_text(shin::ui::tr(text(field(row, "phase")).c_str()), 15, true) << text(field(row, "name"));
-                const auto partial = field(field(row, "source_coverage"), "state") == "partial";
+                const bool partial = ui::partial_coverage(row);
                 if (partial) line << shin::ui::tr(" [partial]");
                 const bool search_warning = ui::quality_warning(row);
                 if (search_warning) line << shin::ui::tr(" [search warning]");

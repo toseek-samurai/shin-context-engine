@@ -16,7 +16,7 @@ struct WindowsManagement {
     bool busy() const { return pending.valid(); }
     fs::path cli() const { return current_executable_path().parent_path()/"shin-ce.exe"; }
     std::vector<std::string> arguments(const std::string& command) const { return {command,"--home",home.string()}; }
-    void run(const std::string& name, std::vector<std::string> args) {
+    void run(const std::string& name, std::vector<std::string> args, std::string input = {}) {
         if (busy() || test_mode) return;
         operation = name; message.clear(); project_management_busy=true;
         if (name == "add") {
@@ -26,10 +26,10 @@ struct WindowsManagement {
         }
         const auto progress = name == "add" ? connection_progress : nullptr;
         const auto executable = cli();
-        pending = std::async(std::launch::async,[executable,args=std::move(args),progress] {
+        pending = std::async(std::launch::async,[executable,args=std::move(args),progress,input=std::move(input)] {
             try { return windows_command(executable,args,std::chrono::seconds(120),progress ? std::function<void(int)>([progress](int stage) {
                 progress->fetch_or(1U << stage);
-            }) : std::function<void(int)>{}); }
+            }) : std::function<void(int)>{},nullptr,input); }
             catch (const Error& error) { return Json{{"ok",false},{"error",{{"code",error.code},{"message",error.what()}}}}; }
             catch (...) { return Json{{"ok",false},{"error",{{"code","monitor-command-failed"}}}}; }
         });
@@ -50,6 +50,39 @@ struct WindowsManagement {
         const auto result=pending.get();
         if (operation == "add") connection_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - connection_started).count();
         report=result;
+        if (operation=="connect" || operation=="preview") {
+            const bool applying=operation=="connect";
+            const auto rows=result.value("results",Json::array());
+            std::size_t index=0;
+            for (auto& agent:agents) {
+                agent.review=Json();
+                if (!agent.selected || index>=rows.size()) continue;
+                const auto& row=rows.at(index++);
+                const auto access=row.value("access_state","review-required");
+                agent.target["access_state"]=access;
+                if (!applying && result.value("ok",false)) agent.review=row;
+                if (applying || !row.value("ok",false)) {
+                    const auto label=agent.target.value("label",agent.target.value("client",""));
+                    if (!message.empty()) message+='\n';
+                    message+=label+": "+(row.value("ok",false) ? shin::ui::tr(shin::ui::client_access_label(access)) :
+                        row.at("error").value("message",shin::ui::tr("Could not update agent settings.")));
+                }
+            }
+            if (!message.empty()) message+='\n';
+            if (result.value("ok",false)) {
+                message+=shin::ui::tr(!applying ? "Review the selected configuration paths, then confirm connection." :
+                    result.value("restart_required",false) ? "Access saved. Reconnect older MCP connections once; subsequent projects appear without restarting the agent." :
+                    "Access saved. Connected agents see this project on their next shin_projects call; no restart is needed.");
+            } else {
+                const auto error=result.value("error",Json::object());
+                const auto code=error.value("code","");
+                message+=code=="client-config-duplicate" ? shin::ui::tr("Choose a different settings file for each target.") :
+                    shin::ui::tr("Operation was not confirmed. Review the report before retrying.");
+                if (!code.empty() && code!="client-config-duplicate") message+="\n"+code;
+            }
+            project_management_busy=false;
+            return;
+        }
         const bool service_failed=result.contains("service") && (!result.at("service").value("ok",false) ||
             (result.at("service").contains("error") && result.at("service").at("error").is_object()));
         if (!result.value("ok",false) || service_failed) {
@@ -60,37 +93,13 @@ struct WindowsManagement {
                 message=shin::ui::tr("The generated project index exceeds a load budget. Review the index size and project limits before retrying.");
                 message+="\nsnapshot-memory-budget-exceeded\n"+failure.at("error").value("message", std::string{}).substr(0,1024);
             }
-            if(operation=="connect" || operation=="preview") {
-                const auto completed=result.value("completed_connections",Json::array());
-                for(std::size_t i=0;i<completed.size()&&i<agents.size();++i)
-                    if(agents[i].selected&&completed[i].is_object()) agents[i].target["access_state"]=completed[i].value("access_state","review-required");
-                for(auto& agent:agents) agent.review=Json();
-            }
             storage=Json::object();
         } else if (operation=="targets") {
             agents.clear();
             for (const auto& connection:result.at("targets")) agents.push_back({connection,false,Json()});
         } else if (operation=="add") { discover(); message=shin::ui::tr("Project added. Select the agents that should have access."); }
         else if (operation=="storage") storage=result;
-        else if (operation=="preview") {
-            for (std::size_t i=0;i<agents.size();++i) {
-                agents[i].review=result.at("reviews").at(i);
-                if (agents[i].selected) agents[i].target["access_state"]=agents[i].review.value("access_state","review-required");
-            }
-            message=shin::ui::tr("Review the selected configuration paths, then confirm connection.");
-        } else if (operation=="connect") {
-            bool reconnect=false;
-            for (std::size_t i=0;i<agents.size();++i) {
-                const auto& review=result.at("reviews").at(i);
-                if (agents[i].selected) {
-                    agents[i].target["access_state"]=review.value("access_state","review-required");
-                    reconnect=reconnect||review.value("restart_required",true);
-                }
-                agents[i].review=Json();
-            }
-            message=reconnect ? shin::ui::tr("Access saved. Reconnect older MCP connections once; subsequent projects appear without restarting the agent.") :
-                shin::ui::tr("Access saved. Connected agents see this project on their next shin_projects call; no restart is needed.");
-        } else if (operation=="detach") {
+        else if (operation=="detach") {
             message=shin::ui::tr("The project was removed from observation. Sources, indexes, history and Shin settings were preserved.");
             page=Page::storage; storage=Json::object();
         } else { message=shin::ui::tr("Operation completed."); storage=Json::object(); }
@@ -98,30 +107,18 @@ struct WindowsManagement {
     }
     void connections(bool apply) {
         if (busy() || root.empty() || test_mode) return;
-        const auto rows=agents; const auto executable=cli(); const auto data_home=home.string(); const auto project=root;
-        operation=apply?"connect":"preview"; message.clear(); project_management_busy=true;
-        pending=std::async(std::launch::async,[rows,executable,data_home,project,apply] {
-            Json reviews=Json::array();
-            try {
-                for (const auto& agent:rows) {
-                    Json review;
-                    if (agent.selected) {
-                        const auto config=agent.target.value("config","");
-                        std::vector<std::string> args{"client-connect","--home",data_home,"--root",project,
-                            "--client",agent.target.at("client"),"--config",config};
-                        if (apply) { args.push_back("--revision"); args.push_back(agent.review.at("revision")); }
-                        review=windows_command(executable,args);
-                        if (!review.value("ok",false)) {
-                            // Earlier successful writes remain recorded for review.
-                            review["completed_connections"]=reviews; return review;
-                        }
-                    }
-                    reviews.push_back(std::move(review));
-                }
-                return Json{{"ok",true},{"reviews",reviews}};
-            } catch(const Error& error) { return Json{{"ok",false},{"error",{{"code",error.code}}}}; }
-            catch(...) { return Json{{"ok",false},{"error",{{"code","client-config-invalid"}}}}; }
-        });
+        Json targets=Json::array();
+        for (const auto& agent:agents) if (agent.selected) {
+            Json entry{{"client",agent.target.at("client")},{"config",agent.target.value("config","")}};
+            if (apply) entry["revision"]=agent.review.at("revision");
+            targets.push_back(std::move(entry));
+        }
+        auto input=targets.dump();
+        if(input.size()>kMaximumStateBytes) { message=shin::ui::tr("The selected settings list is too large."); return; }
+        auto args=arguments("client-connect-batch");
+        args.insert(args.end(),{"--root",root});
+        if (apply) args.push_back("--apply");
+        run(apply?"connect":"preview",std::move(args),std::move(input));
     }
 };
 WindowsManagement management;

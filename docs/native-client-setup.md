@@ -1,7 +1,7 @@
 # Native client setup
 
 The graphical setup below is available in macOS Monitor, including the Homebrew
-package, and Windows Monitor dev.74. The CLI provides the reviewed setup workflow
+package, and Windows Monitor. The CLI provides the reviewed setup workflow
 on macOS, Linux and Windows. See the [Windows guide](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/windows-desktop.md)
 for MSI and portable-kit ownership.
 
@@ -10,8 +10,8 @@ for MSI and portable-kit ownership.
 Manual configuration remains available for clients without automatic writers.
 On Windows, **Review connections** precedes the final connection confirmation.
 
-Native preview dev.98 includes a retained project-connection view with live preparation
-stages and elapsed time. macOS keeps setup visible from folder selection through
+Native Monitor shows project preparation stages and elapsed time.
+macOS keeps setup visible from folder selection through
 the result; failures remain inline for review and retry. Windows shows the same
 stages in its management page. The older Homebrew dev.70 package does not include
 this progress view.
@@ -21,12 +21,12 @@ this progress view.
    and starts the local service, including on a fresh installation.
 2. Select the agents and profiles that should have access, then click
    **Connect selected agents**. No JSON copying is needed.
-3. In the current source candidate, connected agents refresh their allowed project
-   list on their next `shin_projects` call. Adding another project does not require
-   an agent restart. Ask for `shin_status` with that project's returned selector.
+3. The live catalog introduced in dev.109 lets connected agents refresh their
+   allowed project list on the next `shin_projects` call. Ask for `shin_status`
+   with that project's returned selector.
    **Check project** checks local search readiness, separately from agent access.
 
-The candidate's connection list shows **Access not configured**, **Access configured**
+Monitor's connection list shows **Access not configured**, **Access configured**
 with a live project list, **Connection needs review**, or the one-time reconnect
 notice for older connections. These labels describe reviewed settings, not proof
 that a model has called Shin. Initial MCP activation and migration from older static
@@ -94,6 +94,13 @@ shin-ce client-connect --client codex --root /path/to/project --revision REVISIO
 Use `--config /absolute/path/to/settings` for a specific profile or custom file.
 Portable kits also need `--home` pointing to the same data home used for `init`.
 The commands do not enroll projects, run other clients, or print existing secrets.
+
+Starting with preview dev.111, both desktop Monitors use `client-connect-batch`
+for selected agents. It reads a UTF-8 JSON list from standard input. Each entry
+names `client` and `config`. Review returns the results in selection order.
+Applying with `--apply` requires the returned `revision` on every entry. If a file
+changes after review, the result includes earlier successes and the failed entry.
+Later files stay untouched.
 
 A read-only export remains available for manual integrations:
 
@@ -170,10 +177,9 @@ mechanism. Keep its existing structure and other settings intact.
 
 ### The agent still shows the old project list
 
-First check that agent's access state for the project in Monitor. **Access not
-configured** means it must be explicitly selected and connected; restarting alone
-will not grant it access. With the candidate's live project list, ask the agent
-to call `shin_projects` again, select the returned project, then call `shin_status`.
+First check that agent's access state for the project in Monitor. For **Access
+not configured**, select and connect the agent. With a live project list, ask
+the agent to call `shin_projects` again, select the returned project, then call `shin_status`.
 For an older/static connection, reload or reconnect its MCP server once; restart
 the agent only if the host offers no connection reload. If the project is still
 missing, check the active client profile, settings precedence and the `--root`

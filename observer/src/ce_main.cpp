@@ -21,6 +21,8 @@
 #include <csignal>
 #ifdef _WIN32
 #include "shin/observer/windows_setup.h"
+#include <fcntl.h>
+#include <io.h>
 #endif
 #ifndef _WIN32
 #include "../tui/view.h"
@@ -35,6 +37,16 @@ namespace {
 using namespace shin::observer;
 volatile std::sig_atomic_t stop_requested = 0;
 void request_stop(int) { stop_requested = 1; }
+Json read_client_batch() {
+#ifdef _WIN32
+    if (::_setmode(::_fileno(stdin), _O_BINARY) == -1)
+        throw Error("invalid-arguments", "Cannot read the settings list from standard input.");
+#endif
+    std::string bytes(kMaximumStateBytes + 1, '\0');
+    std::cin.read(bytes.data(), static_cast<std::streamsize>(bytes.size()));
+    bytes.resize(static_cast<std::size_t>(std::cin.gcount()));
+    return parse_json(bytes);
+}
 const char* user_home(char** environment) {
 #ifdef _WIN32
     constexpr std::string_view key = "USERPROFILE=";
@@ -88,6 +100,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce status [--root DIR] [--home DIR] [--text]\n"
                      "shin-ce client-targets [--root DIR] lists agents, settings paths and configured project access.\n"
                      "shin-ce client-connect --client NAME [--config FILE] [--root DIR] [--home DIR] previews a connection; --revision HASH applies that exact review.\n"
+                     "shin-ce client-connect-batch [--apply] [--root DIR] [--home DIR] reads selected connections as JSON from standard input.\n"
                      "shin-ce mcp-config --client codex|opencode|rider|generic [--root DIR] [--home DIR] [--text] prints settings without editing files.\n"
                      "shin-ce detach [--root DIR] [--home DIR] disconnects one project; data and history stay.\n"
                      "shin-ce query TEXT [--root DIR]\n"
@@ -159,9 +172,10 @@ int run(int argc, char** argv, char** environment) {
     bool text_status = false;
     std::string setup_client = "generic", client_revision;
     fs::path client_config;
+    bool apply_client_batch = false;
     fs::path usage_file;
     if (background_child || supervised_child) request.command = "serve";
-    if (!std::set<std::string>{"prepare-projects", "client-targets", "client-connect", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
+    if (!std::set<std::string>{"prepare-projects", "client-targets", "client-connect", "client-connect-batch", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
                                "profile-relocate", "service-start", "service-status", "service-stop", "service-definition",
                                "service-install", "service-update", "service-uninstall", "service-installation"}.contains(request.command))
         throw Error("invalid-arguments", "Unsupported command; see shin-ce --help.");
@@ -188,6 +202,11 @@ int run(int argc, char** argv, char** environment) {
             if (option == "--config") client_config = argv[++i];
             else client_revision = argv[++i];
             continue;
+        }
+        if (request.command == "client-connect-batch") {
+            if (option == "--apply" && seen.insert(option).second) { apply_client_batch = true; continue; }
+            if (option != "--root" && option != "--home")
+                throw Error("invalid-arguments", "Use client-connect-batch [--apply] [--root DIR] [--home DIR] with a JSON list on standard input.");
         }
         if (request.command == "stats" && option == "--language" && seen.insert(option).second && i + 1 < argc) {
             ui_language = argv[++i];
@@ -298,7 +317,7 @@ int run(int argc, char** argv, char** environment) {
         } else throw Error("invalid-arguments", "Unsupported command argument; see shin-ce --help.");
     }
     std::unique_ptr<LocalInstallationGuard> installation_guard;
-    if (!std::set<std::string>{"client-targets", "client-connect", "mcp-config", "stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
+    if (!std::set<std::string>{"client-targets", "client-connect", "client-connect-batch", "mcp-config", "stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
         installation_guard = lock_local_installation(executable_path(), background_child || supervised_child);
     if (const auto installed_home = installed_local_home(executable_path(), background_child || supervised_child)) {
         if (!request.home.empty() && fs::absolute(request.home).lexically_normal() != *installed_home)
@@ -322,6 +341,11 @@ int run(int argc, char** argv, char** environment) {
     }
     if (!request.session_id.empty())
         request.session_id = digest("shin-session-v1:" + fs::weakly_canonical(request.home).string() + ":" + request.session_id);
+    if (request.command == "client-connect-batch") {
+        const auto result = local_client_connect_batch(executable_path(), request.root, request.home, read_client_batch(), apply_client_batch);
+        std::cout << result.dump() << '\n';
+        return result.at("ok") == true ? 0 : 1;
+    }
     if (request.command == "client-targets" || request.command == "client-connect") {
         const auto targets = (request.command == "client-targets" || client_config.empty()) ? local_client_targets(fs::canonical(user_home(environment)), environment) : Json::object();
         if (request.command == "client-targets") {

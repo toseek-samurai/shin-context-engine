@@ -26,7 +26,7 @@
   },
   "execution": {
     "session": "One RetrievalSession pins the generated publication, freshness proof, and manifest for the complete command.",
-    "primaryRetrieval": "The normal brief request determines whether the expected path is returned and its global unique-path rank.",
+    "primaryRetrieval": "The normal brief request determines whether the expected path is returned and its global unique-path rank. Brief, Pack, Eval and Diagnose report the mode from the same retrieval decision for equivalent requests.",
     "budgetProbe": {
       "limit": 100,
       "perDocumentLimit": 8,
@@ -76,7 +76,7 @@
     "source": "Reports current regular-file existence, document policy, source-fact configuration, and pinned publication state.",
     "indexed_rows": "Reports typed row counts, sparse probe completeness, and actual rows examined.",
     "matching": "Reports the best path-local group match, score, line, record type, evidence kind, verification level, fields, and group indices.",
-    "retrieval": "Reports strict, relaxed, or planned mode, candidate work, coverage, rank table, and planner selection."
+    "retrieval": "Reports the selected mode (identifier-scoped, directory-scoped, owner-scoped, planned, relaxed, or strict), candidate work, coverage, rank table, and planner selection."
   },
   "verification": [
     "returned document and source-fact paths",

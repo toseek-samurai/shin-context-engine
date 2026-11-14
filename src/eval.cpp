@@ -36,6 +36,7 @@ struct EvalCaseResult {
     Json path_ranks = Json::object();
     Json rank_violations = Json::array();
     QueryCoverage query_coverage;
+    BriefRetrievalDecision decision;
     int matched_sections = 0;
     int matched_facts = 0;
     int returned_sections = 0;
@@ -174,6 +175,7 @@ static EvalCaseResult run_eval_query(const RetrievalSession& session,
 #endif
     const BriefResult& brief = execution.retrieval;
     EvalCaseResult result;
+    result.decision = execution.decision;
     result.item = item;
     result.item.query = query;
     result.variant_index = variant_index;
@@ -380,35 +382,7 @@ static void append_identifier_scope_diagnostics(Json& output, const EvalCaseResu
     output["identifier_probe_rows"] = result.identifier_probe_rows;
 }
 
-static std::string eval_retrieval_mode(const EvalCaseResult& result) {
-    return result.identifier_scope_used
-               ? "identifier-scoped"
-               : (result.directory_owner_scope_used
-                      ? "directory-scoped"
-                      : (result.document_owner_scope_used
-                             ? "owner-scoped"
-                             : (result.query_planner_used
-                                    ? "planned"
-                                    : (result.fallback_used ? "relaxed" : "strict"))));
-}
-
-static std::string eval_matching_policy(const EvalCaseResult& result) {
-    return result.identifier_scope_used
-               ? "confirmed-identifier-scope-v1"
-               : (result.directory_owner_scope_used
-                      ? "directory-owner-scope-v1"
-                      : (result.document_owner_scope_used
-                             ? "document-owner-scope-v1"
-                             : (result.query_planner_used
-                                    ? "document-coverage-planner-v1"
-                                    : (result.scope_fallback_used
-                                           ? "first-term-must-rest-should-v1"
-                                           : "required-groups-v1"))));
-}
-
 static void emit_eval_case_json(std::ostream& out, const EvalCaseResult& result) {
-    const std::string retrieval_mode = eval_retrieval_mode(result);
-    const std::string matching_policy = eval_matching_policy(result);
     Json rank_pairs = Json::array();
     Json rank_assertions = Json::array();
     for (const RankBeforeExpectation& pair : result.item.must_rank_before) {
@@ -442,7 +416,7 @@ static void emit_eval_case_json(std::ostream& out, const EvalCaseResult& result)
         << ",\"resources_passed\":" << (result.resources_passed ? "true" : "false")
         << ",\"resource_policy\":" << json_string(result.resource_policy)
         << ",\"passed\":" << (result.passed ? "true" : "false")
-        << ",\"retrieval_mode\":" << json_string(retrieval_mode)
+        << ",\"retrieval_mode\":" << json_string(result.decision.mode)
         << ",\"query_diagnostics\":{"
         << "\"fallback_used\":" << (result.fallback_used ? "true" : "false")
         << ",\"scope_fallback_used\":" << (result.scope_fallback_used ? "true" : "false")
@@ -465,7 +439,7 @@ static void emit_eval_case_json(std::ostream& out, const EvalCaseResult& result)
                 ? "null"
                 : json_string(result.planner_rejection_reason))
         << ",\"scope_group_index\":" << result.scope_group_index
-        << ",\"matching_policy\":" << json_string(matching_policy)
+        << ",\"matching_policy\":" << json_string(result.decision.matching_policy)
         << ",\"candidate_rows\":" << result.candidate_rows
         << ",\"candidate_index_used\":" << (result.candidate_index_used ? "true" : "false")
         << ",\"required_group_matches\":" << result.required_group_matches
@@ -587,7 +561,7 @@ static Json eval_failure_json(const RuntimeOptions& options, const EvalCaseResul
                     {"resource_policy", result.resource_policy},
                     {"quality_passed", result.quality_passed},
                     {"resources_passed", result.resources_passed},
-                    {"retrieval_mode", eval_retrieval_mode(result)},
+                    {"retrieval_mode", result.decision.mode},
                     {"failure_reasons", eval_failure_reasons(result)},
                     {"missing_paths", result.missing_paths},
                     {"missing_top_paths", result.missing_top_paths},
@@ -602,7 +576,7 @@ static Json eval_failure_json(const RuntimeOptions& options, const EvalCaseResul
                     {"returned_paths_total", result.returned_paths.size()},
                     {"diagnose", std::move(diagnose)}};
     if (has_identifier_scope_diagnostics(result)) {
-        failure["matching_policy"] = eval_matching_policy(result);
+        failure["matching_policy"] = result.decision.matching_policy;
         append_identifier_scope_diagnostics(failure, result);
     }
     return failure;
@@ -630,8 +604,8 @@ static Json eval_failure_header_json(const EvalCaseResult& result) {
                    {"ceiling_violation_details", ceiling_violation_details_json(result)},
                    {"details_omitted", true}};
     if (has_identifier_scope_diagnostics(result)) {
-        header["retrieval_mode"] = eval_retrieval_mode(result);
-        header["matching_policy"] = eval_matching_policy(result);
+        header["retrieval_mode"] = result.decision.mode;
+        header["matching_policy"] = result.decision.matching_policy;
         append_identifier_scope_diagnostics(header, result);
     }
     return header;

@@ -8,7 +8,8 @@
 // jobs; an intentionally detached service must survive completion of this command.
 Json windows_command(const fs::path& executable, const std::vector<std::string>& arguments,
                      std::chrono::seconds timeout = std::chrono::seconds(120),
-                     const std::function<void(int)>& progress = {}, DWORD* completion_code = nullptr) {
+                     const std::function<void(int)>& progress = {}, DWORD* completion_code = nullptr,
+                     std::string_view input_bytes = {}) {
     struct Handle {
         HANDLE value = nullptr;
         ~Handle() { if (value && value != INVALID_HANDLE_VALUE) CloseHandle(value); }
@@ -32,7 +33,30 @@ Json windows_command(const fs::path& executable, const std::vector<std::string>&
         !SetHandleInformation(out_read.value, HANDLE_FLAG_INHERIT, 0) ||
         !SetHandleInformation(err_read.value, HANDLE_FLAG_INHERIT, 0))
         throw Error("monitor-command-failed", "Cannot prepare native command output.");
-    input.value = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, nullptr);
+    if (input_bytes.empty()) {
+        input.value = CreateFileW(L"NUL", GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE, &security, OPEN_EXISTING, 0, nullptr);
+    } else {
+        if (input_bytes.size() > kMaximumStateBytes)
+            throw Error("client-config-limit", "The selected settings list exceeds its size limit.");
+        const auto path = fs::temp_directory_path()/(L"shin-client-"+wide(digest(std::to_string(GetCurrentProcessId())+
+            ":"+std::to_string(std::chrono::steady_clock::now().time_since_epoch().count())).substr(0,24))+L".tmp");
+        PSECURITY_DESCRIPTOR raw = nullptr;
+        if (!ConvertStringSecurityDescriptorToSecurityDescriptorW(L"D:P(A;;FA;;;OW)", SDDL_REVISION_1, &raw, nullptr))
+            throw Error("monitor-command-failed", "Cannot protect native command input.");
+        std::unique_ptr<void,decltype(&LocalFree)> descriptor(raw,&LocalFree);
+        SECURITY_ATTRIBUTES private_input{sizeof(private_input),descriptor.get(),FALSE};
+        Handle staged;
+        staged.value = CreateFileW(path.c_str(), GENERIC_READ | GENERIC_WRITE | DELETE, FILE_SHARE_READ | FILE_SHARE_DELETE,
+            &private_input, CREATE_NEW, FILE_ATTRIBUTE_TEMPORARY | FILE_FLAG_DELETE_ON_CLOSE | FILE_FLAG_OPEN_REPARSE_POINT, nullptr);
+        if (staged.value == INVALID_HANDLE_VALUE)
+            throw Error("monitor-command-failed", "Cannot prepare native command input.");
+        DWORD written = 0;
+        const auto bytes = static_cast<DWORD>(input_bytes.size());
+        if (!WriteFile(staged.value, input_bytes.data(), bytes, &written, nullptr) || written != bytes ||
+            !SetFilePointerEx(staged.value, {}, nullptr, FILE_BEGIN) ||
+            !DuplicateHandle(GetCurrentProcess(), staged.value, GetCurrentProcess(), &input.value, GENERIC_READ, TRUE, 0))
+            throw Error("monitor-command-failed", "Cannot prepare native command input.");
+    }
     if (input.value == INVALID_HANDLE_VALUE) throw Error("monitor-command-failed", "Cannot prepare native command input.");
     SIZE_T size = 0; InitializeProcThreadAttributeList(nullptr, 1, 0, &size);
     std::vector<unsigned char> attributes(size);
@@ -52,6 +76,7 @@ Json windows_command(const fs::path& executable, const std::vector<std::string>&
         throw Error("monitor-command-failed", "Cannot start the matching native CLI.");
     process.value = child.hProcess; thread.value = child.hThread;
     struct Running { HANDLE value; ~Running() { if (WaitForSingleObject(value,0)==WAIT_TIMEOUT) TerminateProcess(value,1); } } running{process.value};
+    CloseHandle(input.value); input.value = nullptr;
     if (ResumeThread(thread.value) == DWORD(-1)) throw Error("monitor-command-failed", "Cannot resume native command.");
     CloseHandle(out_write.value); out_write.value = nullptr; CloseHandle(err_write.value); err_write.value = nullptr;
     const auto deadline = std::chrono::steady_clock::now() + timeout;
@@ -81,5 +106,20 @@ Json windows_command(const fs::path& executable, const std::vector<std::string>&
     if (!result.is_object() || !result.contains("ok") || !result.at("ok").is_boolean())
         throw Error("monitor-response-invalid", "Native command returned an invalid response.");
     if (code && result.value("ok", false)) throw Error("monitor-response-invalid", "Native command did not confirm completion.");
+    return result;
+}
+
+inline Json prepare_installed_windows_projects(const fs::path& prefix, const fs::path& home,
+                                               const Json& manifest) {
+    const auto executable = prefix/"bin/shin-ce.exe";
+    shin::windows::ReadFile cli(executable); cli.require_machine_owned();
+    auto result = windows_command(executable, {"prepare-projects", "--home", home.string()}, std::chrono::seconds(1105));
+    if (!result.value("ok", false) && result.value("schema_version", "") == "shin.ce-response.v1" &&
+        !result.contains("version") && !result.contains("core_version"))
+        throw Error(result.value("error", Json::object()).value("code", "installation-preparation-unavailable"),
+            "The installed CLI could not prepare projects.");
+    if (result.value("version", "") != manifest.at("version").get_ref<const std::string&>() ||
+        result.value("core_version", "") != manifest.at("core_version").get_ref<const std::string&>())
+        throw Error("update-installation-changed", "Project preparation belongs to another installation.");
     return result;
 }

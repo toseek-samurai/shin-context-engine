@@ -477,9 +477,6 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 @property(nonatomic, strong) NSMutableArray<NSMutableDictionary*>* setupTargets;
 @property(nonatomic, strong) NSMutableArray<NSButton*>* setupTargetButtons;
 @property(nonatomic, strong) NSMutableArray<NSButton*>* setupFileButtons;
-@property(nonatomic, strong) NSMutableArray<NSMutableDictionary*>* setupPlans;
-@property(nonatomic, strong) NSMutableString* setupReport;
-@property(nonatomic, copy) NSString* setupConnectRoot;
 @property(nonatomic) BOOL setupConnecting;
 @property(nonatomic) BOOL setupAdding;
 @property(nonatomic) BOOL setupPreparationFailed;
@@ -563,7 +560,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (void)toggleSetupAdvanced:(id)sender;
 - (void)chooseSetupConfig:(NSButton*)sender;
 - (void)connectSetupAgents:(id)sender;
-- (void)continueSetupConnection:(NSUInteger)index applying:(BOOL)applying;
+- (void)connectSetupSelection:(NSArray<NSMutableDictionary*>*)selected root:(NSString*)root reviews:(const Json&)reviews;
 - (void)checkSetup:(id)sender;
 - (void)enableSetupLogin:(id)sender;
 - (void)addProjectFolder:(id)sender;
@@ -587,6 +584,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (NSString*)nativeCLIPath;
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments completion:(void (^)(Json, NSString*))completion;
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments progress:(void (^)(NSInteger))progress completion:(void (^)(Json, NSString*))completion;
+- (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments input:(NSData*)input progress:(void (^)(NSInteger))progress completion:(void (^)(Json, NSString*))completion;
 - (void)closePanel:(id)sender;
 - (void)updatePanelSize;
 - (void)activatedApplication:(NSNotification*)notification;
@@ -651,7 +649,11 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
     [self runCLI:command arguments:arguments progress:nil completion:completion];
 }
 - (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments progress:(void (^)(NSInteger))progress completion:(void (^)(Json, NSString*))completion {
+    [self runCLI:command arguments:arguments input:nil progress:progress completion:completion];
+}
+- (void)runCLI:(NSString*)command arguments:(NSArray<NSString*>*)arguments input:(NSData*)input progress:(void (^)(NSInteger))progress completion:(void (^)(Json, NSString*))completion {
     if (!self.shinHome.length) { completion(Json::object(), ui_text("Cannot locate the Shin folder.")); return; }
+    if (input.length > kMaximumStateBytes) { completion(Json::object(), ui_text("The selected settings list is too large.")); return; }
     NSString* cli = [self nativeCLIPath];
     if (!cli || ![NSFileManager.defaultManager isExecutableFileAtPath:cli]) {
         completion(Json::object(), shin::observer::homebrew_managed() ?
@@ -662,12 +664,14 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
     NSArray<NSString*>* argv = [@[command, @"--home", self.shinHome] arrayByAddingObjectsFromArray:arguments];
     const auto timeout = ([command isEqualToString:@"update-install"] || [command isEqualToString:@"update-resume"]) ? std::chrono::seconds(360) :
         [command isEqualToString:@"update-check"] ? std::chrono::seconds(20) : [command isEqualToString:@"project-add"] ? std::chrono::seconds(120) :
+        [command isEqualToString:@"client-connect-batch"] ? std::chrono::seconds(120) :
         [command isEqualToString:@"storage-clean"] ? std::chrono::seconds(90) :
         [command isEqualToString:@"detach"] ? std::chrono::seconds(90) : std::chrono::seconds(15);
     dispatch_async(dispatch_get_global_queue(QOS_CLASS_USER_INITIATED, 0), ^{
         @autoreleasepool {
             Json result = Json::object();
             NSString* failure = nil;
+            NSFileHandle* inputFile = nil;
             @try {
                 NSTask* task = [[NSTask alloc] init];
                 task.executableURL = [NSURL fileURLWithPath:cli];
@@ -677,8 +681,23 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
                 task.standardOutput = pipe;
                 task.standardError = errors;
                 NSError* launchError = nil;
-                if (![task launchAndReturnError:&launchError]) {
-                    failure = launchError.localizedDescription.length ? launchError.localizedDescription : ui_text("Cannot start shin-ce.");
+                if (input) {
+                    // An anonymous file provides bounded input without blocking on a pipe.
+                    char name[] = "/tmp/shin-client-batch.XXXXXXXX";
+                    const int fd = ::mkstemp(name);
+                    if (fd < 0) failure = ui_text("Cannot start shin-ce.");
+                    else {
+                        inputFile = [[NSFileHandle alloc] initWithFileDescriptor:fd closeOnDealloc:YES];
+                        if (::unlink(name) != 0) failure = ui_text("Cannot start shin-ce.");
+                        else {
+                            [inputFile writeData:input];
+                            [inputFile seekToFileOffset:0];
+                            task.standardInput = inputFile;
+                        }
+                    }
+                }
+                if (failure || ![task launchAndReturnError:&launchError]) {
+                    if (!failure) failure = launchError.localizedDescription.length ? launchError.localizedDescription : ui_text("Cannot start shin-ce.");
                 } else {
                     NSMutableData* bytes = [NSMutableData data];
                     NSMutableData* diagnostics = [NSMutableData data];

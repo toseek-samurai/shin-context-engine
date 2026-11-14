@@ -14,10 +14,10 @@ ce = Path(sys.argv[1]).resolve()
 # Explicit unsafe-permission cases below retain the refusal boundary.
 os.umask(0o077)
 
-def run(*args, ok=True, env=None):
-    p = subprocess.run([str(ce), *map(str,args)], capture_output=True, text=True, timeout=20, env=env)
+def run(*args, ok=True, env=None, data=None):
+    p = subprocess.run([str(ce), *map(str,args)], capture_output=True, text=True, timeout=20, env=env, input=data)
     assert (p.returncode == 0) == ok, (args,p.stdout,p.stderr)
-    return json.loads(p.stdout if ok else p.stderr)
+    return json.loads(p.stdout or p.stderr)
 
 with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as temp:
     base=Path(temp).resolve(); root=base/'project café'; root.mkdir(); old=base/'old project'; old.mkdir(); home=base/'data'
@@ -31,6 +31,34 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
         'hermes': '# keep café\nmodel: unchanged\nmcp_servers:\n  other:\n    command: other\n  shin:\n    command: '+command+'\n    args:\n      - "--root"\n      - '+json.dumps(str(old),ensure_ascii=False)+'\n      - "--home"\n      - '+json.dumps(str(home))+'\n    enabled: false\n    env: {KEEP: private-value}\n# keep footer\nterminal:\n  backend: local\n',
     }
     extensions={'codex':'toml','opencode':'jsonc','command-code':'json','hermes':'yaml'}
+    selected = []
+    for client in ('codex', 'opencode', 'hermes'):
+        config = base / f'batch-{client}.{extensions[client]}'
+        config.write_text(fixtures[client], encoding='utf-8')
+        selected.append({'client': client, 'config': str(config)})
+    batch = ('client-connect-batch', '--root', root, '--home', home)
+    review = run(*batch, data=json.dumps(selected))
+    assert len(review['results']) == 3 and not any(row['client_modified'] for row in review['results'])
+    for target, row in zip(selected, review['results']):
+        assert Path(target['config']).read_text(encoding='utf-8') == fixtures[target['client']]
+        target['revision'] = row['revision']
+    duplicate = run(*batch, '--apply', ok=False, data=json.dumps([selected[0], selected[0]]))
+    assert duplicate['error']['code'] == 'client-config-duplicate'
+    missing = run(*batch, '--apply', ok=False, data=json.dumps([selected[0], {**selected[1], 'revision': ''}]))
+    assert missing['error']['code'] == 'client-config-review-required'
+    assert Path(selected[0]['config']).read_text(encoding='utf-8') == fixtures['codex']
+    edited = fixtures['opencode'] + '\n'
+    Path(selected[1]['config']).write_text(edited, encoding='utf-8')
+    partial = run(*batch, '--apply', ok=False, data=json.dumps(selected))
+    assert len(partial['results']) == 2 and partial['results'][0]['client_modified']
+    assert partial['results'][0]['access_state'] == 'reconnect-required'
+    assert partial['results'][1]['error']['code'] == 'client-config-changed'
+    assert partial['results'][1]['access_state'] == 'review-required'
+    applied = tomllib.loads(Path(selected[0]['config']).read_text(encoding='utf-8'))
+    assert applied['model'] == 'unchanged' and applied['mcp_servers']['other']['command'] == 'other'
+    assert Path(selected[1]['config']).read_text(encoding='utf-8') == edited
+    assert Path(selected[2]['config']).read_text(encoding='utf-8') == fixtures['hermes']
+
     for client, original in fixtures.items():
         directory=base/client;directory.mkdir();config=directory/('config.'+extensions[client]);config.write_text(original);config.chmod(0o644)
         def preview():return run('client-connect','--client',client,'--root',root,'--home',home,'--config',config)

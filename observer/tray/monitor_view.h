@@ -1547,8 +1547,7 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     const bool tiny = layout_height() < 300;
     const float width = ImGui::GetContentRegionAvail().x;
     if (!tiny) page_title(shin::ui::tr("Your projects"));
-    const bool connection_problem = view.connected && view.data.is_object() &&
-        (!view.data.value("registry_error", "").empty() || !view.data.value("enrollment_errors", Json::object()).empty());
+    const bool connection_problem = view.connected && shin::observer::project_connection_problem(view.data);
     if (connection_problem) {
         ImGui::PushStyleColor(ImGuiCol_Text, red);
         ImGui::TextWrapped("%s", shin::ui::tr("Some project connections could not be loaded. Check the service report."));
@@ -1922,8 +1921,7 @@ void render_readiness(const ViewState& view, const Json& projects) {
             }
         }
     }
-    const bool registry_problem = view.connected && view.data.is_object() &&
-        (!view.data.value("registry_error", "").empty() || !view.data.value("enrollment_errors", Json::object()).empty());
+    const bool registry_problem = view.connected && shin::observer::project_connection_problem(view.data);
     page_title(shin::ui::tr(!view.connected ? "Waiting for Shin" : registry_problem ? "Project connection error" :
         ready == projects.size() ? "Your context is ready" : availability.blocked ? "Some projects need attention" : "Preparing project context"));
     ImGui::PushFont(nullptr, 14);

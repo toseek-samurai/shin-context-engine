@@ -164,7 +164,7 @@ Element project_table(const Snapshot& snapshot, State& state, const Painter& pai
         const bool chosen = field(row, "root") == state.project;
         const auto status = project_status(row, fresh(snapshot));
         const auto& coverage = field(row, "source_coverage");
-        const bool partial = field(coverage, "state") == "partial";
+        const bool partial = ui::partial_coverage(row);
         const std::string coverage_text = !fresh(snapshot) ? ui::tr("unknown") :
             partial ? ui::tr("! Partial") : field(coverage, "state") == "complete" ? ui::tr("Complete") :
             field(coverage, "state").is_string() ? ui::tr(string(field(coverage, "state")).c_str()) : "—";

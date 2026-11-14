@@ -425,7 +425,7 @@
       "type": "fetched-static-source",
       "license": "BSD-3-Clause",
       "runtimeDependency": false,
-      "purpose": "Source candidate: fixed, bounded-memory secret scanning patterns; not shipped in preview dev.98."
+      "purpose": "Fixed secret scanning patterns with bounded memory use."
     },
     {
       "id": "abseil",

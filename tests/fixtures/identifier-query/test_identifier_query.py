@@ -70,6 +70,7 @@ class IdentifierQueryTests(unittest.TestCase):
         compact = self.brief("retention window", "--projection", "compact")
         self.assertEqual(compact["retrieval_mode"], "identifier-scoped")
         self.assertEqual(compact["identifier_scope"]["key"], "retention window")
+        self.assertEqual(compact["identifier_scope"]["policy"], spaced["query_diagnostics"]["matching_policy"])
         self.assertTrue(compact["evidence"])
         for row in compact["evidence"]:
             self.assertEqual(row["matched_group_indices"], [0, 1])
@@ -144,6 +145,14 @@ class IdentifierQueryTests(unittest.TestCase):
             "mustTopPaths": ["src/reference.ts"], "mustTopN": 1, "maxCandidateRows": 16, "limit": 8,
         }]
         self.build()
+        request = self.base / "task.json"
+        request.write_text(json.dumps({
+            "schema_version": "shin.task-request.v1", "request_id": "identifier-parity",
+            "task": {"objective": "Find the retention identifier", "must": [
+                {"id": "retention", "query": "retention window"}]},
+            "budget": {"max_evidence_bytes": 8192, "max_records": 8,
+                       "per_query_records": 8, "per_document_records": 2},
+        }))
         before = {str(path): path.read_bytes() for parent in (self.root, self.out, self.profiles)
                   for path in parent.rglob("*") if path.is_file()}
         evaluated = self.invoke("eval", "--require-current", "--strict")
@@ -152,6 +161,15 @@ class IdentifierQueryTests(unittest.TestCase):
                                 "--require-current", "--strict")
         self.assertEqual(diagnosed["returned_path_rank"], 1)
         self.assertEqual(diagnosed["retrieval"]["mode"], "identifier-scoped")
+        self.assertEqual(evaluated["cases"][0]["retrieval_mode"], diagnosed["retrieval"]["mode"])
+        brief = self.brief("retention window")
+        packed = self.invoke("pack", "--input", str(request), "--require-current", "--strict")
+        requirement = packed["requirements"][0]
+        self.assertEqual(requirement["retrieval_mode"], brief["retrieval_mode"])
+        self.assertEqual(requirement["query_diagnostics"]["matching_policy"],
+                         evaluated["cases"][0]["query_diagnostics"]["matching_policy"])
+        self.assertIn("src/reference.ts", [entry["path"] for entry in packed["verification_paths"]])
+        self.assertLessEqual(packed["budget"]["returned_records"], 8)
         self.assertTrue(diagnosed["retrieval"]["identifier_scope_used"])
         self.assertEqual(diagnosed["retrieval"]["identifier_scope_key"], "retention window")
         self.assertEqual(diagnosed["retrieval"]["identifier_probe_rows"], diagnosed["retrieval"]["candidate_rows"])

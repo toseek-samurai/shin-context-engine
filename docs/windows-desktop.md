@@ -11,10 +11,10 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-Download the Windows files from [preview dev.98](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98):
+The [dev.110 preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110) provides these Windows downloads.
 
-- `shin-desktop-2.0.5-dev.98-windows-AMD64.msi` for the installed desktop route.
-- `shin-desktop-2.0.5-dev.98-windows-AMD64.zip` for a portable extraction.
+- `shin-desktop-2.0.5-dev.110-windows-AMD64.msi` for desktop installation.
+- `shin-desktop-2.0.5-dev.110-windows-AMD64.zip` for portable use.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 
@@ -42,11 +42,10 @@ exercise Linux and do not substitute for native Windows tests. Mixed-monitor
 moves and interactive accessibility remain separate visual checks. See the
 [platform capability matrix](README.md#capabilities-by-platform).
 
-### Windows window behavior in dev.110
+### Windows quick status and desktop Monitor
 
-The dev.110 Windows host separates the notification-area quick status panel
-from the full Monitor. Each platform's package is published after its source and
-exact archive pass CI qualification. The older captures below describe dev.98.
+Since dev.110, the Windows host has a notification-area quick status panel and
+a full desktop Monitor.
 
 - Click the notification icon for a short status panel with **Open Monitor** and
   **Check for updates…**. It anchors to the icon, stays inside the selected
@@ -61,7 +60,8 @@ exact archive pass CI qualification. The older captures below describe dev.98.
   Escape returns from a detail page without closing the desktop window.
 - Monitor remembers its normal position, size and maximized state. Reopening or
   switching pages preserves the user's layout; a changed display/DPI configuration
-  restores it into the available work area.
+  restores it into the available work area. Starting with dev.111, Monitor saves
+  the placement before handing off to the updater.
 - Windows sign-in starts Monitor in the background. Opening it again restores
   the existing window rather than starting a second Monitor.
 
@@ -70,22 +70,11 @@ keeps the shared Sand presentation inside its native desktop frame. Native windo
 and keyboard tests complement the render checks; they do not substitute for
 interactive accessibility and multiple-display verification.
 
-### Published desktop layout
+### Earlier Sand screenshots
 
-The published preview uses the original dark Sand palette with the
-**Overview**, **Projects**, **History** and **Settings** navigation. Project
-connections remain under Projects, the journal opens first in History, and
-technical reports stay in details. Body text is 14 px, with compact labeled
-buttons and inset content.
-
-The standard panel is 520 px wide. Short Overview, Projects and Settings pages
-fit their contents up to a 680 px ceiling; long views retain their height limit
-and scrolling. Resizing preserves the popup's bottom anchor and focus, follows
-the current monitor's bounds and supports 100/150/200% DPI. Management, update
-and modal screens retain their own sizes.
-
-The native render checks below remain separate evidence from interactive
-client setup, MSI/UAC installation, saved-result and recovery checks.
+The dev.98 captures below show the Sand palette and navigation in the older tray
+panel. The current desktop window uses the same **Overview**, **Projects**,
+**History** and **Settings** navigation.
 
 <p>
   <img src="images/monitor-windows-overview.png" width="400" alt="Windows Sand Overview rendered by the native Win32/DX11 Monitor with synthetic data">
@@ -93,8 +82,7 @@ client setup, MSI/UAC installation, saved-result and recovery checks.
 </p>
 
 These captures come from the published dev.98 ZIP's native Windows render test
-on a signed-in Mini-PC at 100% render scaling. Their data is synthetic; this is render evidence, not an
-installed MSI or live-project test. See
+in a signed-in session at 100% render scaling with synthetic data. See
 [Windows Settings](images/monitor-windows-settings.png),
 [Russian Overview](images/monitor-windows-overview-ru.png),
 [Russian Projects](images/monitor-windows-projects-ru.png),
@@ -106,8 +94,9 @@ installed MSI or live-project test. See
 Open **Settings → Check for updates…**, or use the notification-area menu.
 The check runs in the background and shows the running version and the
 checking/current/available/error state. A complete newer release offers
-**Download and install**, MSI/checksum links and release notes. Setup and update
-pages stay visible when focus moves to another application.
+**Download and install** and **Release notes**. **Technical details** provides
+the checksum link. Setup and update pages stay visible when focus moves to
+another application.
 
 Checks read public GitHub release metadata over HTTPS without account credentials
 or project data. Existing version/channel rules apply; stable installations do
@@ -140,21 +129,18 @@ An interrupted or failed update keeps **Download and install** disabled until
 **Review previous update** confirms its result. Keep its diagnostic report and
 Installer log. An unknown installation outcome must not trigger another install.
 
-The dev.108 source includes a correction for error `1619` (the MSI
-could not be opened). The verified, pinned MSI temporarily grants SYSTEM read
+Since dev.108, the updater handles error `1619` (the MSI could not be opened).
+The verified, pinned MSI temporarily grants SYSTEM read
 access while Windows Installer runs; the journal, helper, project data and
 approvals keep their private permissions. The MSI's original permissions are
 restored when the handoff ends. Review can acknowledge this opening failure only
 when the original installed version and its complete inventory still verify.
 Other failed Installer outcomes continue to require review.
 
-For an affected published kit, install the complete published MSI with its
-matching checksum through Windows Installer, then finish project preparation.
-This correction is not present in the published dev.106 package.
+On affected previews such as dev.106, install the complete published MSI with
+its matching checksum through Windows Installer, then finish project preparation.
 
 ## Monitor setup and updates
-
-The following behavior is included in preview dev.74.
 
 Windows packages preserve CRLF in bundled profile JSON independently of checkout
 line endings. Project bindings pin exact profile bytes: packaging the same policy
@@ -162,12 +148,11 @@ from LF and CRLF checkouts must not create different approved revisions. Source
 files and project-owned profiles are not rewritten; revision checks remain strict.
 
 After Windows Installer confirms success and the installed inventory is verified,
-the helper runs the **new installed** `shin-ce prepare-projects` as the ordinary
-desktop user. Existing enrolled projects are prepared with their approved profiles
-and original source/workspace identities, including a rebuild when Core changes.
-Completion requires every enrolled project to be admitted by the current service.
-Changed profile approvals, missing roots or concurrent enrollment changes remain
-errors; preparation never accepts policy changes or reattaches detached projects.
+the helper runs the newly installed `shin-ce prepare-projects` as the ordinary
+desktop user. The new kit rebuilds derived indexes for enrolled projects using
+their approved profiles and original source/workspace identities. Preparation is
+complete once the current service admits every enrolled project. Changed profile
+approvals, missing roots and concurrent enrollment changes require review.
 
 The full MSI wizard offers a checked **Finish project setup and open Shin Monitor**
 action. It runs the same helper unelevated after the Installer transaction has
@@ -178,11 +163,13 @@ after installation, with `--home DIR` for a custom data home. `--check` only che
 the saved completion against the current kit, enrollment and live readiness.
 No project data is changed by SYSTEM during the MSI transaction.
 
-- The project setup and empty-state actions select and add a folder, discover supported agent configuration locations and
-  let the user choose which configurations to change. **Review connections**
+- Project setup lets the user add a folder and choose which supported agent
+  configurations to change. **Review connections**
   precedes **Connect selected agents**. Codex, OpenCode, Command Code and Hermes
   reuse the shared lossless parsers, exact revision checks, private backups and
-  atomic replacement. Other configuration is preserved; reconnect MCP afterward.
+  atomic replacement. Reconnect MCP once to activate a new connection or migrate
+  an older static connection. Subsequent allowed projects appear on the next
+  `shin_projects` call. See the [MCP client setup guide](native-client-setup.md).
 - **Projects → project → Project actions** provides agent connection,
   disconnection and storage access. Disconnecting preserves sources, indexes,
   history and settings. Cache deletion is separate, confirmed and tied to the
@@ -210,11 +197,13 @@ No project data is changed by SYSTEM during the MSI transaction.
   helper, can confirm an installed target only after checking its complete file
   inventory, and can acknowledge a known failure before installation. An unknown
   Installer outcome requires review and never silently starts another MSI.
-  Project preparation has its own private `windows-setup` journal. The result
-  page shows per-project errors even after ordinary MSI setup and offers
-  **Retry project preparation** without reinstalling MSI or changing approvals.
-  A failing project does not stop preparation of the others. Setup and update
-  pages stay visible when another window gains focus.
+  Starting with dev.111, Shin saves the verified installation result before
+  preparing projects. The result page reads the separate `windows-setup` journal,
+  shows per-project errors and offers **Retry project preparation**. That action
+  runs preparation using the current kit and approvals. Preparation continues for
+  the other projects and, once it ends, future updates remain available even if a
+  project still needs attention. Setup and update pages stay visible when another
+  window gains focus.
 
 Source and D3D11 render checks, exact-archive qualification and installed MSI
 checks provide separate evidence. The local dev.72 rehearsal confirmed automatic
@@ -336,29 +325,28 @@ asset hashes. Failed or missing Windows proof prevents publication of Windows
 downloads. Its `shin-preview-windows.json` receipt preserves that provenance when
 another platform's qualified assets are added to the same preview.
 
-`qualify_windows.ps1` creates a temporary standard account only on disposable
-GitHub-hosted VMs, then removes the account/profile. It does not change
-UAC or install an MSI. The runtime test uses a private temporary project and home;
-A bounded child process runs with that user's loaded profile; Monitor renders
-with software D3D11/WARP. A short preflight checks the launcher before compilation.
-The CI account has no Explorer shell: `--render-headless-test` retains all 65
-rendered states, action bounds, focus-loss and Escape checks, and reports
+`qualify_windows.ps1` creates a temporary standard account on a disposable
+GitHub-hosted VM. The runtime test runs in a bounded child process with that
+account's loaded profile and a private project and home. Monitor renders with
+software D3D11/WARP. The harness also installs the exact MSI silently, runs
+the installed updater's preparation checks as that standard user, then removes
+the MSI, account and profile. A short preflight checks the standard-user launcher
+before compilation.
+The CI account has no Explorer shell. `--render-headless-test` covers action
+bounds, focus-loss and Escape checks and reports
 `shell_integration=false` and `taskbar_recreated_event=null`. The receipt records
 `render_scope=headless`; it never certifies notification-area integration.
 The default `--render-test`, the full local CTest preset and `windows_kit_test.py`
 without `--headless-render` still require actual icon registration and recovery
 after `TaskbarCreated` in a signed-in Windows session.
 
-Real interactive-session installation, repair, upgrade, downgrade refusal,
-uninstall/reinstall and data/history preservation were rehearsed for the dev.54
-packaging policy. That is separate installed evidence, not a claim that every
-hosted package check repeats the lifecycle rehearsal. Changes to installer or
-SCM behavior still need a new installed rehearsal, including multi-user and
-rollback scenarios where affected. The local dev.72 rehearsal additionally covered
-MSI upgrade and automatic project preparation. Reviewed client setup, automatic
-usage collection and MSI updates are available in dev.74; the Windows TUI remains
-unimplemented. The rehearsal does not certify all future payloads or every
-multi-user, restart and rollback scenario.
+Interactive installation, repair, upgrade, downgrade refusal, uninstall and
+reinstall were rehearsed for the dev.54 packaging policy, including preservation
+of data and history. Later local MSI rehearsals also exercised UAC and automatic
+project preparation. Changes to installer or SCM behavior need an installed
+rehearsal for the affected paths, including multi-user or rollback where relevant.
+The hosted receipt covers the exact assets and the unattended checks described
+above.
 
 Linux/macOS gates, Windows source checks, exact-archive checks and installed
 service checks retain separate proof boundaries. Local binaries never substitute

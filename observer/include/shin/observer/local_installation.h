@@ -4,6 +4,12 @@
 namespace shin::observer {
 // Only complete, extracted kits are installable. No downloads or client edits.
 Json local_installation(int argc, char** argv, const fs::path& user_home);
+struct LocalInstallationInspection {
+    Json status;
+    std::string receipt_sha256;
+};
+// Bind the verified status and manifest identity to the exact receipt bytes.
+LocalInstallationInspection inspect_local_installation(const fs::path& prefix, const fs::path& user_home);
 // Verify a staged complete kit before any downloaded executable is invoked.
 Json verify_local_kit(const fs::path& path);
 // Only the service bootstrap may enter an installed payload during activation.

@@ -242,12 +242,33 @@ int main(int argc,char** argv) {
         shin::windows::Directory images(commands,shin::windows::Directory::Access::private_owner);
         const fs::path original_cli(argv[1]);shin::windows::ReadFile binary(original_cli);
         require(images.create("shin-ce.exe",binary.read(64U*1024*1024)),"private command fixture failed");
+        shin::windows::ReadFile mcp(original_cli.parent_path()/"shin-mcp.exe");
+        require(images.create("shin-mcp.exe",mcp.read(64U*1024*1024)),"private MCP fixture failed");
         for(const auto& file:fs::directory_iterator(original_cli.parent_path())) if(file.path().extension()==".dll") {
             shin::windows::ReadFile library(file.path());
             require(images.create(file.path().filename().string(),library.read(32U*1024*1024)),"private DLL fixture failed");
         }
         const auto discovered=windows_command(commands/"shin-ce.exe",{"client-targets","--home",home.string()});
         require(discovered.value("ok",false) && discovered.at("targets").is_array(),"native command runner failed");
+        const auto codex_settings=root/"batch codex.toml", opencode_settings=root/"batch opencode.json";
+        write_user_archive(codex_settings,"model=\"keep\"\n");
+        write_user_archive(opencode_settings,"{}\n");
+        Json targets=Json::array({{{"client","codex"},{"config",codex_settings.string()}},
+                                  {{"client","opencode"},{"config",opencode_settings.string()}}});
+        std::vector<std::string> args{"client-connect-batch","--home",home.string(),"--root",project.string()};
+        // More than a Windows command line can hold, with no stdin pipe backpressure.
+        const auto preview_batch=windows_command(commands/"shin-ce.exe",args,std::chrono::seconds(10),{},nullptr,
+            targets.dump()+std::string(35000,' '));
+        require(preview_batch.at("ok")==true && preview_batch.at("results").size()==2,"batch review lost a selected agent");
+        for (std::size_t i=0;i<targets.size();++i) targets[i]["revision"]=preview_batch.at("results").at(i).at("revision");
+        const auto revised=local_client_connect(commands/"shin-ce.exe",project,home,"opencode",opencode_settings,"");
+        local_client_connect(commands/"shin-ce.exe",project,home,"opencode",opencode_settings,revised.at("revision"));
+        const auto edited=read_text(opencode_settings,kMaximumStateBytes,false);
+        args.push_back("--apply");
+        const auto partial=windows_command(commands/"shin-ce.exe",args,std::chrono::seconds(10),{},nullptr,targets.dump());
+        require(partial.at("ok")==false && partial.at("results").at(0).at("client_modified")==true &&
+            partial.at("results").at(1).at("error").at("code")=="client-config-changed" &&
+            read_text(opencode_settings,kMaximumStateBytes,false)==edited,"batch application lost partial success or overwrote an edited file");
         phase="update payload validation";
         check_installer_system_read_access(root);
         check_installer_system_read_access_restores_after_exception(root);

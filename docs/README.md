@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.98](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98).
-It contains Core **2.0.5-dev.18** and Observer/CLI/MCP/Monitor **2.0.5-dev.98**.
+The current published preview is [dev.110](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110).
+It contains Core **2.0.5-dev.22** and Observer/CLI/MCP/Monitor **2.0.5-dev.110**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -12,10 +12,8 @@ Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
 
-The current source candidate uses Core **2.0.5-dev.19** with RE2-based secret
-scanning. That change is not part of the published dev.98 kit. The Homebrew tap
-currently pins **dev.70**, with that older preview's UI and update behavior;
-use the native dev.98 downloads for the current packaged application.
+The native packages include RE2-based secret scanning. The Homebrew tap
+pins **dev.70**, with that preview's UI and its Homebrew-managed updates.
 
 Source identities are maintained in [VERSION](../VERSION),
 [observer/VERSION](../observer/VERSION) and the
@@ -32,13 +30,12 @@ Monitor groups tasks under **Overview**, **Projects**, **History** and
 History opens with recorded calls; timing and optional agent usage remain
 secondary views.
 
-The current preview uses the original dark Sand palette while
-keeping the new layout, 14 px body text and 520 px standard width. Short Overview,
-Projects and Settings pages fit their contents up to a 680 px ceiling; long
-history and detail views retain bounded height and scrolling.
-The [native screenshots](images/README.md) identify the
-source and capture boundaries. The terminal keeps its existing Sand appearance
-and Activity navigation.
+The macOS menu bar panel uses the dark Sand palette, 14 px body text and a
+standard width of 520 px. Short pages fit their contents up to 680 px and longer
+views scroll. Windows provides a notification-area quick panel and a resizable
+desktop Monitor that remembers its placement. The terminal uses Sand with
+Activity navigation. The [native screenshot gallery](images/README.md) records
+the version and environment for each capture.
 
 ## Capabilities by platform
 
@@ -78,11 +75,11 @@ Homebrew is a project-owned tap, not an entry in Homebrew's official catalog.
 
 ## Windows Monitor
 
-Preview dev.74 includes graphical project/agent setup, project actions, storage
-management, startup-settings access, automatic client-history collection and
-reviewed MSI installation with UAC. Project preparation follows confirmed MSI
-success using the new installed CLI. See [setup and updates](windows-desktop.md#monitor-setup-and-updates)
-for the wizard Finish action, saved results and unattended installation boundaries.
+Open Windows Monitor from the notification-area panel to connect projects and
+agents, review storage and check for updates. MSI updates use UAC, and the
+installed CLI prepares enrolled projects after Windows Installer finishes.
+See [setup and updates](windows-desktop.md#monitor-setup-and-updates) for the wizard
+Finish action, saved results and unattended installation behavior.
 
 ## Installation and everyday use
 

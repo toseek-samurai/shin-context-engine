@@ -61,6 +61,7 @@ int window_shell_test(const fs::path& output) {
         require(IsWindowVisible(panel) && !updates_page, "Escape did not return from a detail page without hiding the desktop.");
     });
     check("desktop_close_and_placement_round_trip", [&] {
+        ShowWindow(panel, SW_RESTORE);
         MONITORINFO info{sizeof(info)}; GetMonitorInfoW(MonitorFromWindow(panel, MONITOR_DEFAULTTONEAREST), &info);
         const int width = std::min(640, static_cast<int>(info.rcWork.right - info.rcWork.left));
         const int height = std::min(480, static_cast<int>(info.rcWork.bottom - info.rcWork.top));
@@ -205,7 +206,19 @@ int window_shell_test(const fs::path& output) {
             close_quick_panel();
         }
     });
-    close_quick_panel(); close_panel();
+    check("update_handoff_saves_desktop_placement", [&] {
+        close_quick_panel();
+        show_panel();
+        ShowWindow(panel, SW_RESTORE);
+        capture_desktop_placement(true);
+        ShowWindow(panel, SW_MAXIMIZE);
+        require(settings.at("windows_monitor_window").value("maximized",false)==false,
+            "Update handoff fixture did not begin with a different saved state.");
+        SendMessageW(panel, update_handoff_message, 0, 0);
+        require(!IsWindow(panel), "Update handoff left the original Monitor running.");
+        require(preferences->load().value().at("windows_monitor_window").value("maximized",false),
+            "Update handoff did not save the current maximized state.");
+    });
     std::ofstream(output / "result.json") << Json{{"ok", true}, {"checks", checks}, {"source_fixture_only", true}}.dump(2);
     return 0;
 }

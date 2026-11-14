@@ -42,7 +42,44 @@ class LexicalRetrievalTests(unittest.TestCase):
         return json.loads(result.stdout or result.stderr)
 
     def document(self, name, text):
-        (self.root / "docs" / name).write_text(text)
+        (self.root / "docs" / name).write_text(text, encoding="utf-8")
+
+    def test_russian_description_and_unrelated_match_use_same_route_in_each_command(self):
+        query = "как оператор меняет порог уведомлений после проверки вручную"
+        owner = "docs/alert-threshold.md"
+        decoy = "docs/other-operator.md"
+        self.document("alert-threshold.md", "# Порог уведомлений\n\nОператор меняет порог уведомлений после проверки.\n")
+        self.document("other-operator.md", "# Оператор\n\nРуководство по настройке рабочего места.\n")
+        profile_path = self.profiles / "lexical.json"
+        profile = json.loads(profile_path.read_text())
+        profile["evalCases"] = [{
+            "id": "russian-alert-threshold", "query": query, "mustTopPaths": [owner],
+            "mustTopN": 1, "mustNotPaths": [decoy], "limit": 4, "perDocLimit": 1,
+        }]
+        profile_path.write_text(json.dumps(profile))
+        self.invoke("build")
+        budget = ("--limit", "4", "--per-doc", "1", "--require-current")
+        brief = self.invoke("brief", query, *budget)
+        compact = self.invoke("brief", query, *budget, "--projection", "compact")
+        diagnosed = self.invoke("diagnose", query, *budget, "--expected-path", owner, "--strict")
+        evaluated = self.invoke("eval", "--require-current", "--strict")["cases"][0]
+        request = self.base / "task.json"
+        request.write_text(json.dumps({
+            "schema_version": "shin.task-request.v1", "request_id": "russian-route-parity",
+            "task": {"objective": "Find the alert threshold policy", "must": [{"id": "policy", "query": query}]},
+            "budget": {"max_evidence_bytes": 6000, "max_records": 4,
+                       "per_query_records": 4, "per_document_records": 1},
+        }))
+        packed = self.invoke("pack", "--input", str(request), "--require-current", "--strict")
+        requirement = packed["requirements"][0]
+        self.assertEqual(brief["retrieval_mode"], "relaxed")
+        for mode in (compact["retrieval_mode"], diagnosed["retrieval"]["mode"],
+                     evaluated["retrieval_mode"], requirement["retrieval_mode"]):
+            self.assertEqual(mode, brief["retrieval_mode"])
+        self.assertEqual(brief["ranked_paths"], compact["ranked_paths"])
+        self.assertEqual(diagnosed["returned_path_rank"], 1)
+        self.assertEqual([row["path"] for row in packed["verification_paths"]], [owner])
+        self.assertLessEqual(packed["budget"]["returned_records"], 4)
 
     def test_bare_topic_does_not_exclude_other_documents(self):
         self.document("sql.md", "# SQL tool\n\nSQL queries select database connectors from a catalog.\n")

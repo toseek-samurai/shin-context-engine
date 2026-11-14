@@ -186,4 +186,51 @@ Json local_client_connect(const fs::path& executable, const fs::path& root,
     result["access_state"] = live_catalog ? "configured" : "reconnect-required";
     return result;
 }
+
+Json local_client_connect_batch(const fs::path& executable, const fs::path& root,
+                                const fs::path& home, const Json& targets, bool apply) {
+    if (!targets.is_array() || targets.empty() || targets.size() > 4 + 64)
+        throw Error("invalid-arguments", "Choose between one and 68 agent settings files.");
+    std::set<fs::path> paths;
+    for (const auto& target : targets) {
+        if (!target.is_object() || !target.contains("client") || !target.at("client").is_string() ||
+            !target.contains("config") || !target.at("config").is_string() ||
+            (target.contains("revision") && !target.at("revision").is_string()))
+            throw Error("invalid-arguments", "Each selected settings file must name an agent and a configuration path.");
+        const fs::path config(target.value("config", ""));
+        const auto revision = target.value("revision", "");
+        if (!config.is_absolute() || config.filename().empty() || config.lexically_normal() != config)
+            throw Error("client-config-path", "Choose an absolute, normalized configuration file path.");
+        if (!paths.insert(config).second)
+            throw Error("client-config-duplicate", "Choose a different settings file for each target.");
+        if (apply && (revision.size() != 64 || revision.find_first_not_of("0123456789abcdef") != std::string::npos))
+            throw Error("client-config-review-required", "Review each selected settings file before connecting it.");
+    }
+
+    Json result{{"ok", true}, {"schema_version", "shin.client-connect-batch.v1"},
+                {"restart_required", false}, {"results", Json::array()}};
+    for (const auto& target : targets) {
+        Json row;
+        try {
+            const auto connection = local_client_connect(executable, root, home, target.at("client"),
+                fs::path(target.at("config").get<std::string>()), apply ? target.value("revision", "") : std::string{});
+            row = {{"ok", true}, {"revision", connection.at("revision")}, {"changed", connection.at("changed")},
+                   {"access_state", connection.at("access_state")},
+                   {"client_modified", connection.at("client_modified")}, {"restart_required", connection.at("restart_required")}};
+            if (connection.value("restart_required", false)) result["restart_required"] = true;
+        } catch (const Error& error) {
+            row = {{"ok", false}, {"error", error_json(error)}, {"access_state", "review-required"}};
+        } catch (const std::exception&) {
+            row = {{"ok", false}, {"error", error_json(Error("client-config-invalid", "Agent settings could not be confirmed."))},
+                   {"access_state", "review-required"}};
+        }
+        const bool ok = row.at("ok").get<bool>();
+        result["results"].push_back(std::move(row));
+        if (!ok) {
+            result["ok"] = false;
+            break;
+        }
+    }
+    return result;
+}
 }

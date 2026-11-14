@@ -175,18 +175,11 @@ Json make_compact_brief_json(const RuntimeOptions& options,
     output["index_freshness"] = index_freshness_json(freshness);
     output["snapshot_id"] = freshness.snapshot_id.empty() ? Json(nullptr) : Json(freshness.snapshot_id);
     output["query"] = request.query;
-    output["retrieval_mode"] = result.directory_owner_scope_used
-                                   ? "directory-scoped"
-                                   : (result.document_owner_scope_used
-                                          ? "owner-scoped"
-                                   : (result.query_planner_used
-                                          ? "planned"
-                                          : (result.fallback_used ? "relaxed" : "strict")));
+    output["retrieval_mode"] = execution.decision.mode;
     output["query_coverage"] = compact_brief_coverage_json(execution.coverage);
     if (result.identifier_scope_used) {
-        output["retrieval_mode"] = "identifier-scoped";
         output["identifier_scope"] = {{"key", result.identifier_scope_key},
-                                       {"policy", "confirmed-identifier-scope-v1"}};
+                                       {"policy", execution.decision.matching_policy}};
     }
     output["evidence_budget"] = {
         {"policy", "global-record-document-diversity-with-type-seeding-v3"},

@@ -704,8 +704,14 @@ struct RankedBriefPath {
     int first_evidence_rank = 0;
 };
 
+struct BriefRetrievalDecision {
+    const char* mode = "strict";
+    const char* matching_policy = "required-groups-v1";
+};
+
 struct BriefExecution {
     BriefResult retrieval;
+    BriefRetrievalDecision decision;
     BriefSelection selection;
     QueryCoverage coverage;
     std::vector<RankedBriefPath> ranked_paths;

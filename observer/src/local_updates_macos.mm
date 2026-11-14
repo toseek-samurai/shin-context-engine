@@ -22,12 +22,6 @@ namespace {
 fs::path own_prefix() {
     const auto exe=fs::canonical(current_executable_path());return exe.parent_path().parent_path();
 }
-Json installation(const fs::path& prefix,const fs::path& user) {
-    std::vector<std::string> a{"shin-ce","installation","--prefix",prefix.string()};std::vector<char*> p;for(auto& s:a)p.push_back(s.data());
-    auto result=local_installation((int)p.size(),p.data(),user);
-    result["manifest_sha256"]=parse_json(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)).at("manifest_sha256");
-    return result;
-}
 void describe_affected_projects(Json& state,const fs::path& home) noexcept {
     try {
         std::map<std::string,std::string> names;
@@ -62,16 +56,18 @@ bool acknowledgeable_update(const Json& state) {
     const auto phase=state.value("phase","");
     return phase=="installed" || phase=="failed" || phase=="review-required" || phase=="downloaded" || phase=="retryable";
 }
-std::string update_review_revision(const Json& state,const Json& installed,const fs::path& prefix) {
+std::string update_review_revision(const Json& state,const LocalInstallationInspection& installed) {
     // A repaired/newer installation may supersede the saved attempt. Its exact
     // verified receipt is part of the explicit review; a changed kit cannot
     // inherit an acknowledgement made for a different installation.
-    return digest(Json{{"state",state},{"installation",installed},
-        {"receipt_sha256",digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true))}}.dump());
+    return digest(Json{{"state",state},{"installation",installed.status},
+        {"receipt_sha256",installed.receipt_sha256}}.dump());
 }
 // Classify only after an independent, integrity-checked native readback. A
 // known project refusal is not an interrupted installation transaction.
-std::string update_disposition(const Json& state, const Json& installed, const std::string& receipt, bool updater_active=false) {
+std::string update_disposition(const Json& state, const LocalInstallationInspection& inspection, bool updater_active=false) {
+    const auto& installed=inspection.status;
+    const auto& receipt=inspection.receipt_sha256;
     if (!installed.value("integrity_verified",false)) return "review-required";
     if (installed.value("recovery_pending",true)) return "recovery-required";
     const auto phase=state.value("phase","");
@@ -296,7 +292,9 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
     require(!(force_progress || json_progress) || (!parent && (command=="update-install" || command=="update-resume" || command=="update-download" || command=="update-acknowledge")),"invalid-arguments","--progress is available for terminal downloads and updates.");
     TerminalUpdateProgress terminal(force_progress,json_progress,!observer && !parent && (command=="update-install" || command=="update-resume" || command=="update-download"));
     terminal.report({ReleaseUpdateStep::preparing});
-    const auto installed=installation(prefix,user);require(installed.value("integrity_verified",false),"installation-integrity-failed","Verify the owned installation before checking updates.");
+    const auto inspection=inspect_local_installation(prefix,user);
+    const auto& installed=inspection.status;
+    require(installed.value("integrity_verified",false),"installation-integrity-failed","Verify the owned installation before checking updates.");
     const auto current=installed.at("version").get<std::string>();
     if(home.empty())home=installed.at("home").get<std::string>();
     require(home==fs::path(installed.at("home").get<std::string>()),"installation-home-conflict","Use the installed kit's recorded data home.");
@@ -306,13 +304,13 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
         if(command=="update-status") {
             StateStore saved(directory,false);
             auto state=saved.load().value_or(Json{{"ok",true},{"phase","idle"}});
-            state["review_revision"]=update_review_revision(state,installed,prefix);
+            state["review_revision"]=update_review_revision(state,inspection);
             describe_affected_projects(state,home);
             state["current_version"]=current;state["installation_verified"]=true;
             state["native_recovery_pending"]=installed.value("recovery_pending",true);
             const bool terminal=!saved.writer_present();
             state["updater_active"]=!terminal;
-            const auto disposition=update_disposition(state,installed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)),!terminal);
+            const auto disposition=update_disposition(state,inspection,!terminal);
             state["can_retry"]=terminal && disposition=="retryable";
             state["can_resume"]=terminal && disposition=="recovery-required" && state.contains("version");
             state["outcome"]=disposition;
@@ -325,12 +323,13 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
         StateStore review(directory,true);review.recover_pending();auto previous=review.load();
         require(!installed.value("recovery_pending",true),"update-outcome-unknown","Finish the native installation recovery journal before acknowledging the update result.");
         auto installation_guard=lock_local_installation(prefix/"bin/shin-ce");
-        const auto confirmed=installation(prefix,user);
-        require(!confirmed.value("recovery_pending",true),"update-outcome-unknown","Finish the native installation recovery journal before acknowledging the update result.");
-        require(previous && !revision.empty() && update_review_revision(*previous,confirmed,prefix)==revision,"update-offer-changed","The saved result or current installation changed. Review it again.");
+        const auto confirmed=inspect_local_installation(prefix,user);
+        require(!confirmed.status.value("recovery_pending",true),"update-outcome-unknown","Finish the native installation recovery journal before acknowledging the update result.");
+        require(previous && !revision.empty() && update_review_revision(*previous,confirmed)==revision,"update-offer-changed","The saved result or current installation changed. Review it again.");
         auto state=*previous;
-        require(acknowledgeable_update(state) || update_disposition(state,confirmed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)))=="installed" ||
-            update_disposition(state,confirmed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)))=="retryable","update-outcome-unknown","The previous updater has no terminal result. Review its installation recovery before acknowledging it.");
+        const auto disposition=update_disposition(state,confirmed);
+        require(acknowledgeable_update(state) || disposition=="installed" || disposition=="retryable",
+            "update-outcome-unknown","The previous updater has no terminal result. Review its installation recovery before acknowledging it.");
         if(state.contains("staging")) {
             const fs::path stage=state.at("staging").get<std::string>();
             require(stage.parent_path()==fs::canonical("/tmp") && stage.filename().string().starts_with("shin-release."),"update-staging-changed","The saved candidate location is invalid; preserve it for review.");
@@ -341,7 +340,7 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
             state.erase("staging");state.erase("stage_identity");state.erase("candidate");
         }
         state.erase("updater");state["phase"]="reviewed";state["ok"]=true;
-        state["acknowledged_version"]=confirmed.at("version");review.save(state);return state;
+        state["acknowledged_version"]=confirmed.status.at("version");review.save(state);return state;
     }
     // The viewer must exit before LaunchServices reopens this bundle.
     RelaunchMonitor relaunch{prefix};
@@ -354,7 +353,7 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
     Json resume_state;
     if(command=="update-resume") {
         StateStore saved(home/"updates",false);resume_state=saved.load().value_or(Json::object());
-        require(!saved.writer_present() && !revision.empty() && update_review_revision(resume_state,installed,prefix)==revision,
+        require(!saved.writer_present() && !revision.empty() && update_review_revision(resume_state,inspection)==revision,
             "update-offer-changed","The saved operation changed; review it again.");
     }
     auto selected=command=="update-resume" ? exact_offer(resume_state) : offer(current);selected["prefix"]=prefix.string();
@@ -365,24 +364,26 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
     const auto directory=home/"updates";ensure_private_directory(directory);
     StateStore owner(directory,true);owner.recover_pending();
     const auto prior=owner.load();
-    Json confirmed;
+    LocalInstallationInspection confirmed_inspection;
+    const auto& confirmed=confirmed_inspection.status;
     {
         // Stable installations can be fenced through their verified payload.
         // Recovery inspection itself refuses any live native operation; the
         // exact candidate rechecks its journal under its exclusive operation lock.
         auto fence=installed.value("recovery_pending",true) ? std::unique_ptr<LocalInstallationGuard>{} :
             lock_local_installation(prefix/"bin/shin-ce");
-        confirmed=installation(prefix,user);
+        confirmed_inspection=inspect_local_installation(prefix,user);
         require(confirmed.value("version","")==installed.value("version","") &&
-            confirmed.value("manifest_sha256","")==installed.value("manifest_sha256",""),
+            confirmed.value("manifest_sha256","")==installed.value("manifest_sha256","") &&
+            confirmed_inspection.receipt_sha256==inspection.receipt_sha256,
             "update-installation-changed","The installed kit changed while the release was reviewed.");
         if(confirmed.value("recovery_pending",false))require(command=="update-resume" && prior &&
             confirmed.value("target_version",prior->value("version", ""))==prior->value("version", ""),
             "update-outcome-unknown","Resume the exact pending installation before starting another update.");
         if(command=="update-resume")require(prior && *prior==resume_state &&
-            update_review_revision(*prior,confirmed,prefix)==revision,"update-offer-changed","The saved operation changed.");
+            update_review_revision(*prior,confirmed_inspection)==revision,"update-offer-changed","The saved operation changed.");
         if(prior && prior->value("phase","")!="installed" && prior->value("phase","")!="reviewed" && prior->value("phase","")!="failed") {
-            const auto disposition=update_disposition(*prior,confirmed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)));
+            const auto disposition=update_disposition(*prior,confirmed_inspection);
             require(disposition=="installed" || disposition=="retryable" || (command=="update-resume" && disposition=="recovery-required"),
                 "update-outcome-unknown","The previous operation needs recovery. Review its saved result before continuing.");
         }
@@ -390,7 +391,7 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
     fs::path reusable=prior ? verified_retained_kit(*prior,selected) : fs::path{};
     Json state{{"ok",true},{"phase","downloading"},{"from_version",prior && command=="update-resume" ? prior->at("from_version") : Json(current)},
         {"version",selected.at("version")},{"release",selected},{"checked_at_ms",now_ms()},
-        {"before_receipt_sha256",digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true))},
+        {"before_receipt_sha256",confirmed_inspection.receipt_sha256},
         {"timeline",Json::array()}};
     if(prior && prior->contains("result"))state["previous_result"]=prior->at("result");
     const auto record=[&](ReleaseUpdateProgress value) {
@@ -413,7 +414,7 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
     if(prior && !confirmed.value("recovery_pending",true) && (prior->value("version","")!=selected.value("version","") ||
          (reusable.empty() && !prior->contains("candidate") && !prior->contains("target_manifest_sha256"))) &&
         (prior->value("phase","")=="installed" || prior->value("phase","")=="reviewed" || prior->value("phase","")=="failed" ||
-         update_disposition(*prior,confirmed,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)))=="retryable")) {
+         update_disposition(*prior,confirmed_inspection)=="retryable")) {
         const auto obsolete=retained_stage(*prior);
         if(!obsolete.empty())fs::remove_all(obsolete);
     }
@@ -461,13 +462,13 @@ Json run_updater_request(int argc,char** argv,const fs::path& user,const Release
         report(ReleaseUpdateStep::installing);
         const auto result=run(kit/"bin/shin-ce",{"update","--prefix",prefix.string(),"--progress-json"},0,nullptr,record);
         state["result"]=result;
-        const auto after=installation(prefix,user);
-        const auto disposition=update_disposition(state,after,digest(read_text(prefix/".shin-installation.json",kMaximumStateBytes,true)));
+        const auto after=inspect_local_installation(prefix,user);
+        const auto disposition=update_disposition(state,after);
         state["ok"]=disposition=="installed";state["phase"]=disposition;
         for(const auto* field:{"projects_pending","project_preparation","project_diagnostic","all_projects_ready"})if(result.contains(field))state[field]=result.at(field);
         owner.save(state);
         if(state.at("ok")==true) {
-            report(ReleaseUpdateStep::confirming);const auto confirmed=installation(prefix,user);
+            report(ReleaseUpdateStep::confirming);const auto confirmed=inspect_local_installation(prefix,user).status;
             require(confirmed.at("version")==selected.at("version") && confirmed.value("integrity_verified",false),
                 "update-outcome-unknown","The installed version did not confirm the update receipt.");
             // Cache removal is optional after independent installation proof.

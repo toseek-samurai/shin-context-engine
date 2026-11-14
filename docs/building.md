@@ -19,12 +19,11 @@ discovery requires SQLite with FTS5, version 3.38 or newer, and Observer require
 OpenSSL Crypto. Windows uses a pinned static SQLite build and native cryptography.
 CMake downloads pinned dependencies and checks their hashes.
 
-The current source candidate links [RE2 2025-11-05](https://github.com/google/re2/tree/2025-11-05)
+Core links [RE2 2025-11-05](https://github.com/google/re2/tree/2025-11-05)
 and its upstream-pinned Abseil 20250814.1 statically for secret scanning.
 They require no additional runtime installation. CMake
 verifies both source archives and includes their licenses in packaged tools;
-upstream tests and utilities are excluded from the product build. This change
-is not included in preview dev.98.
+upstream tests and utilities are excluded from the product build.
 
 macOS CI uses Xcode 26.3 on macOS 15. Local builds can use Command Line Tools
 for Xcode 26 or newer, or a current full Xcode installation. The C++20 standard
@@ -110,7 +109,7 @@ The project folder stays separate from that home. A source build does not
 install the commands, replace another kit or enable login startup. In WSL, use
 a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
 native desktop Monitor. A prebuilt Ubuntu 24.04 x86_64 terminal archive is also
-available from the [current preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98).
+available from the [current preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110).
 The TUI's Updates guidance links to Releases; there is no automatic Linux installer.
 Replace the archive or rebuild the source tools, restart the service and reconnect
 persistent MCP clients.
@@ -213,11 +212,9 @@ The desktop presets leave ZIP/MSI packaging disabled. The separate `windows-kit`
 preset builds production binaries in `kit/`, with source tests disabled; run
 the desktop test preset first, then the [exact ZIP/MSI checks](windows-desktop.md#installer-presentation-checks).
 MSI packaging requires CPack 4.3+ and WiX 4. Published previews pass exact-archive
-checks; interactive installed SCM lifecycle tests remain a separate rehearsal.
-Published dev.74 includes project/agent setup, storage actions, automatic usage
-collection, DPI-aware input/rendering and reviewed MSI installation with UAC.
-See [setup and update boundaries](windows-desktop.md#monitor-setup-and-updates). TUI remains
-unavailable on Windows. The `shin-windows-client-features` native test covers
+checks and an installed updater preflight. Interactive SCM lifecycle tests use
+a signed-in Windows session. See [setup and updates](windows-desktop.md#monitor-setup-and-updates).
+The `shin-windows-client-features` native test covers
 configuration preservation, stale-review/hardlink refusal, download/inventory
 validation and active-history collection. It is included in the hosted smoke preset.
 Run this fixture as an unelevated user: elevated Windows processes can create

@@ -4,6 +4,7 @@ import copy
 import hashlib
 import io
 import json
+from itertools import product
 import re
 from pathlib import Path
 import subprocess
@@ -741,6 +742,48 @@ class Publication(unittest.TestCase):
         self.assertIn('actions: write',entry)
         self.assertIn('python3 -B tools/create_preview.py',entry)
         self.assertNotIn('release upload',entry)
+
+    def check_workflow_package_proof(self, workflow):
+        # Read only the job, matrix and step metadata used by the publisher.
+        jobs = dict(re.findall(r'^  ([\w-]+):\n(.*?)(?=^  [\w-]+:|\Z)',
+                               workflow.split('\njobs:\n', 1)[1], re.M | re.S))
+        for platform, spec in publisher.PLATFORMS.items():
+            block = jobs[platform]
+            name = re.search(r'^    name: (.+)$', block, re.M)[1]
+            matrix = re.search(r'^      matrix:\n((?: {8}[^\n]*\n)+)', block, re.M)[1]
+            # Matrix rows are currently written as inline axes, or include
+            # rows with component as the first key on Windows.
+            if matrix.startswith('        include:'):
+                rows = [{'component': component} for component in
+                        re.findall(r'^          - component: (\S+)\s*$', matrix, re.M)]
+            else:
+                axes = {axis: values.split(', ') for axis, values in
+                        re.findall(r'^        (\w+): \[([^\]]+)\]$', matrix, re.M)}
+                rows = [dict(zip(axes, values)) for values in product(*axes.values())]
+            actual_jobs = [re.sub(r'\$\{\{ matrix\.(\w+) \}\}', lambda m: row[m[1]], name)
+                           for row in rows]
+            self.assertCountEqual(actual_jobs, spec['jobs'], platform + ' job names')
+            steps = re.findall(r'^      - name: ([^\n]+)\n(.*?)(?=^      - |\Z)', block, re.M | re.S)
+            for expected in spec['steps']:
+                self.assertEqual(sum(name == expected for name, _ in steps), 1,
+                                 platform + ' step ' + expected)
+            upload = dict(steps)[spec['steps'][-1]]
+            self.assertRegex(upload, r'(?m)^        uses: actions/upload-artifact@')
+            artifact = re.search(r'^          name: (.+)$', upload, re.M)[1]
+            architectures = {'linux': 'X64', 'macos': 'ARM64', 'windows': 'X64'}
+            rendered = (artifact.replace('${{ runner.arch }}', architectures[platform])
+                        .replace('${{ github.run_id }}', '123')
+                        .replace('${{ github.run_attempt }}', '2'))
+            self.assertEqual({rendered}, publisher.artifact_names(123, 2, platform),
+                             platform + ' artifact name')
+
+    def test_workflow_package_proof_matches_publisher(self):
+        workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
+        self.check_workflow_package_proof(workflow)
+        for original in ('windows (${{ matrix.component }})', 'Exact Windows kit qualification',
+                         'shin-desktop-windows-X64-'):
+            with self.subTest(original=original), self.assertRaises(AssertionError):
+                self.check_workflow_package_proof(workflow.replace(original, 'Renamed ' + original, 1))
 
     def test_cancellation_or_tag_movement_stops_public_platform_append_before_kit_visibility(self):
         for failure in ('cancelled','moved-tag'):

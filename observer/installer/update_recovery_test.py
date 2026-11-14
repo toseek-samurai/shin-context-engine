@@ -101,6 +101,13 @@ with tempfile.TemporaryDirectory(prefix='.shin-update-recovery-',dir=Path.home()
             state['phase']='review-required';state['ok']=False
             state['result']={'ok':False,'error':{'code':'installation-project-not-ready'}};save(state_path,state)
             status=helper('update-status',expected=1);assert status['can_retry'] and not status['native_recovery_pending']
+            reviewed_receipt=receipt_path.read_bytes()
+            receipt_path.write_bytes(reviewed_receipt+b'\n')
+            try:
+                refused=helper('update-resume','--revision',status['review_revision'],expected=2)
+                assert refused['error']['code']=='update-offer-changed' and json.loads(state_path.read_text())==state
+            finally:
+                receipt_path.write_bytes(reviewed_receipt)
             (transport/'offline').touch();before=(transport/'requests').read_bytes()
             kit=Path(state['candidate']);target=kit/'share/shin-context/docs/local-kit.md'
             if not target.exists():

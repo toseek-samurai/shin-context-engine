@@ -227,14 +227,6 @@ std::vector<std::string> diagnose_reason_codes(
     return reasons;
 }
 
-std::string_view diagnose_retrieval_mode(const BriefResult& retrieval) {
-    if (retrieval.directory_owner_scope_used) return "directory-scoped";
-    if (retrieval.document_owner_scope_used) return "owner-scoped";
-    if (retrieval.identifier_scope_used) return "identifier-scoped";
-    if (retrieval.query_planner_used) return "planned";
-    return retrieval.fallback_used ? "relaxed" : "strict";
-}
-
 bool regular_source_path_exists(const fs::path& path) {
     std::error_code error;
     const fs::file_status status = fs::symlink_status(path, error);
@@ -289,9 +281,8 @@ int run_diagnose(const RuntimeOptions& options, const std::vector<std::string>& 
         const PublishedSourceState published = published_source_state(
             session.manifest(), session.options().profile, request.expected_path);
         const BriefResult& retrieval = execution.retrieval;
-        const auto retrieval_mode = diagnose_retrieval_mode(retrieval);
-        const bool route_changed = expanded &&
-            diagnose_retrieval_mode(expanded->retrieval) != retrieval_mode;
+        const std::string_view retrieval_mode = execution.decision.mode;
+        const bool route_changed = expanded && expanded->decision.mode != retrieval_mode;
         const bool planner_selected =
             selected_by_planner(execution.coverage, request.expected_path);
         const std::vector<std::string> reasons = diagnose_reason_codes(
@@ -371,7 +362,7 @@ int run_diagnose(const RuntimeOptions& options, const std::vector<std::string>& 
             {"executed", expanded.has_value()},
             {"limit", kDiagnoseProbeLimit},
             {"per_doc_limit", kDiagnoseProbePerDocument},
-            {"retrieval_mode", expanded ? Json(diagnose_retrieval_mode(expanded->retrieval)) : Json(nullptr)},
+            {"retrieval_mode", expanded ? Json(expanded->decision.mode) : Json(nullptr)},
             {"route_changed", expanded ? Json(route_changed) : Json(nullptr)},
             {"candidate_rows", expanded ? Json(expanded->retrieval.candidate_rows) : Json(nullptr)},
             {"required_group_matches", expanded ? Json(expanded->retrieval.required_group_matches) : Json(nullptr)},

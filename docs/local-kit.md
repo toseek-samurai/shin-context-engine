@@ -15,7 +15,7 @@ Windows ZIP/MSI packaging route are described in the [Windows guide](https://git
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.98).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.110).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -23,7 +23,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.98/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.110/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -152,7 +152,7 @@ The background service has a separate login-startup setting.
 
 Add more projects from **Projects** with the folder picker or
 `shin-ce project-add --root /path/to/another/project`.
-Native dev.98 keeps the setup window visible during preparation, showing the
+Monitor keeps the setup window visible during preparation, showing the
 current stage and elapsed time. Failures remain inline with a retry action;
 successful preparation leads to agent selection in the same window.
 
@@ -367,9 +367,9 @@ previous kit is retained outside the active payload. A subsequent update or
 uninstall removes it only after verifying its ownership and contents. Unexpected
 files or corruption are preserved for review, never silently deleted.
 
-Published dev.98 uses Core dev.18 and the Objective-C++ v24 index format. It
-rebuilds older derived indexes from approved project sources under their existing
-authority; no old retrieval reader or data conversion is retained. During rollback to an
+The current Core uses the Objective-C++ v24 index format. A new native kit
+rebuilds derived indexes from approved project sources under their existing
+authority, even when the format stays the same. During rollback to an
 older kit, a private bootstrap index that the old CLI cannot read is atomically
 retired through the owned temporary-publication lifecycle before the old CLI
 builds it again. The installation journal retains pending recovery throughout.
@@ -676,8 +676,10 @@ The saved result distinguishes a retryable refusal before replacement, an
 interrupted native transaction requiring recovery, and a confirmed installation.
 Monitor and terminal stats show the original failure and offer **Retry update** or
 **Continue update** when independent installation readback permits that action.
-These actions use the exact saved result revision; another operation or a changed
-installation invalidates the review. The CLI entry is:
+These actions use the saved result's revision. Starting with dev.111, the Updater
+derives that revision from the same receipt bytes it checks against the verified
+installation. A different receipt or another saved attempt requires a fresh review.
+The CLI entry is:
 
 ```sh
 shin-ce update-status

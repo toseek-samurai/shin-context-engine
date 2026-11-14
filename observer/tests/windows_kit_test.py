@@ -257,7 +257,7 @@ def main():
                 'second_process_reuses_existing_desktop', 'background_start_keeps_both_surfaces_hidden',
                 'qualification_lock_collision_fails_closed',
                 'malformed_placement_falls_back_to_visible_desktop', 'quick_actions_remain_visible_in_short_work_area',
-                'quick_panel_en_ru_and_content_size_stability'} <= set(shell['checks']), shell
+                'quick_panel_en_ru_and_content_size_stability', 'update_handoff_saves_desktop_placement'} <= set(shell['checks']), shell
         root = base / 'project'
         root.mkdir()
         (root / 'quota.cpp').write_text('int quotaLimit() { return 42; }\n', encoding='utf-8')

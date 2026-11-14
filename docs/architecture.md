@@ -37,6 +37,9 @@ Component identities and qualification state come from the checked-in version fi
 The architecture exposes search, bounded Brief and task-oriented Pack retrieval,
 snapshot-pinned batches, source inspection and reading, and change-aware evidence.
 These capabilities share Core's provenance, freshness and output-budget contracts.
+Brief, Pack, Eval and Diagnose use the same retrieval decision to report how
+the query matched. The decision identifies the search mode and matching policy
+independently of the result's presentation.
 Agent integration uses native MCP or an explicit CLI adapter. The agent still owns
 task execution and conversation memory; a retrieved instruction cannot grant it
 publication or filesystem authority.
@@ -101,9 +104,12 @@ Core lives in `src/` with its tests in `tests/`. Observer owns its
 platform support; `third_party/` holds vendored dependencies. `profiles/` selects
 source scope, and `docs/machine/` holds versioned contracts.
 
-Observer's `ui/` owns the shared status, timing, usage presentation and compiled
-EN/RU catalog. `tray/` adapts it to macOS/Windows and `tui/` adapts it to the
-terminal. Language preferences never change protocol fields or project data.
+Observer's local status module determines project readiness for CLI, Monitor and
+TUI. `ui/` owns the shared timing and usage presentation and the compiled EN/RU
+catalog. `tray/` adapts these results to macOS and Windows and `tui/` adapts them
+to the terminal. Both desktop hosts use the same native review and apply
+operation for selected agent settings. Language preferences never change
+protocol fields or project data.
 The macOS/Linux Sand TUI uses statically linked FTXUI for layout, input and line charts.
 It reads the existing local service, usage snapshot and storage inventory; opening
 it does not enroll projects, start another service or publish an index.

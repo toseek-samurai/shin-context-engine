@@ -1,6 +1,7 @@
 #pragma once
 #include "shin/observer/observer.h"
 #include "shin/windows/file.h"
+#include "windows_update_result.h"
 #include <windows.h>
 #include <aclapi.h>
 #include <sddl.h>
@@ -63,20 +64,6 @@ public:
     }
     ~InstallerReadAccess() {restore();if(original_) LocalFree(original_);}
 };
-inline bool update_can_retry_without_install(const Json& saved) {
-    if(!saved.is_object() || !saved.contains("phase") || !saved.at("phase").is_string()) return false;
-    const auto& phase=saved.at("phase").get_ref<const std::string&>();
-    const std::set<std::string> before{"reviewed","checking","downloading","verifying","waiting-monitor"};
-    if(before.contains(phase)) return true;
-    if(phase!="review-required" || !saved.contains("error_code") || !saved.at("error_code").is_string()) return false;
-    const auto& error=saved.at("error_code").get_ref<const std::string&>();
-    const std::set<std::string> no_install{"update-uac-cancelled","update-offer-changed","update-download-invalid",
-        "update-helper-launch-failed","update-monitor-running"};
-    if(no_install.contains(error)) return true;
-    return error=="update-msi-failed" && saved.contains("installer_exit_code") &&
-        saved.at("installer_exit_code").is_number_integer() &&
-        saved.at("installer_exit_code").get<std::int64_t>()==ERROR_INSTALL_PACKAGE_OPEN_FAILED;
-}
 inline fs::path msi_install_root(fs::path path) {
     // Windows Installer directory properties end in a separator. Remove only
     // that spelling detail; native IO must still reject aliases and reparse paths.
@@ -143,9 +130,13 @@ inline void validate_inventory(const Json& manifest,const std::string& version) 
     for(const auto* file:{"bin/shin-ce.exe","bin/shin-context.exe","bin/shin-observer.exe","bin/shin-mcp.exe","bin/shin-tray.exe","bin/shin-windows-updater.exe"})
         require(names.contains(file));
 }
-inline Json verify_installed(const fs::path& prefix,const std::string& version) {
+inline Json verify_installed(const fs::path& prefix,const std::string& version,const std::string& alternate = {}) {
     shin::windows::ReadFile inventory(prefix/"shin-kit.json");inventory.require_machine_owned();
-    const auto manifest=parse_json(inventory.read(kMaximumStateBytes));validate_inventory(manifest,version);
+    const auto manifest=parse_json(inventory.read(kMaximumStateBytes));
+    const auto current=manifest.at("version").get<std::string>();
+    if(current.empty() || (current!=version && current!=alternate))
+        throw Error("update-outcome-unknown","Installed version does not belong to this update.");
+    validate_inventory(manifest,current);
     for(const auto& entry:manifest.at("files")) {
         shin::windows::ReadFile file(prefix/fs::path(entry.at("path").get<std::string>()));file.require_machine_owned();
         const auto bytes=entry.at("size").get<std::size_t>();
@@ -153,5 +144,13 @@ inline Json verify_installed(const fs::path& prefix,const std::string& version) 
             throw Error("update-outcome-unknown","Installed files could not be confirmed.");
     }
     return manifest;
+}
+
+inline Json verify_saved_update_installation(const fs::path& prefix, const Json& saved) {
+    const auto& previous = saved.at("from_version").get_ref<const std::string&>();
+    const auto& target = saved.at("offer").at("version").get_ref<const std::string&>();
+    if (previous.empty() || target.empty() || previous == target)
+        throw Error("update-state-invalid", "The saved update does not name two distinct versions.");
+    return verify_installed(prefix, target, previous);
 }
 }

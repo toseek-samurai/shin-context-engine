@@ -160,11 +160,13 @@ void verify_record_locations(const fs::path& prefix, const Json& value) {
         !within(home, prefix) && !within(prefix, home) && !within(bin, prefix) && !within(prefix, bin),
         "installation-ownership-changed", "Installation data or command directory changed.");
 }
-Json record(const fs::path& prefix) {
-    const auto value = parse_json(read_text(prefix / marker_name, kMaximumStateBytes, true));
+Json record(const fs::path& prefix, std::string* receipt_sha256 = nullptr) {
+    const auto bytes = read_text(prefix / marker_name, kMaximumStateBytes, true);
+    auto value = parse_json(bytes);
     verify_record_locations(prefix, value);
     require(value.at("prefix_identity") == directory_identity(prefix, true),
         "installation-ownership-changed", "Installed payload directory changed.");
+    if (receipt_sha256) *receipt_sha256 = digest(bytes);
     return value;
 }
 Json state_record(const StateStore& store, const Json& receipt, bool active, bool startup = false) {
@@ -733,10 +735,12 @@ Json resume_previous_runtime(const fs::path& home, const fs::path& executable, c
     restored["diagnostic"] = update_service_diagnostic({{"enrollment_errors", errors}}, "rollback");
     return restored;
 }
-void verify_update_payload(const fs::path& path, const Json& kit, const Json& receipt) {
+void verify_update_payload(const fs::path& path, const Json& kit, const Json& receipt, bool receipt_checked = false) {
+    const auto manifest_bytes = read_text(path / manifest_name, kMaximumStateBytes / 2, false);
     require(directory_identity(path, true) == receipt.at("prefix_identity").get<std::string>() &&
-        digest(read_text(path / manifest_name, kMaximumStateBytes, false)) == receipt.at("manifest_sha256").get<std::string>() &&
-        manifest(path) == kit && parse_json(read_text(path / marker_name, kMaximumStateBytes, true)) == receipt,
+        digest(manifest_bytes) == receipt.at("manifest_sha256").get<std::string>() &&
+        validate_manifest(parse_json(manifest_bytes)) == kit &&
+        (receipt_checked || parse_json(read_text(path / marker_name, kMaximumStateBytes, true)) == receipt),
         "installation-ownership-changed", "An update payload, manifest or receipt changed.");
     verify_files(path, kit, true);
 }
@@ -1093,16 +1097,17 @@ Json verify_local_kit(const fs::path& path) {
     verify_files(path, kit, false);
     return kit;
 }
-Json local_installation(int argc, char** argv, const fs::path& user_home) {
+static Json local_installation_command(const std::string& command, int argc, char** argv, const fs::path& user_home,
+                                       const fs::path& inspection_prefix, std::string* receipt_sha256) {
 #ifndef __APPLE__
     throw Error("installation-platform-unsupported", "The native local kit installer is currently qualified only for macOS.");
 #endif
     require(::geteuid() != 0, "installation-root-forbidden", "Install the local kit as your normal user, without sudo.");
-    const std::string command = argv[1];
     const bool updating = command == "update";
     bool adopt = false, force_progress = false, json_progress = false;
     const auto source = executable_prefix(current_executable_path());
-    fs::path prefix = present(source / marker_name) ? source : user_home / ".local/opt/shin-local";
+    fs::path prefix = receipt_sha256 ? inspection_prefix :
+        present(source / marker_name) ? source : user_home / ".local/opt/shin-local";
     fs::path bin = user_home / ".local/bin";
     fs::path home = user_home / ".shin-ce";
     std::set<std::string> seen;
@@ -1167,20 +1172,22 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
         StateStore operation_status(control / "operation", false);
         require(!store.writer_present() && !operation_status.writer_present(), "writer-busy", "The native installation transaction is running.");
         const auto& pending = saved->at("update");
-        const auto current = record(prefix);
+        const auto current = record(prefix, receipt_sha256);
         const bool old = current == pending.at("old_receipt");
         require(old || current == pending.at("receipt"), "installation-ownership-changed",
             "The installed payload does not belong to the interrupted transaction.");
         const auto& current_kit = pending.at(old ? "old_kit" : "kit");
-        verify_update_payload(prefix, current_kit, current);
+        verify_update_payload(prefix, current_kit, current, receipt_sha256 != nullptr);
         links(current, false, false);
         require(store.load() == saved && !store.writer_present() && !operation_status.writer_present(), "writer-busy", "Installation changed during inspection.");
-        return {{"ok", true}, {"command", command}, {"phase", saved->at("phase")},
+        Json result{{"ok", true}, {"command", command}, {"phase", saved->at("phase")},
             {"prefix", prefix.string()}, {"home", current.at("home")}, {"bin_dir", current.at("bin_dir")},
             {"integrity_verified", true}, {"recovery_pending", true},
             {"version", current_kit.at("version")}, {"core_version", current_kit.at("core_version")},
             {"target_version", pending.at("kit").at("version")},
             {"target_manifest_sha256", pending.at("receipt").at("manifest_sha256")}};
+        if (receipt_sha256) result["manifest_sha256"] = current.at("manifest_sha256");
+        return result;
     }
     require(!saved || !saved->contains("update"), "installation-incomplete", "Resume the pending update from its original extracted kit.");
     if (command != "install") {
@@ -1193,12 +1200,15 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
             "installation-incomplete", "Complete the interrupted install before uninstalling.");
         if (present(prefix)) {
             if (state.at("phase") == "installed" || present(prefix / marker_name))
-                require(record(prefix) == receipt, "installation-ownership-changed", "Installation receipt changed.");
+                require(record(prefix, receipt_sha256) == receipt, "installation-ownership-changed", "Installation receipt changed.");
             else require(receipt.at("prefix_identity") == directory_identity(prefix, true), "installation-ownership-changed", "Removing installation directory changed.");
-            if (state.at("phase") == "installed" || present(prefix / manifest_name)) require(receipt.at("manifest_sha256") == digest(read_text(prefix / manifest_name, kMaximumStateBytes, false)),
-                "installation-manifest-changed", "Installed manifest changed; files were preserved.");
-            if (present(prefix / manifest_name)) require(manifest(prefix) == state.at("kit"),
-                "installation-manifest-changed", "Installation inventory differs from the verified manifest.");
+            if (state.at("phase") == "installed" || present(prefix / manifest_name)) {
+                const auto bytes = read_text(prefix / manifest_name, kMaximumStateBytes / 2, false);
+                require(receipt.at("manifest_sha256") == digest(bytes), "installation-manifest-changed",
+                    "Installed manifest changed; files were preserved.");
+                require(validate_manifest(parse_json(bytes)) == state.at("kit"), "installation-manifest-changed",
+                    "Installation inventory differs from the verified manifest.");
+            }
             verify_files(prefix, state.at("kit"), true, state.at("phase") == "removing");
         } else require(state.at("phase") == "removing", "installation-missing", "Installed kit is missing.");
         if (command == "installation") {
@@ -1207,6 +1217,11 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
                 {"home", receipt.at("home")}, {"bin_dir", receipt.at("bin_dir")}, {"integrity_verified", true},
                 {"recovery_pending", state.contains("resume_runtime") || state.contains("update")},
                 {"version", state.at("kit").at("version")}, {"core_version", state.at("kit").at("core_version")}};
+            if (receipt_sha256) {
+                require(store.load() == saved && directory_identity(prefix, true) == receipt.at("prefix_identity").get_ref<const std::string&>(),
+                    "writer-busy", "Installation changed during inspection.");
+                result["manifest_sha256"] = receipt.at("manifest_sha256");
+            }
             if (state.contains("project_preparation")) result["project_preparation"] = state.at("project_preparation");
             const auto diagnostic = bounded_validation_diagnostic(state.value("last_update_diagnostic", Json()));
             if (!diagnostic.is_null()) result["last_update_diagnostic"] = diagnostic;
@@ -1331,5 +1346,15 @@ Json local_installation(int argc, char** argv, const fs::path& user_home) {
     return {{"ok", true}, {"command", command}, {"phase", "installed"}, {"changed", true}, {"prefix", prefix.string()},
         {"home", home.string()}, {"bin_dir", bin.string()}, {"version", kit.at("version")},
         {"client_settings_changed", false}, {"autostart_installed", false}, {"next_command", "shin-ce init"}};
+}
+Json local_installation(int argc, char** argv, const fs::path& user_home) {
+    return local_installation_command(argv[1], argc, argv, user_home, {}, nullptr);
+}
+
+LocalInstallationInspection inspect_local_installation(const fs::path& prefix, const fs::path& user_home) {
+    LocalInstallationInspection inspection;
+    inspection.status = local_installation_command("installation", 0, nullptr, user_home, prefix,
+                                                   &inspection.receipt_sha256);
+    return inspection;
 }
 } // namespace shin::observer

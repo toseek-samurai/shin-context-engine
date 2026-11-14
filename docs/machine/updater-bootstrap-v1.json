@@ -61,7 +61,7 @@
   "publication": "The guarded publisher requires the exact qualified kit, separate updater, both checksums and installer. Updater bytes must match the updater inventory embedded in that exact kit.",
   "previewTrust": "GitHub HTTPS plus GitHub asset digest and SHA-256 checksum. No independent publisher signature or Developer ID/notarization is claimed.",
   "recoveryCommands": {
-    "status": "update-status reports a verified outcome, can_retry/can_resume, and a revision binding the saved attempt to the native installation.",
+    "status": "update-status reports a verified outcome, can_retry/can_resume, and a revision binding the saved attempt to the exact receipt bytes used to verify the native installation.",
     "resume": "update-resume --revision resumes the exact recorded operation; the verified retained updater or bundled updater interprets it. Never substitute the latest offer for a journaled target.",
     "readiness": "Installation success and project readiness are separate; pending projects retain their retrieval safety gates.",
     "diagnostics": "Keep a bounded stage timeline and native error on the saved attempt."

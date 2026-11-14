@@ -1,4 +1,5 @@
 #include "shin/observer/local_status.h"
+#include <algorithm>
 #include <iomanip>
 #include <map>
 #include <sstream>
@@ -35,6 +36,76 @@ std::string timestamp(const Json& value) {
 #endif
     std::ostringstream out; out << std::put_time(&utc, "%Y-%m-%d %H:%M UTC"); return out.str();
 }
+
+const char* observation_name(const Json& project) {
+    const auto& phase = field(project, "phase");
+    for (const auto* name : {"starting", "checking", "coalescing", "current", "partial", "blocked", "stopped"})
+        if (phase == name) return name;
+    return "unknown";
+}
+
+bool enrollment_retry(const Json& code) {
+    return code == "writer-busy" || code == "project-busy";
+}
+}
+
+bool active_issue(const Json& project) {
+    const auto& issue = field(project, "active_issue");
+    return issue.is_boolean() ? issue.get<bool>() : field(project, "phase") == "blocked";
+}
+
+ProjectState project_state(const Json& project, bool connected) {
+    if (!connected) return ProjectState::offline;
+    if (active_issue(project)) return ProjectState::blocked;
+    if (field(project, "recovering") == true) return ProjectState::recovering;
+    const auto& query_phase = field(project, "query_phase");
+    if (query_phase == "standby") return ProjectState::standby;
+    const auto& ready = field(project, "query_ready");
+    if (ready.is_boolean()) return ready.get<bool>() ? ProjectState::current : ProjectState::pending;
+    const auto& phase = field(project, "phase");
+    if (query_phase == "preparing" || phase == "starting" || phase == "coalescing" ||
+        (phase == "checking" && field(project, "last_completed_phase") == "coalescing"))
+        return ProjectState::pending;
+    if (phase == "checking") return ProjectState::checking;
+    if (phase == "current") return ProjectState::current;
+    if (phase == "stopped") return ProjectState::stopped;
+    return ProjectState::unknown;
+}
+
+const char* project_state_name(ProjectState state) {
+    switch (state) {
+    case ProjectState::offline: return "offline";
+    case ProjectState::checking: return "checking";
+    case ProjectState::pending: return "preparing";
+    case ProjectState::recovering: return "recovering";
+    case ProjectState::blocked: return "blocked";
+    case ProjectState::current: return "ready";
+    case ProjectState::standby: return "standby";
+    case ProjectState::stopped: return "stopped";
+    default: return "unknown";
+    }
+}
+
+bool quality_warning(const Json& project) {
+    return field(field(project, "quality_warning"), "state") == "degraded";
+}
+
+bool partial_coverage(const Json& project) {
+    const auto& coverage = field(project, "source_coverage");
+    const auto& reason = field(coverage, "reason");
+    const auto& quarantined = field(coverage, "quarantined_files");
+    const bool has_quarantine = quarantined.is_number_unsigned() ? quarantined.get<std::uint64_t>() > 0 :
+        quarantined.is_number_integer() && quarantined.get<std::int64_t>() > 0;
+    return field(coverage, "state") == "partial" || has_quarantine ||
+        reason == "source-observation-limited" || reason == "profile-revision-pending";
+}
+
+bool project_connection_problem(const Json& status) {
+    const auto& registry_error = field(status, "registry_error");
+    if (registry_error.is_string() && registry_error != "") return true;
+    const auto& errors = field(status, "enrollment_errors");
+    return errors.is_object() && std::any_of(errors.begin(), errors.end(),
+        [](const Json& error) { return !enrollment_retry(error); });
 }
 
 std::string local_status_text(const Json& status) {
@@ -51,7 +122,7 @@ std::string local_status_text(const Json& status) {
             << " | State: " << label(field(status, "state")) << '\n';
         const auto& quality = field(status, "project_quality");
         if (quality.is_string()) out << "Project checks: " << label(quality) << '\n';
-        if (field(field(status, "quality_warning"), "state") == "degraded")
+        if (quality_warning(status))
             out << "Search warning: some checks missed expected evidence; verified current context remains available.\n";
         const auto& coverage = field(status, "source_coverage");
         if (field(coverage, "state") == "partial")
@@ -59,7 +130,8 @@ std::string local_status_text(const Json& status) {
         return out.str();
     }
     const auto& telemetry = field(status, "telemetry");
-    out << "Shin service: " << (field(status, "service_running") == true ? "running" : "not running")
+    const bool connected = field(status, "service_running") == true;
+    out << "Shin service: " << (connected ? "running" : "not running")
         << " | Supervision: " << label(field(status, "supervision")) << '\n'
         << "Uptime: " << number(field(telemetry, "uptime_ms"), 1000) << " s"
         << " | Active queries: " << number(field(status, "query_workers")) << '\n';
@@ -78,23 +150,28 @@ std::string local_status_text(const Json& status) {
         << number(field(metrics, "unobserved")) << " unobserved\n";
 
     std::map<std::string, Json> projects;
+    const Json pending{{"query_phase", "preparing"}};
     for (const auto* key : {"projects", "preparing_projects"}) {
         const auto& rows = field(status, key);
         if (rows.is_array()) for (const auto& root : rows)
-            if (root.is_string()) projects.try_emplace(root.get<std::string>(), Json::object());
+            if (root.is_string()) projects.try_emplace(root.get<std::string>(), pending);
     }
     const auto& states = field(telemetry, "project_states");
     if (states.is_array()) for (const auto& row : states)
         if (field(row, "root").is_string()) projects[row.at("root").get<std::string>()] = row;
     for (const auto* key : {"enrollment_errors", "resident_errors"}) {
+        const bool enrollment = std::string_view(key) == "enrollment_errors";
         const auto& errors = field(status, key);
         if (errors.is_object()) for (const auto& item : errors.items()) {
-            auto& project = projects[item.key()];
-            // Resident refresh/disconnect is transient; admission failures are not.
-            if (std::string_view(key) == "resident_errors" &&
-                (item.value() == "project-updating" || item.value() == "resident-disconnected")) continue;
+            auto& project = projects.try_emplace(item.key(), pending).first->second;
+            // Live rows already carry the service's decision, including retained blockers.
+            if (field(project, "active_issue").is_boolean()) continue;
+            const auto& code = item.value();
+            const bool transient = enrollment ? enrollment_retry(code) :
+                code == "project-updating" || code == "resident-disconnected";
+            if (transient) continue;
             project["active_issue"] = true;
-            project["error_code"] = item.value();
+            project["error_code"] = code;
         }
     }
     const auto& registry_error = field(status, "registry_error");
@@ -102,18 +179,15 @@ std::string local_status_text(const Json& status) {
         out << "Registry issue: " << label(registry_error) << '\n';
     out << "Projects: " << projects.size() << "\nSEARCH     OBSERVER       LAST CHECK   ROOT\n";
     for (const auto& [root, row] : projects) {
-        const bool issue = field(row, "active_issue") == true;
-        const auto phase = field(row, "query_phase");
-        const std::string search = issue ? "blocked" : field(row, "query_ready") == true ? "ready" :
-            phase == "standby" ? "standby" : "preparing";
-        const auto observer = field(row, "phase");
-        const std::string observed = observer == "current" ? "current" : observer == "checking" ? "checking" :
-            observer == "coalescing" ? "coalescing" : observer == "blocked" ? "blocked" : "unknown";
-        out << std::left << std::setw(11) << search << std::setw(15) << observed
+        const auto state = project_state(row, connected);
+        out << std::left << std::setw(11) << project_state_name(state) << std::setw(15) << observation_name(row)
             << std::setw(13) << (number(field(row, "last_check_age_ms"), 1000) + " s") << label(root) << '\n';
-        if (issue) out << "  Issue: " << label(field(row, "error_code")) << '\n';
-        if (field(field(row, "quality_warning"), "state") == "degraded")
-            out << "  Search warning: some checks missed expected evidence; verified current context remains available.\n";
+        if (state == ProjectState::blocked) out << "  Issue: " << label(field(row, "error_code")) << '\n';
+        if (state == ProjectState::current || state == ProjectState::standby) {
+            if (partial_coverage(row)) out << "  Coverage: partial\n";
+            if (quality_warning(row))
+                out << "  Search warning: some checks missed expected evidence; verified current context remains available.\n";
+        }
     }
     if (field(field(telemetry, "projection"), "truncated") == true)
         out << "Historical detail is truncated; current project status is retained.\n";

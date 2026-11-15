@@ -818,11 +818,16 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
                             coverage.selected_document_paths.empty()) covered = false;
                     }
                     if (covered) {
-                        if (groups >= kCompoundQueryCoverageThreshold && plan.admits(kMaxIndexedCandidateRows)) {
+                        // Narrowed rows can cover every group while omitting a
+                        // qualifying document whose terms span several sections.
+                        // Preserve those owners below the compound-query threshold too.
+                        if (plan.admits(kMaxIndexedCandidateRows)) {
                             const int available_groups = query_coverage_covered_groups(execution.coverage);
+                            const int document_required = groups < kCompoundQueryCoverageThreshold
+                                ? required : available_groups;
                             auto planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
                                 options, request, true, required, true, &*prepared_groups, manifest,
-                                false, available_groups));
+                                false, document_required));
                             planned.identifier_probe_rows = identifier_probe_rows;
                             auto supplemented = make_brief_execution(request, std::move(planned));
                             if (!supplemented.selection.ordered.empty() &&

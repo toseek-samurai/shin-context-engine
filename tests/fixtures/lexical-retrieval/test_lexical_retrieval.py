@@ -125,6 +125,35 @@ class LexicalRetrievalTests(unittest.TestCase):
         self.assertEqual(result["query_coverage"]["covered_groups"], 6)
         self.assertEqual(result["query_diagnostics"]["required_group_matches"], 2)
 
+    def test_narrowed_fallback_keeps_complete_split_json_for_shorter_queries(self):
+        profile_path = self.profiles / "lexical.json"
+        profile = json.loads(profile_path.read_text())
+        profile["sourceExtensions"].append(".json")
+        profile.update(jsonKeySections=True, jsonKeyMaxDepth=1)
+        profile_path.write_text(json.dumps(profile))
+        self.document("left.md", "# Left\n\nalpha beta gamma delta epsilon.\n")
+        self.document("right.md", "# Right\n\ngamma delta epsilon zeta eta.\n")
+        self.document("manual.json", json.dumps({
+            "schemaVersion": "fixture.reference.v1", "document": "neutral-reference",
+            "status": "accepted", "title": "Complete reference", "summary": "Reference entry.",
+            "first": "alpha beta",
+            "second": "gamma delta", "third": "epsilon zeta",
+        }, indent=2))
+        for index in range(30):
+            self.document(f"noise-{index}.md", "# Unrelated\n\nalpha beta.\n")
+        self.invoke("build")
+        for terms in ("alpha beta gamma delta epsilon zeta",
+                      "alpha beta gamma delta epsilon zeta eta"):
+            for query in (terms, " ".join(reversed(terms.split()))):
+                with self.subTest(query=query):
+                    result = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
+                    paths = [row["path"] for row in result["ranked_paths"]]
+                    self.assertIn("docs/manual.json", paths[:3])
+                    self.assertEqual(result["query_coverage"]["covered_groups"], len(terms.split()))
+                    for group in result["query_coverage"]["groups"]:
+                        if group["term"] == "eta":
+                            self.assertNotIn("docs/manual.json", group["selected_document_paths"])
+
     def test_narrowed_fallback_still_supplements_a_complete_split_document(self):
         query = "alpha beta gamma delta epsilon zeta eta theta iota"
         self.document("left.md", "# Left\n\nalpha beta gamma delta epsilon zeta.\n")

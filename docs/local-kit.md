@@ -510,6 +510,9 @@ CMake downloads pinned dependencies with checked hashes, including FTXUI 7.0.3
 (MIT) for the terminal monitor. FTXUI is linked statically; users need no
 additional terminal UI library. Its license ships under
 `share/shin-observer/licenses/ftxui/`.
+Development source also pins libuv 1.53.0 for the event-driven local coordinator.
+It is linked statically; its license and supplemental notices ship under
+`share/shin-observer/licenses/libuv/`. No separate runtime installation is needed.
 
 ```sh
 cmake -S observer -B /tmp/shin-observer-kit \

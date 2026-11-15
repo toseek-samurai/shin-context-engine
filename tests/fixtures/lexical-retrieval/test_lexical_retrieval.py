@@ -150,6 +150,10 @@ class LexicalRetrievalTests(unittest.TestCase):
                     paths = [row["path"] for row in result["ranked_paths"]]
                     self.assertIn("docs/manual.json", paths[:3])
                     self.assertEqual(result["query_coverage"]["covered_groups"], len(terms.split()))
+                    # Recovering the split document must not score the ordinary
+                    # narrowed candidates once more before the combined pass.
+                    self.assertEqual(result["query_plan"]["matched_section_visits"], result["matched_sections"])
+                    self.assertEqual(result["query_plan"]["matched_fact_visits"], result["matched_facts"])
                     for group in result["query_coverage"]["groups"]:
                         if group["term"] == "eta":
                             self.assertNotIn("docs/manual.json", group["selected_document_paths"])

@@ -1,4 +1,5 @@
 #include "shin/observer/local_project.h"
+#include "shin/observer/local_coordinator.h"
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_query.h"
 #include "shin/observer/local_changes.h"
@@ -1739,8 +1740,8 @@ Json local_project(const LocalProjectRequest& request) {
 namespace {
 class LocalWatch {
 public:
-    LocalWatch(LocalProjectRequest input, const std::function<bool()>& stopped, LocalRefresh execute)
-        : request(std::move(input)), refresh(std::move(execute)) {
+    LocalWatch(LocalProjectRequest input, const std::function<bool()>& stopped, LocalRefresh execute, std::function<void()> wake)
+        : request(std::move(input)), refresh(std::move(execute)), notify(std::move(wake)) {
         request.command = "_refresh";
         request.home = fs::absolute(request.home).lexically_normal();
         const auto identity = directory_identity(request.root);
@@ -1968,7 +1969,7 @@ private:
                     if (core::should_skip_source_fact_dir(it->string())) return false;
                 }
                 return true;
-            });
+            }, notify);
     }
 
     void record_refresh_error(const Json& error) {
@@ -2003,6 +2004,7 @@ private:
     LocalProjectRequest request;
     std::shared_ptr<LocalRefreshSession> idle_session;
     LocalRefresh refresh;
+    std::function<void()> notify;
     std::unique_ptr<StateStore> controller;
     std::unique_ptr<LocalChanges> changes;
     std::uint64_t epoch = 0;
@@ -2021,7 +2023,9 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
                           std::uint64_t samples, const std::function<bool()>& stopped,
                           const std::function<void()>& service_poll, const LocalEnrollmentHooks& enrollment,
                           const std::function<void(const fs::path&, const Json&)>& report,
-                          const LocalRefresh& refresh, const LocalReaderDemand& reader_demand) {
+                          const LocalRefresh& refresh, const LocalReaderDemand& reader_demand,
+                          LocalCoordinator* coordinator,
+                          const std::function<void(std::chrono::steady_clock::time_point)>& service_wait) {
     if ((roots.empty() && !enrollment.read) || roots.size() > 16 || samples > 3600)
         throw Error("invalid-arguments", "Watch permits 1..16 projects and at most 3600 samples per project.");
     std::vector<fs::path> canonical;
@@ -2032,6 +2036,9 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
                 throw Error("watch-root-conflict", "Watched roots must be distinct and non-overlapping, including aliases.");
         canonical.push_back(path);
     }
+    // Loop lifetime covers every native producer, including admission failures.
+    auto owned_coordinator = coordinator ? nullptr : std::make_unique<LocalCoordinator>();
+    auto& events = coordinator ? *coordinator : *owned_coordinator;
     std::vector<std::unique_ptr<LocalWatch>> watches;
     // Admit the whole explicit set before publishing any changed source.
     for (const auto& root : canonical) {
@@ -2040,7 +2047,7 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
         request.root = root;
         request.maintenance_worktree.clear();
         try {
-            watches.push_back(std::make_unique<LocalWatch>(std::move(request), stopped, refresh));
+            watches.push_back(std::make_unique<LocalWatch>(std::move(request), stopped, refresh, events.notifier()));
         } catch (const Error& error) {
             // Cancellation during admission still needs normal watch shutdown
             // and delivery of the service's accepted stop acknowledgement.
@@ -2102,7 +2109,7 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
                             if (overlaps(root, request.root)) throw Error("registry-root-conflict", "Enrolled root overlaps an active project.");
                         request.maintenance_worktree.clear();
                         if (enrollment.preparing) enrollment.preparing(request.root, true);
-                        auto watch = std::make_unique<LocalWatch>(request, stopped, refresh);
+                        auto watch = std::make_unique<LocalWatch>(request, stopped, refresh, events.notifier());
                         canonical.push_back(request.root);
                         admitted.emplace(request.root, identities);
                         watches.push_back(std::move(watch));
@@ -2161,7 +2168,14 @@ Json watch_local_projects(const LocalProjectRequest& input, const std::vector<fs
             report_state();
         }
         if (!pending) break;
-        std::this_thread::sleep_for(std::chrono::milliseconds(20));
+        // Timers keep the same admission, coalescing, backoff and reconciliation
+        // deadlines. Notifications only request another ordinary checked turn.
+        auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(1);
+        if (enrollment.read) deadline = std::min(deadline, next_enrollment);
+        for (const auto& watch : watches)
+            if (watch->pending(samples)) deadline = std::min(deadline, watch->due);
+        if (service_wait) service_wait(deadline);
+        else events.wait(deadline);
     }
     for (auto& watch : watches) {
         try { watch->stop(); }

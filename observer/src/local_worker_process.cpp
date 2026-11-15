@@ -182,6 +182,10 @@ public:
     void stop() noexcept { child.stop(); }
     std::uint64_t id() const { return child.process_id(); }
     std::optional<std::uint64_t> rss() const { return child.rss_bytes(); }
+    LocalReadySource readiness() {
+        const auto event = child.output().read_event();
+        return {event, false, event == 0};
+    }
 #else
     Pair channel;
     pid_t pid = -1;
@@ -210,6 +214,7 @@ public:
         pid = -1;
     }
     std::uint64_t id() const { return pid > 0 ? static_cast<std::uint64_t>(pid) : 0; }
+    LocalReadySource readiness() { return {channel.fd[0]}; }
     std::optional<std::uint64_t> rss() const {
         if (pid <= 0) return {};
 #ifdef __APPLE__
@@ -325,13 +330,19 @@ LocalWorkerOutput LocalWorkerProcess::read(Clock::time_point deadline) {
     return result;
 }
 LocalWorkerOutput LocalWorkerProcess::poll() { return read(Clock::now()); }
+LocalReadySource LocalWorkerProcess::readiness() {
+    if (ended_ || buffered_.find('\n') != std::string::npos) return {-1, false, true};
+    try { return impl_->readiness(); }
+    catch (...) { return {-1, false, true}; } // The ordinary pump owns IO failure handling.
+}
 Json LocalWorkerProcess::receive(Clock::time_point deadline, const std::function<bool()>& cancelled,
-                                 const std::function<void(const Json&)>& progress) {
+                                 const std::function<void(const Json&)>& progress,
+                                 const std::function<void(Clock::time_point)>& wait) {
     const auto checked = [&] { return cancelled_or_suspended(cancelled); };
     std::size_t progress_frames = 0;
     for (;;) {
         active(deadline, checked);
-        const auto output = read(std::min(deadline, Clock::now() + std::chrono::milliseconds(20)));
+        const auto output = read(wait ? Clock::now() : std::min(deadline, Clock::now() + std::chrono::milliseconds(20)));
         active(deadline, checked);
         if (output.frame) {
             if (output.frame->size() + 1 > 128 * 1024) throw Error("service-frame-too-large", "Worker reply exceeds its bound.");
@@ -348,6 +359,7 @@ Json LocalWorkerProcess::receive(Clock::time_point deadline, const std::function
             return value;
         }
         if (output.ended) throw Error("service-disconnected", "Worker closed before its reply.");
+        if (wait) wait(deadline);
     }
 }
 }

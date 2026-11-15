@@ -162,6 +162,7 @@ struct Channel::Impl {
     std::unique_ptr<Operation> readiness;
     std::array<char, 4096> stream_buffer{};
     std::unique_ptr<Operation> stream_read;
+    std::optional<std::string> prefetched;
     std::string write_buffer;
     std::unique_ptr<Operation> stream_write;
     explicit Impl(detail::Handle input) : handle(std::move(input)) {}
@@ -175,6 +176,7 @@ void Channel::close() noexcept {
         impl_->stream_read.reset();
         impl_->stream_write.reset();
         impl_->buffered = false;
+        impl_->prefetched.reset();
         impl_->handle = detail::Handle();
     }
 }
@@ -202,9 +204,18 @@ std::pair<Channel, Channel> Channel::worker_stdio() {
     return {std::move(input), std::move(output)};
 }
 bool Channel::input_or_closed() const {
+    if (impl_->prefetched || (impl_->stream_read && WaitForSingleObject(impl_->stream_read->event.get(), 0) == WAIT_OBJECT_0)) return true;
     if (impl_->buffered || (impl_->readiness && WaitForSingleObject(impl_->readiness->event.get(), 0) == WAIT_OBJECT_0)) return true;
     DWORD bytes = 0;
     return !PeekNamedPipe(impl_->handle.get(), nullptr, 0, nullptr, &bytes, nullptr) || bytes != 0;
+}
+std::intptr_t Channel::read_event() {
+    if (impl_->prefetched) return 0;
+    if (auto bytes = read_some(Clock::now())) { impl_->prefetched = std::move(*bytes); return 0; }
+    return reinterpret_cast<std::intptr_t>(impl_->stream_read->event.get());
+}
+std::intptr_t Channel::write_event() const {
+    return impl_->stream_write ? reinterpret_cast<std::intptr_t>(impl_->stream_write->event.get()) : 0;
 }
 bool Channel::wait_input(Deadline deadline, const Cancelled& cancelled) {
     if (impl_->stream_read) throw TransportError("service-frame-invalid", "Cannot mix native stream and framed reads.");
@@ -242,6 +253,7 @@ bool Channel::wait_input(Deadline deadline, const Cancelled& cancelled) {
     return true;
 }
 std::optional<std::string> Channel::read_some(Deadline deadline) {
+    if (impl_->prefetched) { auto bytes = std::move(impl_->prefetched); impl_->prefetched.reset(); return bytes; }
     if (impl_->readiness || impl_->buffered) throw TransportError("service-frame-invalid", "Cannot mix native stream and framed reads.");
     DWORD count = 0;
     if (!impl_->stream_read) {
@@ -339,6 +351,12 @@ bool Channel::wait_written(Deadline deadline) {
     catch (const TransportError& error) { if (error.code == "service-timeout") return false; throw; }
 }
 bool Channel::reply_consumed() const {
+    if (impl_->prefetched || (impl_->stream_read && WaitForSingleObject(impl_->stream_read->event.get(), 0) == WAIT_OBJECT_0)) {
+        // Only collect an already completed readiness read; never block here.
+        const auto bytes = const_cast<Channel*>(this)->read_some(Clock::now());
+        if (bytes && bytes->empty()) return true;
+        if (bytes) throw TransportError("service-frame-invalid", "Unexpected input after the local request.");
+    }
     DWORD bytes = 0;
     if (!PeekNamedPipe(impl_->handle.get(), nullptr, 0, nullptr, &bytes, nullptr)) {
         const auto error = GetLastError();
@@ -424,6 +442,9 @@ std::unique_ptr<PipeListener> PipeListener::system_broker(const std::string& end
     return std::unique_ptr<PipeListener>(new PipeListener(endpoint, true));
 }
 PipeListener::~PipeListener() = default;
+std::intptr_t PipeListener::connection_event() const {
+    return impl_->connection ? reinterpret_cast<std::intptr_t>(impl_->connection->event.get()) : 0;
+}
 Channel PipeListener::accept(Deadline deadline, const Cancelled& cancelled) {
     for (;;) {
         active(deadline, cancelled);

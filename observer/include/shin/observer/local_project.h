@@ -13,6 +13,7 @@ inline bool valid_reported_model(const std::string& value) {
 }
 class LocalQuerySession;
 class LocalRefreshSession;
+class LocalCoordinator;
 struct LocalProjectRequest {
     std::string command;
     fs::path root;
@@ -83,5 +84,7 @@ Json watch_local_projects(const LocalProjectRequest& request, const std::vector<
                           std::uint64_t samples, const std::function<bool()>& stopped,
                           const std::function<void()>& service_poll = {}, const LocalEnrollmentHooks& enrollment = {},
                           const std::function<void(const fs::path&, const Json&)>& report = {},
-                          const LocalRefresh& refresh = {}, const LocalReaderDemand& reader_demand = {});
+                          const LocalRefresh& refresh = {}, const LocalReaderDemand& reader_demand = {},
+                          LocalCoordinator* coordinator = nullptr,
+                          const std::function<void(std::chrono::steady_clock::time_point)>& service_wait = {});
 } // namespace shin::observer

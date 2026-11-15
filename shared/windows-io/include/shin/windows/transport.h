@@ -35,6 +35,10 @@ public:
     // belong to the same live same-user parent; duplicate without inheritance.
     static std::pair<Channel, Channel> worker_stdio();
     bool input_or_closed() const;
+    // Borrowed overlapped-operation events. Zero means already ready. Retire
+    // native wait registrations before the next channel operation or teardown.
+    std::intptr_t read_event();
+    std::intptr_t write_event() const;
     // Timeout leaves the pending first-byte read intact; read_frame consumes it.
     bool wait_input(Deadline deadline, const Cancelled& cancelled = {});
     // Stream reader for the service pump, separate from framed/first-byte reads.
@@ -65,6 +69,7 @@ public:
     ~PipeListener();
     Channel accept(Deadline deadline, const Cancelled& cancelled = {});
     std::unique_ptr<Channel> try_accept();
+    std::intptr_t connection_event() const;
 private:
     friend class Worker;
     PipeListener(const std::string& endpoint, bool system);

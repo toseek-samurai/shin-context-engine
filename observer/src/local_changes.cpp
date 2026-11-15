@@ -5,6 +5,7 @@
 #include <cerrno>
 #include <cstring>
 #include <limits>
+#include <map>
 #include <mutex>
 #include <utility>
 
@@ -83,8 +84,8 @@ int open_directory(const fs::path& path) {
 
 class LocalChanges::Impl {
 public:
-    Impl(std::vector<fs::path> input, std::function<bool(const fs::path&, bool)> predicate)
-        : roots(std::move(input)), relevant(std::move(predicate)) {
+    Impl(std::vector<fs::path> input, std::function<bool(const fs::path&, bool)> predicate, std::function<void()> wake)
+        : roots(std::move(input)), relevant(std::move(predicate)), notify(std::move(wake)) {
         if (roots.empty() || roots.size() > maximum_watches || !relevant) {
             throw Error("change-monitor-invalid", "Monitor requires bounded roots and a predicate");
         }
@@ -93,6 +94,12 @@ public:
     void changed() noexcept {
         if (serial.fetch_add(1, std::memory_order_acq_rel) == std::numeric_limits<std::uint64_t>::max()) {
             failure.store("event-token-overflow", std::memory_order_release);
+            good.store(false, std::memory_order_release);
+        }
+        try { if (notify) notify(); }
+        catch (...) {
+            auto previous = failure.load(std::memory_order_acquire);
+            if (*previous == '\0') failure.compare_exchange_strong(previous, "event-notification-failed", std::memory_order_acq_rel);
             good.store(false, std::memory_order_release);
         }
     }
@@ -126,6 +133,7 @@ public:
 
     std::vector<fs::path> roots;
     std::function<bool(const fs::path&, bool)> relevant;
+    std::function<void()> notify;
     std::atomic<std::uint64_t> serial{0};
     std::atomic<bool> good{true};
     std::atomic<const char*> failure{""};
@@ -140,11 +148,10 @@ public:
     }
     void flush() { if (native) native->flush(); }
 #elif defined(__APPLE__)
-    FSEventStreamRef stream = nullptr;
-    dispatch_queue_t queue = nullptr;
-    bool started = false;
-
-    static void fence(void*) {}
+    struct Subscriber { std::mutex gate; Impl* owner = nullptr; };
+    struct MacStream;
+    std::shared_ptr<MacStream> native;
+    std::shared_ptr<Subscriber> subscription;
 
     static void callback(ConstFSEventStreamRef, void* context, std::size_t count, void* paths,
                          const FSEventStreamEventFlags flags[], const FSEventStreamEventId[]) noexcept {
@@ -185,69 +192,182 @@ public:
         } catch (...) { self.failed("event-callback-failed"); }
     }
 
+    struct MacStream {
+        explicit MacStream(std::vector<fs::path> paths) : roots(std::move(paths)) {}
+        const std::vector<fs::path> roots;
+        FSEventStreamRef stream = nullptr;
+        dispatch_queue_t queue = nullptr;
+        bool started = false;
+        std::atomic<bool> reusable{true};
+        std::mutex delivery, subscribers_mutex;
+        std::vector<std::shared_ptr<Subscriber>> subscribers;
+
+        static void fence(void*) {}
+        static void callback(ConstFSEventStreamRef stream, void* context, std::size_t count, void* paths,
+                             const FSEventStreamEventFlags flags[], const FSEventStreamEventId ids[]) noexcept {
+            auto& self = *static_cast<MacStream*>(context);
+            try {
+                // A root/loss event can arrive before the first subscription.
+                // Such a stream must never be handed to a fresh logical monitor.
+                if (count > maximum_watches) self.reusable.store(false, std::memory_order_release);
+                else {
+                    auto names = static_cast<char**>(paths);
+                    std::size_t bytes = 0;
+                    for (std::size_t i = 0; i < count; ++i) {
+                        const auto flag = flags[i];
+                        if (flag & (kFSEventStreamEventFlagUserDropped | kFSEventStreamEventFlagKernelDropped |
+                                    kFSEventStreamEventFlagEventIdsWrapped | kFSEventStreamEventFlagRootChanged)) {
+                            self.reusable.store(false, std::memory_order_release);
+                            break;
+                        }
+                        if (flag & kFSEventStreamEventFlagHistoryDone) continue;
+                        const auto length = ::strnlen(names[i], maximum_path_bytes + 1);
+                        bytes += length;
+                        if (length > maximum_path_bytes || bytes > maximum_event_bytes || names[i][0] != '/') {
+                            self.reusable.store(false, std::memory_order_release);
+                            break;
+                        }
+                        if (flag & (kFSEventStreamEventFlagMount | kFSEventStreamEventFlagUnmount)) {
+                            const auto path = fs::path(std::string(names[i], length)).lexically_normal();
+                            if (std::any_of(self.roots.begin(), self.roots.end(), [&](const auto& root) {
+                                    return within(path, root) || within(root, path);
+                                })) self.reusable.store(false, std::memory_order_release);
+                        }
+                    }
+                }
+                std::vector<std::shared_ptr<Subscriber>> targets;
+                { std::lock_guard lock(self.subscribers_mutex); targets = self.subscribers; }
+                for (const auto& target : targets) {
+                    // Teardown waits for this subscriber's active delivery;
+                    // predicates run without the shared registry lock.
+                    std::lock_guard lock(target->gate);
+                    if (!target->owner) continue;
+                    Impl::callback(stream, target->owner, count, paths, flags, ids);
+                    if (!target->owner->good.load(std::memory_order_acquire))
+                        self.reusable.store(false, std::memory_order_release);
+                }
+            } catch (...) {
+                self.reusable.store(false, std::memory_order_release);
+                std::lock_guard lock(self.subscribers_mutex);
+                for (const auto& target : self.subscribers) {
+                    std::lock_guard gate(target->gate);
+                    if (target->owner) target->owner->failed("event-callback-failed");
+                }
+            }
+        }
+
+        std::shared_ptr<Subscriber> subscribe(Impl* owner) {
+            auto target = std::make_shared<Subscriber>(); target->owner = owner;
+            { std::lock_guard lock(subscribers_mutex);
+              if (subscribers.size() >= maximum_watches)
+                  throw Error("change-monitor-limit", "Monitor subscriber bound exceeded");
+              subscribers.push_back(target); }
+            if (!reusable.load(std::memory_order_acquire)) owner->failed();
+            return target;
+        }
+        void unsubscribe(const std::shared_ptr<Subscriber>& target) {
+            { std::lock_guard lock(target->gate); target->owner = nullptr; }
+            std::lock_guard lock(subscribers_mutex);
+            std::erase(subscribers, target);
+        }
+
+        void start() {
+            std::vector<std::string> names;
+            std::vector<struct stat> identities(roots.size());
+            for (std::size_t i = 0; i < roots.size(); ++i) {
+                names.push_back(roots[i].string());
+                if (::lstat(names.back().c_str(), &identities[i]) != 0 || !S_ISDIR(identities[i].st_mode)) {
+                    throw Error("change-monitor-setup", "Cannot identify monitor root");
+                }
+            }
+            queue = dispatch_queue_create("shin.observer.local-changes", DISPATCH_QUEUE_SERIAL);
+            if (!queue) throw Error("change-monitor-setup", "Cannot create monitor dispatch queue");
+            dispatch_queue_set_specific(queue, this, this, nullptr);
+            auto paths = CFArrayCreateMutable(nullptr, 0, &kCFTypeArrayCallBacks);
+            if (!paths) throw Error("change-monitor-setup", "Cannot allocate monitor roots");
+            for (const auto& name : names) {
+                auto path = CFStringCreateWithFileSystemRepresentation(nullptr, name.c_str());
+                if (!path) {
+                    CFRelease(paths);
+                    throw Error("change-monitor-setup", "Cannot encode monitor root");
+                }
+                CFArrayAppendValue(paths, path);
+                CFRelease(path);
+            }
+            FSEventStreamContext context{0, this, nullptr, nullptr, nullptr};
+            stream = FSEventStreamCreate(nullptr, callback, &context, paths, kFSEventStreamEventIdSinceNow,
+                0.020, kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer |
+                       kFSEventStreamCreateFlagWatchRoot);
+            CFRelease(paths);
+            if (!stream) throw Error("change-monitor-setup", "Cannot create native event stream");
+            FSEventStreamSetDispatchQueue(stream, queue);
+            started = FSEventStreamStart(stream);
+            if (!started) throw Error("change-monitor-setup", "Cannot start native event stream");
+            for (std::size_t i = 0; i < roots.size(); ++i) {
+                require_directory(roots[i]);
+                struct stat current{};
+                if (::lstat(names[i].c_str(), &current) != 0 || current.st_dev != identities[i].st_dev ||
+                    current.st_ino != identities[i].st_ino) {
+                    throw Error("change-monitor-setup", "Monitor root changed during stream setup");
+                }
+            }
+        }
+
+        bool flush() {
+            if (queue && dispatch_get_specific(this)) {
+                throw Error("change-monitor-reentrant", "Cannot flush from the monitor predicate");
+            }
+            std::lock_guard<std::mutex> lock(delivery);
+            if (started) {
+                if (!stream || !queue) { reusable.store(false, std::memory_order_release); return false; }
+                FSEventStreamFlushSync(stream);
+                dispatch_sync_f(queue, nullptr, fence);
+            }
+            return started;
+        }
+
+        ~MacStream() {
+            if (stream) {
+                if (started) FSEventStreamStop(stream);
+                FSEventStreamInvalidate(stream);
+                dispatch_sync_f(queue, nullptr, fence);
+                FSEventStreamRelease(stream);
+            }
+            if (queue) dispatch_release(queue);
+        }
+    };
+
+    static std::shared_ptr<MacStream> shared_stream(const std::vector<fs::path>& paths) {
+        static std::mutex pool_mutex;
+        static std::map<std::vector<fs::path>, std::weak_ptr<MacStream>> pool;
+        std::shared_ptr<MacStream> existing;
+        {
+            std::lock_guard lock(pool_mutex);
+            std::erase_if(pool, [](const auto& entry) { return entry.second.expired(); });
+            const auto found = pool.find(paths);
+            if (found != pool.end()) existing = found->second.lock();
+        }
+        if (existing && existing->reusable.load(std::memory_order_acquire)) return existing;
+        auto created = std::make_shared<MacStream>(paths);
+        created->start();
+        std::shared_ptr<MacStream> raced, selected;
+        {
+            std::lock_guard lock(pool_mutex);
+            raced = pool[paths].lock();
+            if (raced && raced->reusable.load(std::memory_order_acquire)) selected = raced;
+            else { pool[paths] = created; selected = created; }
+        }
+        // Discard a concurrent redundant stream outside the registry lock:
+        // its queue may be finishing a predicate that creates another monitor.
+        return selected;
+    }
+
     void start_native() {
-        std::vector<std::string> names;
-        std::vector<struct stat> identities(roots.size());
-        for (std::size_t i = 0; i < roots.size(); ++i) {
-            names.push_back(roots[i].string());
-            if (::lstat(names.back().c_str(), &identities[i]) != 0 || !S_ISDIR(identities[i].st_mode)) {
-                throw Error("change-monitor-setup", "Cannot identify monitor root");
-            }
-        }
-        queue = dispatch_queue_create("shin.observer.local-changes", DISPATCH_QUEUE_SERIAL);
-        if (!queue) throw Error("change-monitor-setup", "Cannot create monitor dispatch queue");
-        dispatch_queue_set_specific(queue, this, this, nullptr);
-        auto paths = CFArrayCreateMutable(nullptr, 0, &kCFTypeArrayCallBacks);
-        if (!paths) throw Error("change-monitor-setup", "Cannot allocate monitor roots");
-        for (const auto& name : names) {
-            auto path = CFStringCreateWithFileSystemRepresentation(nullptr, name.c_str());
-            if (!path) {
-                CFRelease(paths);
-                throw Error("change-monitor-setup", "Cannot encode monitor root");
-            }
-            CFArrayAppendValue(paths, path);
-            CFRelease(path);
-        }
-        FSEventStreamContext context{0, this, nullptr, nullptr, nullptr};
-        stream = FSEventStreamCreate(nullptr, callback, &context, paths, kFSEventStreamEventIdSinceNow,
-            0.020, kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer |
-                   kFSEventStreamCreateFlagWatchRoot);
-        CFRelease(paths);
-        if (!stream) throw Error("change-monitor-setup", "Cannot create native event stream");
-        FSEventStreamSetDispatchQueue(stream, queue);
-        started = FSEventStreamStart(stream);
-        if (!started) throw Error("change-monitor-setup", "Cannot start native event stream");
-        for (std::size_t i = 0; i < roots.size(); ++i) {
-            require_directory(roots[i]);
-            struct stat current{};
-            if (::lstat(names[i].c_str(), &current) != 0 || current.st_dev != identities[i].st_dev ||
-                current.st_ino != identities[i].st_ino) {
-                throw Error("change-monitor-setup", "Monitor root changed during stream setup");
-            }
-        }
+        native = shared_stream(roots);
+        subscription = native->subscribe(this);
     }
-
-    void flush() {
-        if (queue && dispatch_get_specific(this)) {
-            throw Error("change-monitor-reentrant", "Cannot flush from the monitor predicate");
-        }
-        std::lock_guard<std::mutex> lock(delivery);
-        if (started) {
-            if (!stream || !queue) { failed(); return; }
-            FSEventStreamFlushSync(stream);
-            dispatch_sync_f(queue, nullptr, fence);
-        }
-    }
-
-    ~Impl() {
-        if (stream) {
-            if (started) FSEventStreamStop(stream);
-            FSEventStreamInvalidate(stream);
-            dispatch_sync_f(queue, nullptr, fence);
-            FSEventStreamRelease(stream);
-        }
-        if (queue) dispatch_release(queue);
-    }
+    void flush() { if (native && !native->flush()) failed(); }
+    ~Impl() { if (native && subscription) native->unsubscribe(subscription); }
 
 #elif defined(__linux__)
     struct Watch { fs::path path; bool root; bool subtree; };
@@ -458,8 +578,8 @@ public:
 };
 
 LocalChanges::LocalChanges(std::vector<fs::path> roots,
-    std::function<bool(const fs::path&, bool)> relevant)
-    : impl_(std::make_unique<Impl>(std::move(roots), std::move(relevant))) { impl_->start(); }
+    std::function<bool(const fs::path&, bool)> relevant, std::function<void()> notify)
+    : impl_(std::make_unique<Impl>(std::move(roots), std::move(relevant), std::move(notify))) { impl_->start(); }
 LocalChanges::~LocalChanges() = default;
 std::uint64_t LocalChanges::sequence() const noexcept { return impl_->serial.load(std::memory_order_acquire); }
 bool LocalChanges::healthy() const noexcept { return impl_->good.load(std::memory_order_acquire); }

@@ -1,5 +1,6 @@
 #include "local_scm_windows.h"
 #include "shin/observer/local_service.h"
+#include "shin/observer/local_coordinator.h"
 #include "shin/observer/local_registry.h"
 #include "shin/observer/model_usage.h"
 #include "shin/windows/transport.h"
@@ -276,7 +277,9 @@ int windows_scm_user(const std::string& event_name) {
     { const auto lock=lock_local_service_control(request.home); ensure_local_registry(request.home); }
     windows_scm_user_runtime=true;
     const auto usage=[] {try {return default_model_usage_sources(nullptr);}catch(...) {return Json::object();}}();
-    (void)serve_local_projects(request,{},executable,[&]{return WaitForSingleObject(stop.value,0)!=WAIT_TIMEOUT;},true,true,{},usage);
+    LocalCoordinator coordinator;
+    coordinator.stop_on({reinterpret_cast<std::intptr_t>(stop.value)});
+    (void)serve_local_projects(request,{},executable,[&]{return WaitForSingleObject(stop.value,0)!=WAIT_TIMEOUT;},true,true,{},usage,&coordinator);
     return 0;
 }
 }

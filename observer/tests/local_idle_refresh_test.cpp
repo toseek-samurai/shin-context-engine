@@ -13,7 +13,9 @@
 #include <iostream>
 #include <thread>
 #ifndef _WIN32
+#include <fcntl.h>
 #include <sys/resource.h>
+#include <unistd.h>
 #endif
 #ifdef _WIN32
 #include "../../tests/core/windows_private_acl.h"
@@ -171,6 +173,27 @@ void descriptor_pressure(const fs::path& base, const fs::path& profiles) {
             }
         }
     }
+    // Shared streams may retain the complete working set under this limit.
+    // Force real pressure separately rather than requiring redundant watches.
+    {
+        struct Pressure {
+            std::vector<int> held;
+            ~Pressure() { for (int fd : held) ::close(fd); }
+        } pressure;
+        pressure.held.reserve(256);
+        while (local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) {
+            const int fd = ::open("/dev/null", O_RDONLY | O_CLOEXEC);
+            check(fd >= 0, "cannot create controlled descriptor pressure");
+            pressure.held.push_back(fd);
+        }
+        const auto result = current(worker, projects.front());
+        const auto work = result.value("refresh_work", Json::object());
+        check(!hit(result) && work.value("idle_checkpoint_miss", "") == "descriptor-budget",
+              "controlled pressure did not preserve the qualified fallback and miss reason");
+        ++dropped;
+    }
+    (void)current(worker, projects.front());
+    check(hit(current(worker, projects.front())), "checkpoint did not recover after descriptor release");
     std::cout << "checkpoint reuse under descriptor pressure: " << reused << "/18 warm visits, "
               << dropped << " retention refusals\n";
     check(reused >= 6, "overlapping native roots exhausted the unchanged checkpoint working set");

@@ -296,6 +296,14 @@ int telemetry_scenario() {
         }
         result = telemetry.snapshot();
         if (result.at("events").size() != 32 || result.at("samples").empty() || result.at("samples").size() > 120) return 4;
+        LocalTelemetry deferred;
+        std::size_t rss_reads = 0;
+        for (unsigned i = 0; i < 10; ++i)
+            deferred.sample(0, [&] { ++rss_reads; return std::optional<std::uint64_t>{0}; });
+        if (rss_reads != deferred.snapshot().at("samples").size()) return 80;
+        LocalTelemetry unknown;
+        unknown.sample(0, [] { return std::optional<std::uint64_t>{}; });
+        if (!unknown.snapshot().at("samples").at(0).at("rss_bytes").is_null()) return 81;
         for (int i = 0; i < 40; ++i) telemetry.record("/project/" + std::to_string(i), state);
         if (telemetry.snapshot().at("project_states").size() != 16) return 5;
         if (telemetry.snapshot().at("durable") != false) return 6;

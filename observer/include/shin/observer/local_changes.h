@@ -10,10 +10,12 @@ class LocalChanges {
 public:
     // The predicate may run on a native worker; captures must outlive this object.
     // directory=true also denotes uncertainty about the entire subtree. Returning
-    // false for a directory permits Linux to prune it. Do not reenter this object.
+    // false for a directory permits Linux to prune it. Do not reenter this object
+    // or synchronously flush monitors from a predicate: native queues can be shared.
     // Invalid arguments throw Error; native/setup/predicate failures are unhealthy.
     LocalChanges(std::vector<fs::path> roots,
-                 std::function<bool(const fs::path&, bool directory)> relevant);
+                 std::function<bool(const fs::path&, bool directory)> relevant,
+                 std::function<void()> notify = {});
     ~LocalChanges();
     LocalChanges(const LocalChanges&) = delete;
     LocalChanges& operator=(const LocalChanges&) = delete;

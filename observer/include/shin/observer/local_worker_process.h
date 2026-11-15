@@ -1,5 +1,6 @@
 #pragma once
 #include "io.h"
+#include "local_coordinator.h"
 #include <chrono>
 #include <functional>
 
@@ -53,8 +54,10 @@ public:
     LocalWorkerProcess& operator=(const LocalWorkerProcess&) = delete;
     void send(const Json& payload, Clock::time_point deadline, const std::function<bool()>& cancelled = {});
     LocalWorkerOutput poll();
+    LocalReadySource readiness();
     Json receive(Clock::time_point deadline, const std::function<bool()>& cancelled = {},
-                 const std::function<void(const Json&)>& progress = {});
+                 const std::function<void(const Json&)>& progress = {},
+                 const std::function<void(Clock::time_point)>& wait = {});
     std::uint64_t process_id() const;
     std::optional<std::uint64_t> rss_bytes() const;
     void stop() noexcept;

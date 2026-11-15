@@ -15,6 +15,7 @@
 #include "source_discovery.h"
 #include <algorithm>
 #include <cmath>
+#include <condition_variable>
 #include <map>
 #include <set>
 #include <thread>
@@ -84,9 +85,10 @@ struct QualifiedProject {
 
 class Service {
 public:
-    Service(const LocalProjectRequest& input, const std::vector<fs::path>& roots, const fs::path& binary, bool registered, bool managed)
+    Service(const LocalProjectRequest& input, const std::vector<fs::path>& roots, const fs::path& binary, bool registered, bool managed,
+            LocalCoordinator& coordinator)
         : home(fs::absolute(input.home).lexically_normal()), directory(local_service_directory(home)), executable(fs::canonical(binary)),
-          registry_mode(registered), supervised(managed) {
+          registry_mode(registered), supervised(managed), events(coordinator) {
         executable_id = service_executable_identity(executable);
         mcp_runtime = local_mcp_runtime_binding(executable);
         ensure_private_directory(directory);
@@ -109,16 +111,19 @@ public:
     }
 
     void poll() {
+        events.poll_signals();
         poll_residents();
         trim_resident_memory();
-        std::optional<std::uint64_t> rss = std::uint64_t{0};
-        const auto account = [&](const std::optional<std::uint64_t>& bytes) {
-            if (rss && bytes) *rss += *bytes;
-            else rss.reset();
-        };
-        for (const auto& [root, reader] : residents) { (void)root; account(reader->process.rss_bytes()); }
-        if (refresh_process) account(refresh_process->rss_bytes());
-        telemetry.sample(active_workers(), rss);
+        telemetry.sample(active_workers(), [this] {
+            std::optional<std::uint64_t> rss = std::uint64_t{0};
+            const auto account = [&](const std::optional<std::uint64_t>& bytes) {
+                if (rss && bytes) *rss += *bytes;
+                else rss.reset();
+            };
+            for (const auto& [root, reader] : residents) { (void)root; account(reader->process.rss_bytes()); }
+            if (refresh_process) account(refresh_process->rss_bytes());
+            return rss;
+        });
         endpoint->verify();
         for (std::size_t count = 0; count < connection_limit; ++count) {
             // Separate bounded framing slots deliver correlated refusals. Once
@@ -135,6 +140,27 @@ public:
         }
         for (auto& client : connections) process(*client);
         std::erase_if(connections, [](const auto& client) { return client->done; });
+    }
+
+    void wait(Clock::time_point deadline) {
+        if (stopping || events.stopped()) return;
+        deadline = std::min(deadline, next_memory_check);
+        std::vector<LocalReadySource> sources;
+        if (connections.size() < connection_limit + refusal_limit) sources.push_back(endpoint->readiness());
+        for (auto& client : connections) {
+            if (client->done) continue;
+            deadline = std::min(deadline, client->deadline);
+            if (client->admission_pending) deadline = std::min(deadline, client->next_admission);
+            try { sources.push_back(client->socket->readiness(!client->output.empty())); }
+            catch (const Error&) { sources.push_back({-1, false, true}); }
+        }
+        for (auto& [root, reader] : residents) {
+            (void)root;
+            sources.push_back(reader->process.readiness());
+            if (!reader->ready) deadline = std::min(deadline, reader->deadline);
+        }
+        if (refresh_worker) sources.push_back(refresh_worker->readiness());
+        events.wait(deadline, sources);
     }
 
     bool stopping = false;
@@ -239,7 +265,12 @@ public:
             last_progress = now;
         };
         try {
-            result = worker.receive(budget.operation_deadline(), pump, receive_progress);
+            result = worker.receive(budget.operation_deadline(), pump, receive_progress,
+                [&](Clock::time_point deadline) {
+                    // The stage stall deadline remains independent of progress
+                    // and the overall operation cap; neither may slide on wake.
+                    wait(std::min({deadline, budget.next_deadline(), Clock::now() + std::chrono::seconds(1)}));
+                });
         } catch (const Error& error) {
             if (error.code == "service-timeout" || (deadline_expired && error.code == "service-request-cancelled"))
                 throw Error("refresh-timeout", "Refresh stalled for 60 seconds in one stage or exceeded its 3-minute operation deadline.");
@@ -864,6 +895,7 @@ private:
     std::vector<std::unique_ptr<Connection>> connections;
     bool registry_mode;
     bool supervised;
+    LocalCoordinator& events;
     std::string instance_id = digest(std::to_string(service_process_id()) + ":" + std::to_string(Clock::now().time_since_epoch().count()));
     std::string registry_error;
     std::map<std::string, std::string> enrollment_errors;
@@ -942,20 +974,24 @@ std::string service_read(ServiceChannel& channel, std::size_t limit, ServiceDead
 
 Json serve_local_projects(const LocalProjectRequest& request, const std::vector<fs::path>& roots,
                           const fs::path& executable, const std::function<bool()>& stopped, bool registered, bool supervised,
-                          const std::function<void()>& started, const Json& usage_sources) {
+                          const std::function<void()>& started, const Json& usage_sources, LocalCoordinator* coordinator) {
     const auto reaping = service_reaping();
     if (roots.size() > kLocalServiceProjectLimit || (registered && registered_local_projects(request.home).size() > kLocalServiceProjectLimit))
         throw Error("registry-capacity", "This local service supports at most sixteen enrolled projects.");
     if (registered && !roots.empty())
         throw Error("registry-unavailable", "Registered service does not accept explicit roots.");
     check_local_service_supervision(request, executable, supervised);
-    Service service(request, roots, executable, registered, supervised);
+    auto owned_coordinator = coordinator ? nullptr : std::make_unique<LocalCoordinator>();
+    auto& events = coordinator ? *coordinator : *owned_coordinator;
+    Service service(request, roots, executable, registered, supervised, events);
     if (started) started();
     std::jthread storage_maintenance([home = request.home](std::stop_token stop) {
+        std::mutex mutex;
+        std::condition_variable_any wake;
+        std::unique_lock lock(mutex);
         while (!stop.stop_requested()) {
             automatic_local_storage(home);
-            for (int second = 0; second < 3000 && !stop.stop_requested(); ++second)
-                std::this_thread::sleep_for(std::chrono::milliseconds(100));
+            wake.wait_for(lock, stop, std::chrono::minutes(5), [] { return false; });
         }
     });
     std::jthread usage_collection;
@@ -982,7 +1018,8 @@ Json serve_local_projects(const LocalProjectRequest& request, const std::vector<
                                       [&] { service.poll(); }, enrollment,
                                       [&](const auto& root, const auto& state) { service.project_state(root, state); },
                                       [&](const auto& project) { return service.refresh(project, stopped); },
-                                      [&] { return service.reader_demand(); });
+                                      [&] { return service.reader_demand(); }, &events,
+                                      [&](auto deadline) { service.wait(deadline); });
     service.drain_stop_replies();
     result["command"] = "serve";
     result["service_stopped"] = true;

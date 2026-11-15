@@ -15,6 +15,9 @@
 #else
 #include <unistd.h>
 #endif
+#ifdef __APPLE__
+#include <dirent.h>
+#endif
 
 namespace {
 using namespace shin::observer;
@@ -263,6 +266,104 @@ void predicate_failure_and_teardown() {
     check(callbacks.load() == after_destruction, "callback outlived its monitor");
 }
 
+#ifdef __APPLE__
+unsigned descriptor_count() {
+    auto* directory = ::opendir("/dev/fd");
+    check(directory != nullptr, "cannot count native descriptors");
+    unsigned count = 0;
+    while (const auto* entry = ::readdir(directory))
+        if (entry->d_name[0] >= '0' && entry->d_name[0] <= '9') ++count;
+    ::closedir(directory);
+    return count;
+}
+
+void shared_roots_preserve_scope_lifetime_and_root_loss() {
+    Fixture fixture;
+    const auto root = fixture.root;
+    write(root / "first", "before");
+    // The second path is untouched until its own action. Delayed FSEvents
+    // setup notifications must not be mistaken for cross-scope delivery.
+    auto first = std::make_unique<LocalChanges>(std::vector<fs::path>{root},
+        [path = root / "first"](const fs::path& p, bool) { return p == path; });
+    first->flush();
+    const auto one = descriptor_count();
+    auto second = std::make_unique<LocalChanges>(std::vector<fs::path>{root},
+        [path = root / "second"](const fs::path& p, bool) { return p == path; });
+    std::vector<std::unique_ptr<LocalChanges>> peers;
+    for (unsigned i = 0; i < 6; ++i)
+        peers.push_back(std::make_unique<LocalChanges>(std::vector<fs::path>{root},
+            [](const fs::path&, bool) { return false; }));
+    second->flush();
+    check(descriptor_count() <= one + 4, "identical roots retained duplicate native descriptors");
+    const auto before_second = second->sequence();
+    sees(*first, [&] { write(root / "first", "edited first"); });
+    second->flush();
+    check(second->healthy() && second->sequence() == before_second, "one scope invalidated its peer");
+    first.reset();
+    sees(*second, [&] { write(root / "second", "edited second"); });
+    const auto before_loss = second->sequence();
+    const auto moved = root.string() + "-moved";
+    fs::rename(root, moved); fixture.root = moved;
+    second->flush();
+    await([&] { return !second->healthy(); }, "shared root loss was missed");
+    check(second->sequence() > before_loss, "shared root loss did not invalidate the token");
+    for (const auto& peer : peers) check(!peer->healthy(), "filter suppressed shared root loss");
+    Fixture replacement;
+    fs::remove(replacement.root); replacement.root = root; fs::create_directory(root);
+    LocalChanges recovered({root}, [](const fs::path&, bool) { return true; });
+    sees(recovered, [&] { write(root / "new", "replacement root"); });
+    check(!second->healthy(), "replacement stream revived an invalidated subscription");
+}
+
+void concurrent_shared_root_subscriptions() {
+    Fixture fixture;
+    std::vector<std::future<std::unique_ptr<LocalChanges>>> pending;
+    for (unsigned i = 0; i < 8; ++i)
+        pending.push_back(std::async(std::launch::async, [root = fixture.root] {
+            auto monitor = std::make_unique<LocalChanges>(std::vector<fs::path>{root},
+                [](const fs::path&, bool) { return true; });
+            monitor->flush(); return monitor;
+        }));
+    std::vector<std::unique_ptr<LocalChanges>> monitors;
+    std::vector<std::uint64_t> before;
+    for (auto& future : pending) monitors.push_back(future.get());
+    for (auto& monitor : monitors) monitor->flush();
+    for (auto& monitor : monitors) before.push_back(monitor->sequence());
+    write(fixture.root / "created", "shared delivery");
+    for (std::size_t i = 0; i < monitors.size(); ++i) {
+        await([&] { return monitors[i]->sequence() > before[i]; }, "concurrent subscriber missed delivery");
+        check(monitors[i]->healthy(), "concurrent subscription lost native health");
+    }
+}
+
+void shared_callback_does_not_pin_peer_teardown() {
+    Fixture fixture;
+    std::atomic<bool> armed{false};
+    std::promise<void> entered, release;
+    auto released = release.get_future().share();
+    LocalChanges first({fixture.root}, [&](const fs::path&, bool) {
+        if (armed.exchange(false)) { entered.set_value(); released.wait(); }
+        return true;
+    });
+    auto peer = std::make_unique<LocalChanges>(std::vector<fs::path>{fixture.root},
+        [](const fs::path&, bool) { return false; });
+    struct Release {
+        std::promise<void>& trigger; bool done = false;
+        ~Release() { if (!done) trigger.set_value(); }
+    } guard{release};
+    first.flush(); peer->flush(); armed.store(true);
+    write(fixture.root / "created", "hold one subscriber");
+    check(entered.get_future().wait_for(std::chrono::seconds(5)) == std::future_status::ready,
+          "shared predicate was not entered");
+    auto closing = std::async(std::launch::async, [&] { peer.reset(); });
+    const auto status = closing.wait_for(std::chrono::seconds(1));
+    release.set_value(); guard.done = true;
+    closing.get();
+    check(status == std::future_status::ready, "unrelated predicate blocked peer teardown");
+    first.flush(); check(first.healthy(), "peer teardown damaged its live subscription");
+}
+#endif
+
 #if defined(__linux__) || defined(_WIN32)
 void no_symlink_subtree_traversal() {
     Fixture fixture, outside;
@@ -355,6 +456,11 @@ int main() {
         failure_is_explicit_and_sticky();
         root_deletion_and_ancestor_loss();
         predicate_failure_and_teardown();
+#ifdef __APPLE__
+        shared_roots_preserve_scope_lifetime_and_root_loss();
+        concurrent_shared_root_subscriptions();
+        shared_callback_does_not_pin_peer_teardown();
+#endif
 #if defined(__linux__) || defined(_WIN32)
         no_symlink_subtree_traversal();
 #endif

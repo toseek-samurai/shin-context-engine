@@ -1,5 +1,6 @@
 #pragma once
 #include "io.h"
+#include "local_coordinator.h"
 #include <chrono>
 #include <functional>
 #include <string_view>
@@ -17,12 +18,14 @@ public:
     virtual bool input_or_closed() const = 0;
     virtual bool reply_consumed() const = 0;
     virtual void finish_reply(ServiceDeadline deadline, const ServiceCancelled& cancelled) = 0;
+    virtual LocalReadySource readiness(bool writing = false) = 0;
 };
 class ServiceEndpoint {
 public:
     virtual ~ServiceEndpoint() = default;
     virtual std::unique_ptr<ServiceChannel> accept() = 0;
     virtual void verify() const = 0;
+    virtual LocalReadySource readiness() = 0;
 };
 class ServiceLaunch {
 public:

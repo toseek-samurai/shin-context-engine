@@ -124,3 +124,9 @@ Keep the `shin_re2` and `shin_abseil` source tags and SHA-256 pins aligned with
 [SecretScanner.cmake](../shared/cmake/SecretScanner.cmake). The
 formula stages them before offline CMake configuration. `brew test` checks
 that both licenses ship with the package.
+
+For a release containing the libuv coordinator, also stage `shin_libuv` from
+[Coordinator.cmake](../shared/cmake/Coordinator.cmake) with its exact tag and hash
+before offline configuration. Retain both `LICENSE` and `LICENSE-extra` in
+`share/shin-observer/licenses/libuv/`; update the published formula only after
+that release has passed its package gates.

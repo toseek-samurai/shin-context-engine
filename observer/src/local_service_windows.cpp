@@ -33,6 +33,10 @@ public:
     void finish_reply(ServiceDeadline deadline, const ServiceCancelled& cancelled) override {
         io([&] { channel.finish_reply(deadline, cancelled); });
     }
+    LocalReadySource readiness(bool writing) override {
+        const auto event = io([&] { return writing ? channel.write_event() : channel.read_event(); });
+        return {event, false, event == 0};
+    }
 private:
     native::Channel channel;
 };
@@ -56,6 +60,10 @@ public:
         directory.check();
         if (directory_identity(path, true) != identity)
             throw Error("service-endpoint-changed", "Private service directory identity changed.");
+    }
+    LocalReadySource readiness() override {
+        const auto event = listener.connection_event();
+        return {event, false, event == 0};
     }
 private:
     fs::path path;

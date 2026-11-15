@@ -788,6 +788,15 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
         if (complete) {
             const auto ordinary = select_prepared_brief_candidates(
                 options, request, *prepared_groups, relaxed_required);
+            const auto covers_available_groups = [&](const BriefExecution& execution) {
+                if (execution.selection.ordered.empty() || execution.ranked_paths.size() < 2) return false;
+                for (std::size_t group = 0; group < prepared_groups->size(); ++group) {
+                    const auto& coverage = execution.coverage.groups[group];
+                    if ((*prepared_groups)[group].discovered_row_count > 0 &&
+                        coverage.returned_evidence_paths.empty() && coverage.selected_document_paths.empty()) return false;
+                }
+                return true;
+            };
             int previous_required = groups;
             for (int required : {narrowed_required, relaxed_required + 1}) {
                 if (required == previous_required) continue;
@@ -805,29 +814,35 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
                     candidates.discovered_row_count > 0 && families_preserved &&
                     ordinary.discovered_row_count > static_cast<std::size_t>(request.limit) &&
                     plan.admits(candidates.discovered_row_count)) {
+                    std::optional<BriefResult> rejected_plan;
+                    // Qualify missing document units from postings first. A
+                    // successful combined pass already scores the ordinary rows.
+                    if (groups < kCompoundQueryCoverageThreshold && plan.admits(kMaxIndexedCandidateRows)) {
+                        auto planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
+                            options, request, true, required, true, &*prepared_groups, manifest, false, required));
+                        planned.identifier_probe_rows = identifier_probe_rows;
+                        auto execution = make_brief_execution(request, std::move(planned));
+                        if (covers_available_groups(execution))
+                            SHIN_STAGE_RETURN plan.finish(std::move(execution.retrieval));
+                        rejected_plan = std::move(execution.retrieval);
+                    }
+                    if (!plan.admits(candidates.discovered_row_count)) continue;
                     auto narrowed = SHIN_STAGE_AWAIT SHIN_STAGE_COLLECT(
                         options, request, candidates, required, true);
                     plan.record("narrowed", narrowed);
                     narrowed.identifier_probe_rows = identifier_probe_rows;
                     auto execution = make_brief_execution(request, std::move(narrowed));
-                    bool covered = !execution.selection.ordered.empty() && execution.ranked_paths.size() >= 2;
-                    for (std::size_t group = 0; group < prepared_groups->size() && covered; ++group) {
-                        const auto& coverage = execution.coverage.groups[group];
-                        if ((*prepared_groups)[group].discovered_row_count > 0 &&
-                            coverage.returned_evidence_paths.empty() &&
-                            coverage.selected_document_paths.empty()) covered = false;
-                    }
-                    if (covered) {
-                        // Narrowed rows can cover every group while omitting a
-                        // qualifying document whose terms span several sections.
-                        // Preserve those owners below the compound-query threshold too.
-                        if (plan.admits(kMaxIndexedCandidateRows)) {
+                    if (covers_available_groups(execution)) {
+                        if (rejected_plan)
+                            retain_rejected_planner_diagnostics(execution.retrieval, *rejected_plan,
+                                rejected_plan->planner_rejection_reason.empty() ? "insufficient-document-coverage"
+                                                                               : rejected_plan->planner_rejection_reason);
+                        // Compound queries retain their observed-coverage supplement.
+                        if (groups >= kCompoundQueryCoverageThreshold && plan.admits(kMaxIndexedCandidateRows)) {
                             const int available_groups = query_coverage_covered_groups(execution.coverage);
-                            const int document_required = groups < kCompoundQueryCoverageThreshold
-                                ? required : available_groups;
                             auto planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
                                 options, request, true, required, true, &*prepared_groups, manifest,
-                                false, document_required));
+                                false, available_groups));
                             planned.identifier_probe_rows = identifier_probe_rows;
                             auto supplemented = make_brief_execution(request, std::move(planned));
                             if (!supplemented.selection.ordered.empty() &&

@@ -18,6 +18,7 @@ public:
     explicit LocalRefreshDeadline(Clock::time_point now = Clock::now())
         : operation_(now + operation_limit), stage_(now + stage_limit) {}
     Clock::time_point operation_deadline() const { return operation_; }
+    Clock::time_point next_deadline() const { return std::min(stage_, operation_); }
     bool expired(Clock::time_point now = Clock::now()) const { return now >= std::min(stage_, operation_); }
     bool observe(std::string_view stage, double elapsed_ms, Clock::time_point now = Clock::now()) {
         if (expired(now) || !std::isfinite(elapsed_ms) || elapsed_ms < elapsed_ms_ ||

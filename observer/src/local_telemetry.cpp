@@ -211,9 +211,11 @@ void LocalTelemetry::record(const fs::path& root, const Json& state) {
     project.value = std::move(value);
 }
 
-void LocalTelemetry::sample(std::size_t workers, std::optional<std::uint64_t> child_rss) {
+void LocalTelemetry::sample(std::size_t workers,
+                            const std::function<std::optional<std::uint64_t>()>& read_child_rss) {
     const auto now = Clock::now();
     if (last_sample != Clock::time_point{} && now - last_sample < std::chrono::seconds(1)) return;
+    const auto child_rss = read_child_rss ? read_child_rss() : std::optional<std::uint64_t>{0};
     last_sample = now;
     const auto own = resident_bytes();
     const Json rss = own.is_number_unsigned() && child_rss ? Json(own.get<std::uint64_t>() + *child_rss) : Json(nullptr);

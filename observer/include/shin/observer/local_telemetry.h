@@ -4,6 +4,7 @@
 #include "local_mcp_activity.h"
 #include <chrono>
 #include <deque>
+#include <functional>
 #include <map>
 #include <array>
 #include <set>
@@ -17,7 +18,9 @@ class LocalTelemetry {
 public:
     void record(const fs::path& root, const Json& state);
     void detach(const fs::path& root);
-    void sample(std::size_t workers, std::optional<std::uint64_t> child_rss = std::uint64_t{0});
+    // Read child RSS synchronously only when the unchanged sampling interval is due.
+    void sample(std::size_t workers,
+                const std::function<std::optional<std::uint64_t>()>& read_child_rss = {});
     void request_result(const fs::path& root, const std::string& method, const Json& report);
     // Reports retain bounded wall/active/sleep durations, allowlisted stages,
     // and numeric work counters without exposing source paths or contents.

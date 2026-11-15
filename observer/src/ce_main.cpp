@@ -2,6 +2,7 @@
 #include "shin/observer/local_identity.h"
 #include "shin/observer/local_status.h"
 #include "shin/observer/local_service.h"
+#include "shin/observer/local_coordinator.h"
 #include "shin/observer/local_mcp_bridge.h"
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_publication.h"
@@ -390,10 +391,17 @@ int run(int argc, char** argv, char** environment) {
         if (::setsid() < 0 || ::chdir("/") != 0) throw Error("service-start-failed", "Cannot detach the native service session.");
 #endif
     }
+    std::unique_ptr<LocalCoordinator> coordinator;
     if (request.command == "watch" || request.command == "serve") {
         std::signal(SIGINT, request_stop);
         std::signal(SIGTERM, request_stop);
+        coordinator = std::make_unique<LocalCoordinator>();
+        coordinator->stop_on_signals();
     }
+    const auto stopped = [&] {
+        if (coordinator) coordinator->poll_signals();
+        return stop_requested != 0 || (coordinator && coordinator->stopped());
+    };
     Json result;
     if (request.command == "identity") result = {{"schema_version","shin.ce-response.v1"}, {"tool","shin-ce"},
         {"version",SHIN_OBSERVER_VERSION}, {"core_version",SHIN_VERSION}, {"command","identity"}, {"ok",true},
@@ -405,13 +413,13 @@ int run(int argc, char** argv, char** environment) {
     else if (request.command == "service-installation") result = local_autostart_status(request, executable_path());
     else if (request.command == "service-update") result = update_local_autostart(request, executable_path());
     else if (request.command == "serve")
-        result = serve_local_projects(request, watch_roots, executable_path(), [] { return stop_requested != 0; }, registered, supervised_child,
+        result = serve_local_projects(request, watch_roots, executable_path(), stopped, registered, supervised_child,
                                       [&] { installation_guard.reset(); }
                                       , [&]() -> Json {
                                           if (!registered) return nullptr;
                                           try { return default_model_usage_sources(environment); }
                                           catch (...) { return Json::object(); }
-                                      }()
+                                      }(), coordinator.get()
                                       );
     else if (request.command == "service-start") result = start_local_service(request, executable_path());
     else if (request.command.starts_with("storage-")) {
@@ -444,7 +452,7 @@ int run(int argc, char** argv, char** environment) {
     else if (request.command == "init" && !no_service) result = initialize_local_service(request, executable_path());
     else if (request.command == "watch")
         result = watch_local_projects(request, watch_roots.empty() ? std::vector<fs::path>{request.root} : watch_roots,
-                                      samples, [] { return stop_requested != 0; });
+                                      samples, stopped, {}, {}, {}, {}, {}, coordinator.get());
     else if (request.command == "service-stop") {
         const auto lock = lock_local_service_control(request.home);
         result = request_local_service(request);

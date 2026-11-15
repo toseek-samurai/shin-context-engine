@@ -49,6 +49,8 @@ REQUIRED_FILES.update({
     'share/shin-observer/licenses/tree-sitter-unicode/LICENSE',
     'share/shin-observer/licenses/cpp-httplib/LICENSE',
     'share/shin-observer/licenses/mcp-cpp-sdk/LICENSE',
+    'share/shin-observer/licenses/libuv/LICENSE',
+    'share/shin-observer/licenses/libuv/LICENSE-extra',
     'share/shin-context/profiles/generic-source.json',
     'share/shin-context/contracts/local-session-recovery-v1.json',
     'share/shin-context/contracts/mcp-activity-v1.json'})

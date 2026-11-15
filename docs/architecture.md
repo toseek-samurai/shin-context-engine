@@ -82,6 +82,39 @@ the profile's coverage or quality bounds.
 Small policy and authority files are still read; the diagnostic verification
 flags describe the work performed, not raw operating-system I/O counters.
 
+Development source shares a macOS FSEvents stream only between monitors with
+identical normalized root sets. Each subscription retains its own predicate,
+invalidation token, sticky health and teardown fence. A weak process-local registry
+does not retain unused streams; native root/loss events prevent stream reuse.
+The existing idle reconciliation, descriptor reserve, cache limits and selected
+source verification remain mandatory. Linux and Windows retain their native
+backends. Shared-root lifetime, concurrent subscription, root replacement and
+controlled descriptor-pressure fixtures cover this optimization.
+
+The service supplies child RSS through a deferred telemetry reader. Its existing
+one-second sampling gate runs before querying child processes. Independent
+resident-memory retention checks keep their original cadence and limits;
+unavailable child RSS remains unknown rather than becoming zero.
+
+Development source runs the project coordinator on statically linked libuv
+1.53.0. Native source notifications wake its async handle; borrowed nonblocking
+descriptors (POSIX) or one-shot waits on overlapped-operation events (Windows)
+wake it for RPC and worker IO. Readiness never accepts, reads or qualifies data:
+the ordinary service pump retains framing, peer identity, FIFO admission,
+execution limits, cancellation and source verification. Registrations retire
+before borrowed channels can close or reuse an OS identity.
+
+The next coalescing, retry, admission, framing, reader or refresh deadline drives
+a one-shot timer. Registry reconciliation, telemetry and memory checks retain
+their one-second cadence. Lifecycle checks still precede request dispatch and
+qualification; idle lifecycle maintenance uses the one-second control heartbeat.
+Full idle source reconciliation remains bounded by 15 seconds. CLI stop signals
+and the SCM stop event wake the loop.
+Native callers supplying only an opaque cancellation predicate retain the former
+20 ms probe bound. Storage maintenance waits on its existing five-minute interval
+with stop-token cancellation instead of waking every 100 ms. None of these
+scheduling hints grants publication authority or changes qualification budgets.
+
 Persistent refresh admission also retains one process-local executable hash behind
 healthy native events, fresh file identity, size, modification/change time and
 running-image checks. Replacing the named executable invalidates it and the
@@ -109,6 +142,13 @@ Quality gates combine source/profile validation, generated-index integrity,
 declared retrieval cases, Pack completion and resource checks. CTest separately
 exercises runtime correctness, isolation, refusal and recovery. A passing
 retrieval case is evidence about that declared case, not universal answer quality.
+
+Development source can qualify a short query's combined document candidates
+before scoring narrowed rows. A successful combined plan avoids repeating that
+row pass; rejected plans retain the ordinary fallback and cumulative work budget.
+Resource ceilings still count candidate admission and positive scored matches.
+Those counts are diagnostic work signals, not query latency or RSS measurements;
+reducing repeated work does not necessarily clear a per-pass resource warning.
 
 Performance depends on source volume, document structure, cold/warm reader state,
 refresh work and concurrent activity. Measure memory and disk alongside latency.

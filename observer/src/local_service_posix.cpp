@@ -196,6 +196,7 @@ public:
     }
     bool reply_consumed() const override { return true; }
     void finish_reply(ServiceDeadline, const ServiceCancelled&) override {}
+    LocalReadySource readiness(bool writing) override { return {fd(), writing}; }
 private:
     Fd socket;
 };
@@ -244,6 +245,7 @@ public:
             return channel;
         } catch (const Error&) { return {}; }
     }
+    LocalReadySource readiness() override { return {listener.get()}; }
 private:
     fs::path directory, path;
     Fd listener;

@@ -44,6 +44,9 @@ On macOS use the Monitor and local-kit options from
 [the kit build procedure](local-kit.md#build-the-package).
 This matches the source-test workload in CI. Focused tests are regression proof;
 the full suite also covers the service, MCP, lifecycle and installer contracts.
+The `shin-context-source-profiles` test also runs the strict self-profile checks
+in disposable storage. CI keeps its explicit step to retain the same proof files;
+failed output names the affected gates and scenarios.
 Use an external build directory dedicated to source checks and original
 development dependencies. Keep relocated libraries from extracted kits in
 archive fixtures. Record the component versions, compiler, Python and CMake

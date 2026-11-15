@@ -185,6 +185,8 @@ jobs:
             ${{ runner.temp }}/package-smoke.log
             ${{ runner.temp }}/package-checksum.log
             ${{ runner.temp }}/ccache-stats.tsv
+            ${{ runner.temp }}/profile-proof/*.json
+            ${{ runner.temp }}/profile-proof/*.stderr
           if-no-files-found: warn
           retention-days: 14
 
@@ -362,6 +364,8 @@ jobs:
             ${{ runner.temp }}/package-smoke.log
             ${{ runner.temp }}/package-checksum.log
             ${{ runner.temp }}/ccache-stats.tsv
+            ${{ runner.temp }}/profile-proof/*.json
+            ${{ runner.temp }}/profile-proof/*.stderr
           if-no-files-found: warn
           retention-days: 14
 

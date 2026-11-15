@@ -504,6 +504,10 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/run_self_profile_tests.py
                 $<TARGET_FILE:shin-context> ${CMAKE_CURRENT_SOURCE_DIR} ${CMAKE_CURRENT_BINARY_DIR})
     set_tests_properties(shin-context-self-profile PROPERTIES TIMEOUT 120)
+    add_test(NAME shin-context-source-profiles
+        COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tools/verify_source_profiles.py
+                $<TARGET_FILE:shin-context>)
+    set_tests_properties(shin-context-source-profiles PROPERTIES TIMEOUT 180)
     add_test(NAME shin-context-profile-policy-cli
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/integration/test_profile_policy.py
                 $<TARGET_FILE:shin-context> ${CMAKE_CURRENT_SOURCE_DIR}/profiles)

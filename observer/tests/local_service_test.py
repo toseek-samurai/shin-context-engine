@@ -882,6 +882,12 @@ class LocalServiceTests(unittest.TestCase):
         # polling round trip must not spend the real 500 ms execution wait.
         os.kill(service.pid,signal.SIGSTOP)
         try:
+            # kill queues the signal; wait for the actual stop before opening
+            # either socket, so admission cannot start between their sends.
+            stopped,status=os.waitpid(service.pid,os.WUNTRACED)
+            self.assertEqual(stopped,service.pid)
+            self.assertTrue(os.WIFSTOPPED(status),status)
+            self.assertEqual(os.WSTOPSIG(status),signal.SIGSTOP)
             second=self.connect();second.sendall((json.dumps(self.frame('query',query='readLimit',request_id='second'))+'\n').encode())
             probe=self.connect();probe.sendall((json.dumps(self.frame('service-status'))+'\n').encode())
         finally:

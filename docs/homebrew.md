@@ -1,8 +1,8 @@
 # Homebrew installation
 
-The [Homebrew tap](https://github.com/toseek-samurai/homebrew-tap) builds
-**2.0.5-dev.111**. The formula pins a published source tag. `brew upgrade`
-installs the version selected by the formula.
+The [Homebrew tap](https://github.com/toseek-samurai/homebrew-tap) pins a published
+source preview. `brew info toseek-samurai/tap/shin-context-engine` shows its current
+version; `brew upgrade` installs the version selected by that formula.
 
 The project-owned tap distributes the complete macOS preview: Core, Observer,
 CLI, MCP, usage collector, Sand TUI and Shin Monitor. It builds from the pinned
@@ -113,9 +113,20 @@ reviewed handover, preserving its bindings, history and publication grants.
 ## Tap maintenance
 
 The [tap repository](https://github.com/toseek-samurai/homebrew-tap) owns the
-formula and its install tests. Publish a recipe only for a completed qualified
-release, pin the source archive and dependency resources with SHA-256, and check
-install, query, MCP, EN/RU terminal startup, upgrade/reinstall and uninstall.
+formula and its install tests. Its **Update preview formula** workflow checks
+upstream hourly, or runs manually from main with an optional preview tag. It
+selects a published preview with its complete macOS qualification receipt, verifies
+the source commit, and derives the source checksum and dependency pins from that
+tag. Both Apple Silicon and Intel installation checks must pass before its own
+`GITHUB_TOKEN` advances the formula. Normal preview releases need no manual
+formula edits or additional personal token. Automation changes receive lightweight
+guard checks; the existing macOS lifecycle matrix runs for an actual candidate,
+without rebuilding the unchanged old formula for documentation or tooling edits.
+
+Publish a recipe only for a completed qualified release, pin the source archive
+and dependency resources with SHA-256, and check install, query, MCP, EN/RU
+terminal startup, upgrade/reinstall and uninstall. Changed toolchain requirements
+or a new dependency declaration layout still need maintainer review.
 Do not run a native installer from formula hooks, start services or edit client
 settings during installation, fetch dependencies from moving branches, or
 silently change project approval policy during `brew upgrade`.

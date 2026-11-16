@@ -1,6 +1,7 @@
 #include "context_internal.h"
 #include "source_relations.h"
 #include "source_read.h"
+#include "source_syntax.h"
 #include <iterator>
 
 namespace shin::context {
@@ -1445,6 +1446,35 @@ static bool is_cpp_extension(std::string_view extension) {
     return extensions.contains(extension);
 }
 
+static bool is_web_text_extension(std::string_view extension) {
+    return extension == ".css" || extension == ".scss" || extension == ".html" ||
+           extension == ".htm" || extension == ".razor" || extension == ".cshtml";
+}
+
+static void scan_web_text(const Profile& profile, const std::string& path,
+                          const std::string& content, std::vector<FactRow>& rows) {
+    // Real lexical evidence also keeps a styles-only index useful to Brief and
+    // its ordinary integrity checks. Do not invent declarations or waive an
+    // empty dictionary. Small windows retain their complete searchable text.
+    const auto plan = chunk_source_syntax(content, extension_of(path), 384, 16384);
+    if (!plan.coverage_complete)
+        throw CliError("source-text-budget", "validation", "Selected web text exceeds bounded extraction capacity.",
+                       2, false, "Review selected source size and the profile scope.");
+    const auto offsets = source_line_offsets(content);
+    for (const auto& chunk : plan.chunks) {
+        const auto text = content.substr(chunk.begin, chunk.end - chunk.begin);
+        if (trim(text).empty()) continue;
+        const auto first = static_cast<int>(std::upper_bound(offsets.begin(), offsets.end(), chunk.begin) - offsets.begin());
+        const auto last = static_cast<int>(std::upper_bound(offsets.begin(), offsets.end(), chunk.end - 1) - offsets.begin());
+        // Include the byte offset: minified files can have several windows on
+        // one physical line. These are text records, not observed symbols.
+        add_source_fact_row(rows, profile, path, first, "web", "text",
+            path + ":" + std::to_string(chunk.begin), text, "observed", "source-of-truth", last);
+        rows.back().symbol_name.clear();
+        rows.back().range_origin = "lexical";
+    }
+}
+
 bool should_skip_source_fact_dir(const std::string& name) {
     static const std::set<std::string> skipped_names = {
         ".cache", ".git", ".gradle", ".idea", ".mvn", ".next", ".nuxt", ".output", ".tmp",
@@ -1602,6 +1632,7 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
     const std::vector<std::string> lines = split_lines(content);
     const std::string ext = extension_of(path);
     std::string language;
+    if (is_web_text_extension(ext)) scan_web_text(profile, path, content, rows);
     for (const std::string& extractor : profile.source_fact_extractors) {
         if (extractor == "language") {
             if (ext == ".java") {
@@ -1828,6 +1859,8 @@ DiscoveryResult discover_project(const fs::path& root) {
             ++result.cpp_files;
         } else if (is_typescript_javascript_extension(ext)) {
             ++result.ts_files;
+        } else if (is_web_text_extension(ext)) {
+            ++result.web_files;
         }
         if (ext == ".rsx" && starts_with(lower_rel, "apps/")) {
             ++result.rsx_files;
@@ -1973,7 +2006,12 @@ DiscoveryResult discover_project(const fs::path& root) {
                                   static_cast<int>(has_node) +
                                   static_cast<int>(has_cpp) + static_cast<int>(has_dotnet);
     const bool has_documents = result.has_readme || result.has_agents || result.indexable_docs_files > 0;
-    const bool has_sources = language_families > 0 || has_retool;
+    const bool has_sources = language_families > 0 || result.web_files > 0 || has_retool;
+
+    if (result.web_files > 0) {
+        add_unique(result.project_kinds, "web-source");
+        add_unique(result.recommended_extractors, "bounded-source-text");
+    }
 
     if (has_retool) {
         result.recommended_profiles.push_back("generic-retool");
@@ -1996,7 +2034,9 @@ DiscoveryResult discover_project(const fs::path& root) {
     const bool has_dominant_language = language_families > 1 && dominant->second >= 10 &&
                                        dominant->second >= other_source_files * 4;
 
-    if (!has_retool && language_families > 1 && has_dominant_language) {
+    if (!has_retool && result.web_files > 0) {
+        result.recommended_profiles.push_back("generic-source");
+    } else if (!has_retool && language_families > 1 && has_dominant_language) {
         result.recommended_profiles.push_back(dominant->first);
         result.recommended_profiles.push_back("generic-source");
     } else if (!has_retool && language_families > 1) {

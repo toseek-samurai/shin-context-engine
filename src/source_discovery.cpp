@@ -13,6 +13,31 @@
 #include <mutex>
 
 namespace shin::context {
+Json source_discovery_scope(const Profile& profile) {
+    Json result = {{"schema_version", "shin.source-scope.v1"},
+        {"selection", "profile-roots-and-extension-allowlist"},
+        {"representation", "syntax-or-bounded-text-fallback"},
+        {"whole_project_coverage", false}, {"compiler_semantics", false},
+        {"max_files", profile.source_fact_max_files}, {"max_file_bytes", profile.source_fact_max_file_bytes},
+        {"notice", "Source search covers selected profile roots and extensions; exclusions, safety checks and limits still apply. Other files require a direct reader. Text fallback does not evaluate CSS cascade or render templates."}};
+    const auto bounded = [&](const auto& values, const char* key, std::size_t count, std::size_t bytes) {
+        Json items = Json::array();
+        std::size_t used = 2;
+        for (const auto& value : values) {
+            if (items.size() == count || value.size() > 256) continue;
+            const auto encoded = Json(value).dump().size() + 1;
+            if (encoded > bytes - used) continue;
+            used += encoded;
+            items.push_back(value);
+        }
+        result[key] = std::move(items);
+        result[std::string("omitted_") + key] = values.size() - result.at(key).size();
+    };
+    bounded(profile.source_fact_roots, "roots", 16, 1024);
+    bounded(profile.source_fact_extensions, "extensions", 64, 2048);
+    return result;
+}
+
 namespace {
 constexpr std::size_t kFileBytes = 1024 * 1024;
 constexpr std::size_t kSourceBytes = 64 * 1024 * 1024;
@@ -644,6 +669,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
     check_time();
     Json result = {{"schema_version", "shin.source-candidates.v1"}, {"ok", true},
         {"profile", options.profile.id}, {"root", options.root.generic_string()},
+        {"source_scope", source_discovery_scope(options.profile)},
         {"snapshot_id", freshness.snapshot_id}, {"index_freshness", index_freshness_json(freshness)},
         {"policy", "source-software-terms-en-ru-porter-bm25-diversity-v4"},
         {"admission", at_snapshot ? "immutable-publication-and-selected-source-hashes" :

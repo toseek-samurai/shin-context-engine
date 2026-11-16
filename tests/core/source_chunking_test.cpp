@@ -26,7 +26,7 @@ void cover(const std::string& source, const std::string& extension, std::size_t 
 
 int main() {
     try {
-        for (const auto* extension : {".cpp", ".java", ".ts", ".tsx", ".sql"}) {
+        for (const auto* extension : {".cpp", ".java", ".ts", ".tsx", ".sql", ".css", ".scss", ".html", ".htm", ".razor", ".cshtml"}) {
             for (const auto budget : {4U, 32U, 128U, 1024U})
                 cover("// prefix\r\nclass A {\r\n int one() { return 1; }\r\n int two() { return 2; }\r\n}; // suffix\r\n", extension, budget);
         }
@@ -58,6 +58,16 @@ int main() {
         const auto unsupported = chunk_source_syntax("select a from b;", ".sql", 8);
         require(!unsupported.supported && !unsupported.syntax_complete && unsupported.coverage_complete, "unsupported claims syntax");
         for (const auto& part : unsupported.chunks) require(part.fallback, "unsupported not marked fallback");
+        const std::string web = "/* keyboard focus */\r\n.lookup:focus-within { outline: 2px solid var(--accent); }\r\n"
+            "<section class=\"lookup\" @onclick=\"Select\">Поиск 🌐</section>\r\n";
+        for (const auto* extension : {".css", ".scss", ".html", ".htm", ".razor", ".cshtml"}) {
+            const auto plan = chunk_source_syntax(web, extension, 64);
+            require(!plan.supported && !plan.syntax_complete && plan.coverage_complete, "web text claims compiler syntax");
+            for (const auto& part : plan.chunks) require(part.fallback, "web text lost fallback provenance");
+            cover(web, extension, 64);
+            const auto truncated = chunk_source_syntax(web, extension, 16, 1);
+            require(!truncated.coverage_complete, "web text cap hidden");
+        }
         const auto broken = chunk_source_syntax("int main( { ???", ".cpp", 8);
         require(broken.supported && !broken.syntax_complete && broken.coverage_complete, "broken syntax claims complete");
         cover("int main( { ???", ".cpp", 8);

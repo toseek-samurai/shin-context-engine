@@ -142,6 +142,56 @@ void check(const fs::path& parent) {
     expect(split.at("results")[3].at("candidates").empty(), "no invented lexical evidence");
 }
 
+void web_source_checks(const fs::path& parent) {
+    Fixture f(parent);
+    f.options.profile.source_fact_extensions = {".css", ".scss", ".html", ".htm", ".razor", ".cshtml"};
+    const std::string css = "/* Keyboard focus belongs to the search field outline. */\r\n"
+        ".lookup-field input:focus-visible { outline: none; }\r\n"
+        ".lookup-field:focus-within { border-color: var(--accent); border-width: 2px; }\r\n";
+    f.write("src/theme.css", std::string(1100, ' ') + "\r\n" + css);
+    f.write("src/theme.scss", "$accent: blue;\n.scss-marker { color: $accent; }\n");
+    f.write("src/page.html", "<!-- Static inventory filter -->\n<form class=\"inventory-filter\"><input type=\"search\"></form>\n");
+    f.write("src/old.htm", "<main>LegacyMarkupMarker</main>\n");
+    f.write("src/Panel.razor", "@page \"/inventory\"\n<!-- Inventory editor template -->\n<EditForm Model=\"entry\"><InputText @bind-Value=\"entry.Title\" /></EditForm>\n");
+    f.write("src/Index.cshtml", "@model EditorModel\n<form asp-action=\"Save\">ServerViewMarker</form>\n");
+    f.write("src/ignored.txt", "OutsideProfileMarker\n");
+    const auto secret = "sk-" + std::string(64, 'Q');
+    f.write("src/private.css", "/* cssPrivateMarker */\n.private { content: \"" + secret + "\"; }\n");
+    f.publish();
+    const auto result = discover_source_candidates(f.options, {"lookup-field focus-within border-color",
+        "Where is the search field focus outline?", "Где рамка фокуса поля поиска?", "scss-marker", "inventory-filter",
+        "LegacyMarkupMarker", "Inventory editor template", "ServerViewMarker", "OutsideProfileMarker", "cssPrivateMarker"});
+    const std::vector<std::string> owners = {"src/theme.css", "src/theme.css", "src/theme.css", "src/theme.scss",
+        "src/page.html", "src/old.htm", "src/Panel.razor", "src/Index.cshtml"};
+    for (std::size_t i = 0; i < owners.size(); ++i) {
+        const auto& candidates = result.at("results")[i].at("candidates");
+        expect(!candidates.empty() && candidates[0].at("path") == owners[i], ("web source owner: " + std::to_string(i)).c_str());
+        const auto& row = candidates[0];
+        const auto content = read_file(f.options.root / owners[i]);
+        const auto start = row.at("byte_start").get<std::size_t>();
+        const auto end = row.at("byte_end").get<std::size_t>();
+        expect(row.at("range_origin") == "bounded-text-fallback" && end > start && end - start <= 1024 &&
+            row.at("source_content_hash") == fnv1a64(content) && row.at("span_hash") == fnv1a64(content.substr(start, end - start)),
+            "web source byte binding");
+        if (i < 3) expect(content.substr(start, end - start).find("border-color") != std::string::npos,
+                          "web focus property missing from selected fragment");
+    }
+    expect(result.at("results")[8].at("candidates").empty(), "profile exclusion bypassed for web text");
+    expect(result.at("results")[9].at("candidates").empty() && result.at("redacted_files") == 1 &&
+        result.dump().find(secret) == std::string::npos, "web text bypasses secret quarantine");
+    const auto& scope = result.at("source_scope");
+    expect(scope.at("whole_project_coverage") == false && scope.at("compiler_semantics") == false &&
+        scope.at("extensions").size() == 6 && scope.at("omitted_extensions") == 0, "source scope unavailable");
+    auto enormous = f.options.profile;
+    enormous.source_fact_roots.assign(30, std::string(4000, 'r'));
+    enormous.source_fact_extensions.assign(100, ".css");
+    const auto bounded = source_discovery_scope(enormous);
+    expect(bounded.dump().size() < 4096 && bounded.at("omitted_roots") == 30 &&
+        bounded.at("extensions").size() == 64 && bounded.at("omitted_extensions") == 36, "source scope bound");
+    f.write("src/theme.css", ".changed { outline: none; }\n");
+    rejected([&] { discover_source_candidates(f.options, {"focus"}); });
+}
+
 void natural_language_checks(const fs::path& parent) {
     Fixture f(parent);
     f.write("src/retry.cpp", "// Retry failed requests after a network timeout.\nint retryRequest() { return 1; }\n");
@@ -733,6 +783,7 @@ int main(int argc, char** argv) {
         if (argc != 2) return 2;
         shin::context::check(argv[1]);
         shin::context::natural_language_checks(argv[1]);
+        shin::context::web_source_checks(argv[1]);
         shin::context::resident_checks(argv[1]);
         shin::context::snapshot_checks(argv[1]);
         shin::context::context_checks(argv[1]);

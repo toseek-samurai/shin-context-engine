@@ -85,6 +85,7 @@ struct LocalQuerySession::Impl {
         epoch = changes->sequence();
         snapshot = core::GeneratedSnapshot::load(options, {config.max_snapshot_bytes, config.max_file_bytes}, qualification.snapshot);
         options.generated_snapshot = snapshot;
+        status["source_scope"] = core::source_discovery_scope(options.profile);
         const auto coverage = source_coverage_summary(snapshot->manifest());
         if (!coverage.is_null() && !partial) status["source_coverage"] = coverage;
         for (const auto* key : {"sources", "source_fact_sources"}) {
@@ -165,6 +166,7 @@ Json LocalQuerySession::description() const {
     Json result = {{"snapshot_id", impl_->snapshot->id()}, {"payload_bytes", impl_->snapshot->payload_bytes()},
         {"preparation_ms", impl_->prepared_ms}, {"prepared_at_ms", impl_->prepared_at_ms}, {"observation_epoch", impl_->epoch}};
     if (impl_->status.contains("source_coverage")) result["source_coverage"] = impl_->status.at("source_coverage");
+    result["source_scope"] = impl_->status.at("source_scope");
     if (impl_->partial) {
         result["retained_profile"] = true;
         result["profile_revision"] = impl_->status.at("profile_revision");

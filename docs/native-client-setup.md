@@ -312,6 +312,22 @@ support Unicode. This preserves words; it does not translate a Russian question
 into an English document. Native source hints and document matching remain
 separate retrieval paths.
 
+Preview dev.120 source expands the bundled mixed-language, Node, .NET and Retool
+profiles to include applicable CSS/SCSS, HTML/HTM and Razor/CSHTML files. Native
+source search indexes their bounded text, including comments, selectors,
+pseudo-classes, properties and template markup. Returned fragments retain exact
+line/byte positions and `bounded-text-fallback` provenance. This does not compute
+CSS cascade, render templates or resolve framework components.
+Core Brief also indexes real lexical text records, so a styles-only project can
+pass the ordinary index checks without adding documentation or declarations.
+
+Query responses include `source_scope`: the selected roots, extension allowlist,
+file limits and explicit truncation counts. This is informational scope, not a
+readiness warning or whole-repository coverage claim. A file outside that scope
+requires an ordinary authorized reader. Permanent project profiles retain their
+owner-approved scope; new kits rebuild their owned indexes without rewriting a
+project profile or its documentation.
+
 The current Core source uses one index format, `shin-generator-v24-objective-cpp`.
 The service rebuilds older managed indexes from approved project sources before
 serving them. Project settings, permissions, histories and recovery notes remain

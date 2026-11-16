@@ -9,7 +9,7 @@
   "optionalRootFiles": ["README.md", "readme.md", "AGENTS.md"],
   "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
   "sourceFactRoots": ["apps", "resources", "workflows"],
-  "sourceFactExtensions": [".rsx", ".js", ".sql", ".query", ".css", ".html", ".json", ".yml", ".yaml"],
+  "sourceFactExtensions": [".rsx", ".js", ".sql", ".query", ".css", ".scss", ".html", ".htm", ".json", ".yml", ".yaml"],
   "sourceFactExtractors": ["retool", "language"],
   "sourceFactAttributeKeys": ["disabled", "hidden", "readonly", "readonlyMode", "queryDisabled", "label", "text", "viewKey", "formDataKey"],
   "sourceFactMaxFiles": 10000,

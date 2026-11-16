@@ -91,6 +91,74 @@ class LocalProjectTests(unittest.TestCase):
         self.assertEqual(((self.workspace() / "state.json").stat().st_mode & 0o777), 0o600)
         self.assertTrue((self.workspace() / "observer/source-cache").is_dir())
 
+    def test_web_styles_and_templates_use_bundled_scope_without_project_configuration(self):
+        from source_query_test import decode_source_view
+        files = {
+            'web/theme.css': ('/* Search field keyboard focus outline */\r\n'
+                              '.lookup input:focus-visible { outline: none; }\r\n'
+                              '.lookup:focus-within { border-color: var(--accent); border-width: 2px; }\r\n'),
+            'web/theme.scss': '$accent: blue;\n.scssLookup { color: $accent; }\n',
+            'web/minified.css': '.padding{display:block}' * 50 + '.tailMarker:focus-visible{outline:none}',
+            'web/Index.html': '<form class="inventoryFilter"><input type="search"></form>\n',
+            'web/Older.htm': '<main>olderMarkupMarker</main>\n',
+            'web/Panel.razor': '@page "/inventory"\n<EditForm Model="entry">inventoryEditorTemplate</EditForm>\n',
+            'web/View.cshtml': '@model InventoryModel\n<form asp-action="Save">serverViewMarker</form>\n',
+            'web/omitted.txt': 'unselectedExtensionMarker\n',
+            'node_modules/dependency.css': '.unselectedDependencyMarker { outline: none; }\n',
+        }
+        for path, text in files.items():
+            destination = self.root / path
+            destination.parent.mkdir(parents=True, exist_ok=True)
+            destination.write_bytes(text.encode())
+        before = self.file_map(self.root)
+        self.init()
+        for query, path, clause in (
+            ('Where is the search field focus outline?', 'web/theme.css', 'border-color'),
+            ('Где рамка фокуса поля поиска?', 'web/theme.css', 'border-color'),
+            ('lookup focus-within', 'web/theme.css', 'border-color'),
+            ('scssLookup', 'web/theme.scss', 'color: $accent'),
+            ('tailMarker', 'web/minified.css', 'tailMarker:focus-visible'),
+            ('inventoryFilter', 'web/Index.html', 'type="search"'),
+            ('olderMarkupMarker', 'web/Older.htm', 'olderMarkupMarker'),
+            ('inventoryEditorTemplate', 'web/Panel.razor', 'EditForm'),
+            ('serverViewMarker', 'web/View.cshtml', 'asp-action'),
+        ):
+            with self.subTest(query=query):
+                result = self.run_ce('query', query)
+                _, locators, bodies, _ = decode_source_view(result['source_context'].encode())
+                hits = [i for i, row in locators.items() if row['path'] == path and i in bodies]
+                self.assertTrue(hits, result['source_context'])
+                self.assertTrue(any(clause.encode() in bodies[i] for i in hits))
+                for i in hits:
+                    row = locators[i]
+                    self.assertEqual(row['range_origin'], 'bounded-text-fallback')
+                    self.assertEqual(bodies[i], (self.root / path).read_bytes()[row['byte_start']:row['byte_end']])
+                self.assertFalse(result['source_scope']['whole_project_coverage'])
+                self.assertFalse(result['source_scope']['compiler_semantics'])
+                self.assertTrue({'.css', '.scss', '.html', '.htm', '.razor', '.cshtml'} <= set(result['source_scope']['extensions']))
+                self.assertEqual(result['work_performed']['full_generations'], 0)
+                self.assertNotIn('source_coverage', result)
+        for omitted in ('unselectedExtensionMarker', 'unselectedDependencyMarker'):
+            _, locators, bodies, _ = decode_source_view(self.run_ce('query', omitted)['source_context'].encode())
+            self.assertEqual(locators, {})
+            self.assertEqual(bodies, {})
+        self.assertEqual(before, self.file_map(self.root))
+
+    def test_web_only_project_needs_no_documents_or_declarations(self):
+        (self.root / 'README.md').unlink()
+        (self.root / 'limits.js').unlink()
+        (self.root / 'theme.css').write_text('.standalone:focus-visible { outline: 2px solid blue; }\n')
+        before = self.file_map(self.root)
+        self.assertTrue(self.init()['local_ready'])
+        result = self.run_ce('query', 'standalone focus-visible outline')
+        self.assertIn('theme.css', result['source_context'])
+        self.assertIn('outline: 2px solid blue', result['source_context'])
+        self.assertTrue(any(row['path'] == 'theme.css' for row in result['document_context']['evidence']))
+        manifest = json.loads((self.workspace() / 'index/docs/kb/generated/manifest.json').read_text())
+        self.assertEqual(manifest['row_counts']['documents'], 0)
+        self.assertGreater(manifest['row_counts']['facts'], 0)
+        self.assertEqual(before, self.file_map(self.root))
+
     def test_status_is_current_and_non_mutating(self):
         self.init()
         before = self.file_map(self.home)

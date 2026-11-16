@@ -16,7 +16,7 @@
   ],
   "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
   "sourceFactRoots": ["."],
-  "sourceFactExtensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs"],
+  "sourceFactExtensions": [".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs", ".css", ".scss", ".html", ".htm"],
   "sourceFactExtractors": ["language"],
   "sourceFactMaxFiles": 10000,
   "sourceFactMaxFileBytes": 1048576,

@@ -17,6 +17,14 @@ SOURCE follow-ups require the same project and query snapshot. Document paths in
 and build files without SOURCE locators. Refusal does not prove a file is absent.
 After snapshot mismatch, query the same project once; do not retry the old read.
 
+When returned, `source_scope` lists the profile's source roots/extensions and
+limits; omitted-entry counts make truncation explicit. It describes source
+search, independently of document evidence and readiness. An empty result does
+not establish absence outside this scope. CSS/SCSS, HTML and Razor text can carry
+exact `bounded-text-fallback` locators without evaluating cascade or templates.
+Use direct readers for uncovered files; engine misses do not require rewriting
+project documentation or relaxing a project profile.
+
 Select each repository's allowed handle; single-root MCP cannot serve other roots.
 Use a verified existing CLI route or authorized direct reads; never guess homes/grants.
 Pass real host session IDs only, with the query's request ID for follow-ups.

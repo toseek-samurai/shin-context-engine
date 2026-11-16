@@ -872,6 +872,7 @@ struct DiscoveryResult {
     int java_files = 0;
     int kotlin_files = 0;
     int csharp_files = 0;
+    int web_files = 0;
     int cpp_files = 0;
     int ts_files = 0;
     int rsx_files = 0;

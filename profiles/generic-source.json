@@ -25,7 +25,8 @@
     ".java", ".kt", ".kts", ".cs",
     ".ts", ".tsx", ".mts", ".cts", ".js", ".jsx", ".mjs", ".cjs",
     ".c", ".cc", ".cpp", ".cxx", ".h", ".hh", ".hpp", ".hxx", ".ipp", ".inl", ".m", ".mm",
-    ".py", ".go", ".rs", ".sql", ".rsx", ".json", ".yaml", ".yml"
+    ".py", ".go", ".rs", ".sql", ".rsx", ".json", ".yaml", ".yml",
+    ".css", ".scss", ".html", ".htm", ".razor", ".cshtml"
   ],
   "sourceFactExtractors": ["language", "retool"],
   "sourceFactMaxFiles": 30000,

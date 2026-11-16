@@ -49,7 +49,7 @@
     },
     {
       "id": "generic-node",
-      "evidence": "TypeScript and JavaScript source plus optional package and compiler metadata"
+      "evidence": "TypeScript and JavaScript source, bounded CSS/SCSS and HTML/HTM text, plus optional package and compiler metadata"
     },
     {
       "id": "generic-cpp",
@@ -57,7 +57,7 @@
     },
     {
       "id": "generic-dotnet",
-      "evidence": "C# source plus optional .NET root metadata"
+      "evidence": "C# source, bounded Razor/CSHTML, CSS/SCSS and HTML/HTM text, plus optional .NET root metadata"
     },
     {
       "id": "generic-retool",
@@ -65,13 +65,21 @@
     },
     {
       "id": "generic-source",
-      "evidence": "Mixed Java, Kotlin, C#, TypeScript, JavaScript and C-family source trees, including Objective-C/Objective-C++"
+      "evidence": "Mixed Java, Kotlin, C#, TypeScript, JavaScript and C-family source trees, including Objective-C/Objective-C++, with bounded CSS/SCSS, HTML/HTM and Razor/CSHTML text"
     },
     {
       "id": "generic-docs",
       "evidence": "README, AGENTS, and docs tree when no supported source family is recognized"
     }
   ],
+  "webSourceText": {
+    "extensions": [".css", ".scss", ".html", ".htm", ".razor", ".cshtml"],
+    "discovery": "Web-only trees are source-only and recommend generic-source. Its web_files counter includes these formats. Mixed web trees retain the mixed profile first; Retool recognition keeps its own precedence.",
+    "retrieval": "Native source candidates and Observer queries use existing bounded-text-fallback chunks with exact byte, line and hash bindings.",
+    "scope": "source_scope exposes selected roots/extensions and existing file limits, with bounded delivery and omitted-entry counts. It is independent of readiness and never promises whole-project coverage.",
+    "nonGoals": ["CSS cascade evaluation", "Template rendering", "Framework component resolution"],
+    "safety": "Source exclusions, file/query/chunk budgets, secret quarantine, freshness and snapshot-bound reads remain required. Permanent consumer profiles are not rewritten."
+  },
   "profileContract": {
     "rootFiles": "Required project-specific entry files; may be empty when other inputs are configured.",
     "optionalRootFiles": "Conventional root metadata included only when present; missing candidates are not errors.",

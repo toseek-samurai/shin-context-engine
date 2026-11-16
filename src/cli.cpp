@@ -45,6 +45,7 @@ int run_discover(const RuntimeOptions& options) {
               << ",\"java_files\":" << result.java_files
               << ",\"kotlin_files\":" << result.kotlin_files
               << ",\"csharp_files\":" << result.csharp_files
+              << ",\"web_files\":" << result.web_files
               << ",\"cpp_files\":" << result.cpp_files
               << ",\"ts_files\":" << result.ts_files
               << ",\"rsx_files\":" << result.rsx_files

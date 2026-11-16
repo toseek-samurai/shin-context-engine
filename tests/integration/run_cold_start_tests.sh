@@ -113,6 +113,18 @@ assert_contains "$work_root/out-objc/docs/kb/generated/facts.jsonl" 'objcpp-func
 assert_not_contains "$work_root/out-objc/docs/kb/generated/facts.jsonl" 'syntax-incomplete'
 validate_source_profile dotnet generic-dotnet "LoadAccount csharp method" \
   "src/AccountService.cs" "csharp-method" "GeneratedNoise"
+
+# Styles and templates alone are usable source inputs without adding docs or
+# installing a framework. Discovery must not recommend a declaration-only route.
+for web_extension in css scss html htm razor cshtml; do
+  web_root="$work_root/web-$web_extension"
+  mkdir -p "$web_root"
+  printf '.lookup:focus { outline: none; }\n' >"$web_root/view.$web_extension"
+  "$tool" --root "$web_root" discover >"$work_root/discover-web-$web_extension.json"
+  assert_contains "$work_root/discover-web-$web_extension.json" '"state":"source-only"'
+  assert_contains "$work_root/discover-web-$web_extension.json" '"primary_profile":"generic-source"'
+  assert_contains "$work_root/discover-web-$web_extension.json" '"web_files":1'
+done
 validate_source_profile retool generic-retool "ColdStartQuery JavascriptQuery query" \
   "apps/Fixture/main.rsx" "retool-query" ""
 

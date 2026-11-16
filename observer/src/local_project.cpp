@@ -305,6 +305,7 @@ void add_query_context(Json& result, const core::RuntimeOptions& options, const 
     if (brief.at("snapshot_id") != snapshot || freshness.snapshot_id != snapshot.get<std::string>())
         throw Error("query-snapshot-changed", "Publication changed during the query.");
     result["source_context"] = source_view(source);
+    result["source_scope"] = core::source_discovery_scope(options.profile);
     result["snapshot_id"] = snapshot;
     result["document_context"] = std::move(brief);
     result["answer_complete"] = false;
@@ -1110,6 +1111,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         config.max_snapshot_bytes, config.max_file_bytes).manifest_content) : Json::object();
     const auto coverage = source_coverage_summary(manifest);
     if (!coverage.is_null()) result["source_coverage"] = coverage;
+    if (runtime_ready) result["source_scope"] = core::source_discovery_scope(options.profile);
     result.update({{"binding_kind", "existing-route"}, {"local_ready", local_ready}, {"retrieval_ready", local_ready}, {"canonical_ready", canonical_ready},
         {"readiness_scope", "selected-canonical-route"}, {"project_quality", runtime_ready ? (canonical_ready ? "declared-checks-passed" : "degraded") : "blocked"},
         {"quality_warning", readiness.value("quality_warning", Json())},
@@ -1661,6 +1663,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const bool ready = readiness.at("ok") == true && sampled && prepared &&
         (!engine_changed || initialize) && (!fresh_kit || initialize);
     auto result = envelope(request.command, ready);
+    result["source_scope"] = core::source_discovery_scope(options.profile);
     result.update({{"local_ready", ready}, {"state", ready ? "local-ready" : "needs-init"},
         {"canonical_ready", false}, {"project_quality", "not-configured"},
         {"readiness_scope", "local-bootstrap-not-project-quality-qualification"},

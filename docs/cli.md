@@ -144,6 +144,13 @@ outside explicit update actions, the dashboard observes existing state.
 the selected service, their search and observer states, recent memory usage,
 active queries, and request counters for the current run. Omit `--text` for JSON.
 
+Since dev.120, native query responses include `source_scope` with the selected
+source roots, extension allowlist, limits and omitted-entry counts. It describes
+source search, independently of `document_context`. Files outside that scope
+need direct reads; `whole_project_coverage=false` is informational, not an alert.
+Styles and templates use exact bounded-text fragments rather than compiler or
+browser semantics.
+
 Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.

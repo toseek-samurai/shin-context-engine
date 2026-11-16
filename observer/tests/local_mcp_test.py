@@ -822,6 +822,10 @@ class McpTests(unittest.TestCase):
         query = self.tool(child, 'shin_query', {'query': 'readLimit'})
         self.assertIn('return 7;', query['source_context'])
         self.assertEqual(query['transport'], 'local-socket-v1')
+        self.assertIn('.css', query['source_scope']['extensions'])
+        self.assertIn('.razor', query['source_scope']['extensions'])
+        self.assertFalse(query['source_scope']['whole_project_coverage'])
+        self.assertFalse(query['source_scope']['compiler_semantics'])
         args = {'path': 'limits.js', 'snapshot': query['snapshot_id']}
         self.assertTrue(self.tool(child, 'shin_inspect', args)['ok'])
         self.assertTrue(self.tool(child, 'shin_read', args)['ok'])

@@ -2,6 +2,9 @@
 #include "context_types.h"
 
 namespace shin::context {
+// Informational profile scope, bounded for agent delivery; never a readiness
+// verdict or an assertion that every project file has been searched.
+Json source_discovery_scope(const Profile& profile);
 // Retain raw text/identifiers and append CamelCase components for lexical recall.
 std::string source_search_projection(std::string_view text);
 // The same normalized vocabulary and expansion budget used by source search.

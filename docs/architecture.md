@@ -63,6 +63,13 @@ unknown identities and a new connection require a snapshot or fresh query.
 latency and process-scoped memory. These development-source additions require a
 future qualified kit; current download pins are unchanged.
 
+Dev.120 source includes styles and web templates in the applicable bundled
+bootstrap profiles. The existing native source index searches CSS/SCSS,
+HTML/HTM and Razor/CSHTML as bounded text with exact source locators. Source
+scope is returned independently of readiness; excluded formats are not implied
+to have been searched. No CSS cascade, template rendering or framework symbol
+resolution is claimed. Consumer-owned profiles and limits remain authoritative.
+
 ## Quality gates and performance limitations
 
 Observer dev.75 adds an idle refresh path shared by Windows, macOS and Linux.

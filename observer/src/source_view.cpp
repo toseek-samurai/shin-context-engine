@@ -1,4 +1,4 @@
-#include "shin/observer/observer.h"
+#include "source_view.h"
 
 #include <algorithm>
 
@@ -69,11 +69,11 @@ std::string lines(const Json& body) {
 }
 }
 
-std::string source_view(const Json& result, std::size_t maximum_bytes) {
+SourceViewProjection project_source_view(const Json& result, std::size_t maximum_bytes) {
     require_view(maximum_bytes >= 2048 && maximum_bytes <= 32768 &&
                  result.at("live_source_verified") == true);
     const auto schema = result.at("schema_version").get<std::string>();
-    if (schema == "shin.observer-source-inspection.v1") return inventory_view(result, maximum_bytes);
+    if (schema == "shin.observer-source-inspection.v1") return {inventory_view(result, maximum_bytes), nullptr};
     const bool context = schema == "shin.observer-source-context.v1";
     require_view(context || schema == "shin.observer-source-read.v1");
     const auto& native = result.at(context ? "source_context" : "source_read");
@@ -159,6 +159,10 @@ std::string source_view(const Json& result, std::size_t maximum_bytes) {
         require_view(end != std::string::npos && end - begin <= 1900);
         begin = end + 1;
     }
-    return output;
+    return {std::move(output), receipt};
+}
+
+std::string source_view(const Json& result, std::size_t maximum_bytes) {
+    return project_source_view(result, maximum_bytes).text;
 }
 }

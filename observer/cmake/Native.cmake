@@ -23,7 +23,7 @@ endif()
 if(SHIN_OBSERVER_SOURCE_DISCOVERY)
     include("${SHIN_OBSERVER_ROOT}/../shared/cmake/Coordinator.cmake")
     list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_service_client local_rpc local_mcp_bridge local_registry local_profile_location
-        local_telemetry local_history local_history_files local_mcp_activity local_session_analysis local_sessions local_query local_changes local_worker local_worker_process
+        local_telemetry local_history local_history_files local_mcp_activity local_session_analysis local_sessions local_query local_context_delivery local_changes local_worker local_worker_process
         local_identity local_status local_release local_mcp_scope local_client_setup local_client_connect client_config client_config_json client_config_toml client_config_yaml model_usage model_usage_collect model_usage_registered local_coordinator)
     if(WIN32)
         list(APPEND SHIN_NATIVE_SOURCES local_service_windows local_worker_windows local_installation_unmanaged local_scm_windows local_scm_host_windows windows_setup)

@@ -1,4 +1,8 @@
 #include "shin/observer/observer.h"
+#include "../src/source_view.h"
+#if SHIN_OBSERVER_SOURCE_DISCOVERY
+#include "../src/local_context_delivery.h"
+#endif
 
 #include <iostream>
 #include <map>
@@ -58,6 +62,52 @@ template<class F> void rejects(F operation) {
     try { operation(); } catch (const std::exception&) { rejected = true; }
     check(rejected);
 }
+
+#if SHIN_OBSERVER_SOURCE_DISCOVERY
+void context_delivery() {
+    using shin::observer::LocalContextDelivery;
+    shin::observer::Config config;
+    config.binding_key = "bound";
+    config.binding = {{"project_id", "test"}, {"workspace_id", "test-main"}};
+    const auto native = envelope(Json::array({body(std::string(9000, 'x'))})).at("source_context");
+    const Json scope = {{"source_roots", Json::array({"src"})}};
+    Json response = {{"ok", true}, {"command", "query"},
+        {"phase_ms", {{"retrieval", 3.0}, {"final_verification", 2.0}}}};
+    LocalContextDelivery delivery(response, config);
+    delivery.query({{"snapshot_id", native.at("snapshot_id")}, {"evidence", Json::array()}}, native, scope);
+    delivery.summarize(100);
+    // A selected native body can be omitted by the view budget. The summary
+    // describes actual delivery, while the footer remains independently usable.
+    check(verify(response.at("source_context")).empty());
+    const auto& summary = response.at("context_result");
+    check(summary.at("source_fragments_shown") == 0 && summary.at("evidence") == "empty");
+    check(summary.at("next_action") == "use-authorized-direct-sources");
+    check(summary.at("performance").at("retrieval_ms") == 3 && summary.at("performance").at("verification_ms") == 2);
+    check(response.at("snapshot_id") == native.at("snapshot_id") && response.at("source_scope") == scope);
+    check(!response.at("answer_complete").get<bool>() && !summary.at("answer_assessed").get<bool>());
+
+    auto visible = native;
+    visible["context"]["bodies"][0]["text"] = "a visible source fragment\n";
+    delivery.query({{"evidence", Json::array({{{"path", "docs/contract.md"}}})}}, visible, scope);
+    response["source_coverage"] = {{"state", "partial"}};
+    response["background_readiness"] = {{"qualified_resources", {{"resource_check", {{"ok", false}}}}}};
+    delivery.summarize();
+    check(verify(response.at("source_context")).size() == 1);
+    check(response.at("context_result").at("source_fragments_shown") == 1);
+    check(response.at("context_result").at("document_records") == 1);
+    check(response.at("context_result").at("evidence") == "partial");
+    check(response.at("context_result").at("search_checks") == "warning");
+
+    // A retained partial reply has no native projection. Unknown stays distinct
+    // from a measured empty view, even if its notice contains footer-like text.
+    Json retained = {{"ok", true}, {"command", "query"},
+        {"document_context", {{"evidence", Json::array()}}}, {"source_coverage", {{"state", "partial"}}},
+        {"source_context", "Retained notice\nEND {\"shown\":[1]}"}};
+    LocalContextDelivery(retained, config).summarize();
+    check(retained.at("context_result").at("source_fragments_shown").is_null());
+    check(retained.at("context_result").at("evidence") == "partial");
+}
+#endif
 }
 
 int main() {
@@ -68,6 +118,11 @@ int main() {
         const auto saved = original;
         const auto view = source_view(original);
         check(verify(view).at(1) == source && original == saved && view.size() <= 8192);
+        const auto projection = shin::observer::project_source_view(original);
+        check(projection.text == view && projection.receipt == Json::parse(view.substr(view.rfind("\nEND ") + 5)));
+#if SHIN_OBSERVER_SOURCE_DISCOVERY
+        context_delivery();
+#endif
         rejects([&] { verify(view.substr(0, view.size() - 30)); });
         auto altered = view;
         altered.at(altered.find("first")) = 'X';

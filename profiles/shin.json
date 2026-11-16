@@ -10,6 +10,7 @@
   "rootFiles": [
     "AGENTS.md",
     "README.md",
+    "GLOSSARY.md",
     "CMakeLists.txt",
     "VERSION",
     "docs/README.md",
@@ -49,6 +50,7 @@
   "documentIncludePrefixes": [
     "AGENTS.md",
     "README.md",
+    "GLOSSARY.md",
     "CMakeLists.txt",
     "VERSION",
     "docs/README.md",

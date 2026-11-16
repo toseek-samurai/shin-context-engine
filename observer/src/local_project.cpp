@@ -15,7 +15,7 @@
 #include "worktree_state.h"
 #include "validation_generation.h"
 #include "local_refresh_guard.h"
-#include "local_context_result.h"
+#include "local_context_delivery.h"
 #include "local_profile_revision.h"
 #include "local_partial_context.h"
 #include "local_route_guard.h"
@@ -87,14 +87,15 @@ Json bootstrap_readiness(const core::RuntimeOptions& input_options) {
     return result;
 }
 
-struct RefreshQualification {
+struct PublishedQualification {
+    // Returned only after publication, cache transfer and the source/authority
+    // fences complete. There is no separate, potentially inconsistent cache flag.
     std::shared_ptr<const core::GenerationAdmission> admission;
     Json validation;
     Json work;
-    bool source_cache_transferred = false;
 };
 
-std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions& options, const Config& config, const fs::path& workspace,
+PublishedQualification publish_refreshed(const core::RuntimeOptions& options, const Config& config, const fs::path& workspace,
                        const std::string& expected_worktree,
                        const std::function<void()>& verify_authority, LocalPublication* grant = nullptr,
                        const std::optional<SnapshotRepairBase>& repair = {},
@@ -223,7 +224,7 @@ std::optional<RefreshQualification> publish_refreshed(const core::RuntimeOptions
             work["validation_" + gate.at("id").get<std::string>() + "_ms"] = gate.at("elapsed_ms");
     verify_authority();
     remember_index_generation(workspace, candidate_snapshot);
-    return RefreshQualification{std::move(admission), checked, work, true};
+    return PublishedQualification{std::move(admission), checked, work};
 }
 
 void prepare_source_cache(const core::RuntimeOptions& options, const fs::path& directory, bool fresh_kit) {
@@ -235,6 +236,41 @@ void prepare_source_cache(const core::RuntimeOptions& options, const fs::path& d
     } else {
         core::SourceDiscoveryIndex prepared(options, directory, options.generation_admission.get());
     }
+}
+
+struct SourceCachePreparation {
+    fs::path directory;
+    bool fresh_kit = false;
+    const PublishedQualification* published = nullptr;
+};
+
+struct CompletionFences {
+    std::function<void()> authority;
+    std::function<void()> source;
+    std::function<void()> after_cache;
+};
+
+struct ExpectedGeneration {
+    std::string snapshot;
+    const char* mismatch_message;
+};
+
+// Finish the cache/currentness sequence on the caller's held publication lock.
+// Each route supplies its existing authority fences. Saving a binding, enabling
+// publication and recording qualification remain separate authority decisions.
+std::string complete_generation_preparation(const core::RuntimeOptions& options,
+        const SourceCachePreparation& cache, const CompletionFences& fences = {},
+        const std::optional<ExpectedGeneration>& expected = {}) {
+    prepare_with_source_fence([&] { if (fences.authority) fences.authority(); },
+        [&] { if (fences.source) fences.source(); }, [&] {
+            if (!cache.published) prepare_source_cache(options, cache.directory, cache.fresh_kit);
+        });
+    if (fences.after_cache) fences.after_cache();
+    const auto freshness = core::assess_index_freshness(options, true);
+    core::require_current_index_or_throw(freshness);
+    if (expected && expected->snapshot != freshness.snapshot_id)
+        throw Error("query-snapshot-changed", expected->mismatch_message);
+    return freshness.snapshot_id;
 }
 
 bool source_generation_current(const fs::path& workspace, const fs::path& index, const std::string& prepared) {
@@ -293,7 +329,7 @@ bool matches_bootstrap_configuration(const Json& document, const Json& expected,
     return identity == expected;
 }
 
-void add_query_context(Json& result, const core::RuntimeOptions& options, const Config& config,
+void add_query_context(LocalContextDelivery& delivery, const core::RuntimeOptions& options, const Config& config,
                        const std::string& query, const fs::path& cache = {}) {
     const auto started = core::SteadyClock::now();
     auto brief = core_result([&] { return core::run_brief(options,
@@ -304,36 +340,26 @@ void add_query_context(Json& result, const core::RuntimeOptions& options, const 
     core::require_current_index_or_throw(freshness);
     if (brief.at("snapshot_id") != snapshot || freshness.snapshot_id != snapshot.get<std::string>())
         throw Error("query-snapshot-changed", "Publication changed during the query.");
-    result["source_context"] = source_view(source);
-    result["source_scope"] = core::source_discovery_scope(options.profile);
-    result["snapshot_id"] = snapshot;
-    result["document_context"] = std::move(brief);
-    result["answer_complete"] = false;
-    result["query_persisted"] = false;
-    add_context_result(result, core::elapsed_ms_since(started));
+    delivery.query(std::move(brief), source.at("source_context"), core::source_discovery_scope(options.profile));
+    delivery.summarize(core::elapsed_ms_since(started));
 }
 
-void add_followup_context(Json& result, const Config& config, const LocalProjectRequest& request,
+void add_followup_context(LocalContextDelivery& delivery, const Config& config, const LocalProjectRequest& request,
                           const core::RuntimeOptions& options,
                           const Json& prepared_snapshot) {
     if (request.snapshot != prepared_snapshot.get<std::string>())
         throw Error("source-snapshot-mismatch", "Follow-up must use the current prepared snapshot returned by query.");
     if (request.command == "inspect") {
         const auto source = inspect_source(config, request.path, request.snapshot, options.generation_admission);
-        result["source_inventory"] = parse_json(source_view(source));
+        delivery.followup(source.at("source_inspection"));
     } else {
         const bool file = request.record.empty();
         const Json selection = {{"schema_version", file ? "shin.source-read-request.v2" : "shin.source-read-request.v1"},
             {"snapshot_id", request.snapshot},
             {file ? "file_paths" : "record_ids", Json::array({file ? request.path : request.record})}};
         const auto source = read_source(config, selection.dump(), options.generation_admission);
-        // Explicit reading has its own bounded view; omissions remain visible.
-        result["source_context"] = source_view(source, 32768);
-        result["native_read_complete"] = source.at("source_read").at("complete");
+        delivery.followup(source.at("source_read"));
     }
-    result["snapshot_id"] = request.snapshot;
-    result["answer_complete"] = false;
-    result["query_persisted"] = false;
 }
 
 bool attached_binding(const std::optional<Json>& binding) {
@@ -471,7 +497,7 @@ std::optional<Json> load_qualification(const fs::path& workspace) {
 Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::string>& args,
                          const Config& config, const fs::path& workspace, const Json& binding,
                          const std::string& key,
-                         const std::optional<RefreshQualification>& candidate = {}, RefreshMeasurements* metrics = nullptr,
+                         const std::optional<PublishedQualification>& candidate = {}, RefreshMeasurements* metrics = nullptr,
                          std::optional<core::VerifiedSnapshot>* reader_snapshot = nullptr, bool fresh_generation = false,
                          const std::function<void(const std::string&)>& progress = {}) {
     RefreshMeasurements local;
@@ -908,7 +934,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     if (refresh) recover_refresh_candidate(workspace);
     bool published = false;
     bool repaired = false;
-    std::optional<RefreshQualification> published_qualification;
+    std::optional<PublishedQualification> published_qualification;
     Json managed_observation;
     bool source_limit_partial = false;
     if (!refresh && !partial_allowed && approved_text && grant.active() &&
@@ -1076,25 +1102,16 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             throw Error("query-snapshot-changed", "Publication changed during attachment preflight.");
     }
     if ((attach || (refresh && binding.at("prepared_snapshot") != snapshot)) && runtime_ready && sampled) {
-        const bool source_cache_transferred = refresh && published_qualification &&
-            published_qualification->source_cache_transferred;
-        if (!source_cache_transferred) refresh_stage(request, "source-cache");
-        if (refresh && grant.active()) {
-            const auto source_guard = [&] {
-                const auto current = sample_worktree(config, binding.at("root_identity"));
-                if (current.at("status") == "stale" && current.at("worktree_id") != managed_observation.at("worktree_id"))
-                    throw Error("refresh-superseded", "Source changed during search preparation.");
-            };
-            if (source_cache_transferred) prepare_with_source_fence(managed_authority, source_guard, [] {});
-            else prepare_with_source_fence(managed_authority, source_guard, [&] {
-                core::SourceDiscoveryIndex prepared(options, workspace / "source-cache");
-            });
-        } else {
-            core::SourceDiscoveryIndex prepared(options, workspace / "source-cache");
-        }
-        const auto freshness = core::assess_index_freshness(options, true);
-        core::require_current_index_or_throw(freshness);
-        if (snapshot != freshness.snapshot_id) throw Error("query-snapshot-changed", "Publication changed during attachment.");
+        const auto* published_cache = refresh && published_qualification ? &*published_qualification : nullptr;
+        if (!published_cache) refresh_stage(request, "source-cache");
+        const auto source_guard = [&] {
+            const auto current = sample_worktree(config, binding.at("root_identity"));
+            if (current.at("status") == "stale" && current.at("worktree_id") != managed_observation.at("worktree_id"))
+                throw Error("refresh-superseded", "Source changed during search preparation.");
+        };
+        const auto fences = refresh && grant.active() ? CompletionFences{managed_authority, source_guard, {}} : CompletionFences{};
+        complete_generation_preparation(options, {workspace / "source-cache", false, published_cache},
+            fences, ExpectedGeneration{snapshot, "Publication changed during attachment."});
         // Granted route versions are immutable authority identity. Executable
         // and current artifact versions are checked by qualification instead.
         if (!grant.active()) {
@@ -1107,6 +1124,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
         (grant.active() || (binding.at("core_version") == SHIN_VERSION &&
                             binding.at("generator_version") == core::kGeneratorVersion));
     auto result = envelope(request.command, local_ready);
+    LocalContextDelivery delivery(result, config);
     const auto manifest = runtime_ready ? Json::parse(core::load_verified_snapshot(config.out_dir,
         config.max_snapshot_bytes, config.max_file_bytes).manifest_content) : Json::object();
     const auto coverage = source_coverage_summary(manifest);
@@ -1129,9 +1147,9 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     if (attach) result["service_enrolled"] = false;
     const auto retrieval_started = core::SteadyClock::now();
     if (local_ready && request.command == "query")
-        add_query_context(result, options, config, request.query, workspace / "source-cache");
+        add_query_context(delivery, options, config, request.query, workspace / "source-cache");
     if (local_ready && (request.command == "inspect" || request.command == "read"))
-        add_followup_context(result, config, request, options, binding.at("prepared_snapshot"));
+        add_followup_context(delivery, config, request, options, binding.at("prepared_snapshot"));
     const double retrieval_ms = core::elapsed_ms_since(retrieval_started);
     // Managed readers hold the publication read lock and recheck every binding.
     // An unchanged maintenance writer alone must not invalidate that evidence.
@@ -1177,7 +1195,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
     verify_route(loaded);
     result["phase_ms"] = {{"admission", admission_ms}, {"retrieval", retrieval_ms},
         {"final_verification", core::elapsed_ms_since(verification_started)}};
-    add_context_result(result);
+    delivery.summarize();
     if (result.dump(2).size() + 1 > 65536) throw Error("output-limit", "Attached route response exceeds the bounded view.");
     guard_ancestor_bindings(root, home);
     require_running();
@@ -1495,7 +1513,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const auto quality_key = qualification_key(binding, options.profile.config_hash, std::nullopt,
                                                refresh && request.refresh_session);
     std::optional<core::VerifiedSnapshot> reader_snapshot;
-    std::optional<RefreshQualification> published_qualification;
+    std::optional<PublishedQualification> published_qualification;
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
         return qualified_readiness(options, {}, config, workspace, binding, quality_key,
@@ -1593,27 +1611,24 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         if (readiness.at("ok") != true)
             throw Error("refresh-not-current", "Source changed during refresh; no current context is declared.");
         refresh_stage(request, "source-cache");
-        prepare_with_source_fence(authority, [&] {
+        const auto source_guard = [&] {
             const auto current = sample_worktree(config, root_identity);
             if (current.at("status") == "stale" && current.at("worktree_id") != observed.at("observation").at("worktree_id"))
                 throw Error("refresh-superseded", "Source changed during search preparation.");
-        }, [&] {
-            if (!published_qualification || !published_qualification->source_cache_transferred)
-                prepare_source_cache(options, config.state_dir / "source-cache", fresh_kit);
-        });
-        authority();
-        const auto freshness = core::assess_index_freshness(options, true);
-        core::require_current_index_or_throw(freshness);
-        binding["prepared_snapshot"] = freshness.snapshot_id;
+        };
+        const auto snapshot = complete_generation_preparation(options,
+            {config.state_dir / "source-cache", fresh_kit, published_qualification ? &*published_qualification : nullptr},
+            {authority, source_guard, authority});
+        binding["prepared_snapshot"] = snapshot;
         binding["core_version"] = SHIN_VERSION;
         binding["generator_version"] = core::kGeneratorVersion;
         store.save(binding);
         qualify(readiness);
-        remember_index_generation(workspace, freshness.snapshot_id);
+        remember_index_generation(workspace, snapshot);
         result["phase"] = "current";
         result["recovered"] = repair ? "primary-index" : "";
         result["recovery_pending"] = false;
-        result["snapshot_id"] = freshness.snapshot_id;
+        result["snapshot_id"] = snapshot;
         result["observation"] = observed.at("observation");
         result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
         return result;
@@ -1642,16 +1657,14 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         readiness = readiness_for_generation();
         if (readiness.at("ok") == true) {
             refresh_progress(request.maintenance_progress, "source-cache");
-            prepare_source_cache(options, config.state_dir / "source-cache", fresh_kit);
+            const auto snapshot = complete_generation_preparation(options,
+                {config.state_dir / "source-cache", fresh_kit}, {},
+                ExpectedGeneration{readiness.at("freshness").at("snapshot_id"), "Publication changed during search preparation."});
             binding["core_version"] = SHIN_VERSION;
             binding["generator_version"] = core::kGeneratorVersion;
-            const auto freshness = core::assess_index_freshness(options, true);
-            core::require_current_index_or_throw(freshness);
-            if (readiness.at("freshness").at("snapshot_id") != freshness.snapshot_id)
-                throw Error("query-snapshot-changed", "Publication changed during search preparation.");
-            binding["prepared_snapshot"] = freshness.snapshot_id;
+            binding["prepared_snapshot"] = snapshot;
             if (store.load() != std::optional<Json>(binding)) store.save(binding);
-            if (rebuilt) remember_index_generation(workspace, freshness.snapshot_id);
+            if (rebuilt) remember_index_generation(workspace, snapshot);
         }
     }
     const auto observer = observer_status(config);
@@ -1663,6 +1676,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const bool ready = readiness.at("ok") == true && sampled && prepared &&
         (!engine_changed || initialize) && (!fresh_kit || initialize);
     auto result = envelope(request.command, ready);
+    LocalContextDelivery delivery(result, config);
     result["source_scope"] = core::source_discovery_scope(options.profile);
     result.update({{"local_ready", ready}, {"state", ready ? "local-ready" : "needs-init"},
         {"canonical_ready", false}, {"project_quality", "not-configured"},
@@ -1678,9 +1692,9 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         if (!ready && result.at("watch").at("running") == true) result["next_action"] = "wait-for-local-refresh";
     }
     if (ready && request.command == "query") {
-        add_query_context(result, options, config, request.query);
+        add_query_context(delivery, options, config, request.query);
     }
-    if (ready && followup) add_followup_context(result, config, request, options, binding.at("prepared_snapshot"));
+    if (ready && followup) add_followup_context(delivery, config, request, options, binding.at("prepared_snapshot"));
     if (ready && request.query_session) {
         // Resident readers fence the published index and compare committed
         // authority before/after. An unchanged maintenance writer is not a

@@ -8,7 +8,7 @@
 #include "local_source_relevance.h"
 #include "source_discovery.h"
 #include "source_read.h"
-#include "local_context_result.h"
+#include "local_context_delivery.h"
 
 namespace shin::observer {
 Json source_coverage_summary(const Json& manifest) {
@@ -141,11 +141,6 @@ struct LocalQuerySession::Impl {
                 throw Error("project-updating", "A generation dependency changed; background preparation is in progress.");
     }
 
-    Json wrap(const Json& result, const char* schema, const char* key) const {
-        return {{"schema_version", schema}, {"binding_key", config.binding_key},
-            {"project_id", config.binding.at("project_id")}, {"workspace_id", config.binding.at("workspace_id")},
-            {"live_source_verified", true}, {"verification_scope", "selected-source-files"}, {key, result}};
-    }
 };
 
 LocalQuerySession::LocalQuerySession(const Config& config, const fs::path& workspace, const fs::path& cache, const Json& status,
@@ -297,21 +292,17 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         (void)core::read_bound_source(state.config.root, path, binding.at("content_hash"), selected_bytes_limit);
         observed.emplace(path, before);
     }
+    LocalContextDelivery delivery(result, state.config);
     if (request.command == "query" && state.partial)
         result["source_context"] = "Partial approved context: use the verified document evidence and snapshot-bound file reads. New or changed sources are not included.";
     else if (request.command == "query")
-        result["source_context"] = source_view(state.wrap(source, "shin.observer-source-context.v1", "source_context"));
+        delivery.query(std::move(result.at("document_context")), source, state.status.at("source_scope"));
     else if (request.command == "inspect" && state.partial && !omitted.empty())
         result["source_inventory"] = {{"records", Json::array()}, {"complete", false}};
     else if (request.command == "read" && state.partial && !omitted.empty()) {
         result["source_context"] = "Source omitted: current bytes do not match the approved snapshot.";
         result["native_read_complete"] = false;
-    } else if (request.command == "inspect")
-        result["source_inventory"] = parse_json(source_view(state.wrap(source, "shin.observer-source-inspection.v1", "source_inspection")));
-    else if (request.command == "read") {
-        result["source_context"] = source_view(state.wrap(source, "shin.observer-source-read.v1", "source_read"), 32768);
-        result["native_read_complete"] = source.at("complete");
-    }
+    } else if (request.command == "inspect" || request.command == "read") delivery.followup(source);
     state.guard();
     for (const auto& [path, metadata] : observed)
         if (core::profile_path_contains_symlink(state.config.root, path) || core::file_metadata(state.config.root / path) != metadata)
@@ -343,7 +334,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
     result["phase_ms"] = {{"admission", admission_ms}, {"retrieval", retrieval_ms},
         {"documents", document_ms}, {"source", source_ms}, {"source_collection", collection_ms},
         {"final_verification", core::elapsed_ms_since(verification_started)}};
-    add_context_result(result);
+    delivery.summarize();
     if (result.dump().size() + 1 > 65536) throw Error("output-limit", "Resident response exceeds the bounded local view.");
     return result;
 }

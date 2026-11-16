@@ -312,7 +312,7 @@ support Unicode. This preserves words; it does not translate a Russian question
 into an English document. Native source hints and document matching remain
 separate retrieval paths.
 
-Preview dev.120 source expands the bundled mixed-language, Node, .NET and Retool
+Preview dev.120 expands the bundled mixed-language, Node, .NET and Retool
 profiles to include applicable CSS/SCSS, HTML/HTM and Razor/CSHTML files. Native
 source search indexes their bounded text, including comments, selectors,
 pseudo-classes, properties and template markup. Returned fragments retain exact

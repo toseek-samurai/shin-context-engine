@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The current published preview is [dev.111](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.111).
-It contains Core **2.0.5-dev.22** and Observer/CLI/MCP/Monitor **2.0.5-dev.111**.
+The documented download baseline is [dev.120](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.120).
+It contains Core **2.0.5-dev.28** and Observer/CLI/MCP/Monitor **2.0.5-dev.120**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -12,8 +12,10 @@ Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
 
-The native packages and the **dev.111** Homebrew formula include RE2-based
-secret scanning. See [Homebrew installation](homebrew.md) for its build and update steps.
+The native packages include RE2-based secret scanning. The Homebrew tap has an
+independent qualified version, which can lag these binary downloads; check it
+with `brew info toseek-samurai/tap/shin-context-engine`. See
+[Homebrew installation](homebrew.md) for its build and update steps.
 
 Source identities are maintained in [VERSION](../VERSION),
 [observer/VERSION](../observer/VERSION) and the
@@ -64,8 +66,8 @@ complete application from source and has passed its installation checks on Apple
 Silicon; Intel installation qualification is incomplete. Linux/WSL2 currently
 offers the published Ubuntu 24.04 x86_64 terminal archive or source builds. The
 archive includes Core, Observer, CLI, MCP, usage collection and the EN/RU TUI; it
-requires glibc 2.39+, libstdc++6, OpenSSL 3 and SQLite system packages. It includes
-no Linux desktop host, OS service installer or automatic updater. See
+requires glibc 2.39+, libstdc++6 and OpenSSL 3. SQLite 3.54.1 is included
+statically. The archive has no Linux desktop host, OS service installer or automatic updater. See
 [Linux and WSL2 tools](building.md#linux-and-wsl2-terminal-tools).
 Windows targets **x64 on local NTFS**; WSL tests exercise the
 Linux implementation, not the native Windows application.
@@ -93,7 +95,7 @@ Finish action, saved results and unattended installation behavior.
 
 ## Development and evidence
 
-- [Architecture](architecture.md), [contributing](../CONTRIBUTING.md) and [test ownership](../tests/README.md).
+- [Architecture](architecture.md), [domain glossary](../GLOSSARY.md), [contributing](../CONTRIBUTING.md) and [test ownership](../tests/README.md).
 - [Agent maintenance](agent-maintenance.md): profiles, authority and verification after refactors.
 - [Machine-readable contracts](machine/README.md): source identities and protocol boundaries.
 - [Third-party notices](../THIRD_PARTY.md) and [security reporting](../SECURITY.md).

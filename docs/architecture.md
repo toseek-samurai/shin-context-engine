@@ -2,6 +2,9 @@
 
 Shin is split into components with distinct responsibilities. The current source identity and release boundaries are recorded in [VERSION](../VERSION) and the [machine-readable product manifest](machine/shin-context-engine.manifest.json).
 
+Domain terms are defined in the [glossary](../GLOSSARY.md); platform downloads and
+current source have [separate identities](README.md#current-preview).
+
 ## Components
 
 **Core** owns profiles, indexing, retrieval, evidence formatting, and the command-line interface. A profile selects the paths and file families that belong in a project context. Use `--out-dir` to keep generated output apart from source; the low-level CLI defaults to the project root when this option is omitted. Core reads do not grant authority to publish or execute anything.
@@ -44,8 +47,8 @@ Agent integration uses native MCP or an explicit CLI adapter. The agent still ow
 task execution and conversation memory; a retrieved instruction cannot grant it
 publication or filesystem authority.
 
-Current development source keeps consumer profiles focused on source selection
-and product scenarios. Shin owns algorithm/resource regressions; consumers should
+Consumer profiles describe source selection and product scenarios. Shin owns
+algorithm/resource regressions; consumers should
 not split or rewrite sound documentation to optimize internal counters. Optional
 `mustEvidence`/`mustNotEvidence` checks inspect the selected display fragments in
 both Eval and Pack-eval. Paths and lexical coverage alone do not prove an answer.
@@ -60,10 +63,10 @@ The MCP adapter can pin a follow-up snapshot for one real session and project af
 a successful query. An explicit snapshot remains strict; overlapping queries,
 unknown identities and a new connection require a snapshot or fresh query.
 `context_result` distinguishes delivered evidence from availability, with measured
-latency and process-scoped memory. These development-source additions require a
-future qualified kit; current download pins are unchanged.
+latency and process-scoped memory. These features are included in the documented
+dev.120 packages; a result summary still does not establish answer correctness.
 
-Dev.120 source includes styles and web templates in the applicable bundled
+Dev.120 includes styles and web templates in the applicable bundled
 bootstrap profiles. The existing native source index searches CSS/SCSS,
 HTML/HTM and Razor/CSHTML as bounded text with exact source locators. Source
 scope is returned independently of readiness; excluded formats are not implied
@@ -89,7 +92,7 @@ the profile's coverage or quality bounds.
 Small policy and authority files are still read; the diagnostic verification
 flags describe the work performed, not raw operating-system I/O counters.
 
-Development source shares a macOS FSEvents stream only between monitors with
+Observer shares a macOS FSEvents stream only between monitors with
 identical normalized root sets. Each subscription retains its own predicate,
 invalidation token, sticky health and teardown fence. A weak process-local registry
 does not retain unused streams; native root/loss events prevent stream reuse.
@@ -103,7 +106,7 @@ one-second sampling gate runs before querying child processes. Independent
 resident-memory retention checks keep their original cadence and limits;
 unavailable child RSS remains unknown rather than becoming zero.
 
-Development source runs the project coordinator on statically linked libuv
+Observer runs the project coordinator on statically linked libuv
 1.53.0. Native source notifications wake its async handle; borrowed nonblocking
 descriptors (POSIX) or one-shot waits on overlapped-operation events (Windows)
 wake it for RPC and worker IO. Readiness never accepts, reads or qualifies data:
@@ -150,7 +153,7 @@ declared retrieval cases, Pack completion and resource checks. CTest separately
 exercises runtime correctness, isolation, refusal and recovery. A passing
 retrieval case is evidence about that declared case, not universal answer quality.
 
-Development source can qualify a short query's combined document candidates
+Core can qualify a short query's combined document candidates
 before scoring narrowed rows. A successful combined plan avoids repeating that
 row pass; rejected plans retain the ordinary fallback and cumulative work budget.
 Resource ceilings still count candidate admission and positive scored matches.
@@ -176,6 +179,20 @@ catalog. `tray/` adapts these results to macOS and Windows and `tui/` adapts the
 to the terminal. Both desktop hosts use the same native review and apply
 operation for selected agent settings. Language preferences never change
 protocol fields or project data.
+
+One-shot and resident queries share the context delivery module. It owns source
+view projection, response fields and delivery summaries. The bounded renderer
+returns its structured receipt alongside the text; internal summaries consume
+that receipt directly. Callers retain admission, publication locks and final
+source/authority verification. Retained partial context keeps its distinct
+verification and unknown-delivery semantics.
+
+Generation completion shares source-cache preparation and the final current
+snapshot check. A returned publication qualification includes the completed
+cache transfer, so completion does not rebuild that cache. Canonical and
+bootstrap routes retain their own authority fences, binding saves and
+qualification-recording order; granted route version pins remain immutable.
+
 Background refresh keeps an optional in-process qualification checkpoint. On
 macOS its FSEvents stream coalesces source, output and private control roots to
 their common ancestor, filtering events back to the selected scope. This reduces

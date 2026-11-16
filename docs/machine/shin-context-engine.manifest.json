@@ -466,9 +466,9 @@
     },
     {
       "id": "simdjson",
-      "version": "4.6.10",
-      "upstreamTag": "v4.6.10",
-      "upstreamCommit": "41717da488fcb09af4c4a081a77a58b4f7319b2c",
+      "version": "5.2.0",
+      "upstreamTag": "v5.2.0",
+      "upstreamCommit": "a0d5ad9798f9e51706399b649929dafb91d9b714",
       "location": "third_party/simdjson",
       "type": "vendored-static-source",
       "license": "Apache-2.0 OR MIT",

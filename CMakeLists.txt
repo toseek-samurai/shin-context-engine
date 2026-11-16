@@ -347,6 +347,11 @@ if(SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
     endif()
 endif()
 if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
+    add_executable(shin-generated-row-decoder-tests tests/core/generated_row_decoder_test.cpp)
+    target_link_libraries(shin-generated-row-decoder-tests PRIVATE shin-context-core)
+    target_compile_options(shin-generated-row-decoder-tests PRIVATE ${SHIN_CXX_WARNINGS})
+    add_test(NAME shin-context-generated-row-decoder COMMAND shin-generated-row-decoder-tests)
+    set_tests_properties(shin-context-generated-row-decoder PROPERTIES TIMEOUT 30)
     add_executable(shin-generation-admission-tests tests/core/generation_admission_test.cpp)
     target_link_libraries(shin-generation-admission-tests PRIVATE shin-context-core)
     add_test(NAME shin-context-generation-admission COMMAND shin-generation-admission-tests
@@ -858,5 +863,6 @@ endif()
 if(WIN32 AND BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI AND SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
     add_custom_target(shin-windows-ci-core DEPENDS
         shin-context shin-source-discovery shin-source-discovery-tests shin-windows-file-tests
-        shin-publisher-ownership-tests shin-qualified-query-tests shin-source-read-tests)
+        shin-publisher-ownership-tests shin-qualified-query-tests shin-source-read-tests
+        shin-generated-row-decoder-tests)
 endif()

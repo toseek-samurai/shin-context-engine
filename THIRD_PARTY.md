@@ -7,7 +7,7 @@ the referenced build files; system-library versions depend on the build host.
 | Component | Source selection | License notices |
 | --- | --- | --- |
 | nlohmann JSON | Vendored 3.12.0 | `third_party/nlohmann/LICENSE.MIT` |
-| simdjson | Vendored 4.6.10 | `third_party/simdjson/LICENSE-MIT`, `LICENSE-APACHE-2.0` |
+| simdjson | Vendored 5.2.0 | `third_party/simdjson/LICENSE-MIT`, `LICENSE-APACHE-2.0` |
 | pugixml | Vendored 1.16 | `third_party/pugixml/LICENSE.MIT` |
 | Tree-sitter runtime | Vendored 0.27.0 | Runtime MIT; Unicode notice in `src/unicode/LICENSE` |
 | Java, C++, TypeScript/TSX grammars | 0.23.5, 0.23.4, 0.23.2 | Each grammar's `LICENSE` and `UPSTREAM.json` |

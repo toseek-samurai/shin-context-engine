@@ -237,7 +237,7 @@ mkdir -p "$(dirname "$report")"
       equality_check("version-result-stability"; $version_result.stability; $expected_stability),
       equality_check("version-generator-canonical"; ($version_result.generator_version | canonical_generator); true),
       equality_check("generated-json-decoder-library"; $version_result.generated_json_decoder.library; "simdjson"),
-      equality_check("generated-json-decoder-version"; $version_result.generated_json_decoder.version; "4.6.10"),
+      equality_check("generated-json-decoder-version"; $version_result.generated_json_decoder.version; "5.2.0"),
       equality_check("generated-json-decoder-api"; $version_result.generated_json_decoder.api; "dom"),
       equality_check("generated-json-decoder-scope"; $version_result.generated_json_decoder.scope; "generated-jsonl-only"),
       equality_check("machine-project-version"; $machine_manifest.project.version; $expected_version),
@@ -509,7 +509,7 @@ mkdir -p "$(dirname "$report")"
                      ($static_analysis_contract.toolchain.executableDiscovery |
                       contains("version-suffixed")); true),
       equality_check("static-analysis-release-gate"; $static_analysis_contract.commands.releaseGate; "make static-analysis-check"),
-      equality_check("simdjson-version-documented"; ($machine_manifest.dependencies | map(select(.id == "simdjson") | .version)); ["4.6.10"]),
+      equality_check("simdjson-version-documented"; ($machine_manifest.dependencies | map(select(.id == "simdjson") | .version)); ["5.2.0"]),
       equality_check("simdjson-runtime-independent"; ($machine_manifest.dependencies | map(select(.id == "simdjson") | .runtimeDependency)); [false]),
       equality_check("pugixml-version-documented"; ($machine_manifest.dependencies | map(select(.id == "pugixml") | .version)); ["1.16"]),
       equality_check("pugixml-upstream-tag"; ($machine_manifest.dependencies | map(select(.id == "pugixml") | .upstreamTag)); ["v1.16"]),

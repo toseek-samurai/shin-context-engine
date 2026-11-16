@@ -55,7 +55,7 @@
       "execution": { "noTestsAction": "error", "jobs": 2 },
       "filter": {
         "include": {
-          "name": "^(shin-context-(windows-smoke|windows-source-cache|source-discovery|publisher-ownership|qualified-query|source-read)|shin-windows-file)$"
+          "name": "^(shin-context-(windows-smoke|windows-source-cache|source-discovery|publisher-ownership|qualified-query|source-read|generated-row-decoder)|shin-windows-file)$"
         }
       }
     }

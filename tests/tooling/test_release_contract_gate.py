@@ -78,7 +78,7 @@ class ReleaseContractGateTests(unittest.TestCase):
             "schema_version": "shin.version.v1", "version": DEV,
             "stability": "development", "generator_version": NATIVE_GENERATOR,
             "generated_json_decoder": {
-                "library": "simdjson", "version": "4.6.10", "api": "dom",
+                "library": "simdjson", "version": "5.2.0", "api": "dom",
                 "scope": "generated-jsonl-only",
             },
         })

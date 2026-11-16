@@ -10,7 +10,7 @@ function(shin_configure_ftxui)
     FetchContent_Declare(shin_ftxui
         URL https://codeload.github.com/ArthurSonzogni/FTXUI/tar.gz/refs/tags/v7.0.3
         URL_HASH SHA256=e7c62ffe19009759821b4f0f8df7f2a6fb83784c3a9f1477d81f56d3ee723c88
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE)
     FetchContent_MakeAvailable(shin_ftxui)
     foreach(library screen dom component)
         target_include_directories(${library} SYSTEM INTERFACE "${shin_ftxui_SOURCE_DIR}/include")

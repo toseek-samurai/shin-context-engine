@@ -40,8 +40,6 @@ inline nlohmann::json bounded_observation_diagnostic(const nlohmann::json& value
     return value;
 }
 
-inline constexpr char kIdentitySchema[] = "shin.observer-server-identity.v3";
-inline constexpr char kRequestIdentityHeader[] = "X-Shin-Server-ID";
 
 class ValidationError : public std::runtime_error {
 public:
@@ -53,7 +51,4 @@ void verify_observation(const Json& observation);
 void verify_submission(const Json& submission);
 void verify_acknowledgement_shape(const Json& receipt);
 void verify_acknowledgement(const Json& receipt, const Json& submission, const std::string& server_id);
-void verify_reconciliation_request(const Json& request);
-void verify_reconciliation_result(const Json& result, const Json& request);
-void verify_confirmation(const Json& response, const Json& receipt);
 } // namespace shin::observer_protocol

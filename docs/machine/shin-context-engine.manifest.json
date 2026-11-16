@@ -429,8 +429,8 @@
     },
     {
       "id": "abseil",
-      "version": "20250814.1",
-      "source": "https://codeload.github.com/abseil/abseil-cpp/tar.gz/refs/tags/20250814.1",
+      "version": "20260817.0",
+      "source": "https://codeload.github.com/abseil/abseil-cpp/tar.gz/refs/tags/20260817.0",
       "archiveSha256": "1692f77d1739bacf3f94337188b78583cf09bab7e420d2dc6c5605a4f86785a1",
       "type": "fetched-static-source",
       "license": "Apache-2.0",
@@ -477,7 +477,7 @@
     },
     {
       "id": "tree-sitter",
-      "version": "0.27.0",
+      "version": "0.27.2",
       "location": "third_party/tree-sitter",
       "type": "vendored-static-c11",
       "license": "MIT; bundled Unicode notices retained",
@@ -527,6 +527,35 @@
       "type": "development-check-only",
       "runtimeDependency": false,
       "purpose": "Structured validation of release metadata and local performance gate reports."
+    },
+    {
+      "id": "sqlite",
+      "version": "3.54.1",
+      "source": "https://www.sqlite.org/2026/sqlite-amalgamation-3540100.zip",
+      "sourceSha3_256": "92281c86e2957f9b9305890f9ac04204caa7b677cc868dc326d942689df28e30",
+      "location": "shared/cmake/SQLite.cmake",
+      "type": "pinned-static-amalgamation",
+      "license": "public-domain",
+      "runtimeDependency": false,
+      "purpose": "One FTS5-enabled thread-safe runtime for the private source cache, history and telemetry on every platform; no system SQLite dependency."
+    },
+    {
+      "id": "libuv",
+      "version": "1.53.0",
+      "location": "shared/cmake/Coordinator.cmake",
+      "type": "pinned-static-source",
+      "license": "MIT; LICENSE-extra notices retained",
+      "runtimeDependency": false,
+      "purpose": "Event and timer driven local service coordination; no polling or resource-policy changes."
+    },
+    {
+      "id": "mcp-cpp-sdk",
+      "upstreamCommit": "2304f1bb43e37034f5abf51fd9bd44f555966942",
+      "location": "shared/cmake/Mcp.cmake",
+      "type": "pinned-static-protocol-subset",
+      "license": "MIT",
+      "runtimeDependency": false,
+      "purpose": "Native stdio MCP server protocol without upstream HTTP/client transports, examples or native-CPU build flags."
     }
   ],
   "profileFiles": [
@@ -1362,7 +1391,7 @@
     ]
   },
   "secretProtectionContract": {
-    "engine": "RE2 2025-11-05, statically linked with Abseil 20250814.1; pinned SHA-256 source archives; fixed Latin-1 byte patterns with a 256 KiB compiled-memory budget per pattern; compilation failure refuses scanning.",
+    "engine": "RE2 2025-11-05, statically linked with Abseil 20260817.0; pinned SHA-256 source archives; fixed Latin-1 byte patterns with a 256 KiB compiled-memory budget per pattern; compilation failure refuses scanning.",
     "rules": "Built-in private-key, AWS access-key, OpenAI key, JWT, Bearer value and credential-assignment classes. RE2 is the matching engine, not the complete Gitleaks ruleset or a guarantee that all secrets are detected. Matches inspect token values; source code and template references are not credentials merely because their names contain secret/token. Assignment inspection preserves local statement boundaries and closes empty quoted URL parameters without borrowing subsequent statements; concatenated credential operands remain scanned. In multiline manifest literals with apiVersion and kind headers, a DNS-style name scalar in flow metadata is a resource identifier, not an assigned credential; other fields, data/stringData values and provider signatures remain scanned. A ternary branch that only reads a credential-named variable is not an assignment; credential object fields and later assignments still scan. PEM detection requires literal key material rather than a BEGIN header alone; complete short bodies and substantial truncated bodies remain protected, including escaped newlines and source-concatenated literals.",
     "cutover": "Core source candidate dev.22 changes scanner policy and therefore requires normal engine-version qualification and managed source regeneration. The generated format is unchanged. No installed kit or project approval is modified by preparing this source.",
     "doctorCounter": "counts.secret_findings",

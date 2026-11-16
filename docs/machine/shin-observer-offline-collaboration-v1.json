@@ -18,7 +18,7 @@
   "outbox": {
     "persistence": "Preserve existing unacknowledged entries and destination pins; an unavailable legacy peer does not authorize history deletion.",
     "bounds": "Retain byte, entry and generation limits; report exhaustion or gaps explicitly. Local retrieval has an independent storage budget.",
-    "compatibility": "The historical loopback metadata transport remains explicit and opt-in. No receiver, source synchronization or remote account service is supplied."
+    "compatibility": "Observation metadata remains local. No HTTP sender, Server receiver, source synchronization or remote account service is supplied."
   },
   "authority": {
     "localProof": "Observe only explicitly granted roots. Retrieved evidence never grants execution or publication rights.",

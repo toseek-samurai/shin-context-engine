@@ -24,7 +24,7 @@ CHECKS = ['archive_structure', 'manifest_inventory', 'runtime_elf', 'system_depe
 PROGRAMS = ('shin-context', 'shin-observer', 'shin-ce', 'shin-mcp', 'shin-usage')
 MANIFEST = 'shin-terminal-kit.json'
 RUNTIME = dict(distribution='ubuntu', minimum_distribution_version='24.04', glibc_minimum='2.39',
-               system_packages=['libc6', 'libstdc++6', 'libssl3t64', 'libsqlite3-0'])
+               system_packages=['libc6', 'libstdc++6', 'libssl3t64'])
 MAX_ARCHIVE = 128 * 1024 * 1024
 MAX_FILE = 128 * 1024 * 1024
 MAX_PAYLOAD = 512 * 1024 * 1024
@@ -47,7 +47,6 @@ REQUIRED_FILES.update({
     'share/shin-context/licenses/tree-sitter-objcpp/UPSTREAM.json',
     'share/shin-context/licenses/tree-sitter/unicode/LICENSE',
     'share/shin-observer/licenses/tree-sitter-unicode/LICENSE',
-    'share/shin-observer/licenses/cpp-httplib/LICENSE',
     'share/shin-observer/licenses/mcp-cpp-sdk/LICENSE',
     'share/shin-observer/licenses/libuv/LICENSE',
     'share/shin-observer/licenses/libuv/LICENSE-extra',
@@ -461,7 +460,7 @@ def package(cmake, build, output, source_sha, run_id, attempt):
         (prefix / 'README-linux.txt').write_text(
             f'Shin terminal kit {version} (Core {core})\n\n'
             'Runtime: Ubuntu 24.04 x86_64, glibc 2.39 or newer; system packages\n'
-            'libc6, libstdc++6, libssl3t64 (OpenSSL 3), libsqlite3-0.\n'
+            'libc6, libstdc++6, libssl3t64 (OpenSSL 3).\n'
             'This archive provides the native CLI, local service, MCP and EN/RU terminal UI.\n'
             'Desktop/tray, automatic updates and service-manager installation are outside this kit.\n\n'
             f'sha256sum -c {name}.tar.gz.sha256\ntar -xzf {name}.tar.gz\n'

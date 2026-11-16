@@ -501,11 +501,16 @@ changing the publisher or binding.
 ## Build the package
 
 From a macOS source checkout, use a C++20 compiler and standard library with
-`std::jthread` and `std::stop_token`, CMake 3.24+, SQLite with FTS5
-3.38+ and OpenSSL Crypto. Command Line Tools for Xcode 26 or newer, or a current
+`std::jthread` and `std::stop_token`, CMake 3.24+ and OpenSSL Crypto.
+CMake builds checksum-pinned SQLite 3.54.1 statically with FTS5; a separate system
+SQLite development package is not needed. Command Line Tools for Xcode 26 or newer, or a current
 full Xcode installation, provides the required Apple standard library. Full Xcode
 and an Apple Developer Program membership are not required for local compilation.
 Python 3.11+, Bash, and jq are needed for the checks.
+For a macOS 15-compatible archive, OpenSSL must also support macOS 15. A newer
+Homebrew library can require the build host's newer OS; setting the application's
+deployment target does not retarget that library. Select a matching development
+prefix with `OPENSSL_ROOT_DIR` before building the kit.
 CMake downloads pinned dependencies with checked hashes, including FTXUI 7.0.3
 (MIT) for the terminal monitor. FTXUI is linked statically; users need no
 additional terminal UI library. Its license ships under

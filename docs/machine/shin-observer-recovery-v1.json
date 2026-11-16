@@ -3,19 +3,26 @@
   "document": "observer-recovery",
   "status": "active-contract",
   "title": "Local Observer State And Identity Preservation",
-  "summary": "Local sampling and archive operations preserve state, delivery pins and pending observations. The standalone Server is no longer distributed.",
+  "summary": "Local sampling and private archives preserve committed observation metadata and identity. Observer has no network delivery or Server receiver.",
   "localQueueDisposition": "Use outbox-export and outbox-verify with an explicit private archive destination. Export and verification do not change the original state, destination, acknowledgements or cursors.",
-  "identity": "Legacy loopback delivery pins a configured destination and rejects mismatched identities before export. Never silently repin an immutable outbox or discard pending observations to resume delivery.",
-  "reconciliation": "Read-only reconciliation requires an already persisted destination. It cannot repair local cursors, rewrite pending packets, reconstruct missing history or authorize a new binding.",
+  "identity": "Preserve local binding, stream identity, destination metadata and any stored receipts when reading or exporting committed state. No operation repins a stream or treats an archive as remote acknowledgement.",
   "recovery": "Keep the original state and matching binary. Continue local sampling independently. Any fresh state namespace or disposition of an old queue requires an explicit owner decision.",
   "implementation": [
     "observer/src/observer.cpp",
-    "observer/src/delivery_transport.cpp",
     "observer/src/outbox.cpp"
   ],
   "relatedContracts": [
-    "docs/machine/shin-observer-delivery-v1.json",
     "docs/machine/shin-observer-outbox-v1.json",
     "docs/machine/shin-companion-protocols-v1.json"
-  ]
+  ],
+  "localArchive": {
+    "commands": [
+      "shin-observer outbox-export --config FILE --archive FILE",
+      "shin-observer outbox-verify --config FILE --archive FILE"
+    ],
+    "receipt": "shin.observer-outbox-archive.v1",
+    "scope": "Export exactly the committed bounded state to a private external file. Retries accept only identical bytes; verification preserves the original state, queue, source and index. No network request or receipt application is performed.",
+    "safety": "Require normalized absolute paths outside source, profiles, index and Observer state. Reject unsafe permissions, symlinks, stale or incomplete archives. Preserve stream identity, byte hash, queue bounds and explicit uncommitted-state exclusion.",
+    "proof": "Archive receipts describe a byte-exact local copy, not external durability, remote delivery or publication."
+  }
 }

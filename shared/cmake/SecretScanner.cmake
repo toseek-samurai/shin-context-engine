@@ -12,13 +12,13 @@ function(shin_configure_secret_scanner)
     set(RE2_USE_ICU OFF)
     set(RE2_INSTALL OFF)
     FetchContent_Declare(shin_abseil
-        URL https://codeload.github.com/abseil/abseil-cpp/tar.gz/refs/tags/20250814.1
-        URL_HASH SHA256=1692f77d1739bacf3f94337188b78583cf09bab7e420d2dc6c5605a4f86785a1
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE SOURCE_SUBDIR shin-no-cmake)
+        URL https://codeload.github.com/abseil/abseil-cpp/tar.gz/refs/tags/20260817.0
+        URL_HASH SHA256=f7e05179df39c45434cad433f5783840bb3788ef322976f9138bc6b72b3a107d
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE SOURCE_SUBDIR shin-no-cmake)
     FetchContent_Declare(shin_re2
         URL https://codeload.github.com/google/re2/tar.gz/refs/tags/2025-11-05
         URL_HASH SHA256=87f6029d2f6de8aa023654240a03ada90e876ce9a4676e258dd01ea4c26ffd67
-        DOWNLOAD_EXTRACT_TIMESTAMP TRUE SOURCE_SUBDIR shin-no-cmake)
+        DOWNLOAD_EXTRACT_TIMESTAMP FALSE SOURCE_SUBDIR shin-no-cmake)
     FetchContent_MakeAvailable(shin_abseil shin_re2)
     get_directory_property(saved_compile_options COMPILE_OPTIONS)
     if(CMAKE_CXX_COMPILER_ID MATCHES "^(AppleClang|Clang|GNU)$")

@@ -3,11 +3,11 @@ include(FetchContent)
 FetchContent_Declare(shin_toml
     URL https://codeload.github.com/marzer/tomlplusplus/tar.gz/refs/tags/v3.4.0
     URL_HASH SHA256=8517f65938a4faae9ccf8ebb36631a38c1cadfb5efa85d9a72e15b9e97d25155
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE SOURCE_SUBDIR shin-no-cmake)
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE SOURCE_SUBDIR shin-no-cmake)
 FetchContent_Declare(shin_yaml
     URL https://codeload.github.com/yaml/libyaml/tar.gz/refs/tags/0.2.5
     URL_HASH SHA256=fa240dbf262be053f3898006d502d514936c818e422afdcf33921c63bed9bf2e
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE SOURCE_SUBDIR shin-no-cmake)
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE SOURCE_SUBDIR shin-no-cmake)
 FetchContent_MakeAvailable(shin_toml shin_yaml)
 add_library(shin-client-yaml STATIC
     ${shin_yaml_SOURCE_DIR}/src/api.c ${shin_yaml_SOURCE_DIR}/src/dumper.c

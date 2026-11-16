@@ -45,10 +45,25 @@ def main():
             assert json.loads(run([str(installed), '--version'], base, env)) == original
         share = relocated / 'share' / 'shin-observer'
         assert (share / 'VERSION').read_text().strip() == original['version']
-        for name in ('cpp-httplib/LICENSE', 'nlohmann/LICENSE.MIT', 'simdjson/LICENSE-APACHE-2.0',
+        assert not (share / 'licenses/cpp-httplib').exists(), 'removed Server transport was packaged'
+        capabilities = json.loads(run([str(relocated / 'bin' / ('shin-observer' + suffix)), '--version'], base, env))['result']
+        assert capabilities['synchronization_available'] is False
+        assert capabilities['delivery_scope'] == 'local-only'
+        # Retired commands/options fail before reading config or creating state.
+        observer = str(relocated / 'bin' / ('shin-observer' + suffix))
+        config = str(base / 'absent-config.json')
+        for arguments in (['deliver', '--config', config], ['reconcile', '--config', config],
+                          ['sample', '--config', config, '--delivery-config', config],
+                          ['watch', '--config', config, '--delivery-config', config]):
+            refused = subprocess.run([observer, *arguments], cwd=base, env=env,
+                                     stdin=subprocess.DEVNULL, capture_output=True, text=True, timeout=10)
+            assert refused.returncode == 1 and not refused.stdout, arguments
+            error = json.loads(refused.stderr)
+            assert error['ok'] is False and error['error']['code'] == 'invalid-arguments', error
+        for name in ('nlohmann/LICENSE.MIT', 'simdjson/LICENSE-APACHE-2.0',
                      'simdjson/LICENSE-MIT', 'tree-sitter/LICENSE', 'tree-sitter-unicode/LICENSE',
                      'tree-sitter-java/LICENSE', 'tree-sitter-typescript/LICENSE', 'tree-sitter-cpp/LICENSE',
-                     'pugixml/LICENSE.MIT'):
+                     'pugixml/LICENSE.MIT', 'libuv/LICENSE', 'libuv/LICENSE-extra'):
             assert (share / 'licenses' / name).stat().st_size > 0, name
         if os.name != 'nt':
             assert (share / 'licenses/ftxui/LICENSE').stat().st_size > 0

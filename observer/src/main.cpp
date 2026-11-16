@@ -1,5 +1,4 @@
 #include "shin/observer/observer.h"
-#include "shin/observer/delivery.h"
 #include <charconv>
 #include <atomic>
 #include <csignal>
@@ -24,7 +23,7 @@ int run(int argc, char** argv) {
         std::cout << response({{"observer_available", true}, {"watch_policy", "periodic-content-rescan"},
             {"server_required", false}, {"postgresql_required", false}, {"git_required", false},
             {"automatic_publication", false}, {"durable_local_outbox", true}, {"metrics_available", true},
-            {"synchronization_available", true}, {"delivery_scope", "explicit-loopback-metadata"},
+            {"synchronization_available", false}, {"delivery_scope", "local-only"},
             {"source_query_available", SHIN_OBSERVER_SOURCE_DISCOVERY != 0},
             {"source_context_available", SHIN_OBSERVER_SOURCE_DISCOVERY != 0},
             {"source_followup_available", SHIN_OBSERVER_SOURCE_DISCOVERY != 0},
@@ -38,12 +37,10 @@ int run(int argc, char** argv) {
     const bool source_inspect = command == "source-inspect";
     const bool source_read = command == "source-read";
     const bool archive_command = command == "outbox-export" || command == "outbox-verify";
-    if ((!archive_command && !source_command && !source_inspect && !source_read && command != "sample" && command != "watch" && command != "status" && command != "metrics" && command != "deliver" && command != "reconcile") || std::string_view(argv[2]) != "--config")
+    if ((!archive_command && !source_command && !source_inspect && !source_read && command != "sample" && command != "watch" && command != "status" && command != "metrics") || std::string_view(argv[2]) != "--config")
         throw Error("invalid-arguments", "Unsupported Observer command.");
     std::uint64_t samples = command == "watch" ? 0 : 1;
-    std::uint64_t maximum = 128;
     bool count_seen = false;
-    std::optional<fs::path> delivery_path;
     std::optional<fs::path> archive_path;
     std::optional<std::string> query;
     std::optional<std::string> source_path, snapshot;
@@ -73,26 +70,20 @@ int run(int argc, char** argv) {
             archive_path = fs::path(value);
             continue;
         }
-        if (option == "--delivery-config" && !delivery_path && (command == "sample" || command == "watch" || command == "deliver" || command == "reconcile")) {
-            delivery_path = fs::path(value);
-            continue;
-        }
-        if (count_seen || !((command == "watch" && option == "--samples") || (command == "deliver" && option == "--max-submissions")))
+        if (count_seen || command != "watch" || option != "--samples")
             throw Error("invalid-arguments", "Unsupported or duplicate Observer option.");
         count_seen = true;
-        auto& count = command == "watch" ? samples : maximum;
+        auto& count = samples;
         const auto parsed = std::from_chars(value.data(), value.data() + value.size(), count);
-        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || count < 1 || count > (command == "watch" ? 1000U : 128U))
+        if (parsed.ec != std::errc{} || parsed.ptr != value.data() + value.size() || count < 1 || count > 1000U)
             throw Error("invalid-arguments", "Requested count exceeds its command bound.");
     }
-    if ((command == "deliver" || command == "reconcile") && !delivery_path) throw Error("invalid-arguments", "Delivery/reconciliation requires --delivery-config.");
     if (archive_command && !archive_path) throw Error("invalid-arguments", "Outbox export/verification requires --archive.");
     if (source_command && !query) throw Error("invalid-arguments", "Source search requires --query.");
     if (source_inspect && (!source_path || !snapshot)) throw Error("invalid-arguments", "Source inspection requires --path and --snapshot.");
     if (source_read && !input_path) throw Error("invalid-arguments", "Source reading requires --input FILE.");
     if (view_bytes && projection != "compact") throw Error("invalid-arguments", "--max-bytes requires --projection compact.");
     const auto config = load_config(argv[3]);
-    const auto delivery = delivery_path ? std::optional(load_delivery_config(config, *delivery_path)) : std::nullopt;
     if (std::signal(SIGINT, stop) == SIG_ERR || std::signal(SIGTERM, stop) == SIG_ERR)
         throw Error("signal-setup-failed", "Cannot install Observer stop handlers.");
     Json result;
@@ -102,9 +93,7 @@ int run(int argc, char** argv) {
     else if (command == "status") result = observer_status(config);
     else if (archive_command) result = archive_outbox(config, *archive_path, command == "outbox-verify");
     else if (command == "metrics") result = observer_metrics(config);
-    else if (command == "reconcile" && delivery) result = reconcile_outbox(config, *delivery);
-    else if (command == "deliver" && delivery) result = deliver_outbox(config, *delivery, maximum, [] { return interrupted.test(std::memory_order_relaxed); });
-    else result = run_observer(config, samples, [] { return interrupted.test(std::memory_order_relaxed); }, delivery ? &*delivery : nullptr);
+    else result = run_observer(config, samples, [] { return interrupted.test(std::memory_order_relaxed); });
     if (projection == "compact") std::cout << source_view(result, view_bytes.value_or(8192));
     else std::cout << response(result).dump() << '\n';
     return 0;

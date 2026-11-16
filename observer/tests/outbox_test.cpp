@@ -309,31 +309,24 @@ Json receipt_for(const Json& entry) {
         {"verification_level", "producer-observed"}, {"server_source_verified", false}, {"shared_publication_mutated", false}};
 }
 
-void committed_receipts_drain_without_reusing_sequence() {
+void persisted_receipts_preserve_sequence_and_integrity() {
     const auto active = config(true, 2);
     auto value = populated_state();
     capture(value, active, observation("unpublished", 2));
     auto& queue = value.at("outbox");
+    const auto receipt = receipt_for(queue.at("entries").back());
     queue["destination"] = {{"host", "127.0.0.1"}, {"port", 19125}, {"server_id", kEpoch}, {"principal_id", "reader"}};
     auto& delivery = queue.at("delivery");
-    delivery["attempts"] = 1;
+    delivery["attempts"] = 2;
     delivery["last_attempt_at_ms"] = 100;
-    delivery["last_outcome"] = "in-flight";
-    const auto first = queue.at("entries").front();
-    const auto second = queue.at("entries").back();
-    auto wrong = receipt_for(first);
-    wrong["payload_sha256"] = kForeignBindingKey;
-    const auto unchanged = value;
-    rejects("invalid-outbox", [&] { acknowledge_outbox(active, value, wrong); });
-    check(value == unchanged, "invalid receipt modified the queue");
     delivery["last_outcome"] = "acknowledged";
     delivery["last_result_at_ms"] = 110;
-    acknowledge_outbox(active, value, receipt_for(first));
-    check(queue.at("acknowledged_sequence") == 1 && queue.at("entries") == Json::array({second}), "receipt removed the wrong entry");
-    delivery["attempts"] = 2;
-    acknowledge_outbox(active, value, receipt_for(second));
-    check(queue.at("entries").empty() && queue.at("payload_bytes") == 0 && queue.at("accepted_sequence") == 2,
-          "draining lost the issued cursor or retained bytes");
+    queue["acknowledged_sequence"] = receipt.at("sequence");
+    queue["acknowledged_observation_sequence"] = queue.at("entries").back().at("payload").at("observer_sequence");
+    queue["last_receipt"] = receipt;
+    queue["entries"] = Json::array();
+    queue["payload_bytes"] = 0;
+    verify(active, value);
     capture(value, active, observation("unpublished", 3));
     check(queue.at("entries").front().at("sequence") == 3 && queue.at("entries").front().at("payload").at("observer_sequence") == 4,
           "new entry reused an acknowledged sequence or lost the capture gap");
@@ -363,7 +356,7 @@ int main() {
         serialization_preserves_restart_state();
         reserved_state_budget_and_rejection_ranges();
         metrics_track_retained_samples();
-        committed_receipts_drain_without_reusing_sequence();
+        persisted_receipts_preserve_sequence_and_integrity();
         std::cout << "observer outbox tests passed\n";
         return 0;
     } catch (const std::exception& error) {

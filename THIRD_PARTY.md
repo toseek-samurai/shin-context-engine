@@ -9,26 +9,28 @@ the referenced build files; system-library versions depend on the build host.
 | nlohmann JSON | Vendored 3.12.0 | `third_party/nlohmann/LICENSE.MIT` |
 | simdjson | Vendored 5.2.0 | `third_party/simdjson/LICENSE-MIT`, `LICENSE-APACHE-2.0` |
 | pugixml | Vendored 1.16 | `third_party/pugixml/LICENSE.MIT` |
-| Tree-sitter runtime | Vendored 0.27.0 | Runtime MIT; Unicode notice in `src/unicode/LICENSE` |
+| Tree-sitter runtime | Vendored 0.27.2 | Runtime MIT; Unicode notice in `src/unicode/LICENSE` |
 | Java, C++, TypeScript/TSX grammars | 0.23.5, 0.23.4, 0.23.2 | Each grammar's `LICENSE` and `UPSTREAM.json` |
 | Objective-C/Objective-C++ grammar | Vendored 0.1.0, `third_party/tree-sitter-objcpp/UPSTREAM.json` | Upstream MIT `LICENSE` |
 | utf8proc | Vendored 2.12.0, `third_party/utf8proc/UPSTREAM.json` | MIT and Unicode data notices in `LICENSE.md` |
 | RE2 | 2025-11-05, `shared/cmake/SecretScanner.cmake` | Upstream BSD-3-Clause `LICENSE` |
-| Abseil | 20250814.1, `shared/cmake/SecretScanner.cmake` | Upstream Apache-2.0 `LICENSE` |
-| cpp-httplib | 0.54.1, `shared/cmake/Http.cmake` | Upstream MIT `LICENSE` |
+| Abseil | 20260817.0, `shared/cmake/SecretScanner.cmake` | Upstream Apache-2.0 `LICENSE` |
 | MCP C++ SDK | Commit pinned in `shared/cmake/Mcp.cmake` | Upstream MIT `LICENSE` |
 | toml++ | 3.4.0, `observer/cmake/ClientConfig.cmake` | Upstream MIT `LICENSE` |
 | LibYAML | 0.2.5, `observer/cmake/ClientConfig.cmake` | Upstream MIT `License` |
 | Dear ImGui | 1.93.0, `observer/tray/CMakeLists.txt` | Upstream MIT `LICENSE.txt` |
 | FTXUI | 7.0.3, `shared/cmake/Ftxui.cmake` | Upstream MIT `LICENSE` |
-| mimalloc | Optional Linux 3.5.3, `shared/cmake/CoreAllocator.cmake` | Upstream MIT `LICENSE` |
+| SQLite | 3.54.1, `shared/cmake/SQLite.cmake` | Upstream public-domain dedication: https://www.sqlite.org/copyright.html |
+| libuv | 1.53.0, `shared/cmake/Coordinator.cmake` | Upstream MIT `LICENSE` and `LICENSE-extra` |
+| mimalloc | Optional Linux 3.6.1, `shared/cmake/CoreAllocator.cmake` | Upstream MIT `LICENSE` |
 
 The vendored Tree-sitter source also includes its wasm libc license files.
 Preserve them when redistributing those sources, even when that code is not
 compiled by the native build.
 
-OpenSSL Crypto and SQLite are selected through the
-component build configuration. Record their actual versions and linkage for each
+SQLite is compiled statically from the same checksum-pinned amalgamation on every
+platform, with FTS5 and thread safety enabled. OpenSSL Crypto is selected through
+the component build configuration. Record actual versions and linkage for each
 release. The macOS local kit copies its runtime Crypto dependency and its license;
 other component packages may require provisioned system libraries. Do not assume
 that one package's dependency inventory describes another package.
@@ -43,3 +45,9 @@ component license directories.
 Package qualification checks the extracted payload, including notices and dynamic
 library dependencies. This source inventory does not claim a vulnerability audit
 or qualification of an unbuilt platform.
+
+The MCP SDK stays on its existing protocol-only commit. The reviewed 0.3.11
+server subset requires HTTP trigger/webhook symbols; adopting it needs a separate
+transport-boundary review. That migration must also switch its archive extraction
+to fresh timestamps. The unchanged SDK pin and build file preserve the current
+MCP adapter contract for live clients.

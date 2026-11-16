@@ -265,7 +265,7 @@ mkdir -p "$(dirname "$report")"
       equality_check("worktree-diff-command-documented"; ($machine_manifest.commands.worktreeDiff | type); "string"),
       equality_check("impact-command-documented"; ($machine_manifest.commands.impact | type); "string"),
       equality_check("impact-schema"; $machine_manifest.schemas.impactPack; "shin.impact-pack.v1"),
-      equality_check("source-syntax-runtime"; ($machine_manifest.dependencies | map(select(.id == "tree-sitter") | .version)); ["0.27.0"]),
+      equality_check("source-syntax-runtime"; ($machine_manifest.dependencies | map(select(.id == "tree-sitter") | .version)); ["0.27.2"]),
       equality_check("checkpoint-command-documented"; ($machine_manifest.commands.checkpoint | type); "string"),
       equality_check("resume-command-documented"; ($machine_manifest.commands.resume | type); "string"),
       equality_check("receipt-scope-command-documented"; ($machine_manifest.commands.receiptScope | type); "string"),

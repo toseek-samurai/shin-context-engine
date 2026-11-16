@@ -192,8 +192,8 @@ its numeric history, metrics and portfolio producers remain independent tools.
 
 ## Persisted compatibility
 
-The standalone Server and its deployment tooling have been removed. Observer
-retains its existing state, outbox and explicit loopback delivery formats so
-removing the backend does not rewrite local history or identity pins. These
-compatibility interfaces do not provide a remote service or synchronize source
-code. The local kit uses its own local service for CLI, MCP and Monitor.
+The standalone Server, HTTP delivery client and deployment tooling have been
+removed. Observer sampling, metrics and private outbox export are local-only.
+Strict persisted-state validation retains existing observation metadata, identity
+pins and stored receipts without sending, acknowledging or deleting queued data.
+The local kit uses its own local service for CLI, MCP and Monitor.

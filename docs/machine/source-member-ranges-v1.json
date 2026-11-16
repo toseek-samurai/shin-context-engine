@@ -27,7 +27,7 @@
     "treeSitter": {
       "core": {
         "name": "tree-sitter",
-        "version": "v0.27.0",
+        "version": "v0.27.2",
         "license": "MIT"
       },
       "java": {

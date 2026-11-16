@@ -5,7 +5,7 @@
   "observerArchive": {
     "receipt": "shin.observer-outbox-archive.v1",
     "archiveFile": "canonical shin.observer-state.v3",
-    "contract": "docs/machine/shin-observer-delivery-v1.json#localArchive",
+    "contract": "docs/machine/shin-observer-recovery-v1.json#localArchive",
     "observer": "2.0.0-dev.20",
     "noStateMigration": true,
     "noServerHistoryDisposition": true
@@ -24,21 +24,15 @@
   },
   "observerFormats": {
     "sourceConfig": "shin.observer-config.v2",
-    "deliveryConfig": "shin.observer-delivery-config.v1",
     "state": "shin.observer-state.v3",
     "outbox": "shin.observer-outbox.v2",
     "submission": "shin.observer-submission.v1",
-    "acknowledgement": "shin.observer-ack.v1",
-    "confirmation": "shin.observer-confirmation.v1",
-    "reconcileRequest": "shin.observer-reconcile-request.v1",
-    "reconcileResult": "shin.observer-reconcile-result.v1"
+    "acknowledgement": "shin.observer-ack.v1"
   },
-  "reconciliation": "A persisted non-null destination is required before read-only reconcile. Use an explicit mutating delivery operation to establish it. Unbound or mismatched destinations fail before network access. Retired acknowledgement history never permits resume. No local cursor or pending file is repaired by reconciliation.",
   "title": "Local Companion Protocol Inventory",
-  "summary": "Local MCP and persisted Observer formats. Historical loopback delivery remains a compatibility interface; no receiver or remote service is distributed.",
+  "summary": "Local MCP, private Observer archives and strict persisted metadata formats. Sampling and archives do not use a remote service or network delivery.",
   "relatedContracts": [
     "docs/machine/shin-observer-recovery-v1.json",
-    "docs/machine/shin-observer-delivery-v1.json",
     "docs/machine/shin-observer-state-read-v1.json"
   ]
 }

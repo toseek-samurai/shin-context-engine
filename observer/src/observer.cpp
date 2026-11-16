@@ -1,7 +1,6 @@
 #include "shin/observer/observer.h"
 #include "shin/observer/outbox.h"
 #include "shin/observer/metrics.h"
-#include "shin/observer/delivery.h"
 #include "shin/observer_protocol.h"
 #ifdef _WIN32
 #include <windows.h>
@@ -96,10 +95,9 @@ void verify_state(const Config& config, const Json& state) {
     verify_metrics(state);
 }
 
-void pause(const Config& config, const std::function<bool()>& stopped, const std::function<void()>& tick) {
+void pause(const Config& config, const std::function<bool()>& stopped) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(config.poll_interval_ms);
     while (!stopped() && std::chrono::steady_clock::now() < deadline) {
-        tick();
         std::this_thread::sleep_for(std::chrono::milliseconds(20));
     }
 }
@@ -119,7 +117,7 @@ Json response(const Json& result) {
         {"ok", true}, {"result", result}};
 }
 
-Json run_observer(const Config& config, std::uint64_t samples, const std::function<bool()>& stopped, const DeliveryConfig* delivery) {
+Json run_observer(const Config& config, std::uint64_t samples, const std::function<bool()>& stopped) {
     StateStore store(config.state_dir, true, config.binding.at("state_identity").get<std::string>());
     auto loaded = store.load();
     if (loaded) verify_state(config, *loaded);
@@ -145,13 +143,8 @@ Json run_observer(const Config& config, std::uint64_t samples, const std::functi
     state["producer_version"] = SHIN_OBSERVER_VERSION;
     state["core_version"] = SHIN_VERSION;
     state["lifecycle"] = "assessing";
-    if (delivery) bind_delivery(state.at("outbox"), *delivery);
     verify_state(config, state);
     store.save(state);
-    std::unique_ptr<DeliverySession> sender;
-    if (delivery) sender = std::make_unique<DeliverySession>(config, *delivery);
-    const auto tick = [&] { if (sender) sender->tick(state, store); };
-    tick();
     for (std::uint64_t count = 0; !stopped() && (samples == 0 || count < samples); ++count) {
         if (state.at("sequence").get<std::uint64_t>() >= kMaximumSequence)
             throw Error("sequence-exhausted", "Observer sequence capacity was reached.");
@@ -166,10 +159,8 @@ Json run_observer(const Config& config, std::uint64_t samples, const std::functi
         state["lifecycle"] = "waiting";
         verify_state(config, state);
         store.save(state);
-        tick();
-        if (samples == 0 || count + 1 < samples) pause(config, stopped, tick);
+        if (samples == 0 || count + 1 < samples) pause(config, stopped);
     }
-    if (sender) sender->finish(state, store);
     state["lifecycle"] = "stopped";
     store.save(state);
     return state;
@@ -193,7 +184,7 @@ Json observer_status(const Config& config) {
     return {{"state", state ? *state : Json(nullptr)}, {"writer_lock_held", store.writer_present()},
         {"live_source_verified", false}, {"observation_age_ms", age}, {"observation_age", age_status},
         {"observer_state_mutated", false}, {"consumer_mutated", false}, {"index_mutated", false},
-        {"synchronization", "explicit-metadata-delivery"}};
+        {"synchronization", "local-only"}};
 }
 
 Json observer_metrics(const Config& config) {
@@ -204,7 +195,7 @@ Json observer_metrics(const Config& config) {
         {"outbox", state.is_null() ? Json(nullptr) : outbox_summary(config, state.at("outbox"))},
         {"writer_lock_held", status.at("writer_lock_held")}, {"observation_age", status.at("observation_age")},
         {"observation_age_ms", status.at("observation_age_ms")}, {"live_source_verified", false},
-        {"state_mutated", false}, {"synchronization", "explicit-metadata-delivery"}};
+        {"state_mutated", false}, {"synchronization", "local-only"}};
 }
 
 Json archive_outbox(const Config& config, const fs::path& archive, bool verify_only) {
@@ -243,45 +234,4 @@ Json archive_outbox(const Config& config, const fs::path& archive, bool verify_o
         {"delivery_performed", false}, {"external_archive_durability_verified", false}};
 }
 
-Json deliver_outbox(const Config& config, const DeliveryConfig& delivery, std::uint64_t maximum,
-                    const std::function<bool()>& stopped) {
-    if (maximum == 0 || maximum > 128 || !config.outbox_enabled)
-        throw Error("invalid-delivery", "Delivery requires an enabled outbox and a bounded batch.");
-    StateStore store(config.state_dir, true, config.binding.at("state_identity").get<std::string>());
-    auto loaded = store.load();
-    if (!loaded) throw Error("state-unavailable", "Sample the local workspace before delivery.");
-    verify_state(config, *loaded);
-    Json state = *loaded;
-    bind_delivery(state.at("outbox"), delivery);
-    verify_state(config, state);
-    store.recover_pending();
-    store.save(state);
-    DeliverySession sender(config, delivery);
-    for (std::uint64_t count = 0; count < maximum && !stopped() && !state.at("outbox").at("entries").empty(); ++count) {
-        sender.tick(state, store);
-        sender.finish(state, store);
-        if (sender.failed()) break;
-    }
-    return {{"state", state}, {"attempts_completed", sender.completed()}, {"delivery_failed", sender.failed()},
-        {"pending_drained", state.at("outbox").at("entries").empty()}, {"consumer_mutated", false},
-        {"index_mutated", false}, {"shared_publication_mutated", false}};
-}
-
-Json reconcile_outbox(const Config& config, const DeliveryConfig& delivery) {
-    if (!config.outbox_enabled) throw Error("outbox-disabled", "Reconciliation requires an enabled outbox.");
-    StateStore store(config.state_dir, false, config.binding.at("state_identity").get<std::string>());
-    const auto state = store.load();
-    if (!state) throw Error("state-unavailable", "Reconciliation requires existing local state.");
-    verify_state(config, *state);
-    const auto& queue = state->at("outbox");
-    if (queue.at("destination").is_null())
-        throw Error("delivery-binding-required", "Reconciliation requires a persisted destination. Explicit delivery binds it before network access.");
-    if (queue.at("destination") != delivery.destination)
-        throw Error("delivery-binding-mismatch", "Existing delivery destination cannot be changed implicitly.");
-    const Json request{{"schema_version", "shin.observer-reconcile-request.v1"}, {"server_id", delivery.destination.at("server_id")},
-        {"stream_id", queue.at("stream_id")}, {"acknowledged_sequence", queue.at("acknowledged_sequence")},
-        {"accepted_sequence", queue.at("accepted_sequence")}, {"last_receipt", queue.at("last_receipt")},
-        {"next_submission", queue.at("entries").empty() ? Json(nullptr) : queue.at("entries").front()}};
-    return reconcile_remote(delivery, request);
-}
 } // namespace shin::observer

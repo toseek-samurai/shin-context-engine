@@ -15,12 +15,13 @@ update differences between these routes.
 
 Use a C++20 compiler and CMake 3.24 or newer. Tests require Python 3.11 or newer;
 the Linux/macOS suites also require Bash and jq. On those platforms, local source
-discovery requires SQLite with FTS5, version 3.38 or newer, and Observer requires
-OpenSSL Crypto. Windows uses a pinned static SQLite build and native cryptography.
+discovery statically links checksum-pinned SQLite 3.54.1 with FTS5 and thread
+safety enabled on every platform. Observer requires OpenSSL Crypto on macOS/Linux;
+Windows uses native cryptography. A system SQLite development package is not needed.
 CMake downloads pinned dependencies and checks their hashes.
 
 Core links [RE2 2025-11-05](https://github.com/google/re2/tree/2025-11-05)
-and its upstream-pinned Abseil 20250814.1 statically for secret scanning.
+and checksum-pinned [Abseil 20260817.0](https://github.com/abseil/abseil-cpp/tree/20260817.0) statically for secret scanning.
 They require no additional runtime installation. CMake
 verifies both source archives and includes their licenses in packaged tools;
 upstream tests and utilities are excluded from the product build.
@@ -80,7 +81,7 @@ On Ubuntu 24.04, including WSL2, install the build and test prerequisites:
 ```sh
 sudo apt-get update
 sudo apt-get install -y build-essential cmake ninja-build pkg-config \
-  libssl-dev libsqlite3-dev python3 jq git
+  libssl-dev python3 jq git
 ```
 
 From the source checkout:
@@ -121,7 +122,7 @@ session service start/stop commands are available.
 The Linux packaging route produces
 `shin-terminal-VERSION-linux-x86_64.tar.gz`, its checksum and
 `linux-qualification.json`. This is an Ubuntu 24.04 x86_64/glibc 2.39+ archive,
-with system `libc6`, `libstdc++6`, OpenSSL 3 (`libssl3t64`) and `libsqlite3-0`.
+with system `libc6`, `libstdc++6`, OpenSSL 3 (`libssl3t64`). SQLite is included statically.
 It contains Core, Observer, CLI, MCP, usage collection and the EN/RU terminal
 monitor. It does not contain a desktop host, a service-manager installer or an
 automatic updater. Other Linux distributions and CPU architectures need their

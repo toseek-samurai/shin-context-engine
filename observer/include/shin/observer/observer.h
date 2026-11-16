@@ -7,7 +7,6 @@
 namespace shin::context { class GenerationAdmission; }
 
 namespace shin::observer {
-struct DeliveryConfig;
 struct Config {
     Json binding;
     std::string binding_key;
@@ -25,8 +24,7 @@ Config load_config(const fs::path& path);
 Config config_from_json(const Json& value, const fs::path& path);
 // source_only is internal repair preparation, never query/readiness admission.
 Json sample_worktree(const Config& config, const std::string& root_identity, bool source_only = false);
-Json run_observer(const Config& config, std::uint64_t samples, const std::function<bool()>& stopped,
-                  const DeliveryConfig* delivery = nullptr);
+Json run_observer(const Config& config, std::uint64_t samples, const std::function<bool()>& stopped);
 Json observer_status(const Config& config);
 Json observer_metrics(const Config& config);
 Json query_source(const Config& config, const std::string& query, bool materialize = false,

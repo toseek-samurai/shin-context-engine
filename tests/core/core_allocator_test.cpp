@@ -4,7 +4,7 @@
 #include <thread>
 
 int main() {
-    if (mi_version() != 30503) return 1;
+    if (mi_version() != 30601) return 1;
     void* small = std::malloc(37);
     void* aligned = ::operator new(8192, std::align_val_t{4096});
     const bool owned = small && mi_is_in_heap_region(small) && mi_is_in_heap_region(aligned);

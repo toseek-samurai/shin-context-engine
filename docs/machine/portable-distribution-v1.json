@@ -98,7 +98,7 @@
       "selection": "CMake SHIN_CORE_ALLOCATOR=mimalloc",
       "default": "system",
       "scope": "Non-sanitized standalone Linux Core CLI only; never the embeddable Core library, Observer or macOS.",
-      "version": "3.5.3",
+      "version": "3.6.1",
       "pin": "shared/cmake/CoreAllocator.cmake",
       "transparentHugePages": false,
       "runtimePreloadRequired": false,

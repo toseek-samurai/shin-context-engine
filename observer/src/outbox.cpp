@@ -198,20 +198,6 @@ void verify_outbox(const Config& config, const Json& state) {
     if (rejected != 0 && rejected > counter(last) - counter(first) + 1 - accepted_in_gap_range) invalid();
 }
 
-void acknowledge_outbox(const Config& config, Json& state, const Json& receipt) {
-    auto& queue = state.at("outbox");
-    auto& entries = queue.at("entries");
-    if (entries.empty() || queue.at("destination").is_null()) invalid();
-    try { observer_protocol::verify_acknowledgement(receipt, entries.front(), queue.at("destination").at("server_id").get<std::string>()); }
-    catch (const observer_protocol::ValidationError&) { invalid(); }
-    queue["acknowledged_sequence"] = entries.front().at("sequence");
-    queue["acknowledged_observation_sequence"] = entries.front().at("payload").at("observer_sequence");
-    queue["last_receipt"] = receipt;
-    queue["payload_bytes"] = counter(queue.at("payload_bytes")) - entries.front().dump().size();
-    entries.erase(entries.begin());
-    verify_outbox(config, state);
-}
-
 Json outbox_summary(const Config& config, const Json& queue) {
     if (queue.is_null()) return {{"enabled", false}, {"delivery", "disabled"}};
     const auto& entries = queue.at("entries");

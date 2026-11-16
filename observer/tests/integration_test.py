@@ -284,7 +284,7 @@ class ObserverIntegrationSuite:
         if set(result) != expected or result["live_source_verified"] is not False or not isinstance(result["writer_lock_held"], bool):
             raise IntegrationFailure("Observer status is not the required read-only status result")
         if result["observer_state_mutated"] is not False or result["consumer_mutated"] is not False or \
-                result["index_mutated"] is not False or result["synchronization"] != "explicit-metadata-delivery":
+                result["index_mutated"] is not False or result["synchronization"] != "local-only":
             raise IntegrationFailure("Observer status did not retain its read-only local-only boundary")
         if result["state"] is not None and not isinstance(result["state"], dict):
             raise IntegrationFailure("Observer status state is neither null nor an object")
@@ -782,7 +782,7 @@ class ObserverIntegrationSuite:
         state_file = fixture.state / "state.json"
         before = tree_metadata(fixture.state)
         metrics, completed = self.observer_command(fixture, "metrics")
-        if metrics["state_mutated"] or metrics["live_source_verified"] or metrics["synchronization"] != "explicit-metadata-delivery" or \
+        if metrics["state_mutated"] or metrics["live_source_verified"] or metrics["synchronization"] != "local-only" or \
                 metrics["outbox"]["resync_required"] is not True or metrics["outbox"]["server_acknowledged"] is not False or \
                 metrics["metrics"]["sample_count"] != restarted["sequence"] or \
                 sum(metrics["metrics"]["outcomes"].values()) != restarted["sequence"] or \

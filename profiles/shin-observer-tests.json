@@ -22,7 +22,6 @@
     "profiles/shin-observer-tests.json",
     "integrations/shin-development/shin-integration-bundle-v1.json",
     "docs/machine/shin-local-observer-v1.json",
-    "docs/machine/shin-observer-delivery-v1.json",
     "docs/machine/shin-observer-offline-collaboration-v1.json",
     "docs/machine/shin-observer-outbox-v1.json",
     "docs/machine/shin-observer-state-read-v1.json",

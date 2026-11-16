@@ -22,9 +22,9 @@ set(MI_OVERRIDE ON CACHE BOOL "" FORCE)
 set(MI_ALLOW_THP OFF CACHE STRING "" FORCE)
 set(MI_OPT_ARCH OFF CACHE STRING "" FORCE)
 FetchContent_Declare(shin_mimalloc
-    URL https://codeload.github.com/microsoft/mimalloc/tar.gz/refs/tags/v3.5.3
-    URL_HASH SHA256=3b4a15153a59905995f7070296ed604bb5ccc00cabb8b93446931aff77224d47
-    DOWNLOAD_EXTRACT_TIMESTAMP TRUE)
+    URL https://codeload.github.com/microsoft/mimalloc/tar.gz/refs/tags/v3.6.1
+    URL_HASH SHA256=2672e6a99d4579fb4bb32d9de0d63aa424ce600d31fbfaf06eb74d940d2e07a6
+    DOWNLOAD_EXTRACT_TIMESTAMP FALSE)
 FetchContent_MakeAvailable(shin_mimalloc)
 set_property(DIRECTORY "${shin_mimalloc_SOURCE_DIR}" PROPERTY EXCLUDE_FROM_ALL TRUE)
 target_compile_options(mimalloc-obj PRIVATE "-ffile-prefix-map=${shin_mimalloc_SOURCE_DIR}=mimalloc")
@@ -35,7 +35,7 @@ function(shin_link_core_allocator target)
 endfunction()
 
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/shin-core-allocator.json"
-    "{\"schema_version\":\"shin.core-allocator.v1\",\"id\":\"mimalloc\",\"version\":\"3.5.3\",\"scope\":\"standalone-linux-core-cli\",\"linkage\":\"static-object\",\"transparent_huge_pages\":false,\"source_sha256\":\"3b4a15153a59905995f7070296ed604bb5ccc00cabb8b93446931aff77224d47\"}\n")
+    "{\"schema_version\":\"shin.core-allocator.v1\",\"id\":\"mimalloc\",\"version\":\"3.6.1\",\"scope\":\"standalone-linux-core-cli\",\"linkage\":\"static-object\",\"transparent_huge_pages\":false,\"source_sha256\":\"2672e6a99d4579fb4bb32d9de0d63aa424ce600d31fbfaf06eb74d940d2e07a6\"}\n")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/shin-core-allocator.json"
     DESTINATION share/shin-context)
 install(FILES "${shin_mimalloc_SOURCE_DIR}/LICENSE"

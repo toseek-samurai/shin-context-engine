@@ -19,6 +19,11 @@ concurrency:
 jobs:
   linux:
     name: native (${{ matrix.os }}, ${{ matrix.component }})
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -140,6 +145,17 @@ jobs:
             --build "$RUNNER_TEMP/observer" --output "$RUNNER_TEMP/observer/packages" \
             --source-sha "$GITHUB_SHA" --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" \
             2>&1 | tee "$RUNNER_TEMP/package-smoke.log"
+      - name: Prepare Linux platform receipt
+        if: matrix.component == 'observer' && github.ref_type == 'tag' && steps.qualify-kit.outcome == 'success'
+        run: |
+          python3 -B tools/publish_preview.py --prepare-marker "$RUNNER_TEMP/observer/packages" \
+            --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --platform linux
+      - name: Attest qualified Linux kit
+        if: matrix.component == 'observer' && github.ref_type == 'tag' && steps.qualify-kit.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/observer/packages/shin-preview-linux.json
       - name: Upload qualified Linux kit
         if: success() && steps.qualify-kit.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -149,6 +165,7 @@ jobs:
             ${{ runner.temp }}/observer/packages/*.tar.gz
             ${{ runner.temp }}/observer/packages/*.tar.gz.sha256
             ${{ runner.temp }}/observer/packages/linux-qualification.json
+            ${{ runner.temp }}/observer/packages/shin-preview-*.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -192,6 +209,11 @@ jobs:
 
   macos:
     name: native (${{ matrix.os }}, ${{ matrix.component }})
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
     strategy:
       fail-fast: false
       matrix:
@@ -318,6 +340,17 @@ jobs:
             --test-results "$RUNNER_TEMP/observer-tests.xml" 2>&1 | tee "$RUNNER_TEMP/package-smoke.log"
           cd "$RUNNER_TEMP/observer/packages"
           shasum -a 256 -c ./*.zip.sha256 | tee "$RUNNER_TEMP/package-checksum.log"
+      - name: Prepare macOS platform receipt
+        if: matrix.component == 'observer' && github.ref_type == 'tag' && steps.qualify-kit.outcome == 'success'
+        run: |
+          python3 -B tools/publish_preview.py --prepare-marker "$RUNNER_TEMP/observer/packages" \
+            --repo "$GITHUB_REPOSITORY" --sha "$GITHUB_SHA" --tag "$GITHUB_REF_NAME" \
+            --run-id "$GITHUB_RUN_ID" --attempt "$GITHUB_RUN_ATTEMPT" --platform macos
+      - name: Attest qualified macOS kit
+        if: matrix.component == 'observer' && github.ref_type == 'tag' && steps.qualify-kit.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ runner.temp }}/observer/packages/shin-preview-macos.json
       - name: Upload qualified macOS kit
         if: success() && steps.qualify-kit.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -327,6 +360,7 @@ jobs:
             ${{ runner.temp }}/observer/packages/*.zip
             ${{ runner.temp }}/observer/packages/*.zip.sha256
             ${{ runner.temp }}/observer/packages/install.sh
+            ${{ runner.temp }}/observer/packages/shin-preview-*.json
           if-no-files-found: error
           retention-days: 14
 
@@ -370,6 +404,11 @@ jobs:
           retention-days: 14
 
   windows:
+    permissions:
+      contents: read
+      actions: read
+      id-token: write
+      attestations: write
     name: windows (${{ matrix.component }})
     runs-on: windows-2022
     timeout-minutes: 45
@@ -518,6 +557,18 @@ jobs:
         id: qualify-windows
         if: matrix.component == 'desktop'
         run: ../tools/qualify_windows.ps1 -Packages "$env:SHIN_BUILD_ROOT/desktop/packages" -Output "$env:SHIN_BUILD_ROOT/proof"
+      - name: Prepare Windows platform receipt
+        if: matrix.component == 'desktop' && github.ref_type == 'tag' && steps.qualify-windows.outcome == 'success'
+        working-directory: .
+        run: |
+          python -B tools/publish_preview.py --prepare-marker "$env:SHIN_BUILD_ROOT/desktop/packages" `
+            --repo "$env:GITHUB_REPOSITORY" --sha "$env:GITHUB_SHA" --tag "$env:GITHUB_REF_NAME" `
+            --run-id "$env:GITHUB_RUN_ID" --attempt "$env:GITHUB_RUN_ATTEMPT" --platform windows
+      - name: Attest qualified Windows kit
+        if: matrix.component == 'desktop' && github.ref_type == 'tag' && steps.qualify-windows.outcome == 'success'
+        uses: actions/attest@1e69f48acb82d1966a394da916b4c1698aa569d6 # v4.2.2
+        with:
+          subject-path: ${{ steps.paths.outputs.build_root }}/desktop/packages/shin-preview-windows.json
       - name: Upload qualified Windows kit
         if: success() && steps.qualify-windows.outcome == 'success'
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
@@ -528,6 +579,7 @@ jobs:
             ${{ steps.paths.outputs.build_root }}/desktop/packages/*.msi
             ${{ steps.paths.outputs.build_root }}/desktop/packages/*.sha256
             ${{ steps.paths.outputs.build_root }}/desktop/packages/windows-qualification.json
+            ${{ steps.paths.outputs.build_root }}/desktop/packages/shin-preview-*.json
           if-no-files-found: error
           retention-days: 14
           compression-level: 0
@@ -585,6 +637,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -610,6 +663,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -635,6 +689,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      attestations: read
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:

@@ -39,6 +39,7 @@ jobs:
     permissions:
       contents: write
       actions: read
+      attestations: read
     env:
       GH_TOKEN: ${{ github.token }}
       PREVIEW_TAG: ${{ inputs.tag }}

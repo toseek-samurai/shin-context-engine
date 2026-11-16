@@ -118,6 +118,7 @@ class GitHubFixture:
         self.calls = []
         self.payloads = {}
         self.artifact_payloads = {}
+        self.attestations = set()
         self.history = {}
         self.uncertain, self.lose_upload = uncertain, lose_upload
         self.pending_steps = 0
@@ -126,6 +127,11 @@ class GitHubFixture:
         self.calls.append(args)
         if args[0] == 'git':
             return SHA + '\n'
+        if args[:3] == ('gh', 'attestation', 'verify'):
+            digest = hashlib.sha256(Path(args[3]).read_bytes()).hexdigest()
+            if digest not in self.attestations:
+                raise subprocess.CalledProcessError(1, args, stderr='No matching verified attestation')
+            return '[{}]'
         if args[:2] == ('gh', 'api'):
             endpoint = args[2]
             if '/commits/' in endpoint:
@@ -155,15 +161,24 @@ class GitHubFixture:
                 linux_kit(target, attempt=int(name.rsplit('-', 1)[1]))
             else:
                 kit(target)
+            platform = next(p for p, spec in publisher.PLATFORMS.items() if name.startswith(spec['artifact']))
+            attempt = int(name.rsplit('-', 1)[1])
+            assets = publisher.package_assets(target, VERSION, '2.0.5-dev.3', SHA, 123, attempt, platform)
+            raw = publisher.marker_bytes(publisher.marker(REPO, SHA, VERSION, '2.0.5-dev.3', platform, 123, attempt, assets))
+            (target / publisher.marker_name(platform)).write_bytes(raw)
+            self.attestations.add(hashlib.sha256(raw).hexdigest())
             self.artifact_payloads[name]={p.name:p.read_bytes() for p in target.iterdir()}
             return ''
         if args[:3] == ('gh', 'release', 'download'):
-            name = args[args.index('--pattern') + 1]
             directory = Path(args[args.index('--dir') + 1])
             directory.mkdir(exist_ok=True)
-            if (directory / name).exists():
-                raise subprocess.CalledProcessError(1,args,stderr='file already exists')
-            (directory / name).write_bytes(self.payloads[name])
+            for index, argument in enumerate(args):
+                if argument != '--pattern':
+                    continue
+                name = args[index + 1]
+                if (directory / name).exists():
+                    raise subprocess.CalledProcessError(1,args,stderr='file already exists')
+                (directory / name).write_bytes(self.payloads[name])
             return ''
         if args[:3] == ('gh', 'release', 'create'):
             if '--target' in args:
@@ -649,6 +664,149 @@ class Publication(unittest.TestCase):
         self.assertEqual(json.loads(github.payloads['shin-preview-windows.json'])['attempt'], 1)
         self.assertEqual(json.loads(github.payloads['shin-preview-macos.json'])['attempt'], 2)
 
+    def test_signed_published_platform_survives_deleted_or_expired_actions_artifacts(self):
+        for platform in publisher.PLATFORMS:
+            for old_artifact in ('deleted', 'expired'):
+                with self.subTest(platform=platform, artifact=old_artifact):
+                    github = GitHubFixture(platform=platform)
+                    self.publish_with(github, platform)
+                    before = copy.deepcopy(github.state['assets'])
+                    github.history[1] = copy.deepcopy((github.run, github.jobs))
+                    old = copy.deepcopy(github.artifact)
+                    for entry in old:
+                        entry['expired'] = True
+                    github.run, github.jobs, github.artifact = fixtures(platform, attempt=2)
+                    if old_artifact == 'expired':
+                        github.artifact += old
+                    github.calls.clear()
+                    self.publish_with(github, platform)
+                    self.assertEqual(github.state['assets'], before)
+                    self.assertEqual(json.loads(github.payloads[publisher.marker_name(platform)])['attempt'], 1)
+                    self.assertFalse(any(c[:3] == ('gh', 'run', 'download') for c in github.calls))
+                    self.assertTrue(any(c[:3] == ('gh', 'attestation', 'verify') for c in github.calls))
+
+    def test_foreign_platform_can_append_after_previous_actions_artifact_is_gone(self):
+        github = GitHubFixture(platform='windows')
+        self.publish_with(github, 'windows')
+        before = copy.deepcopy(github.state['assets'])
+        github.history[1] = copy.deepcopy((github.run, github.jobs))
+        github.run, github.jobs, github.artifact = fixtures('macos', attempt=2)
+        github.calls.clear()
+        self.publish_with(github, 'macos')
+        self.assertTrue(all(asset in github.state['assets'] for asset in before))
+        self.assertEqual(json.loads(github.payloads['shin-preview-windows.json'])['attempt'], 1)
+        self.assertEqual(json.loads(github.payloads['shin-preview-macos.json'])['attempt'], 2)
+        downloads = [c for c in github.calls if c[:3] == ('gh', 'run', 'download')]
+        self.assertEqual(len(downloads), 1)
+        self.assertIn('shin-local-macos-ARM64-123-2', downloads[0])
+
+    def test_signature_is_required_and_bound_to_exact_source_workflow_and_tag(self):
+        github = GitHubFixture()
+        self.publish_with(github)
+        call = next(c for c in github.calls if c[:3] == ('gh', 'attestation', 'verify'))
+        for flag, value in (
+            ('--repo', REPO), ('--signer-workflow', REPO + '/.github/workflows/ci.yml'),
+            ('--signer-digest', SHA), ('--source-digest', SHA), ('--source-ref', 'refs/tags/' + TAG),
+            ('--format', 'json'),
+        ):
+            self.assertEqual(call[call.index(flag) + 1], value)
+        self.assertIn('--deny-self-hosted-runners', call)
+        github.attestations.clear()
+        github.calls.clear()
+        with self.assertRaisesRegex(ValueError, 'attestation could not be verified'):
+            self.publish_with(github)
+        self.assertFalse(any(c[:3] in [('gh', 'release', verb) for verb in ('create', 'upload', 'edit')]
+                             for c in github.calls))
+
+    def test_unverified_fresh_artifact_never_creates_or_uploads_a_release(self):
+        for response in ('[]', '{}', 'timeout'):
+            with self.subTest(response=response):
+                github = GitHubFixture()
+                original = github.command
+                def command(*args, **kwargs):
+                    if args[:3] == ('gh', 'attestation', 'verify'):
+                        if response == 'timeout':
+                            raise subprocess.TimeoutExpired(args, 180)
+                        return response
+                    return original(*args, **kwargs)
+                with patch.object(publisher, 'command', command), \
+                        patch.object(publisher.subprocess, 'run', github.receipt):
+                    with self.assertRaises(ValueError):
+                        publisher.publish(REPO, SHA, TAG, 123, 1)
+                self.assertIsNone(github.state)
+
+    def test_coordinated_release_payload_receipt_and_digest_tamper_still_needs_signature(self):
+        github = GitHubFixture()
+        self.publish_with(github)
+        github.payloads['install.sh'] += b'# changed after qualification\n'
+        proof = json.loads(github.payloads['shin-preview-macos.json'])
+        proof['assets']['install.sh'] = 'sha256:' + hashlib.sha256(github.payloads['install.sh']).hexdigest()
+        github.payloads['shin-preview-macos.json'] = publisher.marker_bytes(proof)
+        for entry in github.state['assets']:
+            entry['digest'] = 'sha256:' + hashlib.sha256(github.payloads[entry['name']]).hexdigest()
+        github.calls.clear()
+        with self.assertRaisesRegex(ValueError, 'attestation could not be verified'):
+            self.publish_with(github)
+        self.assertFalse(any(c[:3] == ('gh', 'release', 'upload') for c in github.calls))
+
+    def test_historical_signature_path_cannot_bypass_fresh_artifact_gate(self):
+        for platform in publisher.PLATFORMS:
+            run, jobs, _ = fixtures(platform)
+            for existing in (False, True):
+                with self.subTest(platform=platform, existing=existing), self.assertRaisesRegex(ValueError, 'artifact is missing'):
+                    publisher.qualification(run, jobs, None, REPO, SHA, 123, 1, platform=platform, existing=existing)
+
+    def test_completed_publication_needs_no_transient_artifact_even_on_original_attempt(self):
+        for platform in publisher.PLATFORMS:
+            with self.subTest(platform=platform):
+                github = GitHubFixture(platform=platform)
+                self.publish_with(github, platform)
+                before = copy.deepcopy(github.state['assets'])
+                github.artifact.clear()
+                github.calls.clear()
+                self.publish_with(github, platform)
+                self.assertEqual(github.state['assets'], before)
+                self.assertFalse(any(c[:3] == ('gh', 'run', 'download') for c in github.calls))
+
+    def test_missing_signature_or_historical_source_failure_refuses_foreign_append(self):
+        for failure in ('signature', 'source-job', 'package-step'):
+            with self.subTest(failure=failure):
+                github = GitHubFixture(platform='windows')
+                self.publish_with(github, 'windows')
+                github.history[1] = copy.deepcopy((github.run, github.jobs))
+                github.run, github.jobs, github.artifact = fixtures('macos', attempt=2)
+                if failure == 'signature':
+                    github.attestations.clear()
+                else:
+                    jobs = github.history[1][1]
+                    job = next(j for j in jobs if j['name'] == 'windows (desktop)')
+                    if failure == 'source-job':
+                        job['conclusion'] = 'failure'
+                    else:
+                        job['steps'][0]['conclusion'] = 'failure'
+                github.calls.clear()
+                with self.assertRaises(ValueError):
+                    self.publish_with(github, 'macos')
+                self.assertFalse(any(c[:3] in [('gh', 'release', verb) for verb in ('upload', 'edit')]
+                                     for c in github.calls))
+
+    def test_prepared_marker_is_exact_and_does_not_mutate_github(self):
+        for platform, create in (('linux', linux_kit), ('macos', kit), ('windows', windows_kit)):
+            with self.subTest(platform=platform), tempfile.TemporaryDirectory() as folder:
+                directory = Path(folder) / 'packages'
+                create(directory)
+                (directory / '_CPack_Packages').mkdir()
+                (directory / 'build-intermediate').write_text('not a release asset')
+                github = GitHubFixture(platform=platform)
+                with patch.object(publisher, 'command', github.command):
+                    path = publisher.prepare_marker(directory, REPO, SHA, TAG, 123, 1, platform=platform)
+                proof = json.loads(path.read_bytes())
+                self.assertEqual(path.read_bytes(), publisher.marker_bytes(proof))
+                self.assertEqual(set(proof['assets']), publisher.platform_assets(platform, VERSION))
+                self.assertEqual((proof['source_sha'], proof['run_id'], proof['attempt']), (SHA, 123, 1))
+                self.assertEqual([c[0] for c in github.calls], ['git'])
+                self.assertEqual((directory / 'build-intermediate').read_text(), 'not a release asset')
+
     def test_macos_zip_is_last_payload_before_platform_marker(self):
         github = GitHubFixture()
         self.publish_with(github)
@@ -731,11 +889,13 @@ class Publication(unittest.TestCase):
             self.assertIn("startsWith(github.ref, 'refs/tags/v')", block)
             self.assertIn('group: preview-assets-${{ github.ref }}',block)
             self.assertIn('queue: max',block)
+            self.assertIn('attestations: read', block)
             self.assertNotIn('cancel-in-progress: true',block)
         recovery=(root/'.github/workflows/publish-preview.yml').read_text()
         self.assertIn('group: preview-assets-refs/tags/${{ inputs.tag }}',recovery)
         self.assertIn('queue: max',recovery)
         self.assertIn('--platform "$PREVIEW_PLATFORM"',recovery)
+        self.assertIn('attestations: read', recovery)
         entry=(root/'.github/workflows/release-preview.yml').read_text()
         self.assertIn("if: github.ref == 'refs/heads/main'",entry)
         self.assertIn('persist-credentials: false',entry)
@@ -769,6 +929,25 @@ class Publication(unittest.TestCase):
                                  platform + ' step ' + expected)
             upload = dict(steps)[spec['steps'][-1]]
             self.assertRegex(upload, r'(?m)^        uses: actions/upload-artifact@')
+            self.assertIn('/packages/shin-preview-*.json', upload)
+            attestation = dict(steps)[spec['steps'][1]]
+            self.assertRegex(attestation, r'(?m)^        uses: actions/attest@[0-9a-f]{40} # v')
+            self.assertIn("github.ref_type == 'tag'", attestation)
+            self.assertIn('outcome == \'success\'', attestation)
+            self.assertIn('/packages/' + publisher.marker_name(platform), attestation)
+            self.assertNotIn('continue-on-error', attestation)
+            prepare_name = 'Prepare ' + {'linux': 'Linux', 'macos': 'macOS', 'windows': 'Windows'}[platform] + ' platform receipt'
+            preparation = dict(steps)[prepare_name]
+            self.assertIn('--prepare-marker ', preparation)
+            self.assertIn('--platform ' + platform, preparation)
+            self.assertIn("github.ref_type == 'tag'", preparation)
+            self.assertNotIn('continue-on-error', preparation)
+            self.assertRegex(block, r'(?m)^      id-token: write$')
+            self.assertRegex(block, r'(?m)^      attestations: write$')
+            names = [name for name, _ in steps]
+            self.assertLess(names.index(spec['steps'][0]), names.index(prepare_name))
+            self.assertLess(names.index(prepare_name), names.index(spec['steps'][1]))
+            self.assertLess(names.index(spec['steps'][1]), names.index(spec['steps'][-1]))
             artifact = re.search(r'^          name: (.+)$', upload, re.M)[1]
             architectures = {'linux': 'X64', 'macos': 'ARM64', 'windows': 'X64'}
             rendered = (artifact.replace('${{ runner.arch }}', architectures[platform])
@@ -781,7 +960,8 @@ class Publication(unittest.TestCase):
         workflow = (Path(__file__).resolve().parents[1] / '.github/workflows/ci.yml').read_text()
         self.check_workflow_package_proof(workflow)
         for original in ('windows (${{ matrix.component }})', 'Exact Windows kit qualification',
-                         'shin-desktop-windows-X64-'):
+                         'shin-desktop-windows-X64-', 'Attest qualified Linux kit',
+                         'attestations: write', 'id-token: write'):
             with self.subTest(original=original), self.assertRaises(AssertionError):
                 self.check_workflow_package_proof(workflow.replace(original, 'Renamed ' + original, 1))
 

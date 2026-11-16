@@ -47,7 +47,7 @@ index_lifecycle_contract="$source_root/docs/machine/index-lifecycle-v1.json"
 static_analysis_contract="$source_root/docs/machine/static-analysis-v1.json"
 codex_skill="$source_root/integrations/codex/skills/shin-context/SKILL.md"
 hermes_skill="$source_root/integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md"
-expected_version="$(cat "$version_file")"
+expected_version="$(<"$version_file")"
 expected_version="${expected_version%$'\r'}"
 release_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$'
 candidate_pattern='^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)-(dev|rc)\.(0|[1-9][0-9]*)$'
@@ -59,47 +59,34 @@ elif [[ ! "$expected_version" =~ $release_pattern ]]; then
   exit 2
 fi
 
-if grep -Fq "Current stable release" "$source_root/README.md"; then
-  echo "README must not duplicate a stable-release declaration" >&2
-  exit 1
-fi
-if grep -Eq 'shin-generator-v[0-9]+-' "$source_root/README.md"; then
-  echo "README must not declare a literal generator identity" >&2
-  exit 1
-fi
-for required_reference in '`VERSION`' 'docs/machine/shin-context-engine.manifest.json'; do
-  if ! grep -Fq "$required_reference" "$source_root/README.md"; then
-    echo "README must point to $required_reference" >&2
-    exit 1
-  fi
-done
-skill_minimum_version() {
-  local file="$1"
-  local directive="$2"
-  local matches
-  matches="$(sed -nE "s/^[[:space:]]*${directive} Shin v([0-9]+\\.[0-9]+\\.[0-9]+) or newer.*/\\1/p" "$file")"
-  [[ -n "$matches" && "$matches" != *$'\n'* ]] || return 1
-  printf '%s\n' "$matches"
-}
-version_at_least() {
-  local actual="$1"
-  local minimum="$2"
-  [[ "$actual" =~ ^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$ ]] || return 1
-  "$jq_bin" -en --arg actual "$actual" --arg minimum "$minimum" '
-    def components: split(".") | map([length, .]);
-    ($actual | components) >= ($minimum | components)
-  ' >/dev/null
-}
-codex_minimum="$(skill_minimum_version "$codex_skill" 'Use')" || codex_minimum=""
-hermes_minimum="$(skill_minimum_version "$hermes_skill" 'Require')" || hermes_minimum=""
-if ! version_at_least "$codex_minimum" "2.0.0" ||
-   ! version_at_least "$hermes_minimum" "2.0.0" ||
-   ! grep -Fq '## Normal Work' "$codex_skill" ||
-   ! grep -Fq 'shin_status' "$codex_skill" ||
-   ! grep -Fq 'shin_query' "$codex_skill" ||
-   ! grep -Fq 'shin-generator-v24-objective-cpp' "$codex_skill" ||
-   ! grep -Fq 'shin-generator-v24-objective-cpp' "$hermes_skill"; then
-  echo "integration skills must retain approved per-client minimums, managed 2.0 guidance, and the current generator" >&2
+# Read the three text contracts once. Launching grep/sed/jq for each assertion
+# dominates the exhaustive release-gate regression suite on shared CI runners.
+preflight_error="$("$jq_bin" -nr \
+  --rawfile readme "$source_root/README.md" \
+  --rawfile codex "$codex_skill" --rawfile hermes "$hermes_skill" '
+    def minimum_ok($directive):
+      [split("\n")[] | scan("^[[:space:]]*" + $directive +
+        " Shin v([0-9]+\\.[0-9]+\\.[0-9]+) or newer.*") | .[0]] as $versions |
+      if ($versions | length) != 1 then false
+      elif ($versions[0] | test("\\A(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\.(0|[1-9][0-9]*)\\z") | not) then false
+      else ($versions[0] | split(".") | map([length, .])) >= [[1, "2"], [1, "0"], [1, "0"]] end;
+    if ($readme | contains("Current stable release")) then
+      "README must not duplicate a stable-release declaration"
+    elif ($readme | test("shin-generator-v[0-9]+-")) then
+      "README must not declare a literal generator identity"
+    elif ($readme | contains("`VERSION`") | not) then
+      "README must point to `VERSION`"
+    elif ($readme | contains("docs/machine/shin-context-engine.manifest.json") | not) then
+      "README must point to docs/machine/shin-context-engine.manifest.json"
+    elif (($codex | minimum_ok("Use")) and ($hermes | minimum_ok("Require")) and
+          ($codex | contains("## Normal Work") and contains("shin_status") and contains("shin_query") and
+                    contains("shin-generator-v24-objective-cpp")) and
+          ($hermes | contains("shin-generator-v24-objective-cpp"))) then ""
+    else "integration skills must retain approved per-client minimums, managed 2.0 guidance, and the current generator"
+    end
+  ')"
+if [[ -n "$preflight_error" ]]; then
+  echo "$preflight_error" >&2
   exit 1
 fi
 

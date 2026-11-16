@@ -53,3 +53,14 @@ three times within the original three-minute read deadline. Each attempt uses
 fresh temporary staging; partial files cannot enter qualification. Exhaustion
 reports a bounded CLI/HTTP error with download URLs removed. Release creation,
 uploads and edits remain single attempts followed by independent readback.
+
+After exact-package qualification, tag CI creates the canonical
+`shin-preview-PLATFORM.json` receipt and signs it with GitHub artifact attestation.
+The publisher verifies the signature against this repository, workflow, tag and
+source commit, as well as the receipt, package bytes and successful platform jobs.
+Already published platforms are checked from their release downloads and signed
+receipts; their verification does not depend on temporary Actions artifacts still
+being retained. New uploads and interrupted uploads still require the original
+qualified Actions artifact. Missing or invalid signatures stop publication; an
+older unsigned release cannot acquire proof retroactively by rerunning it. Source
+fixes require a new preview tag. Existing tags and assets remain unchanged.

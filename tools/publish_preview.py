@@ -5,6 +5,7 @@ import hashlib
 import json
 from pathlib import Path
 import re
+import shutil
 import subprocess
 import tempfile
 import time
@@ -13,15 +14,15 @@ import zipfile
 PLATFORMS = {
     'linux': dict(jobs={'native (ubuntu-24.04, core)', 'native (ubuntu-24.04, observer)'},
                   package_job='native (ubuntu-24.04, observer)',
-                  steps=('Exact Linux kit qualification', 'Upload qualified Linux kit'),
+                  steps=('Exact Linux kit qualification', 'Attest qualified Linux kit', 'Upload qualified Linux kit'),
                   artifact='shin-terminal-linux-X64'),
     'macos': dict(jobs={'native (macos-15, core)', 'native (macos-15, observer)'},
                   package_job='native (macos-15, observer)',
-                  steps=('Exact macOS kit qualification', 'Upload qualified macOS kit'),
+                  steps=('Exact macOS kit qualification', 'Attest qualified macOS kit', 'Upload qualified macOS kit'),
                   artifact='shin-local-macos-ARM64'),
     'windows': dict(jobs={'windows (native)', 'windows (desktop)'},
                     package_job='windows (desktop)',
-                    steps=('Exact Windows kit qualification', 'Upload qualified Windows kit'),
+                    steps=('Exact Windows kit qualification', 'Attest qualified Windows kit', 'Upload qualified Windows kit'),
                     artifact='shin-desktop-windows-X64'),
 }
 MATRIX = set().union(*(spec['jobs'] for spec in PLATFORMS.values()))
@@ -37,8 +38,8 @@ class PackageProofPending(ValueError):
     """Completed-job step metadata has not reached the API yet."""
 
 
-def qualification(run, jobs, artifacts, repo, sha, run_id, attempt, recover_publisher=False,
-                  platform='macos', existing=False):
+def source_qualification(run, jobs, repo, sha, run_id, attempt, recover_publisher=False,
+                         platform='macos', existing=False):
     require(platform in PLATFORMS, 'Unknown platform')
     require(run['head_sha'] == sha and run['id'] == run_id and run['run_attempt'] == attempt,
             'CI identity or attempt differs from the requested source')
@@ -70,7 +71,13 @@ def qualification(run, jobs, artifacts, repo, sha, run_id, attempt, recover_publ
         if not matches or (len(matches) == 1 and matches[0]['conclusion'] is None):
             raise PackageProofPending(f'Package proof metadata is pending: {step}')
         require(len(matches) == 1 and matches[0]['conclusion'] == 'success', f'Missing package proof: {step}')
-    require(len(artifacts) == 1 and {a['name'] for a in artifacts} == artifact_names(run_id, attempt, platform),
+
+
+def qualification(run, jobs, artifacts, repo, sha, run_id, attempt, recover_publisher=False,
+                  platform='macos', existing=False):
+    source_qualification(run, jobs, repo, sha, run_id, attempt, recover_publisher, platform, existing)
+    require(artifacts is not None and len(artifacts) == 1
+            and {a['name'] for a in artifacts} == artifact_names(run_id, attempt, platform),
             'Qualified platform artifact is missing or ambiguous')
     for artifact in artifacts:
         require(not artifact['expired'] and artifact['workflow_run']['id'] == run_id
@@ -288,6 +295,77 @@ def marker_bytes(value):
     return (json.dumps(value, indent=2, sort_keys=True) + '\n').encode()
 
 
+def package_assets(directory, version, core, sha, run_id, attempt, platform):
+    if platform == 'macos':
+        return verify_assets(directory, version, core)
+    if platform == 'windows':
+        return verify_windows_assets(directory, version, core, sha, run_id, attempt)
+    return verify_linux_assets(directory, version, core, sha, run_id, attempt)
+
+
+def source_identity(repo, sha, tag, run_id, attempt, source_root, platform):
+    require(platform in PLATFORMS, 'Unknown platform')
+    require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo), 'Invalid repository')
+    require(re.fullmatch(r'[0-9a-f]{40}', sha) and re.fullmatch('v' + VERSION, tag), 'Invalid source or preview tag')
+    require(run_id > 0 and attempt > 0, 'Invalid CI operation')
+    root = Path(source_root).resolve() if source_root else Path(__file__).resolve().parents[1]
+    version = tag[1:]
+    core = (root / 'VERSION').read_text().strip()
+    require((root / 'observer/VERSION').read_text().strip() == version, 'Tag differs from Observer VERSION')
+    require(command('git', '-C', str(root), 'rev-parse', 'HEAD').strip() == sha, 'Checkout differs from CI source')
+    return root, version, core
+
+
+def prepare_marker(directory, repo, sha, tag, run_id, attempt, source_root=None, platform='macos'):
+    """Create the canonical receipt after exact-package checks, before CI signs it."""
+    _, version, core = source_identity(repo, sha, tag, run_id, attempt, source_root, platform)
+    # CPack also leaves intermediate directories here. Qualify exactly the
+    # files selected for upload, as the publisher does after artifact download.
+    with tempfile.TemporaryDirectory(prefix='shin-platform-receipt-') as folder:
+        staging = Path(folder)
+        for name in platform_assets(platform, version):
+            source = directory / name
+            require(source.is_file() and not source.is_symlink() and 0 < source.stat().st_size <= 128 * 1024 * 1024,
+                    'Missing or oversized platform asset: ' + name)
+            shutil.copyfile(source, staging / name)
+        assets = package_assets(staging, version, core, sha, run_id, attempt, platform)
+    path = directory / marker_name(platform)
+    path.write_bytes(marker_bytes(marker(repo, sha, version, core, platform, run_id, attempt, assets)))
+    return path
+
+
+def verify_attestation(path, repo, sha, tag):
+    # gh verifies the signature and certificate identities, including the exact
+    # source and signer commits. The signed bytes bind the run, attempt and all
+    # package hashes without trusting mutable release metadata alone.
+    try:
+        verified = json.loads(command('gh', 'attestation', 'verify', str(path), '--repo', repo,
+            '--signer-workflow', repo + '/.github/workflows/ci.yml', '--signer-digest', sha,
+            '--source-digest', sha, '--source-ref', 'refs/tags/' + tag,
+            '--deny-self-hosted-runners', '--format', 'json'))
+    except subprocess.SubprocessError:
+        raise ValueError('Platform attestation could not be verified; source fixes require a new preview') from None
+    require(isinstance(verified, list) and 0 < len(verified) <= 64, 'No verified platform attestation')
+
+
+def signed_package(directory, repo, sha, version, core, platform, run_id, attempt):
+    path = directory / marker_name(platform)
+    require(path.is_file() and not path.is_symlink() and path.stat().st_size <= 32768,
+            'Qualified package requires its signed platform receipt')
+    raw = path.read_bytes()
+    # Existing package validators intentionally accept only the exact payload
+    # set. Keep their inventory and byte checks unchanged.
+    path.unlink()
+    try:
+        assets = package_assets(directory, version, core, sha, run_id, attempt, platform)
+    finally:
+        path.write_bytes(raw)
+    proof = marker(repo, sha, version, core, platform, run_id, attempt, assets)
+    require(raw == marker_bytes(proof), 'Platform receipt differs from qualified source or package')
+    verify_attestation(path, repo, sha, 'v' + version)
+    return {**assets, path.name: 'sha256:' + hashlib.sha256(raw).hexdigest()}, proof
+
+
 def upload_order(names, platform, version):
     # A release can already be public for another platform. Upload the macOS
     # kit ZIP last: existing clients must not see its ZIP+checksum pair before
@@ -301,37 +379,35 @@ def upload_order(names, platform, version):
 
 
 def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher=False, platform='macos'):
-    require(platform in PLATFORMS, 'Unknown platform')
-    require(re.fullmatch(r'[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+', repo), 'Invalid repository')
-    require(re.fullmatch(r'[0-9a-f]{40}', sha) and re.fullmatch('v' + VERSION, tag), 'Invalid source or preview tag')
-    require(run_id > 0 and attempt > 0, 'Invalid CI operation')
-    root = Path(source_root).resolve() if source_root else Path(__file__).resolve().parents[1]
-    version = tag[1:]
-    core = (root / 'VERSION').read_text().strip()
-    require((root / 'observer/VERSION').read_text().strip() == version, 'Tag differs from Observer VERSION')
-    require(command('git', '-C', str(root), 'rev-parse', 'HEAD').strip() == sha, 'Checkout differs from CI source')
+    root, version, core = source_identity(repo, sha, tag, run_id, attempt, source_root, platform)
     notes = (root / 'docs/releases' / (tag + '.md')).read_text()
 
     def api(path):
         return json.loads(command('gh', 'api', f'repos/{repo}/{path}'))
 
-    def gate_once(target, target_run, target_attempt, existing=False):
+    def gate_once(target, target_run, target_attempt, existing=False, artifact_required=True):
         run = api(f'actions/runs/{target_run}/attempts/{target_attempt}')
         page = api(f'actions/runs/{target_run}/attempts/{target_attempt}/jobs?per_page=100')
         require(page['total_count'] == len(page['jobs']), 'CI job list is incomplete')
-        artifacts = api(f'actions/runs/{target_run}/artifacts?per_page=100')
-        require(artifacts['total_count'] == len(artifacts['artifacts']), 'Artifact list is incomplete')
-        selected = [a for a in artifacts['artifacts'] if a['name'] in artifact_names(target_run, target_attempt, target)]
+        selected = None
+        if artifact_required:
+            artifacts = api(f'actions/runs/{target_run}/artifacts?per_page=100')
+            require(artifacts['total_count'] == len(artifacts['artifacts']), 'Artifact list is incomplete')
+            selected = [a for a in artifacts['artifacts'] if a['name'] in artifact_names(target_run, target_attempt, target)]
         require(run['head_branch'] == tag, 'Qualification did not run for this preview tag')
-        qualification(run, page['jobs'], selected, repo, sha, target_run, target_attempt,
-                      recover_publisher, target, existing)
+        if artifact_required:
+            qualification(run, page['jobs'], selected, repo, sha, target_run, target_attempt,
+                          recover_publisher, target, existing)
+        else:
+            source_qualification(run, page['jobs'], repo, sha, target_run, target_attempt,
+                                 recover_publisher, target, existing)
         require(api(f'commits/{tag}')['sha'] == sha, 'Release tag moved away from qualified source')
-        return selected[0]['name']
+        return selected[0]['name'] if selected else None
 
-    def gate(target, target_run, target_attempt, existing=False):
+    def gate(target, target_run, target_attempt, existing=False, artifact_required=True):
         for retry in range(10):
             try:
-                return gate_once(target, target_run, target_attempt, existing)
+                return gate_once(target, target_run, target_attempt, existing, artifact_required)
             except PackageProofPending:
                 if retry == 9:
                     raise
@@ -351,27 +427,27 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
         require(value['source_sha'] == sha, 'Release tag moved away from qualified source')
         return value
 
-    gate(platform, run_id, attempt)  # No download or release mutation precedes this proof.
+    # Source proof precedes all downloads. Fresh/interrupted publication also
+    # requires the exact Actions artifact before any release mutation; complete
+    # published platforms instead retain their signed original package proof.
+    gate(platform, run_id, attempt, artifact_required=False)
     with tempfile.TemporaryDirectory(prefix='shin-qualified-release-') as folder:
         directory = Path(folder)
         checked = {}
-        def qualified(target, target_run, target_attempt, existing=False):
+        def qualified(target, target_run, target_attempt, existing=False, published=False):
             key = (target, target_run, target_attempt)
             if key not in checked:
-                artifact = gate(target, target_run, target_attempt, existing)
+                artifact = gate(target, target_run, target_attempt, existing, artifact_required=not published)
                 destination = directory / f'{target}-{target_run}-{target_attempt}'
-                download(destination, 'gh', 'run', 'download', str(target_run), '--repo', repo,
-                         '--name', artifact)
-                if target == 'macos':
-                    assets = verify_assets(destination, version, core)
-                elif target == 'windows':
-                    assets = verify_windows_assets(destination, version, core, sha, target_run, target_attempt)
+                if published:
+                    patterns = [arg for name in sorted(platform_assets(target, version) | {marker_name(target)})
+                                for arg in ('--pattern', name)]
+                    download(destination, 'gh', 'release', 'download', tag, '--repo', repo, *patterns)
                 else:
-                    assets = verify_linux_assets(destination, version, core, sha, target_run, target_attempt)
-                proof = marker(repo, sha, version, core, target, target_run, target_attempt, assets)
-                value = marker_bytes(proof)
-                (destination / marker_name(target)).write_bytes(value)
-                checked[key] = (destination, {**assets, marker_name(target): 'sha256:' + hashlib.sha256(value).hexdigest()}, proof)
+                    download(destination, 'gh', 'run', 'download', str(target_run), '--repo', repo,
+                             '--name', artifact)
+                assets, proof = signed_package(destination, repo, sha, version, core, target, target_run, target_attempt)
+                checked[key] = (destination, assets, proof)
             return checked[key]
 
         def existing_assets(current):
@@ -393,7 +469,7 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
                     proof = json.loads(raw)
                     require(type(proof.get('run_id')) is int and type(proof.get('attempt')) is int
                             and proof['run_id'] > 0 and proof['attempt'] > 0, 'Invalid platform provenance')
-                    _, expected, identity = qualified(target, proof['run_id'], proof['attempt'], True)
+                    _, expected, identity = qualified(target, proof['run_id'], proof['attempt'], True, published=True)
                     require(proof == identity and raw == marker_bytes(identity), 'Existing platform receipt differs from qualified source')
                     allowed.update(expected)
                     require(platform_assets(target, version) | {name} <= names, 'Published platform assets are incomplete')
@@ -408,6 +484,7 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
 
         current = receipt()
         allowed, completed = existing_assets(current)
+        artifact_required = platform not in completed
         if platform in completed:
             previous = [entry for entry in checked.values() if entry[2]['platform'] == platform]
             require(len(previous) == 1, 'Published platform provenance is ambiguous')
@@ -418,7 +495,7 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
         if current is None:
             body = directory / 'notes.md'
             body.write_text(notes)
-            gate(platform, run_id, attempt)
+            gate(platform, run_id, attempt, artifact_required=artifact_required)
             # The verified tag already exists. Sending --target can make
             # GITHUB_TOKEN fail GitHub's ref/workflow permission checks.
             failure = mutation('gh', 'release', 'create', tag, '--repo', repo, '--draft', '--prerelease',
@@ -431,14 +508,14 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
         for name in upload_order(set(own), platform, version):
             if name in uploaded:
                 continue
-            gate(platform, run_id, attempt)
+            gate(platform, run_id, attempt, artifact_required=artifact_required)
             failure = mutation('gh', 'release', 'upload', tag, '--repo', repo, str(destination / name))
             current = receipt()
             require(current is not None and current['isPrerelease'], 'Release disappeared during upload')
             release_matches(current, sha, allowed, complete=False)
             uploaded = {a['name'] for a in current['assets']}
             require(name in uploaded, f'Upload did not confirm completion: {failure or "CLI returned success"}')
-        gate(platform, run_id, attempt)
+        gate(platform, run_id, attempt, artifact_required=artifact_required)
         current = receipt()
         release_matches(current, sha, allowed, complete=False)
         require(set(own) <= {a['name'] for a in current['assets']}, 'Platform assets are incomplete')
@@ -452,7 +529,7 @@ def publish(repo, sha, tag, run_id, attempt, source_root=None, recover_publisher
         body.write_text(notes)
         if not current['isDraft'] and current.get('body') == notes:
             return current['url']
-        gate(platform, run_id, attempt)
+        gate(platform, run_id, attempt, artifact_required=artifact_required)
         failure = mutation('gh', 'release', 'edit', tag, '--repo', repo, '--notes-file', str(body), '--draft=false', '--prerelease')
         current = receipt()
         require(current is not None and not current['isDraft'] and current['isPrerelease'],
@@ -471,7 +548,14 @@ if __name__ == '__main__':
     for name in ('run-id', 'attempt'):
         parser.add_argument('--' + name, type=int, required=True)
     parser.add_argument('--source-root', type=Path, help='Checkout of the exact qualified source commit')
+    parser.add_argument('--prepare-marker', type=Path, metavar='PACKAGES',
+                        help='Prepare a platform receipt for CI attestation, without publishing')
     parser.add_argument('--recover-publisher', action='store_true', help='Resume this platform publisher after a failed publication')
     args = parser.parse_args()
-    print(publish(args.repo, args.sha, args.tag, args.run_id, args.attempt,
-                  args.source_root, args.recover_publisher, args.platform))
+    if args.prepare_marker is not None:
+        require(not args.recover_publisher, 'Marker preparation cannot recover a publisher')
+        print(prepare_marker(args.prepare_marker, args.repo, args.sha, args.tag, args.run_id, args.attempt,
+                             args.source_root, args.platform))
+    else:
+        print(publish(args.repo, args.sha, args.tag, args.run_id, args.attempt,
+                      args.source_root, args.recover_publisher, args.platform))

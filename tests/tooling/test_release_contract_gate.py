@@ -99,10 +99,10 @@ class ReleaseContractGateTests(unittest.TestCase):
         self.tool = self.root / "fixture-tool"
         self.tool.write_text(
             '#!/usr/bin/env bash\nset -euo pipefail\n'
-            'root="$(dirname "$0")"\n'
+            'root="${0%/*}"\n'
             'case "$*" in\n'
-            '  --version) cat "$root/version.json" ;;\n'
-            '  help) cat "$root/help.json" ;;\n'
+            '  --version) printf "%s\\n" "$(<"$root/version.json")" ;;\n'
+            '  help) printf "%s\\n" "$(<"$root/help.json")" ;;\n'
             '  *) exit 64 ;;\nesac\n', encoding="utf-8")
         self.tool.chmod(0o755)
 
@@ -253,6 +253,37 @@ class ReleaseContractGateTests(unittest.TestCase):
             )
             self.run_gate(setup_error="integration skills must retain approved per-client minimums")
             (self.root / relative).write_text(text, encoding="utf-8")
+
+    def test_text_preflight_retains_canonical_minimums_and_readme_checks(self):
+        for relative, directive in (
+            ("integrations/codex/skills/shin-context/SKILL.md", "Use"),
+            ("integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md", "Require"),
+        ):
+            path = self.root / relative
+            text = path.read_text()
+            for minimum in ("02.0.0", "2.00.0", "2.0.00", "0.999.999"):
+                with self.subTest(skill=relative, minimum=minimum):
+                    path.write_text(text.replace("Shin v2.0.0 or newer", f"Shin v{minimum} or newer", 1))
+                    self.run_gate(setup_error="integration skills must retain approved per-client minimums")
+            path.write_text(text + f"\n{directive} Shin v2.0.0 or newer.\n")
+            self.run_gate(setup_error="integration skills must retain approved per-client minimums")
+            # Comparison must not overflow on canonical numeric components.
+            path.write_text(text.replace("Shin v2.0.0 or newer", "Shin v999999999999999999999999.0.0 or newer", 1))
+            self.run_gate()
+            path.write_text(text)
+
+        path = self.root / "README.md"
+        text = path.read_text()
+        for changed, error in (
+            (text + "\nCurrent stable release\n", "README must not duplicate"),
+            (text + "\nshin-generator-v24-objective-cpp\n", "README must not declare a literal generator"),
+            (text.replace("`VERSION`", "VERSION"), "README must point to `VERSION`"),
+            (text.replace("docs/machine/shin-context-engine.manifest.json", "removed.json"),
+             "README must point to docs/machine/shin-context-engine.manifest.json"),
+        ):
+            with self.subTest(error=error):
+                path.write_text(changed)
+                self.run_gate(setup_error=error)
 
     def test_development_revisions_are_exact_and_not_stable_releases(self):
         for version in (DEV, "8.0.0-dev.10", RC):

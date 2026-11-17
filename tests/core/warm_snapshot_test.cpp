@@ -493,6 +493,16 @@ void assert_lexical_word_match_equivalence() {
            "scattered letters are not lexical evidence");
     expect(!absent.lexical_ready, "impossible single-word field built a complete vocabulary");
 
+    for (const auto& [text, word] : std::vector<std::pair<std::string, std::string>>{
+            {"OpenAPI Contract", "openapi"}, {"Read JSON safely", "json"},
+            {"alphaBeta", "beta"}, {"HTTPServer", "http"}, {"HTTPServer", "server"},
+            {"docs/OpenAPI-contract.md", "openapi"}, {"A Cache2Node", "node"}}) {
+        FieldMatchInput field("summary", text, 20, true);
+        expect(field_match_kind(field, prepare_match_term(word)) == LexicalMatchKind::exact,
+               "ASCII case folding changed complete-word confirmation");
+        expect(!field.lexical_ready, "complete ASCII word unnecessarily built a full vocabulary");
+    }
+
     const auto phrase = prepare_term_groups({{"session context"}}).front().front();
     const std::string prose = std::string(100, ' ') + "session context is preserved";
     FieldMatchInput prose_field("summary", prose, 20, true);
@@ -575,6 +585,50 @@ void assert_lexical_word_match_equivalence() {
             }
         }
     }
+}
+
+void assert_document_row_reuse(const fs::path& parent) {
+    TempDirectory temporary(parent);
+    auto options = make_fixture_options(temporary.path());
+    options.document_row_index_cache = make_document_row_index_cache();
+    write_generation_a(options);
+    publish_generation(options);
+    const auto groups = load_generated_query_group_candidates(options, prepare_term_groups({{"snapshot"}, {"isolation"}}));
+    const auto documents = whole_document_paths(options);
+    const auto lookup = [&] {
+        auto rows = filter_document_coverage_candidates(options, groups, 2, documents);
+        expect(rows.has_value() && rows->at(0).from_terms_index && rows->at(0).discovered_row_count > 0,
+               "document cache lost complete document candidates");
+    };
+    lookup(); lookup();
+    std::vector<std::future<void>> readers;
+    for (int i = 0; i < 8; ++i) readers.push_back(std::async(std::launch::async, lookup));
+    for (auto& reader : readers) reader.get();
+    const auto path = options.out_root / kGeneratedDir / "document-rows.json";
+    const auto original = read_file(path);
+    const auto modified = fs::last_write_time(path);
+    auto invalid = parse_json_text(original, path.string());
+    invalid["totals"]["sections"] = invalid["totals"]["sections"].get<int>() + 1;
+    write_text(path, invalid.dump()); fs::last_write_time(path, modified);
+    expect_cli_error(lookup, "index-corrupt", "changed document cache bytes with preserved mtime");
+    write_text(path, original); lookup();
+    write_text(path, "{\"owners\":[");
+    expect_cli_error(lookup, "index-corrupt", "malformed document cache bytes");
+    write_text(path, original); lookup();
+    const auto snapshot = GeneratedSnapshot::load(options);
+    expect(!snapshot->options().lexical_manifest_cache && !snapshot->options().document_row_index_cache,
+           "resident snapshot retained operation-owned parsing caches");
+    std::weak_ptr<LexicalManifestCache> lexical_cache;
+    std::weak_ptr<DocumentRowIndexCache> document_cache;
+    {
+        RetrievalSession session(options, false);
+        lexical_cache = session.options().lexical_manifest_cache;
+        document_cache = session.options().document_row_index_cache;
+        expect(!lexical_cache.expired() && !document_cache.expired(), "disk operation omitted its parsing caches");
+    }
+    expect(lexical_cache.expired() && document_cache.expired(), "parsing cache outlived its retrieval operation");
+    fs::remove(path);
+    expect_cli_error(lookup, "index-corrupt", "missing document cache input");
 }
 
 void assert_section_publication(const fs::path& parent) {
@@ -753,6 +807,7 @@ void assert_carry_forward_selection(const fs::path& parent) {
 }
 
 int run_warm_snapshot_test(const fs::path& temporary_parent) {
+    assert_document_row_reuse(temporary_parent);
     assert_lexical_word_match_equivalence();
     assert_section_publication(temporary_parent);
     assert_carry_forward_selection(temporary_parent);

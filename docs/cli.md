@@ -270,6 +270,12 @@ observed calls; they reset with the service, and a project's counters reset when
 is detached. They are separate from retained request history and query timings.
 Successful status checks do not change the historical retrieval count.
 
+The unreleased source counts a nonwaiting status probe during preparation as
+`readiness_pending`, with outcome `readiness-pending`, separately from
+`rpc_admission_rejections` and response errors. The durable history exposes the
+same pending count; a useful query exhausting its bounded wait remains a real
+admission refusal. Earlier retained rows are not retrospectively reclassified.
+
 Diagnostic calls are explicitly tagged. Other calls remain unclassified: they
 may include agent traffic, CLI checks or installation probes. `reported_sessions`
 counts distinct valid opaque IDs actually supplied by callers (bounded to 256 for
@@ -301,10 +307,21 @@ client receipt or task success. Queries, source bodies, raw chat IDs and absolut
 project paths are not retained. See the [activity contract](machine/mcp-activity-v1.json).
 
 MCP project status returns promptly when a reader needs background preparation.
-`state=preparing` is pending, not a project failure. Submit the useful `shin_query`
-once: it waits up to 20 seconds for preparation inside the existing service and
-transport deadlines. Cancellation ends that wait. A client-supplied MCP progress
+`state=preparing` is pending, not a project failure. For an on-demand project,
+`project_state=qualified` with `reader_state=warming` means its context already
+passed background checks and its in-memory reader is starting. Shin keeps a
+bounded set of readers in memory; releasing one does not detach the project or
+stop source observation. `project_state=refreshing` with
+`reader_state=waiting-for-qualification` means current context still needs
+background qualification. Neither state calls for re-enrollment or profile edits.
+
+When `query_available=true`, submit the useful `shin_query` once, even if
+`local_ready=false`: it waits up to 20 seconds for preparation inside the existing
+service and transport deadlines. Cancellation ends that wait. A client-supplied MCP progress
 token permits elapsed-time notifications; the client decides how to display them.
+The status response itself does not spend that wait; a `reader-preparing` reason
+in its diagnostic is not a timed-out query. After a query exhausts its wait,
+follow its recovery guidance and continue useful work with direct sources.
 No polling or manual index rebuild is needed. CLI project status keeps its
 existing waiting behavior. Query/inspect/read tools accept `diagnostic: true`
 for explicit probes.
@@ -399,6 +416,16 @@ one to four focused `queries`. Optional `paths` and `next_steps` preserve a smal
 explicit handoff. `shin_resume` takes the same binding and current objective.
 Notes live outside the project in the recorded data home's private `sessions`
 directory. Replacing a saved note requires its returned `expected_revision`.
+
+Published dev.121 session operations use the resident reader's admission path
+and its default five-second wait. The unreleased source instead uses an
+independent session worker after project qualification: a cold or busy source
+reader does not prevent saving or resuming notes. Authority, freshness, source
+and snapshot checks still apply, within the existing execution/deadline limits.
+`session_preparation` reports the worker's measured preparation stages. A refusal
+with `execution_started=false` means the operation did not start; an uncertain
+transport outcome requires inspecting `shin_resume` before replacing a
+checkpoint with its exact revision.
 
 Resume reuses Core's age, objective and worktree checks. Review its flags and
 current evidence before continuing; a note is a caller assertion. Core readiness

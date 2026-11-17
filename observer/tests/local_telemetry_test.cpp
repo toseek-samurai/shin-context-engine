@@ -412,6 +412,20 @@ int telemetry_scenario() {
                 rejection["outcome"] != "admission-rejected" || rejection.dump().find("DO-NOT-EXPORT") != std::string::npos) return 43;
         }
         LocalTelemetry refusals;
+        {
+            LocalTelemetry pending;
+            pending.request_result("/project", "status", {{"stage", "admission"},
+                {"error_code", "project-updating"}, {"readiness_pending", true}});
+            const auto state = pending.snapshot().at("request_metrics");
+            if (state.at("readiness_pending") != 1 || state.at("rpc_admission_rejections") != 0 ||
+                state.at("response_errors") != 0 || state.at("unobserved") != 0 ||
+                state.at("recent").back().at("outcome") != "readiness-pending" ||
+                state.at("recent").back().at("error_code") != "") return 48;
+            // A real bounded wait expiring remains an admission refusal.
+            pending.request_result("/project", "query", {{"stage", "admission"},
+                {"error_code", "project-updating"}, {"wait_ms", 20000.0}});
+            if (pending.snapshot().at("request_metrics").at("rpc_admission_rejections") != 1) return 49;
+        }
         state.update({{"phase", "blocked"}, {"last_result", {{"ok", false},
             {"observation", {{"reason_code", "incomplete-source-observation"}}}}}});
         refusals.record("/project/one", state);

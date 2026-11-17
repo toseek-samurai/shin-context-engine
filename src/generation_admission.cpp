@@ -81,10 +81,12 @@ std::string generation_fingerprint(const RuntimeOptions& options) {
 }
 
 std::shared_ptr<const GenerationAdmission> GenerationAdmission::reuse(
-    const RuntimeOptions& options, const std::string& qualified_fingerprint, const VerifiedSnapshot* observed_snapshot) {
-    auto observed = std::shared_ptr<const GenerationAdmission>(new GenerationAdmission(options, observed_snapshot));
+    const RuntimeOptions& options, const std::string& qualified_fingerprint, const VerifiedSnapshot* observed_snapshot,
+    std::function<bool()> unchanged_source_membership) {
+    auto observed = std::shared_ptr<GenerationAdmission>(new GenerationAdmission(options, observed_snapshot));
     if (observed->fingerprint_ != qualified_fingerprint || !worktree_observation_complete(observed->sources_))
         return {};
+    observed->unchanged_source_membership_ = std::move(unchanged_source_membership);
     return observed;
 }
 
@@ -107,8 +109,10 @@ void GenerationAdmission::verify_binding(const RuntimeOptions& options) const {
         profile_hash_ != profile_config_hash(make_profile(options.profile.id, options.profile_dir))) changed();
 }
 
-void GenerationAdmission::verify_sources(const RuntimeOptions& options) const {
-    require_worktree_stable(options, sources_);
+void GenerationAdmission::verify_sources(const RuntimeOptions& options, bool complete_inventory) const {
+    if (!complete_inventory && unchanged_source_membership_ && unchanged_source_membership_())
+        require_worktree_metadata_stable(options, sources_);
+    else require_worktree_stable(options, sources_);
     for (const auto& [path, exists] : links_)
         if (fs::exists(root_ / path) != exists) changed();
     if (retool_ && retool_generation_environment(root_, fact_paths(sources_)) != retool_environment_) changed();
@@ -121,9 +125,9 @@ void GenerationAdmission::verify_outputs(const RuntimeOptions& options) const {
         if (file_metadata(out_root_ / path) != value.metadata) changed();
 }
 
-void GenerationAdmission::verify_unchanged(const RuntimeOptions& options) const {
+void GenerationAdmission::verify_unchanged(const RuntimeOptions& options, bool complete_inventory) const {
     verify_binding(options);
-    verify_sources(options);
+    verify_sources(options, complete_inventory);
     verify_outputs(options);
 }
 
@@ -154,11 +158,11 @@ void GenerationAdmission::append_content_files(std::map<fs::path, FileFingerprin
 }
 
 void GenerationAdmission::verify_content(const RuntimeOptions& options) const {
-    verify_unchanged(options);
+    verify_unchanged(options, true);
     std::map<fs::path, FileFingerprint> files;
     append_content_files(files);
     verify_files(files);
-    verify_unchanged(options);
+    verify_unchanged(options, true);
 }
 
 std::size_t GenerationAdmission::verify_content_together(const RuntimeOptions& options,
@@ -175,7 +179,7 @@ std::size_t GenerationAdmission::verify_content_together(const RuntimeOptions& o
     const auto verify_both = [&] {
         verify_binding(options);
         other.verify_binding(other_options);
-        verify_sources(options);
+        verify_sources(options, true);
         verify_outputs(options);
         other.verify_outputs(other_options);
     };

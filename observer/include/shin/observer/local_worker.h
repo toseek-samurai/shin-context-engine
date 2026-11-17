@@ -30,6 +30,7 @@ public:
 private:
     LocalProjectRequest request_;
     std::shared_ptr<LocalQuerySession> session_;
+    Json preparation_;
 };
 // Cold reads and qualification use the same owned process adapter as the service.
 Json request_local_worker(const LocalProjectRequest& request, const fs::path& executable,

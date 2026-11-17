@@ -109,6 +109,43 @@ shin-ce mcp-config --client opencode --root /path/to/project --text
 shin-ce mcp-config --client rider --root /path/to/project --text
 ```
 
+## Codex instruction updates (unreleased)
+
+The source build ships a selected, byte-checked `shin-context` skill bundle.
+Monitor's Codex row shows instruction status separately from MCP access. Use
+**Review instructions…**, inspect the destination, then confirm installation,
+update or recovery. Opening the list performs no writes. MCP settings and
+project enrollment are independent of this operation.
+
+The same workflow is available without a project or running service:
+
+```sh
+shin-ce codex-skill
+# Review the returned directory, changed_files, modified_files and revision:
+shin-ce codex-skill --revision REVISION
+```
+
+`--config /absolute/path/config.toml` selects a Codex home explicitly; otherwise
+`CODEX_HOME` or `~/.codex` is used. The settings file itself is never changed.
+For source checkout tooling, `make install-codex-skill SHIN_CE=/path/to/shin-ce`
+previews the bundle shipped with that built CLI. Repeat with the returned
+`SKILL_REVISION=REVISION` to apply it; it does not copy arbitrary checkout files.
+
+Only files matching a previous ownership receipt are replaced or retired.
+Extra user files remain untouched; modified or deleted owned files require
+manual review. An unmanaged copy exactly matching the current bundle can be
+adopted without rewriting it. A differing unmanaged copy is preserved: review
+it manually rather than assuming it is an unmodified old release. Content hashes,
+not a release number alone, determine whether an instruction update is needed.
+Each later update uses the same preview-and-confirm workflow.
+
+Private ownership and interrupted-write state live under
+`<Codex home>/.shin-agent-skills/shin-context`. Recovery restores the previous
+bytes only while files still match either side of the saved operation; later
+user edits block that recovery and are preserved. Recovery does not replay the
+abandoned update. Review a fresh plan afterward. File/path safety checks, size
+bounds and stale-review refusal also apply to this workflow.
+
 Client format references: [Codex](https://developers.openai.com/codex/mcp),
 [OpenCode](https://opencode.ai/docs/mcp-servers/),
 [Command Code](https://commandcode.ai/docs/mcp),

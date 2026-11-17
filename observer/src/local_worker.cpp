@@ -8,6 +8,7 @@
 #include "shin/observer/local_registry.h"
 #include "local_refresh_session.h"
 #include "local_refresh_deadline.h"
+#include "local_refresh_stages.h"
 #include "context_internal.h"
 #include <chrono>
 #include <atomic>
@@ -18,6 +19,30 @@ namespace shin::observer {
 namespace {
 using Clock = std::chrono::steady_clock;
 constexpr std::size_t response_limit = 128 * 1024;
+class PreparationMeasurements {
+public:
+    void stage(const std::string& name) {
+        if (!local_refresh_stage(name) && name != "admission" && name != "qualification" &&
+            name != "reader-watch" && name != "reader-snapshot" && name != "reader-bindings" &&
+            name != "reader-source-cache" && name != "reader-final-verification") return;
+        finish_stage(); current_ = name;
+    }
+    Json finish() {
+        finish_stage(); current_.clear();
+        return {{"total_ms", std::chrono::duration<double, std::milli>(Clock::now() - started_).count()},
+            {"phase_ms", phases_}, {"scope", "worker-start-through-qualified-reader"}};
+    }
+private:
+    void finish_stage() {
+        const auto now = Clock::now();
+        if (!current_.empty()) phases_[current_] = phases_.value(current_, 0.0) +
+            std::chrono::duration<double, std::milli>(now - stage_started_).count();
+        stage_started_ = now;
+    }
+    Clock::time_point started_ = Clock::now(), stage_started_ = started_;
+    std::string current_ = "worker-start";
+    Json phases_ = Json::object();
+};
 void require_binding(const LocalProjectRequest& request, bool workspace_required = true) {
     if (!request.root.is_absolute() || !request.home.is_absolute() ||
         request.maintenance_root_identity.empty() || (workspace_required && request.maintenance_workspace_identity.empty()))
@@ -97,8 +122,9 @@ Json execute_local_worker_read(const Json& payload) {
         id = input.at("request_id").get<std::string>();
         LocalProjectRequest request;
         request.command = input.at("command");
-        if (!std::set<std::string>{"status", "query", "inspect", "read"}.contains(request.command))
-            throw Error("service-method-denied", "Worker accepts only project reads.");
+        const bool session = request.command == "checkpoint" || request.command == "resume";
+        if (!session && !std::set<std::string>{"status", "query", "inspect", "read"}.contains(request.command))
+            throw Error("service-method-denied", "Worker accepts project reads or explicit session operations.");
         request.root = input.at("root").get<std::string>();
         request.home = local_rpc::string_field(payload, "home", 4096);
         request.maintenance_root_identity = local_rpc::string_field(payload, "root_identity", 128);
@@ -106,6 +132,16 @@ Json execute_local_worker_read(const Json& payload) {
         require_binding(request);
         request.query = input.at("query"); request.path = input.at("path");
         request.record = input.at("record"); request.snapshot = input.at("snapshot");
+        local_session_fields(input, request);
+        const auto command = request.command;
+        std::shared_ptr<LocalQuerySession> prepared;
+        PreparationMeasurements preparation;
+        if (session) {
+            request.command = "status";
+            request.prepare_session_only = true;
+            request.query_session = &prepared;
+            request.maintenance_progress = [&](const std::string& stage) { preparation.stage(stage); };
+        }
         response = local_rpc::reply(id);
         const auto retry_until = Clock::now() + std::chrono::seconds(2);
         for (;;) {
@@ -114,6 +150,17 @@ Json execute_local_worker_read(const Json& payload) {
                 if ((error.code != "project-busy" && error.code != "binding-changed") || Clock::now() >= retry_until) throw;
                 std::this_thread::sleep_for(std::chrono::milliseconds(20));
             }
+        }
+        if (session) {
+            if (response.at("result").value("ok", false) != true || !prepared)
+                throw Error("project-updating", "Project context is preparing; the session operation did not start.");
+            request.command = command;
+            const auto measured = preparation.finish();
+            request.maintenance_progress = {};
+            response["result"] = prepared->execute(request);
+            response["result"]["session_preparation"] = measured;
+            response["result"]["work_performed"] = {{"full_generations", 0}, {"session_worker", true},
+                {"resident_hit", false}, {"source_reader_warmed", false}};
         }
         response["ok"] = response.at("result").at("ok");
     } catch (const Error& error) { response = local_rpc::failure(id, error.code, error.what(), error.diagnostic); }
@@ -216,6 +263,8 @@ Json local_worker_metric(const Json& response, double duration_ms) {
         {"duration_ms", duration_ms}, {"response_bytes", response.dump().size() + 1}, {"error_code", code}};
 }
 LocalResidentWorker::LocalResidentWorker(const Json& payload) {
+    PreparationMeasurements preparation;
+    request_.maintenance_progress = [&](const std::string& stage) { preparation.stage(stage); };
     if (!payload.is_object() || payload.size() != 7 || payload.at("schema_version") != "shin.local-resident.v1" ||
         payload.at("version") != SHIN_OBSERVER_VERSION || payload.at("core_version") != SHIN_VERSION)
         throw Error("resident-frame-invalid", "Invalid resident preparation envelope.");
@@ -241,9 +290,12 @@ LocalResidentWorker::LocalResidentWorker(const Json& payload) {
     }
     request_.query_session = nullptr;
     if (!observed_unchanged()) throw Error("project-updating", "Sources changed during preparation.");
+    preparation_ = session_->description();
+    preparation_["reader_preparation"] = preparation.finish();
+    request_.maintenance_progress = {};
 }
 bool LocalResidentWorker::observed_unchanged() const { return session_->observed_unchanged(); }
-Json LocalResidentWorker::ready() const { return {{"kind", "ready"}, {"preparation", session_->description()}}; }
+Json LocalResidentWorker::ready() const { return {{"kind", "ready"}, {"preparation", preparation_}}; }
 Json LocalResidentWorker::execute(const std::string& frame, Clock::time_point started) {
     std::string id;
     Json response;

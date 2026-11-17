@@ -6,6 +6,10 @@ namespace shin::observer {
 Json local_client_setup(const fs::path& executable, const fs::path& root,
                         const fs::path& home, const std::string& client);
 Json local_client_targets(const fs::path& user_home, char** environment);
+// Review/update the bundled Codex guidance. A reviewed revision is required for
+// writes; customized files are preserved and interrupted writes are recoverable.
+Json local_codex_skill(const fs::path& executable, const fs::path& config,
+                       const std::string& revision = {});
 // Re-read only this agent's explicit allowlist. Never enumerates registered roots.
 std::vector<fs::path> local_client_live_roots(const fs::path& executable, const fs::path& home,
                                             const std::string& client, const fs::path& config);

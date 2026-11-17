@@ -136,7 +136,9 @@
   "codexSkill": {
     "canonicalSource": "integrations/codex/skills/shin-context",
     "installTarget": "${CODEX_HOME:-$HOME/.codex}/skills/shin-context",
-    "installCommand": "make install-codex-skill",
+    "previewCommand": "make install-codex-skill",
+    "installCommand": "make install-codex-skill SKILL_REVISION=REVISION",
+    "installer": "Built shin-ce with its bundled instructions; set SHIN_CE to select that executable. Review the preview revision before applying it.",
     "contractGate": "make skill-check",
     "officialValidation": "Codex skill-creator quick_validate.py passed against canonical and installed copies on M4.",
     "implicitTrigger": "Unknown, undocumented, source-only, newly created, or documentation-heavy repository before broad scanning."

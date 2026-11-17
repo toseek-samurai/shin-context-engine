@@ -231,6 +231,8 @@ struct Profile {
 };
 
 class GeneratedSnapshot;
+struct LexicalManifestCache;
+struct DocumentRowIndexCache;
 class GenerationAdmission;
 class ValidationGeneration;
 
@@ -242,6 +244,9 @@ struct RuntimeOptions {
     bool force_index = false;
     bool force_source_scan = false;
     std::shared_ptr<const GeneratedSnapshot> generated_snapshot;
+    // Per retrieval operation; each reuse compares freshly read manifest bytes.
+    std::shared_ptr<LexicalManifestCache> lexical_manifest_cache;
+    std::shared_ptr<DocumentRowIndexCache> document_row_index_cache;
     std::shared_ptr<const GenerationAdmission> generation_admission;
     std::shared_ptr<ValidationGeneration> validation_generation;
     // Native caller cancellation/freshness fence; cannot admit or skip a gate.

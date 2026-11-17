@@ -213,6 +213,16 @@ def scenario(base):
             assert 'return 8181' in mcp.tool('shin_query', {'query': 'quotaLimit'})['source_context']
             assert not mcp.tool('shin_query', {'query': 'quotaLimit', 'root': str(second)})['ok']
             assert mcp.tool('shin_read', {'path': 'quota.cpp', 'snapshot': updated['snapshot_id']})['ok']
+            readers = {row['root']: row['pid'] for row in status()['resident_projects']}
+            session = {'session_id': 'native-windows-session-fixture', 'task_key': 'quota-review',
+                       'task': 'Review the current quota implementation'}
+            saved = mcp.tool('shin_checkpoint', {**session, 'progress': 'Located the implementation',
+                                                'queries': ['quotaLimit'], 'paths': ['quota.cpp']})
+            assert saved['ok'] and saved['work_performed']['session_worker'], saved
+            assert not saved['work_performed']['source_reader_warmed'], saved
+            resumed = mcp.tool('shin_resume', session)
+            assert resumed['ok'] and resumed['revision'] == saved['revision'], resumed
+            assert {row['root']: row['pid'] for row in status()['resident_projects']} == readers
         finally:
             mcp.close()
 

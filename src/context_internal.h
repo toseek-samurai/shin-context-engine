@@ -385,6 +385,8 @@ ContextIndexResult collect_context_from_index_with_fallback(const RuntimeOptions
 int run_search(const RuntimeOptions& options, const std::vector<std::string>& args);
 
 bool compact_lexical_manifest(const Json& manifest);
+std::shared_ptr<LexicalManifestCache> make_lexical_manifest_cache();
+std::shared_ptr<DocumentRowIndexCache> make_document_row_index_cache();
 bool compact_lexical_index(const RuntimeOptions& options);
 std::vector<std::string> expected_generated_relative_files();
 std::vector<std::string> expected_generated_relative_files(const RuntimeOptions& options);

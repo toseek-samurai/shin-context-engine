@@ -7,6 +7,8 @@ struct WindowsManagement {
     fs::path home;
     std::string root, operation, message;
     std::vector<Agent> agents;
+    std::size_t skill_index = 0;
+    Json skill_review;
     Json storage = Json::object();
     Json report = Json::object();
     std::future<Json> pending;
@@ -35,6 +37,7 @@ struct WindowsManagement {
         });
     }
     void discover() {
+        skill_review = Json();
         auto args=arguments("client-targets");
         if (!root.empty()) args.insert(args.end(),{"--root",root});
         run("targets",std::move(args));
@@ -50,6 +53,19 @@ struct WindowsManagement {
         const auto result=pending.get();
         if (operation == "add") connection_seconds = std::chrono::duration<double>(std::chrono::steady_clock::now() - connection_started).count();
         report=result;
+        if (operation == "skill-review" || operation == "skill-apply") {
+            skill_review = Json();
+            if (result.value("ok", false) && skill_index < agents.size()) {
+                agents[skill_index].target["skill"] = result;
+                if (operation == "skill-review") skill_review = result;
+                message = shin::ui::tr(shin::ui::client_skill_label(result.value("state", "unavailable"), result.value("managed", false)));
+            } else {
+                message = shin::ui::tr("Instructions could not be checked");
+                if (result.contains("error")) message += "\n" + result.at("error").value("code", "");
+            }
+            project_management_busy = false;
+            return;
+        }
         if (operation=="connect" || operation=="preview") {
             const bool applying=operation=="connect";
             const auto rows=result.value("results",Json::array());
@@ -189,9 +205,28 @@ void render_management() {
             const auto state=agent.target.value("access_state","not-configured");
             ImGui::TextColored(state=="configured"?green:state=="not-configured"?muted:sand,"%s",tr(shin::ui::client_access_label(state)));
             ImGui::TextWrapped("%s",agent.target.value("config","").c_str());
+            if (agent.target.value("client", "") == "codex") {
+                const auto skill = agent.target.value("skill", Json::object());
+                ImGui::TextWrapped("%s", tr(shin::ui::client_skill_label(skill.value("state", "unavailable"), skill.value("managed", false))));
+                if (ImGui::SmallButton(tr("Review instructions…"))) {
+                    management.skill_index = i; management.skill_review = Json();
+                    management.run("skill-review", {"codex-skill", "--config", agent.target.value("config", "")});
+                }
+                if (i == management.skill_index && management.skill_review.is_object()) {
+                    const auto& review = management.skill_review;
+                    ImGui::TextWrapped("%s", tr("Only unchanged Shin files are updated. Your own files and agent settings stay in place."));
+                    for (const auto& file : review.value("modified_files", Json::array())) ImGui::TextWrapped("%s", file.get_ref<const std::string&>().c_str());
+                    const auto skill_state = review.value("state", "unavailable");
+                    if (review.value("can_apply", false) && (skill_state == "recovery-required" || review.value("changed", false) || !review.value("managed", false))) {
+                        const auto* action = skill_state == "recovery-required" ? "Recover instructions" : review.value("changed", false) ? "Update instructions" : "Enable instruction updates";
+                        if (ImGui::SmallButton(tr(action))) management.run("skill-apply", {"codex-skill", "--config", agent.target.value("config", ""), "--revision", review.at("revision").get<std::string>()});
+                    }
+                }
+            }
             if(ImGui::SmallButton(tr("Choose settings file…"))) if(const auto path=management_picker(false)) {
                 agent.target["config"]=path->string(); for(auto& item:management.agents) item.review=Json();
                 agent.target["access_state"]="review-required";
+                agent.target.erase("skill"); management.skill_review = Json();
             }
             if(agent.selected && agent.review.is_object() && agent.review.value("ok",false))
                 ImGui::TextColored(sand,"%s",agent.review.value("changed",false)?tr("Ready to connect"):tr("Already connected"));

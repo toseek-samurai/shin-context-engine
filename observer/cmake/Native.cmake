@@ -24,7 +24,7 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
     include("${SHIN_OBSERVER_ROOT}/../shared/cmake/Coordinator.cmake")
     list(APPEND SHIN_NATIVE_SOURCES local_project local_publication local_service local_service_client local_rpc local_mcp_bridge local_registry local_profile_location
         local_telemetry local_history local_history_files local_mcp_activity local_session_analysis local_sessions local_query local_context_delivery local_changes local_worker local_worker_process
-        local_identity local_status local_release local_mcp_scope local_client_setup local_client_connect client_config client_config_json client_config_toml client_config_yaml model_usage model_usage_collect model_usage_registered local_coordinator)
+        local_identity local_status local_release local_mcp_scope local_client_setup local_client_connect local_agent_skill client_config client_config_json client_config_toml client_config_yaml model_usage model_usage_collect model_usage_registered local_coordinator)
     if(WIN32)
         list(APPEND SHIN_NATIVE_SOURCES local_service_windows local_worker_windows local_installation_unmanaged local_scm_windows local_scm_host_windows windows_setup)
     else()
@@ -44,7 +44,7 @@ set(mcp_contract_inputs src/mcp_main.cpp src/local_stdio.cpp src/local_service_c
     src/mcp_session_tools.h src/mcp_activity_tracker.h src/mcp_followups.h include/shin/observer/local_mcp_scope.h
     include/shin/observer/local_mcp_activity.h include/shin/observer/local_project.h
     include/shin/observer/local_mcp_bridge.h include/shin/observer/local_rpc.h
-    src/local_client_connect.cpp include/shin/observer/local_client_setup.h src/client_config.h
+    src/local_client_connect.cpp src/local_agent_skill.cpp include/shin/observer/local_client_setup.h src/client_config.h
     src/client_config.cpp src/client_config_json.cpp src/client_config_toml.cpp src/client_config_yaml.cpp
     src/io.cpp src/io_windows.cpp include/shin/observer/io.h)
 set(mcp_contract "")
@@ -83,6 +83,7 @@ if(APPLE)
 endif()
 if(SHIN_OBSERVER_SOURCE_DISCOVERY)
     include("${SHIN_OBSERVER_ROOT}/cmake/ClientConfig.cmake")
+    include("${SHIN_OBSERVER_ROOT}/cmake/AgentSkill.cmake")
 endif()
 add_executable(shin-observer "${SHIN_OBSERVER_ROOT}/src/main.cpp")
 target_link_libraries(shin-observer PRIVATE shin-observer-native)

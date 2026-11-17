@@ -5,6 +5,7 @@
 #include "shin/observer/local_service_platform.h"
 #include "shin/observer/local_rpc.h"
 #include "shin/observer/local_worker_process.h"
+#include "shin/observer/local_worker.h"
 #include "shin/observer/local_supervision.h"
 #include "shin/observer/local_registry.h"
 #include "shin/observer/model_usage.h"
@@ -66,6 +67,8 @@ public:
     bool metric_recorded = false, done = false, stop_reply = false, reply_sent = false;
     bool capacity_refusal = false;
     bool resident_pending = false, admission_pending = false, waited_for_resident = false, diagnostic = false;
+    std::unique_ptr<LocalWorkerProcess> session_worker;
+    Clock::time_point worker_started{};
     Clock::time_point deadline = Clock::now() + std::chrono::seconds(2), received{}, next_admission{};
 };
 struct Resident {
@@ -121,6 +124,7 @@ public:
                 else rss.reset();
             };
             for (const auto& [root, reader] : residents) { (void)root; account(reader->process.rss_bytes()); }
+            for (const auto& client : connections) if (client->session_worker) account(client->session_worker->rss_bytes());
             if (refresh_process) account(refresh_process->rss_bytes());
             return rss;
         });
@@ -153,6 +157,7 @@ public:
             if (client->admission_pending) deadline = std::min(deadline, client->next_admission);
             try { sources.push_back(client->socket->readiness(!client->output.empty())); }
             catch (const Error&) { sources.push_back({-1, false, true}); }
+            if (client->session_worker) sources.push_back(client->session_worker->readiness());
         }
         for (auto& [root, reader] : residents) {
             (void)root;
@@ -346,6 +351,7 @@ public:
         project_blockers.erase(root.string());
         qualified.erase(root.string());
         reader_requests.erase(root.string());
+        qualification_requests.erase(root.string());
         telemetry.detach(root);
     }
     void project_state(const fs::path& root, const Json& state) {
@@ -424,12 +430,17 @@ public:
     }
     std::set<fs::path> preparing_projects;
     std::vector<fs::path> reader_demand() {
-        std::erase_if(reader_requests, [&](const auto& entry) {
+        const auto expired = [&](const auto& entry) {
             return entry.second <= Clock::now() || qualified.contains(entry.first) || !bindings.contains(entry.first);
-        });
-        std::vector<fs::path> roots;
-        for (const auto& [root, until] : reader_requests) { (void)until; roots.emplace_back(root); }
-        return roots;
+        };
+        std::erase_if(reader_requests, expired);
+        std::erase_if(qualification_requests, expired);
+        std::set<fs::path> roots;
+        for (const auto& [root, until] : reader_requests) { (void)until; roots.emplace(root); }
+        // Notes can wake qualification without demanding a source reader or
+        // evicting another project's reader when qualification completes.
+        for (const auto& [root, until] : qualification_requests) { (void)until; roots.emplace(root); }
+        return {roots.begin(), roots.end()};
     }
 private:
     void record_result(Connection& client, Json metric) {
@@ -456,7 +467,11 @@ private:
 
     void discard_resident(const std::string& root, const std::string& code, const Json& diagnostic = nullptr) {
         for (auto& client : connections) {
-            if ((!client->resident_pending && !client->admission_pending) || client->root.string() != root) continue;
+            if ((!client->resident_pending && !client->admission_pending && !client->session_worker) || client->root.string() != root) continue;
+            // Session work owns an independent, fully fenced snapshot. A source
+            // reader being replaced does not cancel it. Authority/lifecycle
+            // retirement still stops the owned worker, with no automatic replay.
+            if (client->session_worker && (code == "project-updating" || code == "resident-disconnected")) continue;
             // An admitted wait has not executed. A peer's cancellation or a
             // transient reader loss must not cancel it or reset its deadline.
             // Every authority/freshness check runs again before its first dispatch.
@@ -467,6 +482,7 @@ private:
             }
             client->resident_pending = false;
             client->admission_pending = false;
+            client->session_worker.reset();
             client->output = failure(client->request_id, code, "Project reader is unavailable.", diagnostic).dump() + '\n';
             record_result(*client, {{"error_code", code}});
         }
@@ -574,7 +590,7 @@ private:
 
     std::size_t active_workers() const {
         return static_cast<std::size_t>(std::count_if(connections.begin(), connections.end(),
-            [](const auto& client) { return client->resident_pending; }));
+            [](const auto& client) { return client->resident_pending || client->session_worker; }));
     }
 
     std::size_t waiting_requests() const {
@@ -654,6 +670,8 @@ private:
                 for (auto& project : value["result"]["telemetry"]["project_states"]) {
                     const auto found = residents.find(project.at("root").get<std::string>());
                     project["query_ready"] = found != residents.end() && found->second->ready;
+                    if (project["query_ready"] == true && found->second->preparation.contains("reader_preparation"))
+                        project["reader_preparation"] = found->second->preparation.at("reader_preparation");
                     if (project["query_ready"] == true && found->second->preparation.contains("source_coverage"))
                         project["source_coverage"] = found->second->preparation.at("source_coverage");
                     const auto root = project.at("root").get<std::string>();
@@ -685,8 +703,10 @@ private:
             }
             for (const auto& [root, reader] : residents) {
                 const auto rss = reader->process.rss_bytes();
+                auto preparation = reader->preparation;
+                if (command != "service-status") preparation.erase("reader_preparation");
                 value["result"]["resident_projects"].push_back({{"root", root}, {"ready", reader->ready},
-                    {"busy", !reader->request_id.empty()}, {"preparation", reader->preparation},
+                    {"busy", !reader->request_id.empty()}, {"preparation", std::move(preparation)},
                     {"pid", reader->process.process_id()}, {"rss_bytes", rss ? Json(*rss) : Json(nullptr)}});
             }
             for (const auto& [root, project] : qualified)
@@ -730,6 +750,37 @@ private:
             throw Error(blocker->second.at("code"), blocker->second.at("message"),
                         blocker->second.value("diagnostic", Json()));
         const bool wait_for_ready = command != "status" || request.value("wait_for_ready",true);
+        const bool session = command == "checkpoint" || command == "resume";
+        const bool predecessor = std::any_of(connections.begin(),connections.end(),[&](const auto& other) {
+            return other.get() != &client && !other->done && other->root == client.root &&
+                (other->resident_pending || other->session_worker ||
+                 (other->admission_pending && other->admission_order < client.admission_order));
+        });
+        if (session) {
+            if (!qualified.contains(found->first)) {
+                qualification_requests.try_emplace(found->first, client.received + std::chrono::seconds(30));
+                wait_for_admission(client, AdmissionWait::preparation, true);
+                return;
+            }
+            if (predecessor || active_workers() >= worker_limit) {
+                wait_for_admission(client, predecessor ? AdmissionWait::project : AdmissionWait::capacity, true);
+                return;
+            }
+            auto payload = request;
+            payload.update({{"home", home.string()}, {"root_identity", found->second.first},
+                {"workspace_identity", found->second.second}});
+            auto worker = std::make_unique<LocalWorkerProcess>(executable, LocalWorkerRole::read);
+            worker->send(payload, Clock::now() + std::chrono::seconds(1));
+            client.worker_started = Clock::now();
+            client.executed = true;
+            if (client.admission_pending)
+                client.wait_ms = std::chrono::duration<double, std::milli>(Clock::now() - client.received).count();
+            client.session_worker = std::move(worker);
+            client.deadline = client.received + std::chrono::seconds(30);
+            client.admission_pending = false;
+            ++telemetry.requests;
+            return;
+        }
         // Waiting never consumes an execution slot. Retain the original four
         // waiting / two execution / eight connection resource boundaries.
         if (!client.admission_pending && waiting_requests() >= waiting_limit &&
@@ -757,6 +808,7 @@ private:
                 client.waited_for_resident = true;
                 auto diagnostic = admission_diagnostic("reader-preparing");
                 diagnostic["context_qualified"] = qualified.contains(found->first);
+                record_result(client, {{"error_code", "project-updating"}, {"readiness_pending", true}});
                 throw Error("project-updating","The project reader is preparing in the background. A useful query can wait briefly for readiness.",
                     diagnostic);
             }
@@ -765,10 +817,6 @@ private:
             client.waited_for_resident = true;
             return;
         }
-        const bool predecessor = std::any_of(connections.begin(),connections.end(),[&](const auto& other) {
-            return other.get() != &client && !other->done && other->root == client.root &&
-                (other->resident_pending || (other->admission_pending && other->admission_order < client.admission_order));
-        });
         auto& reader = *resident->second;
         if (predecessor || !reader.request_id.empty()) {
             wait_for_admission(client,AdmissionWait::project,wait_for_ready);
@@ -795,6 +843,48 @@ private:
     }
 
     void process(Connection& client) {
+        if (client.session_worker) {
+            try {
+                if (client.socket->input_or_closed()) {
+                    record_result(client, {{"error_code", "client-disconnected"}});
+                    client.session_worker.reset(); client.done = true; wake_admissions(); return;
+                }
+                if (Clock::now() >= client.deadline)
+                    throw Error("service-timeout", "Session result could not be confirmed. Inspect saved state with shin_resume before replacing a checkpoint.");
+                const auto output = client.session_worker->poll();
+                if (output.frame) {
+                    const auto response = parse_json(*output.frame);
+                    const auto result = project_response(response, client.request_id);
+                    if (result.value("root", Json()) != client.root.string() || result.value("command", Json()) != client.method)
+                        throw Error("service-response-invalid", "Session response belongs to another project or operation.");
+                    client.snapshot = result.value("snapshot_id", std::string{});
+                    auto metric = local_worker_metric(response,
+                        std::chrono::duration<double, std::milli>(Clock::now() - client.worker_started).count());
+                    client.output = response.dump() + '\n';
+                    if (client.output.size() > response_limit)
+                        throw Error("service-frame-too-large", "Session response exceeds its byte limit.");
+                    record_result(client, std::move(metric));
+                    client.session_worker.reset(); wake_admissions();
+                } else if (output.ended) {
+                    throw Error("service-disconnected", "Session result could not be confirmed. Inspect saved state before replacing a checkpoint.");
+                }
+            } catch (const Error& error) {
+                if (error.code == "project-updating") {
+                    qualified.erase(client.root.string());
+                    qualification_requests.try_emplace(client.root.string(), client.received + std::chrono::seconds(30));
+                    discard_resident(client.root.string(), "project-updating");
+                }
+                client.output = failure(client.request_id, error.code, error.what(), error.diagnostic).dump() + '\n';
+                record_result(client, {{"error_code", error.code}});
+                client.session_worker.reset(); wake_admissions();
+            } catch (const std::exception&) {
+                client.output = failure(client.request_id, "service-response-invalid", "Session result could not be verified; inspect saved state before replacing it.").dump() + '\n';
+                record_result(client, {{"error_code", "service-response-invalid"}});
+                client.session_worker.reset(); wake_admissions();
+            }
+            if (client.session_worker) return;
+            client.deadline = Clock::now() + std::chrono::seconds(1);
+        }
         if (client.admission_pending) {
             const bool expired = Clock::now() >= client.deadline;
             if (client.socket->input_or_closed() || expired) {
@@ -819,7 +909,7 @@ private:
                     client.admission_pending = false;
                     client.output = failure(client.request_id, "service-request-failed", "Cannot prepare the requested project reader.").dump() + '\n';
                 }
-                if (client.admission_pending || client.resident_pending) return;
+                if (client.admission_pending || client.resident_pending || client.session_worker) return;
                 client.wait_ms = std::chrono::duration<double, std::milli>(Clock::now() - client.received).count();
                 record_result(client, {{"error_code", parse_json(client.output).at("error").at("code")}});
             }
@@ -902,6 +992,7 @@ private:
     std::map<std::string, std::unique_ptr<Resident>> residents;
     std::map<std::string, QualifiedProject> qualified;
     std::map<std::string, Clock::time_point> reader_requests;
+    std::map<std::string, Clock::time_point> qualification_requests;
     std::uint64_t admission_sequence = 0;
     std::uint64_t resident_evictions = 0, resident_warm_requests = 0, resident_memory_evictions = 0;
     bool resident_memory_limited = false;

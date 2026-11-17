@@ -559,6 +559,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (void)selectSetupTarget:(id)sender;
 - (void)toggleSetupAdvanced:(id)sender;
 - (void)chooseSetupConfig:(NSButton*)sender;
+- (void)reviewSetupSkill:(NSButton*)sender;
 - (void)connectSetupAgents:(id)sender;
 - (void)connectSetupSelection:(NSArray<NSMutableDictionary*>*)selected root:(NSString*)root reviews:(const Json&)reviews;
 - (void)checkSetup:(id)sender;

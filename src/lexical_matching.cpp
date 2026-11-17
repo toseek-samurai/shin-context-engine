@@ -267,9 +267,19 @@ LexicalMatchKind field_match_kind(FieldMatchInput& field, const PreparedMatchTer
     if (!field.lexical_ready && !could_contain_lexical_term(field.text, term.compact)) return LexicalMatchKind::none;
     if (!field.lexical_ready && !has_non_ascii(term.normalized) &&
         term.normalized == term.compact && index_term_has_signal(term.normalized)) {
-        for (auto start = field.text.find(term.normalized); start != std::string_view::npos;
-             start = field.text.find(term.normalized, start + 1)) {
+        // ASCII case folding cannot change byte positions. Confirm a complete
+        // word in any case before constructing the full field vocabulary.
+        const auto first = term.normalized.front();
+        const auto upper = is_ascii_lower(static_cast<unsigned char>(first))
+            ? static_cast<char>(first - 'a' + 'A') : first;
+        const auto next = [&](std::size_t from) {
+            const auto lower = field.text.find(first, from);
+            return first == upper ? lower : std::min(lower, field.text.find(upper, from));
+        };
+        for (auto start = next(0); start != std::string_view::npos; start = next(start + 1)) {
             const auto end = start + term.normalized.size();
+            if (end > field.text.size() ||
+                !contains_ascii_case_insensitive(field.text.substr(start, term.normalized.size()), term.normalized)) continue;
             const bool left = start == 0 || (static_cast<unsigned char>(field.text[start - 1]) < 128 &&
                 !is_ascii_alnum(static_cast<unsigned char>(field.text[start - 1]))) ||
                 identifier_word_boundary(field.text, start);

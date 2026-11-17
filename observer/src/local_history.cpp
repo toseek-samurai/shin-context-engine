@@ -254,13 +254,14 @@ private:
             result["events"].push_back({{"project_id", column(events.get(), 0)}, {"phase", column(events.get(), 1)},
                 {"at_ms", sqlite3_column_int64(events.get(), 2)}, {"error_code", column(events.get(), 3)}});
         require_sql(db, rc == SQLITE_DONE);
-        result["admission_rejections"] = scalar(db, "SELECT count(*) FROM events WHERE kind='admission'");
+        result["admission_rejections"] = scalar(db, "SELECT count(*) FROM events WHERE kind='admission' AND outcome='admission-rejected'");
+        result["readiness_pending"] = scalar(db, "SELECT count(*) FROM events WHERE kind='admission' AND outcome='readiness-pending'");
         result["admission_waits"] = scalar(db, "SELECT count(*) FROM events WHERE kind IN ('request','admission') AND wait_ms>0");
         result["wait_recoveries"] = scalar(db, "SELECT count(*) FROM events WHERE kind='request' AND wait_ms>0 AND outcome='response-ready'");
         result["observed_follow_ups"] = scalar(db, "SELECT count(*) FROM events WHERE kind='request' AND follow_up='observed'");
         result["correlated_requests"] = scalar(db, "SELECT count(*) FROM events WHERE kind='request' AND length(session_id)=64");
         result["admission_cohorts"] = Json::array();
-        auto admissions = prepare(db, "SELECT project,method,error_code,count(*) FROM events WHERE kind='admission' "
+        auto admissions = prepare(db, "SELECT project,method,error_code,count(*) FROM events WHERE kind='admission' AND outcome='admission-rejected' "
             "GROUP BY 1,2,3 ORDER BY count(*) DESC,1,2,3 LIMIT 17");
         while ((rc = sqlite3_step(admissions.get())) == SQLITE_ROW)
             result["admission_cohorts"].push_back({column(admissions.get(), 0), column(admissions.get(), 1),

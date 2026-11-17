@@ -64,7 +64,7 @@ a successful query. An explicit snapshot remains strict; overlapping queries,
 unknown identities and a new connection require a snapshot or fresh query.
 `context_result` distinguishes delivered evidence from availability, with measured
 latency and process-scoped memory. These features are included in the documented
-dev.120 packages; a result summary still does not establish answer correctness.
+dev.121 packages; a result summary still does not establish answer correctness.
 
 Dev.120 includes styles and web templates in the applicable bundled
 bootstrap profiles. The existing native source index searches CSS/SCSS,
@@ -91,6 +91,32 @@ limited to 16 scopes and 8192 input records in total. Eviction changes cost, not
 the profile's coverage or quality bounds.
 Small policy and authority files are still read; the diagnostic verification
 flags describe the work performed, not raw operating-system I/O counters.
+
+A cold on-demand reader starts a separate process. Before serving its first
+request, it rechecks the qualified generation, including a fresh worktree
+inventory through `GenerationAdmission::reuse`, then opens its query session.
+The background refresh checkpoint does not eliminate this reader admission cost.
+The resident's `preparation_ms` measures query-session construction only. The
+unreleased source also reports `reader_preparation.total_ms` and bounded
+`phase_ms` from worker entry through qualification and reader construction;
+request `wait_ms` and `service_duration_ms` include service-side queueing.
+A short search duration alone does not establish a fast cold response.
+
+The unreleased reader path holds a process-local source observation while it
+prepares. An unchanged healthy observation avoids repeated intermediate
+membership enumeration; selected-file metadata, links and environment checks
+still run. Missing, changed or unhealthy observation restores the full walk.
+Admission begins with a complete inventory and always ends with complete
+membership checks around source/output byte verification. This observation is
+not a persisted qualification certificate. Source bindings point into the held
+immutable manifest rather than copying its metadata rows.
+
+Explicit checkpoint/resume operations in the unreleased source use bounded
+session workers. They recheck ordinary project authority, freshness, safety and
+current snapshot bytes without constructing the source-discovery reader. They
+share existing per-project FIFO ordering and the service's two execution slots;
+they neither evict nor wait for an otherwise qualified source reader. A project
+still undergoing qualification retains its bounded readiness wait.
 
 Observer shares a macOS FSEvents stream only between monitors with
 identical normalized root sets. Each subscription retains its own predicate,

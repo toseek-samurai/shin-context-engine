@@ -58,6 +58,39 @@ class PlannerContractTests(unittest.TestCase):
         self.assertTrue(result["query_diagnostics"]["query_planner_used"])
         self.assertIn("docs/bridge.md", [path["path"] for path in result["ranked_paths"]])
 
+    def test_full_relaxed_budget_does_not_suppress_a_complete_document_owner(self):
+        # Seven ordinary rows cover every group across several documents. A
+        # declared JSON owner's groups are split between smaller key spans, so
+        # it needs document planning at either output budget, with unchanged caps.
+        words = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda".split()
+        query = " ".join(words)
+        groups = [words[:6], words[3:9], words[5:], words[1:7],
+                  words[4:10], words[:3] + words[8:], words[2:8]]
+        for index, count in enumerate((2, 2, 2, 1)):
+            rows = groups[index * 2:index * 2 + count]
+            self.document(f"notes-{index}.md", "# Notes\n\n" + "\n\n".join(
+                f"## Entry {number}\n\n{' '.join(row)}" for number, row in enumerate(rows)))
+        profile_path = self.profiles / "planner.json"
+        profile = json.loads(profile_path.read_text())
+        profile["sourceExtensions"] = [".md", ".json"]
+        profile_path.write_text(json.dumps(profile))
+        owner = {}
+        for offset in range(0, len(words), 3):
+            part = words[offset:offset + 3]
+            owner[" ".join(part)] = {word: "declared policy" for word in part}
+        self.document("owner.json", json.dumps(owner, indent=2))
+        self.invoke("build")
+
+        results = [self.invoke("brief", query, "--limit", str(limit), "--per-doc", "3", "--require-current")
+                   for limit in (7, 8)]
+        self.assertEqual(results[0]["snapshot_id"], results[1]["snapshot_id"])
+        for limit, result in zip((7, 8), results):
+            with self.subTest(limit=limit):
+                self.assertIn("docs/owner.json", [row["path"] for row in result["ranked_paths"]])
+                self.assertTrue(result["query_diagnostics"]["query_planner_used"])
+                self.assertLessEqual(result["evidence_budget"]["returned_records"], limit)
+                self.assertEqual(result["query_coverage"]["covered_groups"], len(words))
+
     def test_directory_scope_retains_only_explicit_preferred_root_entries(self):
         profile_path = self.profiles / "planner.json"
         profile = json.loads(profile_path.read_text())
@@ -189,7 +222,7 @@ class PlannerContractTests(unittest.TestCase):
         self.assertEqual(len(result["sections"]), 1)
         self.assertEqual(result["sections"][0]["path"], "docs/ordinary.md")
 
-    def test_diagnose_separates_expanded_budget_from_route_change(self):
+    def test_diagnose_keeps_planning_at_a_full_budget_without_a_route_change(self):
         self.document("left.md", "# Left\n\nalpha beta gamma delta\n")
         self.document("right.md", "# Right\n\nepsilon zeta eta theta\n")
         self.document("bridge.md", "# Bridge\n\n## First\n\nalpha beta\n\n"
@@ -199,14 +232,15 @@ class PlannerContractTests(unittest.TestCase):
         result = self.invoke("diagnose", QUERY, "--expected-path", "docs/bridge.md",
                              "--limit", "2", "--per-doc", "2")
         self.assertFalse(result["ok"])
-        self.assertEqual(result["retrieval"]["mode"], "relaxed")
+        self.assertEqual(result["retrieval"]["mode"], "planned")
         self.assertIn("returned-with-expanded-budget", result["expectation"]["reason_codes"])
-        self.assertIn("retrieval-route-changed", result["expectation"]["reason_codes"])
+        self.assertIn("not-selected-by-planner", result["expectation"]["reason_codes"])
+        self.assertNotIn("retrieval-route-changed", result["expectation"]["reason_codes"])
         self.assertNotIn("ranked-out-global-budget", result["expectation"]["reason_codes"])
         self.assertTrue(result["budget_probe"]["executed"])
-        self.assertTrue(result["budget_probe"]["route_changed"])
+        self.assertFalse(result["budget_probe"]["route_changed"])
         self.assertEqual(result["budget_probe"]["retrieval_mode"], "planned")
-        self.assertGreater(result["budget_probe"]["returned_path_rank"], 0)
+        self.assertGreater(result["budget_probe"]["returned_path_rank"], 2)
 
     def test_independent_source_members_do_not_borrow_document_coverage(self):
         profile_path = self.profiles / "planner.json"

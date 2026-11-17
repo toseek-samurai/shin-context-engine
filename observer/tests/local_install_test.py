@@ -76,8 +76,10 @@ with tempfile.TemporaryDirectory(prefix="shin-ce-install-", dir='/tmp') as tempo
         assert len(entries) == 1 and entries[0].is_dir()
         entries[0].rename(prefix)
     else:
+        # A collaborative shell umask must not make the verified runtime
+        # manifest group-writable and prevent the relocated service starting.
         installed = subprocess.run([cmake, "--install", build, "--prefix", str(prefix)],
-                                   capture_output=True, text=True, timeout=60)
+                                   capture_output=True, text=True, timeout=60, umask=0o002)
         assert installed.returncode == 0, installed.stdout + installed.stderr
     relocated = work / "relocated kit"
     prefix.rename(relocated)

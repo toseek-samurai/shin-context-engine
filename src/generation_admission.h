@@ -22,9 +22,13 @@ public:
     // Optional observations come from a fresh verified load under the same
     // publication lock, never a persisted metadata cache. They only deduplicate
     // output hashing; source observation and final verify_content remain required.
+    // A process-local native observation may deduplicate intermediate membership
+    // walks. It never skips live file metadata or the final full byte/inventory
+    // fences; false/unavailable observation restores ordinary complete walks.
     static std::shared_ptr<const GenerationAdmission> reuse(
         const RuntimeOptions& options, const std::string& qualified_fingerprint,
-        const VerifiedSnapshot* observed_snapshot = nullptr);
+        const VerifiedSnapshot* observed_snapshot = nullptr,
+        std::function<bool()> unchanged_source_membership = {});
     // Transfer an already qualified generation to an identical published copy.
     // Caller holds both publication locks and independently authorizes the target.
     std::shared_ptr<const GenerationAdmission> published_copy(
@@ -42,9 +46,9 @@ public:
 
 private:
     explicit GenerationAdmission(const RuntimeOptions& options, const VerifiedSnapshot* observed_snapshot = nullptr);
-    void verify_unchanged(const RuntimeOptions& options) const;
+    void verify_unchanged(const RuntimeOptions& options, bool complete_inventory = false) const;
     void verify_binding(const RuntimeOptions& options) const;
-    void verify_sources(const RuntimeOptions& options) const;
+    void verify_sources(const RuntimeOptions& options, bool complete_inventory = false) const;
     void verify_outputs(const RuntimeOptions& options) const;
     void append_content_files(std::map<fs::path, FileFingerprint>& files) const;
     fs::path root_, out_root_;
@@ -54,6 +58,10 @@ private:
     std::map<std::string, bool> links_;
     Json retool_environment_;
     bool retool_ = false;
+    // Process-local native observation can deduplicate intermediate membership
+    // walks only. Metadata remains live; construction and final content fences
+    // always enumerate the complete inventory. Never imported from state/RPC.
+    std::function<bool()> unchanged_source_membership_;
     std::uintmax_t reused_output_bytes_ = 0;
     std::size_t reused_output_files_ = 0;
     friend std::string generation_fingerprint(const RuntimeOptions&);

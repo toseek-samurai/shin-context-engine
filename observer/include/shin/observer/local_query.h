@@ -8,6 +8,8 @@ Json source_coverage_summary(const Json& manifest);
 struct LocalReaderQualification {
     const shin::context::VerifiedSnapshot* snapshot = nullptr;
     const shin::context::GenerationAdmission* admission = nullptr;
+    bool prepare_source_discovery = true;
+    std::function<void(const std::string&)> progress;
 };
 // One serial, process-owned reader. Preparation is admitted by local_project;
 // Full readers require qualification; retained readers require the explicit

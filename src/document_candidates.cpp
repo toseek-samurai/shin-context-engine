@@ -1,5 +1,6 @@
 #include "context_internal.h"
 #include "generated_snapshot.h"
+#include <mutex>
 
 namespace shin::context {
 namespace {
@@ -10,6 +11,7 @@ constexpr std::size_t kMaxOwnerDocuments = 65536;
 constexpr std::array<std::string_view, 5> kStores{"sections", "facts", "decisions", "contracts", "runbooks"};
 constexpr std::array kMembers{&CandidateRows::sections, &CandidateRows::facts, &CandidateRows::decisions,
                               &CandidateRows::contracts, &CandidateRows::runbooks};
+} // namespace
 
 struct OwnerRange {
     int begin;
@@ -23,20 +25,18 @@ struct OwnerIndex {
     std::array<std::vector<OwnerRange>, kStores.size()> stores;
 };
 
-OwnerIndex read_owner_index(const RuntimeOptions& options) {
-    const auto file = options.out_root / kGeneratedDir / "document-rows.json";
-    GeneratedInput input(options, file);
-    if (!input) throw_index_error("index-corrupt", "Document row index is missing.");
+struct DocumentRowIndexCache {
+    std::mutex mutex;
     std::string bytes;
-    std::array<char, 8192> buffer{};
-    while (input.read(buffer.data(), buffer.size()) || input.gcount() > 0) {
-        const auto count = static_cast<std::size_t>(input.gcount());
-        if (bytes.size() + count > kMaxOwnerIndexBytes) {
-            throw_index_error("index-corrupt", "Document row index exceeds its byte bound.");
-        }
-        bytes.append(buffer.data(), count);
-    }
-    if (input.bad()) throw_index_error("index-corrupt", "Cannot read document row index.");
+    std::shared_ptr<const OwnerIndex> index;
+};
+
+std::shared_ptr<DocumentRowIndexCache> make_document_row_index_cache() {
+    return std::make_shared<DocumentRowIndexCache>();
+}
+
+namespace {
+OwnerIndex parse_owner_index(const std::string& bytes) {
     std::size_t owner_values = 0;
     std::size_t range_values = 0;
     // Reject oversized or deeply nested metadata before constructing its full DOM.
@@ -115,6 +115,30 @@ OwnerIndex read_owner_index(const RuntimeOptions& options) {
         }
     }
     return result;
+}
+
+std::shared_ptr<const OwnerIndex> read_owner_index(const RuntimeOptions& options) {
+    const auto file = options.out_root / kGeneratedDir / "document-rows.json";
+    GeneratedInput input(options, file);
+    if (!input) throw_index_error("index-corrupt", "Document row index is missing.");
+    std::string bytes;
+    std::array<char, 8192> buffer{};
+    while (input.read(buffer.data(), buffer.size()) || input.gcount() > 0) {
+        const auto count = static_cast<std::size_t>(input.gcount());
+        if (bytes.size() + count > kMaxOwnerIndexBytes)
+            throw_index_error("index-corrupt", "Document row index exceeds its byte bound.");
+        bytes.append(buffer.data(), count);
+    }
+    if (input.bad()) throw_index_error("index-corrupt", "Cannot read document row index.");
+    const auto& cache = options.document_row_index_cache;
+    if (!cache || bytes.size() > 1024 * 1024)
+        return std::make_shared<const OwnerIndex>(parse_owner_index(bytes));
+    std::lock_guard lock(cache->mutex);
+    if (cache->index && cache->bytes == bytes) return cache->index;
+    auto index = std::make_shared<const OwnerIndex>(parse_owner_index(bytes));
+    cache->bytes = std::move(bytes);
+    cache->index = index;
+    return index;
 }
 
 std::size_t row_owner(const std::vector<OwnerRange>& ranges, int row) {
@@ -202,7 +226,8 @@ std::optional<std::vector<CandidateRows>> filter_document_groups(
     const RuntimeOptions& options, std::size_t group_count, LoadGroup&& load_group, int required,
     const std::set<std::string>& documents, const CandidateRows* ordinary,
     bool include_independent = false) {
-    const auto index = read_owner_index(options);
+    const auto lease = read_owner_index(options);
+    const auto& index = *lease;
     std::set<std::size_t> admitted;
     if (ordinary != nullptr) {
         for (std::size_t store = 0; store < kStores.size(); ++store) {

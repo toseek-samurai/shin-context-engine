@@ -48,6 +48,8 @@ RetrievalSession::RetrievalSession(RuntimeOptions options,
       lock_(lock_index_for_read(options_.out_root)) {
     if (options_.generated_snapshot)
         throw_usage_error("invalid-snapshot-session", "Construct a loaded session from its snapshot owner.");
+    options_.lexical_manifest_cache = make_lexical_manifest_cache();
+    options_.document_row_index_cache = make_document_row_index_cache();
     if (!generated_index_available(options_)) {
         throw_index_error("index-unavailable", "A complete generated index is required.");
     }
@@ -104,6 +106,8 @@ RetrievalSession::RetrievalSession(std::shared_ptr<const GeneratedSnapshot> snap
 RetrievalSession::RetrievalSession(std::shared_ptr<const GeneratedSnapshot> snapshot, RetrievalSessionOpenMode mode)
     : options_(loaded_options(snapshot)) {
     options_.generated_snapshot = std::move(snapshot);
+    options_.lexical_manifest_cache.reset();
+    options_.document_row_index_cache = make_document_row_index_cache();
     const bool pinned = mode == RetrievalSessionOpenMode::verified_snapshot ||
                         mode == RetrievalSessionOpenMode::verified_current;
     if (pinned) lock_ = lock_index_for_read(options_.out_root);

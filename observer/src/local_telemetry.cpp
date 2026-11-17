@@ -268,8 +268,10 @@ void LocalTelemetry::request_result(const fs::path& root, const std::string& met
         if (const auto project = projects.find(root.string()); project != projects.end())
             project->second.service_activity.add(index, report, 64);
     }
-    const bool rejected = report.is_object() && report.value("stage", Json()) == "admission";
-    if (!rejected && method != "query" && method != "inspect" && method != "read") return;
+    const bool admission_stage = report.is_object() && report.value("stage", Json()) == "admission";
+    const bool pending = admission_stage && method == "status" && report.value("readiness_pending", Json()) == true;
+    const bool rejected = admission_stage && !pending;
+    if (!admission_stage && method != "query" && method != "inspect" && method != "read") return;
     const bool measured = report.is_object() && report.value("schema_version", "") == "shin.worker-metric.v1" &&
         report.contains("ok") && report.at("ok").is_boolean() &&
         report.contains("duration_ms") && report.at("duration_ms").is_number() &&
@@ -283,7 +285,8 @@ void LocalTelemetry::request_result(const fs::path& root, const std::string& met
         return (c >= 'a' && c <= 'z') || (c >= '0' && c <= '9') || c == '-';
     })) code = "unclassified";
     const bool ok = measured && report.at("ok").get<bool>();
-    if (rejected) ++admission_rejections;
+    if (pending) { ++readiness_pending; code.clear(); }
+    else if (rejected) ++admission_rejections;
     else if (!measured) ++unobserved;
     else if (ok) ++responses_ready;
     else ++response_errors;
@@ -304,11 +307,11 @@ void LocalTelemetry::request_result(const fs::path& root, const std::string& met
         });
     request_results.push_back({{"project_id", project_id}, {"method", method},
         {"elapsed_ms", std::chrono::duration_cast<std::chrono::milliseconds>(Clock::now() - started).count()},
-        {"outcome", rejected ? "admission-rejected" : !measured ? "unobserved" : ok ? "response-ready" : "response-error"},
+        {"outcome", pending ? "readiness-pending" : rejected ? "admission-rejected" : !measured ? "unobserved" : ok ? "response-ready" : "response-error"},
         {"duration_ms", measured ? report.at("duration_ms") : Json(nullptr)},
         {"response_bytes", measured ? report.at("response_bytes") : Json(nullptr)}, {"error_code", code}});
     auto& row = request_results.back();
-    row["stage"] = rejected ? "admission" : "execution";
+    row["stage"] = admission_stage ? "admission" : "execution";
     row["request_id"] = opaque("request_id");
     row["session_id"] = session;
     const auto model = metadata.value("model_id", Json());
@@ -338,7 +341,7 @@ void LocalTelemetry::request_result(const fs::path& root, const std::string& met
     for (const auto* phase : {"admission", "documents", "source", "source_collection", "final_verification"})
         row["phase_ms"][phase] = measured && phases.is_object() ? bounded_ms(phases.value(phase, Json())) : Json(nullptr);
     if (request_results.size() > 64) request_results.pop_front();
-    if (history) history->append(rejected ? "admission" : "request", request_results.back());
+    if (history) history->append(admission_stage ? "admission" : "request", request_results.back());
 }
 
 void LocalTelemetry::refresh_result(const fs::path& root, const Json& report) {
@@ -444,7 +447,7 @@ Json LocalTelemetry::snapshot() const {
             {"follow_up_scope", "successful-read-or-inspect-of-recent-same-project-session-generation-query;not-task-success"},
             {"responses_ready", responses_ready}, {"response_errors", response_errors}, {"unobserved", unobserved},
             {"observed_follow_ups", observed_follow_ups}, {"admission_waits", admission_waits}, {"wait_recoveries", wait_recoveries},
-            {"rpc_admission_rejections", admission_rejections}, {"recent", request_results},
+            {"rpc_admission_rejections", admission_rejections}, {"readiness_pending", readiness_pending}, {"recent", request_results},
             {"query_sample_count", durations.size()}, {"query_p50_ms", percentile(.5)}, {"query_p95_ms", percentile(.95)},
             {"model_attribution", "caller-reported-not-verified"}, {"task_outcome", "not-observed"}}}};
 }

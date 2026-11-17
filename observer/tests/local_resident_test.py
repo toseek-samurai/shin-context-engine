@@ -159,6 +159,13 @@ class LocalResidentTests(unittest.TestCase):
         self.assertTrue(preparation['snapshot_id'])
         self.assertGreater(preparation['payload_bytes'], 0)
         self.assertGreaterEqual(preparation['preparation_ms'], 0)
+        measured = preparation['reader_preparation']
+        self.assertEqual(measured['scope'], 'worker-start-through-qualified-reader')
+        self.assertGreaterEqual(measured['total_ms'], preparation['preparation_ms'])
+        self.assertTrue(measured['phase_ms'])
+        self.assertTrue(all(0 <= value <= measured['total_ms'] for value in measured['phase_ms'].values()))
+        self.assertLessEqual(sum(measured['phase_ms'].values()), measured['total_ms'] + 1)
+        self.assertNotIn(str(self.base), json.dumps(measured))
         return item
 
     def all_ready(self):

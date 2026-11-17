@@ -35,7 +35,8 @@ namespace core = shin::context;
 constexpr std::uintmax_t selected_bytes_limit = 16U * 1024U * 1024U;
 constexpr std::size_t selected_files_limit = 64;
 
-void collect_paths(const Json& value, const std::map<std::string, Json>& sources, std::set<std::string>& selected) {
+using SourceBindings = std::map<std::string, const Json*>;
+void collect_paths(const Json& value, const SourceBindings& sources, std::set<std::string>& selected) {
     if (value.is_array()) {
         for (const auto& entry : value) collect_paths(entry, sources, selected);
     } else if (value.is_object()) {
@@ -61,7 +62,8 @@ struct LocalQuerySession::Impl {
     std::unique_ptr<core::SourceDiscoveryIndex> discovery;
     std::map<std::string, core::FileMetadata> artifacts;
     std::map<fs::path, core::FileMetadata> cache_files;
-    std::map<std::string, Json> sources;
+    // Rows belong to the immutable snapshot, which outlives this lookup table.
+    SourceBindings sources;
     std::map<std::string, bool> links;
     std::uint64_t epoch = 0;
     double prepared_ms = 0;
@@ -73,28 +75,34 @@ struct LocalQuerySession::Impl {
         : config(input), workspace(std::move(project_workspace)), cache(std::move(cache_directory)),
           status(std::move(ready)), verify_authority(std::move(authority)) {
         const auto started = core::SteadyClock::now();
+        const auto stage = [&](const char* name) noexcept {
+            try { if (qualification.progress) qualification.progress(name); } catch (...) { return; }
+        };
         options.root = config.root;
         options.out_root = config.out_dir;
         options.profile_dir = config.profile_dir;
         partial = approved_profile != nullptr;
         options.profile = partial ? *approved_profile : core::make_profile(config.profile, config.profile_dir);
+        stage("reader-watch");
         changes = std::make_unique<LocalChanges>(std::vector<fs::path>{config.root},
             [this](const fs::path& path, bool directory) { return local_source_relevant(options, path, directory); });
         changes->flush();
         if (!changes->healthy()) throw Error("local-watcher-unavailable", "Reactive source observation could not start.");
         epoch = changes->sequence();
+        stage("reader-snapshot");
         snapshot = core::GeneratedSnapshot::load(options, {config.max_snapshot_bytes, config.max_file_bytes}, qualification.snapshot);
         options.generated_snapshot = snapshot;
         status["source_scope"] = core::source_discovery_scope(options.profile);
         const auto coverage = source_coverage_summary(snapshot->manifest());
         if (!coverage.is_null() && !partial) status["source_coverage"] = coverage;
+        stage("reader-bindings");
         for (const auto* key : {"sources", "source_fact_sources"}) {
             for (const auto& row : snapshot->manifest().at(key)) {
                 if (row.value("content_hash", "").empty()) continue;
                 const auto name = row.at("path").get<std::string>();
-                if (sources.contains(name) && sources.at(name).at("content_hash") != row.at("content_hash"))
+                if (sources.contains(name) && sources.at(name)->at("content_hash") != row.at("content_hash"))
                     throw Error("local-source-binding-invalid", "Published source bindings disagree.");
-                sources[name] = row;
+                sources[name] = &row;
             }
         }
         const auto paths = core::expected_generated_relative_files(options);
@@ -110,14 +118,18 @@ struct LocalQuerySession::Impl {
             if ((kind == "markdown-link" || kind == "path-reference") && (state == "ok" || state == "broken"))
                 links.emplace(row.at("resolved_path").get<std::string>(), state == "ok");
         }
-        if (!partial) discovery = std::make_unique<core::SourceDiscoveryIndex>(options, cache, qualification.admission);
-        if (fs::exists(cache)) {
+        if (!partial && qualification.prepare_source_discovery) {
+            stage("reader-source-cache");
+            discovery = std::make_unique<core::SourceDiscoveryIndex>(options, cache, qualification.admission);
+        }
+        if (qualification.prepare_source_discovery && fs::exists(cache)) {
             std::size_t entries = 0;
             for (const auto& entry : fs::directory_iterator(cache)) {
                 if (++entries > 32) throw Error("resident-cache-budget", "Private search cache inventory exceeds its bound.");
                 if (entry.path().extension() == ".sqlite") cache_files.emplace(entry.path(), core::file_metadata(entry.path()));
             }
         }
+        stage("reader-final-verification");
         guard();
         prepared_ms = core::elapsed_ms_since(started);
         prepared_at_ms = now_ms();
@@ -210,7 +222,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         if (found == state.sources.end()) { omitted.insert(path); return false; }
         try {
             const auto content = core::read_bound_source(state.config.root, path,
-                found->second.at("content_hash"), selected_bytes_limit);
+                found->second->at("content_hash"), selected_bytes_limit);
             if (core::source_range_secret(content).found) { omitted.insert(path); return false; }
             return true;
         } catch (const core::CliError&) { omitted.insert(path); return false; }
@@ -222,6 +234,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         document_ms = core::elapsed_ms_since(retrieval_started);
         const auto source_started = core::SteadyClock::now();
         if (!state.partial) {
+            if (!state.discovery) throw Error("service-method-denied", "Session preparation does not admit source queries.");
             source = state.discovery->context_at_snapshot(state.options, request.query);
             collection_ms = source.at("collection_ms").get<double>();
         } else {
@@ -284,7 +297,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
     std::uintmax_t bytes = 0;
     std::map<std::string, core::FileMetadata> observed;
     for (const auto& path : paths) {
-        const auto& binding = state.sources.at(path);
+        const auto& binding = *state.sources.at(path);
         const auto size = binding.at("bytes").get<std::uintmax_t>();
         if (size > selected_bytes_limit - bytes) throw Error("selected-source-budget", "Selected source verification exceeds its byte budget.");
         bytes += size;
@@ -329,7 +342,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         result.value("native_read_complete", Json()) == true) {
         const auto file = digest("shin-read-file-v1:" + request.home.string() + ":" + state.config.root.string() + ":" + request.path);
         result["work_performed"]["read_identity"] = {{"file_id",file},
-            {"version_id",digest(file + ":" + state.sources.at(request.path).at("content_hash").get<std::string>())}};
+            {"version_id",digest(file + ":" + state.sources.at(request.path)->at("content_hash").get<std::string>())}};
     }
     result["phase_ms"] = {{"admission", admission_ms}, {"retrieval", retrieval_ms},
         {"documents", document_ms}, {"source", source_ms}, {"source_collection", collection_ms},

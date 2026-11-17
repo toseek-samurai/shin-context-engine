@@ -1,0 +1,16 @@
+{
+  "name": "shin-context",
+  "files": [
+    "SKILL.md",
+    "agents/openai.yaml",
+    "references/execution-evidence.md",
+    "references/impact.md",
+    "references/pack-and-diagnostics.md",
+    "references/publication-and-maintenance.md",
+    "references/reader-selection.md",
+    "references/routing-and-comparisons.md",
+    "references/session-resume.md",
+    "references/setup-and-adoption.md",
+    "references/trust-boundaries.md"
+  ]
+}

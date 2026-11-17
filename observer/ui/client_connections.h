@@ -9,4 +9,12 @@ inline const char* client_access_label(std::string_view state) {
     if (state == "review-required") return "Connection needs review";
     return "Access not configured";
 }
+inline const char* client_skill_label(std::string_view state, bool managed = true) {
+    if (state == "current") return managed ? "Instructions are current" : "Instructions are current · updates not enabled";
+    if (state == "update-available") return "Instruction update available";
+    if (state == "not-installed") return "Shin instructions are not installed";
+    if (state == "customized") return "Custom instructions · review changes manually";
+    if (state == "recovery-required") return "Instruction update needs recovery";
+    return "Instructions could not be checked";
+}
 }

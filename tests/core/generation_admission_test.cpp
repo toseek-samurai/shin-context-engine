@@ -61,6 +61,20 @@ void test(const fs::path& base, const fs::path& registry) {
     expect(reused->reused_output_files() == expected_generated_relative_files(options).size() &&
            reused->reused_output_bytes() > 0, "verified output byte reuse was not measured");
     reused->verify_content(options);
+    int membership_checks = 0;
+    auto observed_membership = GenerationAdmission::reuse(options, certificate, &verified,
+        [&] { ++membership_checks; return true; });
+    expect(observed_membership->assess(options).current && membership_checks > 0,
+           "process-local observation did not participate in intermediate admission");
+    // Even an erroneously unchanged event hint cannot waive the final complete
+    // membership fence. The observation is never a publication certificate.
+    write(options.root / "src/observed-new.js", "export const newMember = 1;\n");
+    refuses([&] { observed_membership->verify_content(options); });
+    fs::remove(options.root / "src/observed-new.js");
+    auto unavailable_observation = GenerationAdmission::reuse(options, certificate, nullptr, [] { return false; });
+    write(options.root / "src/observed-new.js", "export const newMember = 1;\n");
+    refuses([&] { unavailable_observation->assess(options); });
+    fs::remove(options.root / "src/observed-new.js");
     auto incomplete = verified; incomplete.fingerprints.erase(incomplete.fingerprints.begin());
     refuses([&] { GenerationAdmission::reuse(options, certificate, &incomplete); });
     auto foreign_snapshot = verified; foreign_snapshot.out_root = base / "foreign-index";
@@ -189,8 +203,11 @@ void test(const fs::path& base, const fs::path& registry) {
     const auto source = options.root / "src/value.js";
     const auto original = read_file(source);
     const auto modified = fs::last_write_time(source);
+    auto metadata_observed = GenerationAdmission::reuse(options, certificate, nullptr, [] { return true; });
     write(source, "export function value() { return 8; }\n");
     fs::last_write_time(source, modified);
+    refuses([&] { metadata_observed->assess(options); });
+    refuses([&] { metadata_observed->verify_content(options); });
     refuses([&] { proof->assess(options); });
     refuses([&] { proof->verify_content(options); });
     expect(!GenerationAdmission::reuse(options, certificate), "same-size source edit accepted");

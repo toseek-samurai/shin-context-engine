@@ -87,6 +87,11 @@ Json local_client_connections(const fs::path& executable, const fs::path& root,
     for (auto& target : targets.at("targets")) {
         target["access_state"] = "not-configured";
         if (target.value("config", "").empty()) continue;
+        if (target.at("client") == "codex") {
+            try { target["skill"] = local_codex_skill(executable, fs::path(target.at("config").get<std::string>())); }
+            catch (const Error& error) { target["skill"] = {{"state", "unavailable"}, {"error", error_json(error)}}; }
+            catch (...) { target["skill"] = {{"state", "unavailable"}}; }
+        }
         try {
             const auto plan = local_client_connect(executable, root, home, target.at("client"),
                                                    fs::path(target.at("config").get<std::string>()), "");

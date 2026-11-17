@@ -134,6 +134,10 @@ void verify_inventory_stable(const RuntimeOptions& options,
         after.capped_file_count != source_fact_paths.capped_file_count) {
         throw_source_changed_during_verification("enumerate-source-entry");
     }
+    require_worktree_metadata_stable(options, inventory);
+}
+
+void verify_source_metadata(const RuntimeOptions& options, const WorktreeInventory& inventory) {
     auto verify_states = [&](const std::map<std::string, SourceState>& states) {
         for (const auto& [path, state] : states) {
             try {
@@ -288,6 +292,10 @@ int manifest_nonnegative_int(const Json& object,
 
 WorktreeInventory observe_worktree(const RuntimeOptions& options) {
     return load_current_inventory(options);
+}
+
+void require_worktree_metadata_stable(const RuntimeOptions& options, const WorktreeInventory& inventory) {
+    verify_source_metadata(options, inventory);
 }
 
 void require_worktree_stable(const RuntimeOptions& options, const WorktreeInventory& inventory) {

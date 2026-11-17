@@ -18,3 +18,8 @@ endforeach()
 string(APPEND manifest "]}\n")
 file(MAKE_DIRECTORY "${prefix}/share/shin-context")
 file(WRITE "${prefix}/share/shin-context/mcp-runtime.json" "${manifest}")
+if(UNIX)
+    # The verified runtime must not inherit a group-writable installer umask.
+    file(CHMOD "${prefix}/share/shin-context/mcp-runtime.json"
+        PERMISSIONS OWNER_READ OWNER_WRITE GROUP_READ WORLD_READ)
+endif()

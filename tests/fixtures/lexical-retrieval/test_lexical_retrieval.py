@@ -1101,7 +1101,7 @@ class LexicalRetrievalTests(unittest.TestCase):
                 self.assertFalse(result["query_diagnostics"]["fallback_used"])
                 self.assertEqual([row["path"] for row in result["ranked_paths"]], ["docs/" + name])
 
-    def test_supplemental_planner_waits_for_ordinary_budget(self):
+    def test_supplemental_planner_respects_a_full_output_budget(self):
         query = "alpha beta gamma delta epsilon zeta eta theta"
         self.document("left.md", "# Left\n\nalpha beta gamma delta.\n")
         self.document("right.md", "# Right\n\nepsilon zeta eta theta.\n")
@@ -1118,7 +1118,10 @@ class LexicalRetrievalTests(unittest.TestCase):
         ordinary = self.invoke("brief", query, "--require-current", "--limit", "2", "--per-doc", "2")
         ordinary_paths = {row["path"] for row in ordinary["ranked_paths"]}
         self.assertEqual(ordinary_paths, {"docs/left.md", "docs/right.md"})
-        self.assertFalse(ordinary["query_diagnostics"]["query_planner_used"])
+        self.assertTrue(ordinary["query_diagnostics"]["query_planner_used"])
+        self.assertEqual(ordinary["evidence_budget"]["returned_records"], 2)
+        self.assertTrue(all("docs/manual.md" not in group["selected_document_paths"]
+                            for group in ordinary["query_coverage"]["groups"]))
 
         expanded = self.invoke("brief", query, "--require-current", "--limit", "8", "--per-doc", "2")
         expanded_paths = {row["path"] for row in expanded["ranked_paths"]}

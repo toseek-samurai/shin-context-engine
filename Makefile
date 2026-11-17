@@ -12,6 +12,8 @@ PROFILE_DIR := $(CURDIR)/profiles
 # Choose an external directory explicitly; this must not be a managed index.
 CONTEXT_OUT ?=
 CODEX_HOME ?= $(HOME)/.codex
+SHIN_CE ?= shin-ce
+SKILL_REVISION ?=
 HERMES_HOME ?= $(HOME)/.hermes
 HERMES ?= hermes
 
@@ -90,8 +92,7 @@ hermes-integration-check:
 	PYTHONDONTWRITEBYTECODE=1 "$(PYTHON)" tests/integration/run_hermes_plugin_tests.py "$(CURDIR)"
 
 install-codex-skill: skill-check
-	mkdir -p "$(CODEX_HOME)/skills/shin-context"
-	cp -R integrations/codex/skills/shin-context/. "$(CODEX_HOME)/skills/shin-context/"
+	"$(SHIN_CE)" codex-skill --config "$(abspath $(CODEX_HOME))/config.toml" $(if $(SKILL_REVISION),--revision "$(SKILL_REVISION)")
 
 install-hermes-integration: hermes-integration-check
 	mkdir -p "$(HERMES_HOME)/plugins/shin-context" "$(HERMES_HOME)/skills/software-development/shin-context"

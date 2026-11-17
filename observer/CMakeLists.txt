@@ -100,6 +100,9 @@ if(BUILD_TESTING AND SHIN_OBSERVER_SOURCE_DISCOVERY)
     add_test(NAME shin-local-refresh-race-harness COMMAND ${Python3_EXECUTABLE} -B
         ${CMAKE_CURRENT_SOURCE_DIR}/tests/test_run_refresh_race_tests.py)
     set_tests_properties(shin-local-refresh-race-harness PROPERTIES TIMEOUT 10)
+    add_test(NAME shin-codex-skill
+        COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/agent_skill_test.py $<TARGET_FILE:shin-ce>)
+    set_tests_properties(shin-codex-skill PROPERTIES TIMEOUT 120)
 endif()
 if(BUILD_TESTING AND WIN32 AND SHIN_OBSERVER_SOURCE_DISCOVERY)
     add_subdirectory(platform/windows)

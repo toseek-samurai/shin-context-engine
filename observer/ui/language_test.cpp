@@ -34,6 +34,12 @@ int main(int argc, char** argv) try {
             const auto* caption = client_access_label(state);
             require(selected == Language::en || std::string_view(tr(caption)) != caption);
         }
+        for (const auto* state : {"current", "update-available", "not-installed", "customized", "recovery-required", "unavailable"}) {
+            for (bool managed : {false, true}) {
+                const auto* caption = client_skill_label(state, managed);
+                require(selected == Language::en || std::string_view(tr(caption)) != caption);
+            }
+        }
     }
     require(std::string_view(tr("Projects")) == "Проекты");
     require(decimal("12.5") == "12,5");

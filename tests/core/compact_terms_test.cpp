@@ -5,6 +5,7 @@
 #include "generated_snapshot.h"
 #include "retrieval_session.h"
 #include "agent_context_pack.h"
+#include <future>
 #include <iostream>
 #include <random>
 #ifndef _WIN32
@@ -151,6 +152,49 @@ void write(const fs::path& path, const std::string& data) {
     fs::create_directories(path.parent_path()); std::ofstream output(path, std::ios::binary); output << data;
     expect(static_cast<bool>(output), "fixture write failed");
 }
+void manifest_reuse(const fs::path& base) {
+    RuntimeOptions options;
+    options.out_root = base / "manifest-reuse";
+    options.lexical_manifest_cache = make_lexical_manifest_cache();
+    const auto manifest = options.out_root / kGeneratedDir / "manifest.json";
+    const TermRowCounts counts{1, 0, 0, 0, 0};
+    const Json valid{{"generator_version", kGeneratorVersion}, {"term_index_format", "shin.lexical.v1"},
+        {"row_counts", {{"sections", 1}, {"facts", 0}, {"decisions", 0}, {"contracts", 0}, {"runbooks", 0}, {"terms", 1}}},
+        {"unrelated", {{"generator_version", "nested-marker-is-not-root-metadata"}}}};
+    write(manifest, valid.dump());
+    write(options.out_root / kGeneratedDir / "terms.lex",
+          encode_compact_terms({{"alpha", {{0}, {}, {}, {}, {}}}}, counts));
+    const auto groups = prepare_term_groups({{"alpha"}});
+    const auto lookup = [&] {
+        const auto rows = load_generated_query_candidates(options, groups, 1);
+        expect(rows.from_terms_index && rows.sections == std::set<int>{0}, "manifest reuse changed candidates");
+    };
+    const auto refuses = [&](const std::string& code) {
+        try { lookup(); }
+        catch (const CliError& error) { expect(error.code() == code, "manifest reuse changed error code"); return; }
+        throw std::runtime_error("manifest reuse admitted changed or malformed bytes");
+    };
+    lookup(); lookup();
+    std::vector<std::future<void>> readers;
+    for (int i = 0; i < 8; ++i) readers.push_back(std::async(std::launch::async, [&] {
+        for (int repeat = 0; repeat < 4; ++repeat) lookup();
+    }));
+    for (auto& reader : readers) reader.get();
+    const auto saved_time = fs::last_write_time(manifest);
+    auto invalid = valid; invalid["term_index_format"] = "unsupported";
+    write(manifest, invalid.dump()); fs::last_write_time(manifest, saved_time);
+    refuses("index-generator-unsupported");
+    invalid = valid; invalid["row_counts"]["sections"] = 2;
+    write(manifest, invalid.dump()); refuses("index-corrupt");
+    auto prefix = valid.dump(); prefix.pop_back();
+    write(manifest, prefix + ",\"ignored\":{\"nested\":[1,]}}"); refuses("invalid-json");
+    write(manifest, prefix + ",\"ignored\":\"" + std::string(1, char(255)) + "\"}"); refuses("invalid-json");
+    write(manifest, prefix + ",\"generator_version\":\"unsupported\"}"); refuses("index-generator-unsupported");
+    auto large = valid; large["unrelated"] = std::string(1024 * 1024 + 1, 'x');
+    write(manifest, large.dump()); lookup(); // Oversized cache input keeps the uncached reader.
+    write(manifest, valid.dump()); lookup();
+    fs::remove(manifest); refuses("index-unavailable");
+}
 Json comparable(Json value) {
     if (value.is_object()) {
         // These are deliberately different snapshot identities, not retrieval results.
@@ -246,7 +290,7 @@ int main(int argc, char** argv) {
         (void)argc; (void)argv;
         codec();
         const auto base = fs::temp_directory_path() / ("shin-compact-" + std::to_string(SteadyClock::now().time_since_epoch().count()));
-        try { parity(base); } catch (...) { fs::remove_all(base); throw; }
+        try { manifest_reuse(base); parity(base); } catch (...) { fs::remove_all(base); throw; }
         fs::remove_all(base);
         std::cout << "compact lexical corruption, independent generations, disk/resident and pack parity passed\n";
         return 0;

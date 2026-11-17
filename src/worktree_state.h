@@ -23,6 +23,7 @@ struct WorktreeInventory {
 
 WorktreeInventory observe_worktree(const RuntimeOptions& options);
 void require_worktree_stable(const RuntimeOptions& options, const WorktreeInventory& inventory);
+void require_worktree_metadata_stable(const RuntimeOptions& options, const WorktreeInventory& inventory);
 Json worktree_identity(const RuntimeOptions& options, const WorktreeInventory& inventory);
 bool worktree_observation_complete(const WorktreeInventory& inventory);
 Json compare_worktree(const RuntimeOptions& options, const Json& manifest,

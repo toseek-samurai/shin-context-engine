@@ -6,8 +6,44 @@
 #include "generated_row_decoder.h"
 #include "generated_io.h"
 #include "snapshot_verification.h"
+#include <mutex>
 
 namespace shin::context {
+
+struct LexicalManifestCache {
+    std::mutex mutex;
+    std::string bytes;
+    Json metadata;
+};
+
+std::shared_ptr<LexicalManifestCache> make_lexical_manifest_cache() {
+    return std::make_shared<LexicalManifestCache>();
+}
+
+static Json read_lexical_manifest(const RuntimeOptions& options, const fs::path& path) {
+    auto text = read_file(path);
+    const auto& cache = options.lexical_manifest_cache;
+    // Cache only parsing, never file safety, contents, freshness or admission.
+    // Every call reads the current bytes. Changed bytes, including owner metadata
+    // unused by posting lookup, must pass the complete ordinary JSON parser.
+    if (!cache || text.size() > 1024 * 1024) return parse_json_text(text, path.string());
+    std::lock_guard lock(cache->mutex);
+    if (!cache->bytes.empty() && cache->bytes == text) return cache->metadata;
+    const auto parsed = parse_json_text(text, path.string());
+    if (!parsed.is_object() || json_string_value(parsed, "generator_version") != kGeneratorVersion ||
+        json_string_value(parsed, "term_index_format") != "shin.lexical.v1" ||
+        !parsed.contains("row_counts") || !parsed.at("row_counts").is_object()) return parsed;
+    Json metadata{{"generator_version", kGeneratorVersion}, {"term_index_format", "shin.lexical.v1"},
+                  {"row_counts", Json::object()}};
+    for (const auto* key : {"sections", "facts", "decisions", "contracts", "runbooks", "terms"}) {
+        const auto field = parsed.at("row_counts").find(key);
+        if (field == parsed.at("row_counts").end() || !field->is_number_integer()) return parsed;
+        metadata["row_counts"][key] = *field;
+    }
+    cache->bytes = std::move(text);
+    cache->metadata = std::move(metadata);
+    return cache->metadata;
+}
 
 bool compact_lexical_manifest(const Json& manifest) {
     const auto generator = json_string_value(manifest, "generator_version");
@@ -21,7 +57,7 @@ bool compact_lexical_index(const RuntimeOptions& options) {
     const auto path = options.out_root / kGeneratedDir / "manifest.json";
     if (!fs::exists(path)) return true;
     verify_snapshot_manifest_file(options.out_root);
-    return compact_lexical_manifest(parse_json_text(read_file(path), path.string()));
+    return compact_lexical_manifest(read_lexical_manifest(options, path));
 }
 
 std::vector<std::string> expected_generated_relative_files(const RuntimeOptions& options) {
@@ -1189,7 +1225,7 @@ static LoadedTermPostings load_compact_term_postings(
     if (wanted.empty()) return loaded;
     const auto manifest_path = options.out_root / kGeneratedDir / "manifest.json";
     Json disk_manifest;
-    if (!options.generated_snapshot) disk_manifest = parse_json_text(read_file(manifest_path), manifest_path.string());
+    if (!options.generated_snapshot) disk_manifest = read_lexical_manifest(options, manifest_path);
     const auto& manifest = options.generated_snapshot ? options.generated_snapshot->manifest() : disk_manifest;
     GeneratedInput input(options, options.out_root / kGeneratedDir / "terms.lex");
     CompactTerms terms(input, term_row_counts(manifest));

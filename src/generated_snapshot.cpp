@@ -224,6 +224,8 @@ std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions 
     }
     auto result = std::shared_ptr<GeneratedSnapshot>(new GeneratedSnapshot());
     result->options_ = std::move(options);
+    result->options_.lexical_manifest_cache.reset();
+    result->options_.document_row_index_cache.reset();
     result->manifest_ = verified.manifest;
     result->id_ = verified.snapshot_id;
     result->backing_ = std::make_unique<Backing>();

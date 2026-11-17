@@ -65,7 +65,8 @@ inline void refresh_progress(const std::function<void(const std::string&)>& prog
 
 template<class Request>
 inline void refresh_stage(const Request& request, const char* stage) noexcept {
-    if (request.command == "_refresh") refresh_progress(request.maintenance_progress, stage);
+    if (request.command == "_refresh" || request.query_session)
+        refresh_progress(request.maintenance_progress, stage);
 }
 
 inline Json envelope(const std::string& command, bool ok) {

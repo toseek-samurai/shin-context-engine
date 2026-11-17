@@ -56,6 +56,7 @@ private:
     std::deque<Json> refresh_results;
     std::uint64_t responses_ready = 0, response_errors = 0, unobserved = 0;
     std::uint64_t observed_follow_ups = 0, admission_waits = 0, wait_recoveries = 0;
+    std::uint64_t readiness_pending = 0;
     std::unique_ptr<LocalHistory> history;
     std::unique_ptr<LocalMcpActivity> mcp_activity;
     Clock::time_point last_persisted_sample{};

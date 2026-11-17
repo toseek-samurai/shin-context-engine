@@ -120,6 +120,12 @@ def check_bundle(root, maximum_entry_bytes):
 def check_repository(root):
     root = root.resolve()
     reports, errors = {}, []
+    skill_root = root / BUNDLES['codex'][0]
+    spec = json.loads((root / 'integrations/codex/skill-bundle.json').read_text())
+    selected = spec.get('files', [])
+    actual = {p.relative_to(skill_root).as_posix() for p in skill_root.rglob('*') if p.is_file()}
+    if spec.get('name') != 'shin-context' or len(selected) != len(set(selected)) or set(selected) != actual:
+        errors.append({'id': 'codex-package-inventory', 'selected': selected, 'actual': sorted(actual)})
     profile = json.loads((root / "profiles/shin.json").read_text())
     for name, (relative, budget) in BUNDLES.items():
         result = check_bundle(root / relative, budget)

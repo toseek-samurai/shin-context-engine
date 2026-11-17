@@ -50,6 +50,9 @@ struct LocalProjectRequest {
     std::function<bool()> maintenance_stop;
     // Optional bounded stage observation (refresh and final reader verification); never authority.
     std::function<void(const std::string&)> maintenance_progress;
+    // Session workers need the verified snapshot and guards, not source search.
+    // Internal only; never accepted from CLI or RPC JSON.
+    bool prepare_session_only = false;
     // Private resident preparation hook, never accepted from CLI or RPC JSON.
     std::shared_ptr<LocalQuerySession>* query_session = nullptr;
     // Process-owned background continuation, never imported from CLI/RPC/state.

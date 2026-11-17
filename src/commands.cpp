@@ -864,13 +864,17 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
     plan.record("relaxed", relaxed);
     relaxed.identifier_probe_rows = identifier_probe_rows;
     const bool relaxed_has_results = brief_returned_count(relaxed, request) > 0;
-    const bool planner_candidate = strict_required_group_matches(request) >= kCompoundQueryCoverageThreshold &&
-        (!relaxed_has_results || brief_distinct_path_count(relaxed) < 2 ||
-         brief_returned_count(relaxed, request) < request.limit);
+    // Saturated relaxed rows do not establish complete document-owner coverage.
+    // Like strict compound results, they retain bounded document planning; the
+    // output limit constrains final selection rather than disabling this route.
+    const bool planner_candidate = strict_required_group_matches(request) >= kCompoundQueryCoverageThreshold;
     if (planner_candidate && plan.admits(kMaxIndexedCandidateRows)) {
         const bool preserve_row_ranking = relaxed_has_results && brief_distinct_path_count(relaxed) >= 2;
+        // Retain ordinary evidence and supplement only missing document owners.
+        // Replanning represented owners would inflate broad-query candidates
+        // and could replace an already recovered bounded posting intersection.
         BriefResult planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
-            options, request, preserve_row_ranking, relaxed_required_group_matches(request), false,
+            options, request, preserve_row_ranking, relaxed_required_group_matches(request), preserve_row_ranking,
             prepared_groups ? &*prepared_groups : nullptr, manifest));
         planned.identifier_probe_rows = identifier_probe_rows;
         const int minimum_coverage = std::max(2, relaxed_required_group_matches(request));

@@ -2,7 +2,7 @@
   "schemaVersion": "shin.context-engine.manifest.v1",
   "project": {
     "name": "Shin Context Engine",
-    "version": "2.0.5-dev.13",
+    "version": "2.0.5-dev.29",
     "language": "C++20",
     "status": "development",
     "goal": "One fast typed KB and context engine for documented, source-only, and profile-selected structured projects so agents can load verified task context without repeated broad repository scans.",
@@ -168,7 +168,8 @@
     "selfKb": "make docs-kb",
     "selfCheck": "make docs-check",
     "skillCheck": "make skill-check",
-    "installCodexSkill": "make install-codex-skill",
+    "reviewCodexSkill": "make install-codex-skill",
+    "installCodexSkill": "make install-codex-skill SKILL_REVISION=REVISION",
     "hermesIntegrationCheck": "make hermes-integration-check",
     "installHermesIntegration": "make install-hermes-integration"
   },

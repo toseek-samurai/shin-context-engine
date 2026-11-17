@@ -236,6 +236,12 @@ class McpTests(unittest.TestCase):
             self.assertEqual(status['recovery']['retry_after_ms'], 0)
             self.assertLess(elapsed, 1)
             self.assertEqual(self.raw('service-status')['result']['waiting_requests'], 0)
+            metrics = self.raw('service-status')['result']['telemetry']['request_metrics']
+            self.assertEqual(metrics['readiness_pending'], 1)
+            self.assertEqual(metrics['rpc_admission_rejections'], 0)
+            self.assertEqual(metrics['response_errors'], 0)
+            history = service.LocalServiceTests.history(self, lambda h: h.get('readiness_pending') == 1)
+            self.assertEqual(history['admission_rejections'], 0)
             invalid = self.raw('query', query='readLimit', wait_for_ready=False)
             self.assertEqual(invalid['error']['code'], 'service-request-invalid')
         query = self.tool(child, 'shin_query', {'query': 'readLimit'})
@@ -376,15 +382,20 @@ class McpTests(unittest.TestCase):
         (prefix/'bin').mkdir(parents=True)
         shutil.copy2(MCP, prefix/'bin/shin-mcp')
         shutil.copy2(service.fixtures.TOOL, prefix/'bin/shin-ce')
+        for name in ('shin-mcp', 'shin-ce'):
+            (prefix/'bin'/name).chmod(0o700)
         for library in MCP.parent.glob('*.dylib'):
             shutil.copy2(library, prefix/'bin'/library.name)
+            (prefix/'bin'/library.name).chmod(0o600)
         for name in ('shin-observer', 'shin-context'):
             (prefix/'bin'/name).write_text(marker)
+            (prefix/'bin'/name).chmod(0o600)
         for component, value in [('shin-context',self.identity['core_version']),
                                  ('shin-observer',version or self.identity['version'])]:
             folder=prefix/'share'/component
             folder.mkdir(parents=True)
             (folder/'VERSION').write_bytes((value + version_newline).encode('ascii'))
+            (folder/'VERSION').chmod(0o600)
         return self.runtime_manifest(prefix,version)
 
     def runtime_manifest(self, prefix, version=None, protocol='shin.mcp-service.v1'):
@@ -395,6 +406,7 @@ class McpTests(unittest.TestCase):
                     'sha256':hashlib.sha256(p.read_bytes()).hexdigest()} for p in paths if p.is_file()]}
         path=prefix/'share/shin-context/mcp-runtime.json'
         path.write_text(json.dumps(value)+'\n')
+        path.chmod(0o600)
         return {'protocol':protocol,'runtime_sha256':hashlib.sha256(path.read_bytes()).hexdigest()}
 
     def bridge_reply(self, child, listener, expected, response_version=None, before_reply=None):
@@ -642,6 +654,148 @@ class McpTests(unittest.TestCase):
         self.assertTrue(self.tool(child, 'shin_read', args)['ok'])
         other_connection = self.adapter()
         self.assertFalse(self.tool(other_connection, 'shin_read', args)['ok'])
+
+    def test_session_operations_do_not_wait_for_or_replace_a_source_reader(self):
+        self.start()
+        before = self.raw('service-status')['result']
+        reader = next(r for r in before['resident_projects'] if r['root'] == str(self.root))
+        child = self.adapter()
+        args = {'session_id': 'actual-session-isolation-fixture', 'task_key': 'session-isolation',
+                'task': 'Review the current readLimit implementation'}
+        draft = {**args, 'progress': 'Located the current implementation',
+                 'queries': ['readLimit'], 'paths': ['limits.js']}
+        # Stop only the source reader. Qualification and the project remain
+        # current; explicit notes must not depend on this process responding.
+        os.kill(reader['pid'], signal.SIGSTOP)
+        try:
+            saved = self.tool(child, 'shin_checkpoint', draft, timeout=8)
+            self.assertTrue(saved['ok'], saved)
+            self.assertTrue(saved['work_performed']['session_worker'])
+            self.assertFalse(saved['work_performed']['source_reader_warmed'])
+            measured = saved['session_preparation']
+            self.assertGreaterEqual(measured['total_ms'], 0)
+            self.assertNotIn('reader-source-cache', measured['phase_ms'])
+            self.assertNotIn(str(self.base), json.dumps(measured))
+            resumed = self.tool(child, 'shin_resume', args, timeout=8)
+            self.assertTrue(resumed['ok'], resumed)
+            self.assertEqual(resumed['revision'], saved['revision'])
+            after = self.raw('service-status')['result']
+            retained = next(r for r in after['resident_projects'] if r['root'] == str(self.root))
+            self.assertEqual(retained['pid'], reader['pid'])
+            self.assertEqual(after['resident_evictions'], before['resident_evictions'])
+            self.assertEqual(after['resident_warm_requests'], before['resident_warm_requests'])
+            self.assertEqual(after['query_workers'], 0)
+        finally:
+            os.kill(reader['pid'], signal.SIGCONT)
+        self.assertTrue(self.tool(child, 'shin_query', {'query': 'readLimit'})['ok'])
+        self.finish_adapter(child)
+
+    def test_checkpoint_while_source_reader_is_still_warming(self):
+        others = []
+        for i in range(5):
+            root = self.base / f'other-session-warmup-{i}'; root.mkdir()
+            (root / 'limits.js').write_text(f'export function readLimit() {{ return {20+i}; }}\n')
+            self.init(root=root); self.roots.append(root); others.append(root)
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        # Initial qualification visits the other roots first. Hold this root's
+        # publication lock so pending qualification and a full reader cache are
+        # witnessed directly, without depending on an idle refresh interval.
+        self.roots = others + [self.root]
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.start(ready=False)
+            before = self.wait_service_state(lambda s: len(s['qualified_projects']) == len(others) and
+                len(s['resident_projects']) == len(others) and all(r['ready'] for r in s['resident_projects']), timeout=10)
+            self.assertNotIn(str(self.root), [p['root'] for p in before['qualified_projects']])
+            child = self.adapter()
+            request = self.send(child, 'tools/call', {'name': 'shin_checkpoint', 'arguments': {
+                'session_id': 'actual-refresh-session-fixture', 'task_key': 'qualification-only',
+                'task': 'Review current limits', 'progress': 'Source update observed', 'queries': ['readLimit']}})
+            self.wait_service_state(lambda s: s['waiting_requests'] == 1)
+        response = self.response(child, request, timeout=8)['result']
+        saved = json.loads(response['content'][0]['text'])
+        self.assertTrue(saved['ok'], saved)
+        after = self.raw('service-status')['result']
+        self.assertEqual(after['resident_evictions'], before['resident_evictions'])
+        self.assertNotIn(str(self.root), [r['root'] for r in after['resident_projects']])
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            status = self.tool(child, 'shin_status', {}, timeout=2)
+            self.assertEqual(status['reader_state'], 'warming')
+            warming = next(r for r in self.raw('service-status')['result']['resident_projects'] if r['root'] == str(self.root))
+            self.assertFalse(warming['ready'])
+            os.kill(warming['pid'], signal.SIGSTOP)
+        try:
+            result = self.tool(child, 'shin_checkpoint', {
+                'session_id': 'actual-cold-session-fixture', 'task_key': 'cold-session',
+                'task': 'Review the current limit', 'progress': 'Current source located',
+                'queries': ['readLimit'], 'paths': ['limits.js']}, timeout=8)
+            self.assertTrue(result['ok'], result)
+            self.assertFalse(result['work_performed']['source_reader_warmed'])
+            state = self.raw('service-status')['result']
+            retained = next(r for r in state['resident_projects'] if r['root'] == str(self.root))
+            self.assertEqual(retained['pid'], warming['pid'])
+            self.assertFalse(retained['ready'])
+        finally:
+            os.kill(warming['pid'], signal.SIGCONT)
+        self.assertTrue(self.tool(child, 'shin_query', {'query': 'readLimit'})['ok'])
+        self.finish_adapter(child)
+
+    def test_session_worker_cancellation_and_project_fifo_preserve_capacity(self):
+        other = self.base / 'independent-session-project'; other.mkdir()
+        (other / 'README.md').write_text('# Limits\n\nreadLimit owns the ceiling.\n')
+        (other / 'limits.js').write_text('export function readLimit() { return 99; }\n')
+        self.init(root=other); self.roots.append(other); self.start()
+        workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
+        session = {'session_id': 'a' * 64, 'session': {'task_id': 'b' * 64, 'task': 'Review current limits'}}
+        first = self.connect(); second = self.connect()
+        self.addCleanup(first.close); self.addCleanup(second.close)
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            first.sendall((json.dumps(self.frame('resume', request_id='cancelled-session', **session)) + '\n').encode())
+            self.wait_service_state(lambda s: s['query_workers'] == 1)
+            second.sendall((json.dumps(self.frame('resume', request_id='queued-session', **session)) + '\n').encode())
+            state = self.wait_service_state(lambda s: s['waiting_requests'] == 1)
+            self.assertEqual(state['query_workers'], 1)
+            self.assertEqual(state['max_query_workers'], 2)
+            self.assertEqual(state['max_waiting_requests'], 4)
+            independent = self.raw('query', root=other, query='readLimit')
+            self.assertTrue(independent['ok'], independent)
+            first.close()
+            self.wait_service_state(lambda s: s['waiting_requests'] == 0 and s['query_workers'] == 1)
+        result = self.receive(second)
+        self.assertEqual(result['error']['code'], 'session-checkpoint-not-found', result)
+        self.wait_service_state(lambda s: s['query_workers'] == 0 and s['waiting_requests'] == 0)
+        self.assertFalse((self.home / 'sessions').exists())
+
+    def test_concurrent_checkpoint_replacements_keep_exact_revision_and_fifo(self):
+        self.start()
+        first, second = self.adapter(), self.adapter()
+        args = {'session_id': 'actual-concurrent-fixture', 'task_key': 'same-task',
+                'task': 'Review current limits', 'progress': 'Initial context', 'queries': ['readLimit']}
+        saved = self.tool(first, 'shin_checkpoint', args)
+        self.assertTrue(saved['ok'], saved)
+        replacement = {**args, 'expected_revision': saved['revision']}
+        barrier = threading.Barrier(2)
+        results, errors = [], []
+        def replace(child, progress):
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.tool(child, 'shin_checkpoint', {**replacement, 'progress': progress}, timeout=8))
+            except Exception as error:
+                errors.append(error)
+        threads = [threading.Thread(target=replace, args=(first, 'First writer')),
+                   threading.Thread(target=replace, args=(second, 'Second writer'))]
+        for thread in threads: thread.start()
+        for thread in threads: thread.join(timeout=12)
+        self.assertFalse(errors, errors)
+        self.assertTrue(all(not thread.is_alive() for thread in threads))
+        self.assertEqual(sum(bool(result['ok']) for result in results), 1, results)
+        self.assertEqual(next(result for result in results if not result['ok'])['error']['code'], 'session-checkpoint-conflict')
+        resumed = self.tool(first, 'shin_resume', {key: args[key] for key in ('session_id', 'task_key', 'task')})
+        self.assertEqual(resumed['revision'], next(result for result in results if result['ok'])['revision'])
+        self.assertEqual(self.raw('service-status')['result']['query_workers'], 0)
+        self.finish_adapter(first); self.finish_adapter(second)
 
     def test_explicit_checkpoint_resume_is_bound_private_and_revision_checked(self):
         self.start()

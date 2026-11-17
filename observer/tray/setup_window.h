@@ -252,7 +252,25 @@
             access.textColor = NSColor.labelColor;
             target[@"accessLabel"] = access;
             [self showSetupAccess:target state:target[@"accessState"]];
-            [group addArrangedSubview:controls]; [group addArrangedSubview:access]; [group addArrangedSubview:location]; [self.setupAgents addView:group inGravity:NSStackViewGravityTop];
+            [group addArrangedSubview:controls]; [group addArrangedSubview:access];
+            if ([client isEqualToString:@"codex"]) {
+                const auto skill = row.value("skill", Json::object());
+                target[@"skillState"] = diagnostic_text_content(skill.value("state", "unavailable"));
+                target[@"skillManaged"] = @(skill.value("managed", false));
+                NSTextField* instructions = [NSTextField labelWithString:@""];
+                target[@"skillLabel"] = instructions;
+                instructions.font = [NSFont systemFontOfSize:13]; instructions.textColor = NSColor.secondaryLabelColor;
+                __weak NSMutableDictionary* skillTarget = target;
+                live_caption(instructions, @"stringValue", ^{
+                    NSString* state = skillTarget[@"skillState"];
+                    return ui_text(shin::ui::client_skill_label(state ? state.UTF8String : "unavailable", [skillTarget[@"skillManaged"] boolValue]));
+                });
+                NSButton* review = live_button("Review instructions…", self, @selector(reviewSetupSkill:)); review.tag = index;
+                review.font = [NSFont systemFontOfSize:13]; review.bordered = NO; review.bezelStyle = NSBezelStyleInline;
+                [group addArrangedSubview:instructions]; [group addArrangedSubview:review];
+                [self.setupFileButtons addObject:review];
+            }
+            [group addArrangedSubview:location]; [self.setupAgents addView:group inGravity:NSStackViewGravityTop];
             [group.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
             [location.widthAnchor constraintEqualToAnchor:group.widthAnchor].active = YES;
             target[@"pathLabel"] = location;
@@ -285,6 +303,9 @@
     panel.directoryURL = [NSURL fileURLWithPath:currentPath.length ? currentPath.stringByDeletingLastPathComponent : NSHomeDirectory()];
     if ([panel runModal] != NSModalResponseOK || !panel.URL.path) return;
     target[@"config"] = panel.URL.path;
+    target[@"skillState"] = @"unavailable"; target[@"skillManaged"] = @NO;
+    NSTextField* skillLabel = target[@"skillLabel"];
+    if (skillLabel) skillLabel.stringValue = ui_text(shin::ui::client_skill_label("unavailable", false));
     NSTextField* label = target[@"pathLabel"]; label.stringValue = panel.URL.path; label.toolTip = panel.URL.path;
     [self showSetupAccess:target state:@"review-required"];
     const NSUInteger epoch = self.setupEpoch; NSString* selectedPath = panel.URL.path;
@@ -303,6 +324,45 @@
     for (NSButton* button in self.setupFileButtons) button.enabled = !connecting;
     if (!connecting) release_project_operation();
     [self selectSetupTarget:nil];
+}
+- (void)reviewSetupSkill:(NSButton*)sender {
+    if (self.setupConnecting || self.setupAdding || sender.tag < 0 || static_cast<NSUInteger>(sender.tag) >= self.setupTargets.count) return;
+    NSMutableDictionary* target = self.setupTargets[static_cast<NSUInteger>(sender.tag)];
+    NSString* config = target[@"config"];
+    if (!config.length) return;
+    bool expected = false;
+    if (!project_management_busy.compare_exchange_strong(expected, true)) return;
+    ++self.setupEpoch; self.setupConnecting = YES;
+    [self runCLI:@"codex-skill" arguments:@[@"--config", config] completion:^(Json plan, NSString* failure) {
+        if (failure || !plan.value("ok", false)) {
+            self.setupStatus.stringValue = failure ? failure : ui_text("Instructions could not be checked"); self.setupConnecting = NO; return;
+        }
+        const auto state = plan.value("state", "unavailable");
+        target[@"skillState"] = diagnostic_text_content(state); target[@"skillManaged"] = @(plan.value("managed", false));
+        NSTextField* skillLabel = target[@"skillLabel"];
+        skillLabel.stringValue = ui_text(shin::ui::client_skill_label(state, plan.value("managed", false)));
+        const bool recovery = state == "recovery-required";
+        const bool apply = plan.value("can_apply", false) && (recovery || plan.value("changed", false) || !plan.value("managed", false));
+        NSAlert* alert = [[NSAlert alloc] init];
+        alert.messageText = ui_text(shin::ui::client_skill_label(state, plan.value("managed", false)));
+        NSMutableString* detail = [NSMutableString stringWithFormat:@"%@\n\n%@", ui_text("Only unchanged Shin files are updated. Your own files and agent settings stay in place."), diagnostic_text_content(plan.value("directory", ""))];
+        for (const auto& file : plan.value("modified_files", Json::array())) [detail appendFormat:@"\n%@", diagnostic_text_content(file.get<std::string>())];
+        alert.informativeText = detail;
+        if (apply) [alert addButtonWithTitle:ui_text(recovery ? "Recover instructions" : plan.value("changed", false) ? "Update instructions" : "Enable instruction updates")];
+        [alert addButtonWithTitle:ui_text("Close")];
+        [alert beginSheetModalForWindow:self.setupWindow completionHandler:^(NSModalResponse answer) {
+            if (!apply || answer != NSAlertFirstButtonReturn) { self.setupConnecting = NO; return; }
+            NSString* revision = diagnostic_text_content(plan.at("revision").get<std::string>());
+            [self runCLI:@"codex-skill" arguments:@[@"--config", config, @"--revision", revision] completion:^(Json result, NSString* updateFailure) {
+                if (!updateFailure && result.value("ok", false)) {
+                    target[@"skillState"] = diagnostic_text_content(result.value("state", "unavailable")); target[@"skillManaged"] = @(result.value("managed", false));
+                    self.setupStatus.stringValue = ui_text(shin::ui::client_skill_label([target[@"skillState"] UTF8String], [target[@"skillManaged"] boolValue]));
+                    NSTextField* updatedLabel = target[@"skillLabel"]; updatedLabel.stringValue = self.setupStatus.stringValue;
+                } else self.setupStatus.stringValue = updateFailure ? updateFailure : ui_text("Instructions could not be checked");
+                self.setupConnecting = NO;
+            }];
+        }];
+    }];
 }
 - (void)connectSetupAgents:(id)sender {
     (void)sender;

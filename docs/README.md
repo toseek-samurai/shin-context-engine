@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The documented download baseline is [dev.121](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.121).
-It contains Core **2.0.5-dev.28** and Observer/CLI/MCP/Monitor **2.0.5-dev.121**.
+The documented download baseline is [dev.124](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.124).
+It contains Core **2.0.5-dev.29** and Observer/CLI/MCP/Monitor **2.0.5-dev.124**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -62,8 +62,8 @@ Missing or unavailable client history does not mean zero usage. Request timing
 and the session journal remain available independently of agent token history.
 
 The native binary kit targets **macOS 15+ on Apple Silicon**. Homebrew builds the
-complete application from source and has passed its installation checks on Apple
-Silicon; Intel installation qualification is incomplete. Linux/WSL2 currently
+complete application from source. Its separate installation workflow checks
+Apple Silicon and Intel before advancing the formula. Linux/WSL2 currently
 offers the published Ubuntu 24.04 x86_64 terminal archive or source builds. The
 archive includes Core, Observer, CLI, MCP, usage collection and the EN/RU TUI; it
 requires glibc 2.39+, libstdc++6 and OpenSSL 3. SQLite 3.54.1 is included

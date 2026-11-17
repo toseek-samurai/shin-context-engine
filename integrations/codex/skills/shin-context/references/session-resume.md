@@ -33,9 +33,8 @@ profile/root/out-dir as retrieval. Its contracts remain `session-checkpoint-v1.j
 and `execution-receipt-v1.json` under the distribution contracts directory
 (source layout: `docs/machine`).
 
-Checkpoint and resume still require qualified current context. Source builds
-with independent session workers do not need the resident source reader to be
-warm; older releases can return `reader-preparing` before execution starts.
+Checkpoint and resume still require qualified current context. Independent
+session workers do not need the resident source reader to be warm.
 Follow the selected server's recovery fields. After an uncertain transport
 outcome, inspect `shin_resume` before replacing a saved checkpoint. Do not
 repeat a potentially completed write or edit profiles merely to warm a reader.

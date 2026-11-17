@@ -36,6 +36,18 @@ are caller-reported statistics, not verified model identity or task success. For
 read/inspect following a query, also pass its `request_trace.request_id` as
 `parent_request_id` when supported. Never persist a chat ID into shared MCP config.
 
+## Availability and quality
+
+Honor explicit `retrieval_ready` when present. Otherwise a successful `ok=true`,
+`local_ready=true` response permits retrieval, including bootstrap routes.
+`canonical_ready=false` can retain a quality-only warning; report it
+and preserve failed strict eval/Pack results. It does not waive authority,
+freshness, integrity, safety or mandatory resource/output refusals. Readiness
+describes the selected scope, not complete repository coverage or answer quality.
+Kit-owned bootstrap profiles need no project maintenance. Review custom profiles
+only for actual owner/root/contract changes; engine misses and resource warnings
+belong to Shin. Follow the existing native review and approval procedure.
+
 ## Pending reader status
 
 A status with `query_available=true` and `next_action=shin_query` permits one useful

@@ -91,6 +91,59 @@ class PlannerContractTests(unittest.TestCase):
                 self.assertLessEqual(result["evidence_budget"]["returned_records"], limit)
                 self.assertEqual(result["query_coverage"]["covered_groups"], len(words))
 
+    def test_narrowed_rows_retain_partial_document_owner_at_adjacent_limits(self):
+        words = "alpha beta gamma delta epsilon zeta eta theta iota kappa lambda".split()
+        query = " ".join(words)
+        # Eight ordinary rows fit the larger output limit. Three narrower rows
+        # already cover all query words across two guides, but cannot replace a
+        # declared owner whose nine matching groups span separate JSON keys.
+        groups = [words[:8], words[4:], words[2:9], words[:6],
+                  words[1:7], words[3:9], words[4:10], words[5:]]
+        for index, rows in enumerate((groups[:2], groups[2:])):
+            self.document(f"guide-{index}.md", "# Guide\n\n" + "\n\n".join(
+                f"## Entry {number}\n\n{' '.join(row)}" for number, row in enumerate(rows)))
+        profile_path = self.profiles / "planner.json"
+        profile = json.loads(profile_path.read_text())
+        profile["sourceExtensions"] = [".md", ".json"]
+        profile["packEvalCases"] = [{
+            "id": "partial-owner", "request": {
+                "schema_version": "shin.task-request.v1", "request_id": "partial-owner",
+                "task": {"objective": "Read the declared policy and its guidance.",
+                         "must": [{"id": "policy", "query": query}]},
+                "budget": {"max_evidence_bytes": 12000, "max_records": 7,
+                           "per_query_records": 7, "per_document_records": 3}},
+            "mustPaths": ["docs/owner.json"], "expectedComplete": True,
+            "maxRecords": 7, "maxEvidenceBytes": 12000, "maxCompactBytes": 30000,
+            "requireSerialParallelIdentity": True,
+        }]
+        profile_path.write_text(json.dumps(profile))
+        owner = {" ".join(words[offset:offset + 3]): {
+            word: "declared policy" for word in words[offset:offset + 3]}
+            for offset in range(0, 9, 3)}
+        self.document("owner.json", json.dumps(owner, indent=2))
+        weaker = {" ".join(words[offset:min(offset + 3, 7)]): {
+            word: "declared policy" for word in words[offset:min(offset + 3, 7)]}
+            for offset in range(0, 7, 3)}
+        self.document("weaker.json", json.dumps(weaker, indent=2))
+        self.invoke("build")
+
+        snapshots = set()
+        plans = []
+        for limit in (7, 8):
+            result = self.invoke("brief", query, "--limit", str(limit), "--per-doc", "7", "--require-current")
+            snapshots.add(result["snapshot_id"])
+            plans.append(result["query_plan"]["stages"])
+            with self.subTest(limit=limit):
+                self.assertIn("docs/owner.json", [row["path"] for row in result["ranked_paths"]])
+                self.assertNotIn("docs/weaker.json", [row["path"] for row in result["ranked_paths"]])
+                self.assertLessEqual(result["evidence_budget"]["returned_records"], limit)
+                self.assertEqual(result["query_coverage"]["covered_groups"], len(words))
+        self.assertEqual(len(snapshots), 1)
+        self.assertEqual(plans[0], plans[1])
+        evaluation = self.invoke("pack-eval", "--require-current", "--strict")
+        self.assertEqual(evaluation["summary"], {"total": 1, "passed": 1, "failed": 0})
+        self.assertTrue(evaluation["cases"][0]["serial_parallel"]["identical"])
+
     def test_directory_scope_retains_only_explicit_preferred_root_entries(self):
         profile_path = self.profiles / "planner.json"
         profile = json.loads(profile_path.read_text())

@@ -113,6 +113,39 @@ void check_normalization_and_source_penalty() {
                  {"title"}, {0});
 }
 
+void check_row_vocabulary_reuse() {
+    FactRow row;
+    row.title = "AlphaMarker";
+    row.summary = "alpha beta café состояние owner=apps/admin/AtlasPanel";
+    row.identifier_terms = {"alpha", "beta"};
+    row.source = "source-fact:cpp";
+    auto fields = fact_match_fields(row);
+    SectionRow section;
+    section.heading = row.title;
+    section.indexed_text = row.summary;
+    section.level = 2;
+    auto section_fields = section_match_fields(section);
+    const auto equal = [](const MatchScore& left, const MatchScore& right) {
+        return left.total == right.total && left.components == right.components &&
+            left.matched_fields == right.matched_fields &&
+            left.matched_group_indices == right.matched_group_indices &&
+            left.matched_groups == right.matched_groups;
+    };
+    // A one-group scope and a multi-group query weight identifier references
+    // differently; warm lexical fields must preserve both scores and provenance.
+    for (const auto& terms : std::vector<std::vector<std::string>>{
+             {"AtlasPanel"}, {"alpha", "beta"}, {"café", "состояние"},
+             {"absent"}, {"AlphaMarker"}, {"alpha beta"}}) {
+        std::vector<std::vector<std::string>> aliases;
+        for (const auto& term : terms) aliases.push_back({term});
+        const auto prepared = prepare_term_groups(aliases);
+        if (!equal(score_fact_match(row, prepared, 1), score_fact_match(row, prepared, 1, &fields)) ||
+            !equal(score_section_match(section, prepared, 1),
+                   score_section_match(section, prepared, 1, &section_fields)))
+            throw std::runtime_error("reused row fields changed scoring or group provenance");
+    }
+}
+
 }  // namespace
 }  // namespace shin::context
 
@@ -124,7 +157,8 @@ int main() {
         shin::context::check_independent_groups();
         shin::context::check_normalization_and_source_penalty();
         shin::context::check_normalization_bytes();
-        std::cout << "retrieval scoring: 6 checks passed\n";
+        shin::context::check_row_vocabulary_reuse();
+        std::cout << "retrieval scoring: 7 checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

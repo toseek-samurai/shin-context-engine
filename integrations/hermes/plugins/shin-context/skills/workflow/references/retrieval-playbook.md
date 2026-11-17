@@ -17,14 +17,24 @@ evidence, not a reason to silently substitute a passing invocation.
 
 ## Classify Before Editing
 
+Honor explicit `retrieval_ready` when present; otherwise a successful
+`ok=true`, `local_ready=true` response permits retrieval. A quality-only
+warning can leave `canonical_ready=false`; report it and retain strict eval/Pack
+failures. Authority, freshness, integrity, safety and mandatory resource/output
+refusals remain blocking. Pending reader preparation is handled by one useful
+query with its bounded wait, not status polling or a project repair.
+Kit-owned bootstrap profiles need no consumer maintenance. Review custom profiles
+only after actual owner/root/contract changes; engine misses and resource warnings
+are Shin's responsibility.
+
 | Observation | Next check | Potential owner of a correction |
 | --- | --- | --- |
 | Wrong root, registry, key or generator | Adoption marker and exact route; `ready` / `worktree-diff` | Consumer adoption, not ranking |
-| Path absent from publication | Existence, profile inclusion, extraction and explicit `build` | Source, profile or neutral extractor |
+| Path absent from publication | Existence, profile inclusion, extraction and managed refresh; build only for an authorized unmanaged index | Source, profile or neutral extractor |
 | Indexed path absent from candidates | `diagnose`, normalized groups, posting completeness and decoded rows | Core only if a general admission invariant is broken |
 | Candidate present but not selected | Exact row identities, local ranking, diversity and output limits | Selector defect or separately reviewed selection policy |
 | Returned path but answer absent from preview | Returned range, child sections, actual JSON keys | Explicit bounded source read; not invented coverage |
-| Work ceiling exceeded | Measured work on identical source/profile inputs | Measured optimization or explicit budget review |
+| Work ceiling exceeded | Measured work on identical source/profile inputs | Shin cost diagnosis with unchanged consumer ceilings |
 | Safety, provenance or freshness failure | Named diagnostic and independent source evidence | Fix the cause; no quality-score or budget waiver |
 
 For a known path, use `shin_diagnose_context`. The corresponding Core CLI is:

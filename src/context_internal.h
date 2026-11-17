@@ -315,12 +315,16 @@ Json make_compact_brief_json(const RuntimeOptions& options,
                              const std::string& index_mode,
                              const IndexFreshness& freshness,
                              const BriefExecution& execution);
+// Optional fields belong to this exact immutable row and may be reused only
+// within its lifetime. Vocabulary reuse does not cache a readiness decision.
 MatchScore score_section_match(const SectionRow& section,
                                const PreparedTermGroups& term_groups,
-                               int required_group_matches);
+                               int required_group_matches,
+                               std::vector<FieldMatchInput>* prepared_fields = nullptr);
 MatchScore score_fact_match(const FactRow& fact,
                             const PreparedTermGroups& term_groups,
-                            int required_group_matches);
+                            int required_group_matches,
+                            std::vector<FieldMatchInput>* prepared_fields = nullptr);
 bool context_hit_better(const ContextHit& a, const ContextHit& b);
 bool fact_hit_better(const FactHit& a, const FactHit& b);
 void push_top_search_hit(std::vector<SearchHit>& hits, const SearchHit& hit, int limit);
@@ -361,7 +365,8 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
                                                              const std::vector<CandidateRows>* prepared_groups = nullptr,
                                                              const Json* manifest = nullptr,
                                                              bool include_near_complete_sections = false,
-                                                             int minimum_document_groups = 0);
+                                                             int minimum_document_groups = 0,
+                                                             const CandidateRows* represented_rows = nullptr);
 BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options,
                                                     const QueryRequest& request,
                                                     const Json* manifest = nullptr);

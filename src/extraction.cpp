@@ -1477,7 +1477,7 @@ static void scan_web_text(const Profile& profile, const std::string& path,
 
 bool should_skip_source_fact_dir(const std::string& name) {
     static const std::set<std::string> skipped_names = {
-        ".cache", ".git", ".gradle", ".idea", ".mvn", ".next", ".nuxt", ".output", ".tmp",
+        ".cache", ".dotnet", ".git", ".gradle", ".idea", ".mvn", ".next", ".nuxt", ".output", ".playwright-mcp", ".tmp",
         ".venv", ".vs", ".nuget", "artifacts", "bin", "build", "coverage", "coverage-report", "dist",
         "external", "node_modules", "obj", "out", "playwright-report", "storybook-static", "target",
         "test-results", "testresults", "third_party", "vendor", "venv"
@@ -1748,7 +1748,7 @@ bool source_fact_extractor_known(std::string_view extractor) noexcept {
 
 static bool should_skip_discovery_dir(const std::string& name, const std::string& rel_path) {
     static const std::set<std::string> skipped_names = {
-        ".cache", ".git", ".gradle", ".idea", ".mvn", ".next", ".nuxt", ".output", ".tmp",
+        ".cache", ".dotnet", ".git", ".gradle", ".idea", ".mvn", ".next", ".nuxt", ".output", ".playwright-mcp", ".tmp",
         ".venv", ".vs", ".nuget", "artifacts", "bin", "build", "coverage-report", "dist", "external",
         "node_modules", "obj", "out", "playwright-report", "storybook-static", "target", "test-results",
         "testresults", "third_party", "vendor", "venv"

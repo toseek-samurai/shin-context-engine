@@ -38,7 +38,7 @@ int semantic_group_coverage(const ScopedBriefPath& path, int scope_group_index) 
                                           }));
 }
 
-std::set<int> topical_group_coverage(std::vector<FieldMatchInput> fields,
+std::set<int> topical_group_coverage(std::vector<FieldMatchInput>& fields,
                                     const PreparedTermGroups& groups,
                                     const std::string& scope_path) {
     std::set<int> matched;
@@ -48,8 +48,11 @@ std::set<int> topical_group_coverage(std::vector<FieldMatchInput> fields,
              field.name != "identifier_references" && field.name != "heading" &&
              field.name != "preview" && field.name != "indexed_text")) continue;
         // Ownership metadata tokens are identity, including the key in key=path.
-        std::string content(field.text);
-        if (!scope_path.empty()) {
+        std::string content;
+        FieldMatchInput scrubbed(field.name, field.text, field.score, field.primary);
+        const bool scrub_scope = !scope_path.empty() && field.text.find(scope_path) != std::string_view::npos;
+        if (scrub_scope) {
+            content = field.text;
             for (auto offset = content.find(scope_path); offset != std::string::npos;
                  offset = content.find(scope_path, offset)) {
                 const auto before = content.find_last_of(" \t\r\n", offset);
@@ -58,14 +61,17 @@ std::set<int> topical_group_coverage(std::vector<FieldMatchInput> fields,
                 content.replace(begin, after == std::string::npos ? std::string::npos : after - begin, " ");
                 offset = begin + 1;
             }
+            scrubbed.text = content;
         }
-        field.text = content;
+        // Reuse the row's vocabulary only when ownership masking did not change
+        // its text. A masked field must not inherit cached ownership tokens.
+        auto& topical_field = scrub_scope ? scrubbed : field;
         for (std::size_t index = 1; index < groups.size(); ++index) {
             if (std::any_of(groups[index].begin(), groups[index].end(),
                             [&](const auto& term) {
                                 return std::none_of(groups.front().begin(), groups.front().end(),
                                     [&](const auto& scope) { return term.compact == scope.compact; }) &&
-                                    field_contains_term(field, term);
+                                    field_contains_term(topical_field, term);
                             })) {
                 matched.insert(static_cast<int>(index));
             }
@@ -835,11 +841,12 @@ BriefResult collect_brief_from_index_first_term_scope(const RuntimeOptions& opti
         if (directory.has_value() && !path_in_directory(section.path, directory->path_prefix)) {
             return;
         }
-        if (score_section_match(section, scope_groups, 1).total <= 0) {
+        auto fields = section_match_fields(section);
+        if (score_section_match(section, scope_groups, 1, &fields).total <= 0) {
             return;
         }
-        MatchScore match = score_section_match(section, match_groups, 1);
-        const auto topical_groups = topical_group_coverage(section_match_fields(section), match_groups,
+        MatchScore match = score_section_match(section, match_groups, 1, &fields);
+        const auto topical_groups = topical_group_coverage(fields, match_groups,
             directory ? section.path.substr(0, directory->path_prefix.size()) : "");
         const bool context_only = topical_groups.empty();
         if (context_only && (!entry_paths.contains(section.path) || !type_allowed("section"))) {
@@ -858,11 +865,12 @@ BriefResult collect_brief_from_index_first_term_scope(const RuntimeOptions& opti
         if (directory.has_value() && !path_in_directory(fact.path, directory->path_prefix)) {
             return;
         }
-        if (score_fact_match(fact, scope_groups, 1).total <= 0) {
+        auto fields = fact_match_fields(fact);
+        if (score_fact_match(fact, scope_groups, 1, &fields).total <= 0) {
             return;
         }
-        MatchScore match = score_fact_match(fact, match_groups, 1);
-        const auto topical_groups = topical_group_coverage(fact_match_fields(fact), match_groups,
+        MatchScore match = score_fact_match(fact, match_groups, 1, &fields);
+        const auto topical_groups = topical_group_coverage(fields, match_groups,
             directory ? fact.path.substr(0, directory->path_prefix.size()) : "");
         const bool context_only = topical_groups.empty();
         if (context_only && (!entry_paths.contains(fact.path) || !fact_allowed(fact))) {

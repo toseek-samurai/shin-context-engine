@@ -812,7 +812,9 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
                     (ordinary.facts.empty() || !candidates.facts.empty());
                 if (candidates.from_terms_index && candidates.term_index_coverage_complete &&
                     candidates.discovered_row_count > 0 && families_preserved &&
-                    ordinary.discovered_row_count > static_cast<std::size_t>(request.limit) &&
+                    (groups >= kCompoundQueryCoverageThreshold
+                         ? ordinary.discovered_row_count > candidates.discovered_row_count
+                         : ordinary.discovered_row_count > static_cast<std::size_t>(request.limit)) &&
                     plan.admits(candidates.discovered_row_count)) {
                     std::optional<BriefResult> rejected_plan;
                     // Qualify missing document units from postings first. A
@@ -837,12 +839,30 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
                             retain_rejected_planner_diagnostics(execution.retrieval, *rejected_plan,
                                 rejected_plan->planner_rejection_reason.empty() ? "insufficient-document-coverage"
                                                                                : rejected_plan->planner_rejection_reason);
-                        // Compound queries retain their observed-coverage supplement.
+                        // Narrowing must retain independently qualifying document
+                        // owners, even when prose already covers every query word.
+                        // Skip owners represented by ordinary rows, not merely
+                        // the narrower subset. Only final selection uses the limit.
                         if (groups >= kCompoundQueryCoverageThreshold && plan.admits(kMaxIndexedCandidateRows)) {
                             const int available_groups = query_coverage_covered_groups(execution.coverage);
+                            // Compare a new owner with the strongest individual
+                            // match, not the union of unrelated guidance rows.
+                            int document_required = required;
+                            const auto retain_coverage = [&](const auto& hits) {
+                                for (const auto& hit : hits)
+                                    document_required = std::max(document_required,
+                                        static_cast<int>(hit.matched_group_indices.size()));
+                            };
+                            for (const auto& [path, hits] : execution.retrieval.section_hits_by_doc) {
+                                (void)path;
+                                retain_coverage(hits);
+                            }
+                            for (const auto* hits : {&execution.retrieval.decisions, &execution.retrieval.contracts,
+                                                    &execution.retrieval.runbooks, &execution.retrieval.facts})
+                                retain_coverage(*hits);
                             auto planned = SHIN_PROBE_ROUTE(planner, collect_brief_from_index_document_coverage_plan(
                                 options, request, true, required, true, &*prepared_groups, manifest,
-                                false, available_groups));
+                                false, document_required, &ordinary));
                             planned.identifier_probe_rows = identifier_probe_rows;
                             auto supplemented = make_brief_execution(request, std::move(planned));
                             if (!supplemented.selection.ordered.empty() &&

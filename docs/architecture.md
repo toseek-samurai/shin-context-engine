@@ -64,7 +64,7 @@ a successful query. An explicit snapshot remains strict; overlapping queries,
 unknown identities and a new connection require a snapshot or fresh query.
 `context_result` distinguishes delivered evidence from availability, with measured
 latency and process-scoped memory. These features are included in the documented
-dev.121 packages; a result summary still does not establish answer correctness.
+dev.124 packages; a result summary still does not establish answer correctness.
 
 Dev.120 includes styles and web templates in the applicable bundled
 bootstrap profiles. The existing native source index searches CSS/SCSS,
@@ -97,12 +97,12 @@ request, it rechecks the qualified generation, including a fresh worktree
 inventory through `GenerationAdmission::reuse`, then opens its query session.
 The background refresh checkpoint does not eliminate this reader admission cost.
 The resident's `preparation_ms` measures query-session construction only. The
-unreleased source also reports `reader_preparation.total_ms` and bounded
+published reader also reports `reader_preparation.total_ms` and bounded
 `phase_ms` from worker entry through qualification and reader construction;
 request `wait_ms` and `service_duration_ms` include service-side queueing.
 A short search duration alone does not establish a fast cold response.
 
-The unreleased reader path holds a process-local source observation while it
+The reader path holds a process-local source observation while it
 prepares. An unchanged healthy observation avoids repeated intermediate
 membership enumeration; selected-file metadata, links and environment checks
 still run. Missing, changed or unhealthy observation restores the full walk.
@@ -111,7 +111,7 @@ membership checks around source/output byte verification. This observation is
 not a persisted qualification certificate. Source bindings point into the held
 immutable manifest rather than copying its metadata rows.
 
-Explicit checkpoint/resume operations in the unreleased source use bounded
+Explicit checkpoint/resume operations use bounded
 session workers. They recheck ordinary project authority, freshness, safety and
 current snapshot bytes without constructing the source-discovery reader. They
 share existing per-project FIFO ordering and the service's two execution slots;
@@ -185,6 +185,12 @@ row pass; rejected plans retain the ordinary fallback and cumulative work budget
 Resource ceilings still count candidate admission and positive scored matches.
 Those counts are diagnostic work signals, not query latency or RSS measurements;
 reducing repeated work does not necessarily clear a per-pass resource warning.
+
+Directory-scoped retrieval reuses lexical field preparation within one immutable
+row across scope, ranking and topical checks. Fields whose ownership tokens are
+masked use a fresh vocabulary so identity cannot become topical evidence. This
+reuse neither retains rows across requests nor changes candidates, scores, safety
+admission or resource ceilings.
 
 Performance depends on source volume, document structure, cold/warm reader state,
 refresh work and concurrent activity. Measure memory and disk alongside latency.

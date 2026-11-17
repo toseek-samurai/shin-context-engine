@@ -270,7 +270,7 @@ observed calls; they reset with the service, and a project's counters reset when
 is detached. They are separate from retained request history and query timings.
 Successful status checks do not change the historical retrieval count.
 
-The unreleased source counts a nonwaiting status probe during preparation as
+Shin counts a nonwaiting status probe during preparation as
 `readiness_pending`, with outcome `readiness-pending`, separately from
 `rpc_admission_rejections` and response errors. The durable history exposes the
 same pending count; a useful query exhausting its bounded wait remains a real
@@ -417,10 +417,9 @@ explicit handoff. `shin_resume` takes the same binding and current objective.
 Notes live outside the project in the recorded data home's private `sessions`
 directory. Replacing a saved note requires its returned `expected_revision`.
 
-Published dev.121 session operations use the resident reader's admission path
-and its default five-second wait. The unreleased source instead uses an
-independent session worker after project qualification: a cold or busy source
-reader does not prevent saving or resuming notes. Authority, freshness, source
+Session operations use an independent worker after project qualification:
+a cold or busy source reader does not prevent saving or resuming notes.
+Authority, freshness, source
 and snapshot checks still apply, within the existing execution/deadline limits.
 `session_preparation` reports the worker's measured preparation stages. A refusal
 with `execution_started=false` means the operation did not start; an uncertain

@@ -913,6 +913,9 @@ class McpTests(unittest.TestCase):
             names=set(re.findall(r'\bshin_[a-z]+\b',instructions))
             self.assertLessEqual(names,set(catalog))
             self.assertTrue({'shin_checkpoint','shin_resume'} <= names)
+            for text in (instructions, catalog['shin_query']['description']):
+                for field in ('retrieval_ready', 'local_ready=true', 'canonical_ready', 'bootstrap', 'custom profile', 'owner authorization'):
+                    self.assertIn(field, text)
             for name in ('shin_checkpoint','shin_resume'):
                 required=set(catalog[name]['inputSchema']['required'])
                 self.assertTrue({'session_id','task_key','task'} <= required)

@@ -68,6 +68,9 @@ To build an index directly, choose an external, unmanaged output directory:
 The low-level Core CLI defaults to the project root if `--out-dir` is omitted.
 Native CE instead enforces separate source and state directories. An index
 managed by Observer must be refreshed by its publisher, not by a manual build.
+Source enumeration and bootstrap discovery exclude local `.dotnet` SDK trees
+and `.playwright-mcp` captures alongside dependency/build caches. Profile readiness
+still describes its selected roots and formats, rather than every repository file.
 
 ## Linux and WSL2 terminal tools
 
@@ -110,7 +113,7 @@ The project folder stays separate from that home. A source build does not
 install the commands, replace another kit or enable login startup. In WSL, use
 a UTF-8 interactive terminal such as Windows Terminal. The Linux route has no
 native desktop Monitor. A prebuilt Ubuntu 24.04 x86_64 terminal archive is also
-available from the [documented preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.121).
+available from the [documented preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.124).
 The TUI's Updates guidance links to Releases; there is no automatic Linux installer.
 Replace the archive or rebuild the source tools, restart the service and reconnect
 persistent MCP clients.

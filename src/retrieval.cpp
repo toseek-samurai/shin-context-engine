@@ -392,10 +392,12 @@ RetrievalDiagnostics make_retrieval_diagnostics(const QueryRequest& request,
 PreparedTermGroups prepare_term_groups(const std::vector<std::vector<std::string>>& term_groups);
 MatchScore score_section_match(const SectionRow& section,
                                const PreparedTermGroups& term_groups,
-                               int required_group_matches);
+                               int required_group_matches,
+                               std::vector<FieldMatchInput>* prepared_fields);
 MatchScore score_fact_match(const FactRow& fact,
                             const PreparedTermGroups& term_groups,
-                            int required_group_matches);
+                            int required_group_matches,
+                            std::vector<FieldMatchInput>* prepared_fields);
 bool generated_index_available(const RuntimeOptions& options);
 int generated_index_source_count(const RuntimeOptions& options);
 IndexFreshness assess_index_freshness(const RuntimeOptions& options, bool require_current);
@@ -1440,12 +1442,7 @@ static int score_field_group(FieldMatchInput& field, const PreparedTermGroup& gr
 }
 
 
-static MatchScore score_fields(
-#if defined(SHIN_EXPERIMENT_FIELD_PREPARATION) || defined(SHIN_EXPERIMENT_ROW_BATCH)
-                               std::vector<FieldMatchInput>& fields,
-#else
-                               std::vector<FieldMatchInput> fields,
-#endif
+static MatchScore score_fields(std::vector<FieldMatchInput>& fields,
                                const PreparedTermGroups& term_groups,
                                int required_group_matches) {
     // Visit the highest score bounds first so strong identifier evidence can
@@ -1515,24 +1512,31 @@ static MatchScore score_fields(
 
 MatchScore score_section_match(const SectionRow& section,
                                const PreparedTermGroups& term_groups,
-                               int required_group_matches) {
+                               int required_group_matches,
+                               std::vector<FieldMatchInput>* prepared_fields) {
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
     experiment::record_aggregate_score();
 #endif
 #ifdef SHIN_EXPERIMENT_EVAL_BATCH
     experiment::record_route_score();
 #endif
+    MatchScore match;
+    if (prepared_fields) {
+        match = score_fields(*prepared_fields, term_groups, required_group_matches);
+    } else {
 #ifdef SHIN_EXPERIMENT_FIELD_PREPARATION
     auto lease = experiment::prepared_section_fields(section);
     auto fresh = lease.get() ? std::vector<FieldMatchInput>{} : section_match_fields(section);
-    MatchScore match = score_fields(lease.get() ? *lease.get() : fresh, term_groups, required_group_matches);
+    match = score_fields(lease.get() ? *lease.get() : fresh, term_groups, required_group_matches);
 #elif defined(SHIN_EXPERIMENT_ROW_BATCH)
     auto* prepared = experiment::prepared_batch_fields(section);
     auto fresh = prepared ? std::vector<FieldMatchInput>{} : section_match_fields(section);
-    MatchScore match = score_fields(prepared ? *prepared : fresh, term_groups, required_group_matches);
+    match = score_fields(prepared ? *prepared : fresh, term_groups, required_group_matches);
 #else
-    MatchScore match = score_fields(section_match_fields(section), term_groups, required_group_matches);
+    auto fields = section_match_fields(section);
+    match = score_fields(fields, term_groups, required_group_matches);
 #endif
+    }
     if (match.total <= 0) {
         return match;
     }
@@ -1552,24 +1556,31 @@ MatchScore score_section_match(const SectionRow& section,
 
 MatchScore score_fact_match(const FactRow& fact,
                             const PreparedTermGroups& term_groups,
-                            int required_group_matches) {
+                            int required_group_matches,
+                            std::vector<FieldMatchInput>* prepared_fields) {
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
     experiment::record_aggregate_score();
 #endif
 #ifdef SHIN_EXPERIMENT_EVAL_BATCH
     experiment::record_route_score();
 #endif
+    MatchScore match;
+    if (prepared_fields) {
+        match = score_fields(*prepared_fields, term_groups, required_group_matches);
+    } else {
 #ifdef SHIN_EXPERIMENT_FIELD_PREPARATION
     auto lease = experiment::prepared_fact_fields(fact);
     auto fresh = lease.get() ? std::vector<FieldMatchInput>{} : fact_match_fields(fact);
-    MatchScore match = score_fields(lease.get() ? *lease.get() : fresh, term_groups, required_group_matches);
+    match = score_fields(lease.get() ? *lease.get() : fresh, term_groups, required_group_matches);
 #elif defined(SHIN_EXPERIMENT_ROW_BATCH)
     auto* prepared = experiment::prepared_batch_fields(fact);
     auto fresh = prepared ? std::vector<FieldMatchInput>{} : fact_match_fields(fact);
-    MatchScore match = score_fields(prepared ? *prepared : fresh, term_groups, required_group_matches);
+    match = score_fields(prepared ? *prepared : fresh, term_groups, required_group_matches);
 #else
-    MatchScore match = score_fields(fact_match_fields(fact), term_groups, required_group_matches);
+    auto fields = fact_match_fields(fact);
+    match = score_fields(fields, term_groups, required_group_matches);
 #endif
+    }
     if (match.total <= 0) {
         return match;
     }

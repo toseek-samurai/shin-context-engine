@@ -114,6 +114,21 @@ assert_not_contains "$work_root/out-objc/docs/kb/generated/facts.jsonl" 'syntax-
 validate_source_profile dotnet generic-dotnet "LoadAccount csharp method" \
   "src/AccountService.cs" "csharp-method" "GeneratedNoise"
 
+# Local tool installations and captured browser reports are disposable inputs,
+# not application source, even when they sit below a selected project root.
+cache_root="$work_root/local-tool-caches"
+mkdir -p "$cache_root/src" "$cache_root/.dotnet/sdk" "$cache_root/.playwright-mcp"
+printf 'export const applicationValue = 42;\n' >"$cache_root/src/app.ts"
+printf 'public class LocalSdkNoise {}\n' >"$cache_root/.dotnet/sdk/helper.cs"
+printf '{"browserCaptureNoise": true}\n' >"$cache_root/.playwright-mcp/capture.json"
+"$tool" --root "$cache_root" --profile generic-source --profile-dir "$profile_dir" \
+  --out-dir "$work_root/out-local-tool-caches" build >"$work_root/build-local-tool-caches.json"
+assert_contains "$work_root/out-local-tool-caches/docs/kb/generated/facts.jsonl" 'applicationValue'
+assert_not_contains "$work_root/out-local-tool-caches/docs/kb/generated/manifest.json" '.dotnet'
+assert_not_contains "$work_root/out-local-tool-caches/docs/kb/generated/manifest.json" '.playwright-mcp'
+"$tool" --root "$cache_root" discover >"$work_root/discover-local-tool-caches.json"
+assert_contains "$work_root/discover-local-tool-caches.json" '"primary_profile":"generic-node"'
+
 # Styles and templates alone are usable source inputs without adding docs or
 # installing a framework. Discovery must not recommend a declaration-only route.
 for web_extension in css scss html htm razor cshtml; do

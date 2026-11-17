@@ -141,3 +141,10 @@ For a release containing the libuv coordinator, also stage `shin_libuv` from
 before offline configuration. Retain both `LICENSE` and `LICENSE-extra` in
 `share/shin-observer/licenses/libuv/`; update the published formula only after
 that release has passed its package gates.
+
+SQLite is built from the pinned amalgamation in
+[SQLite.cmake](../shared/cmake/SQLite.cmake), staged as `shin_sqlite`. Synchronization
+verifies the official archive against that source's SHA3-256 pin before deriving
+the SHA-256 used by Homebrew. The formula needs no system SQLite dependency.
+The retired Server's `shin_httplib` resource is removed when preparing the new recipe;
+unrecognized maintained resources still require review.

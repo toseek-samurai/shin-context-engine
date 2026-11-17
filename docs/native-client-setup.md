@@ -109,9 +109,15 @@ shin-ce mcp-config --client opencode --root /path/to/project --text
 shin-ce mcp-config --client rider --root /path/to/project --text
 ```
 
-## Codex instruction updates (unreleased)
+## Codex instruction updates
 
-The source build ships a selected, byte-checked `shin-context` skill bundle.
+Project setup selects a kit-owned mixed-language bootstrap profile; it does not
+rewrite `AGENTS.md` or create a permanent project-owned profile. MCP access and
+client instructions have separate review states. A custom project profile needs
+review when its selected owners or contracts change; ordinary product edits and
+search-resource warnings do not create a profile maintenance task.
+
+The published packages ship a selected, byte-checked `shin-context` skill bundle.
 Monitor's Codex row shows instruction status separately from MCP access. Use
 **Review instructions…**, inspect the destination, then confirm installation,
 update or recovery. Opening the list performs no writes. MCP settings and

@@ -237,7 +237,8 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
                                                              const std::vector<CandidateRows>* prepared_groups,
                                                              const Json* manifest,
                                                              bool include_near_complete_sections,
-                                                             int minimum_document_groups) {
+                                                             int minimum_document_groups,
+                                                             const CandidateRows* represented_rows) {
     BriefResult result;
     result.fallback_used = true;
     result.planner_attempted = true;
@@ -297,7 +298,8 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
         const auto threshold = !preserve_row_ranking && capped_group ? 1 :
             std::max(minimum_document_groups,
                      supplement_near ? required_group_matches - 1 : required_group_matches);
-        const auto* ordinary = missing_documents_only ? &strict_candidates : nullptr;
+        const auto* ordinary = missing_documents_only
+            ? (represented_rows ? represented_rows : &strict_candidates) : nullptr;
         auto qualified = capped_group
             ? recover_document_coverage_candidates(options, request.prepared_term_groups, threshold,
                                                    result.planner_document_paths, ordinary)

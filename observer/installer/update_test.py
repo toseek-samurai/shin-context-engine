@@ -436,14 +436,22 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             'runtime': {'managed': managed, 'running': True},
             'registry_sha256': hashlib.sha256(registry).hexdigest(), 'step': 'swapping'}}
         pending.pop('previous')
-        write_json(state_file, pending, True)
         binding_bytes = binding_path.read_bytes()
         unsupported = json.loads(binding_bytes)
         unsupported['core_version'] = 'unsupported-core'
         write_json(binding_path, unsupported, True)
         try:
+            # Settle the enrollment refusal before activation. Otherwise this
+            # cause can arrive through either service startup or qualification.
+            refused_start = call('service-start', '--home', home, executable=prefix / 'bin/shin-ce')
+            assert refused_start['enrollment_errors'].get(str(root)) == 'refresh-engine-changed', refused_start
+            write_json(state_file, pending, True)
             rejected = call(*update, error='installation-update-recovery-required')
             assert 'refresh-engine-changed' in json.dumps(rejected['error']['diagnostic']), rejected
+            activation = [gate for gate in rejected['error']['diagnostic']['gates'] if gate['id'] == 'activation']
+            assert any('refresh-engine-changed' in case.get('reasons', [])
+                       for gate in activation for case in gate['cases']), rejected
+            assert str(root) not in json.dumps(rejected['error']['diagnostic']), rejected
             assert 'resume_runtime' in json.loads(state_file.read_text())
             # Removed historical recovery overrides cannot waive authority failures.
             call(*update, '--accept-degraded-rollback', error='invalid-arguments')

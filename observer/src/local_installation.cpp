@@ -396,8 +396,9 @@ Json resume_update_runtime(const fs::path& home, const fs::path& executable, con
         const auto enrolled = registered_local_projects(home);
         for (const auto& item : status.at("enrollment_errors").items()) {
             const auto project = std::find_if(enrolled.begin(), enrolled.end(), [&](const auto& p) { return p.root == item.key(); });
-            require(project != enrolled.end() && pending_update_error(item.value().get<std::string>()),
-                "installation-service-not-ready", "Updated service refused project authority or integrity.");
+            if (project == enrolled.end() || !pending_update_error(item.value().get<std::string>()))
+                throw Error("installation-service-not-ready", "Updated service refused project authority or integrity.",
+                    update_service_diagnostic(status, "activation"));
         }
         projects = qualify_update(home, executable, progress, ReleaseUpdateStep::checking_projects);
         // A registered but deliberately stopped service stays stopped.

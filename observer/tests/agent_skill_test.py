@@ -72,6 +72,17 @@ class AgentSkillTests(unittest.TestCase):
     def private_file(self, path):
         if os.name == 'nt':
             from windows_shell_qualification import private
+            # An elevated Windows token can give Python-created directories the
+            # Administrators owner even beneath a user-owned temporary root.
+            # Model an existing user-owned skill, including its parent chain.
+            self.assertIn(self.base, path.parents)
+            parents = []
+            directory = path.parent
+            while directory != self.base:
+                parents.append(directory)
+                directory = directory.parent
+            for directory in reversed(parents):
+                private(directory, self.sid, directory=True)
             private(path, self.sid)
 
     def install(self):

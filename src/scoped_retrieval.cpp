@@ -671,7 +671,7 @@ BriefResult collect_brief_from_index_document_owner_scope(const RuntimeOptions& 
     ScopedBriefPath owner_entry;
     for (const SectionRow& section : probe.sections) {
         if (topical && (!type_allowed("section") || !has_qualifier(section_match_fields(section)))) continue;
-        MatchScore match = score_section_match(section, owner_match_groups, 1);
+        MatchScore match = score_section_match(section, owner_match_groups, 1, nullptr, request.scoring.get());
         if (match.total <= 0) {
             continue;
         }
@@ -691,7 +691,7 @@ BriefResult collect_brief_from_index_document_owner_scope(const RuntimeOptions& 
     }
     for (const FactRow& fact : probe.facts) {
         if (topical && (!fact_type_allowed(fact) || !has_qualifier(fact_match_fields(fact)))) continue;
-        MatchScore match = score_fact_match(fact, owner_match_groups, 1);
+        MatchScore match = score_fact_match(fact, owner_match_groups, 1, nullptr, request.scoring.get());
         if (match.total <= 0) {
             continue;
         }
@@ -842,10 +842,12 @@ BriefResult collect_brief_from_index_first_term_scope(const RuntimeOptions& opti
             return;
         }
         auto fields = section_match_fields(section);
-        if (score_section_match(section, scope_groups, 1, &fields).total <= 0) {
+        // A resolved directory plus verified path membership already establishes
+        // the owner. Lexical owner confirmation is needed only for topic scopes.
+        if (!directory && score_section_match(section, scope_groups, 1, &fields, request.scoring.get()).total <= 0) {
             return;
         }
-        MatchScore match = score_section_match(section, match_groups, 1, &fields);
+        MatchScore match = score_section_match(section, match_groups, 1, &fields, request.scoring.get());
         const auto topical_groups = topical_group_coverage(fields, match_groups,
             directory ? section.path.substr(0, directory->path_prefix.size()) : "");
         const bool context_only = topical_groups.empty();
@@ -866,10 +868,10 @@ BriefResult collect_brief_from_index_first_term_scope(const RuntimeOptions& opti
             return;
         }
         auto fields = fact_match_fields(fact);
-        if (score_fact_match(fact, scope_groups, 1, &fields).total <= 0) {
+        if (!directory && score_fact_match(fact, scope_groups, 1, &fields, request.scoring.get()).total <= 0) {
             return;
         }
-        MatchScore match = score_fact_match(fact, match_groups, 1, &fields);
+        MatchScore match = score_fact_match(fact, match_groups, 1, &fields, request.scoring.get());
         const auto topical_groups = topical_group_coverage(fields, match_groups,
             directory ? fact.path.substr(0, directory->path_prefix.size()) : "");
         const bool context_only = topical_groups.empty();

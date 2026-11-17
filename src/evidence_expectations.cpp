@@ -64,16 +64,4 @@ EvidenceAssessment assess_evidence(const Json& records, const Json& required, co
     return result;
 }
 
-Json selected_brief_records(const BriefSelection& selection) {
-    Json records = Json::array();
-    for (const auto& hit : selection.sections) {
-        auto row = section_hit_json(hit);
-        row.erase("indexed_text");
-        records.push_back(std::move(row));
-    }
-    for (const auto* hits : {&selection.decisions, &selection.contracts, &selection.runbooks, &selection.facts})
-        for (const auto& hit : *hits) records.push_back(fact_hit_json(hit));
-    return records;
-}
-
 } // namespace shin::context

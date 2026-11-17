@@ -110,14 +110,14 @@ int run_pack(const RuntimeOptions& options, const std::vector<std::string>& args
         telemetry.projection_ms = elapsed_ms_since(projection_start);
     }
     const SteadyClock::time_point serialization_start = SteadyClock::now();
-    std::string serialized = output.dump(2);
+    std::string serialized = serialize_agent_context_pack(output, pack_options.projection);
     telemetry.serialization_ms = elapsed_ms_since(serialization_start);
     telemetry.total_ms = elapsed_ms_since(total_start);
     telemetry.process_peak_rss_bytes = process_peak_rss_bytes();
     telemetry.projected_payload_bytes = serialized.size();
     if (pack_options.telemetry) {
         output["telemetry"] = pack_telemetry_json(telemetry);
-        serialized = output.dump(2);
+        serialized = serialize_agent_context_pack(output, pack_options.projection);
     }
     if (serialized.size() > kMaxPackOutputBytes) {
         throw CliError("context-pack-output-too-large", "resource",

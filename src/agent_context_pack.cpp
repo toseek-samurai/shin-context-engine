@@ -214,8 +214,8 @@ void add_evidence_candidates(
                 EvidenceCandidate candidate;
                 candidate.evidence_type = type;
                 candidate.record = std::move(record);
-                // Deduplicate by the complete indexed record, but publish its fixed display
-                // projection. Search-only text must not consume the agent's evidence budget.
+                // Keep the complete source identity across requirements. The display
+                // excerpt is chosen after all match edges are known.
                 if (reference.type == BriefEvidenceType::section) {
                     candidate.record.erase("indexed_text");
                 }
@@ -295,9 +295,64 @@ Json candidate_json(const EvidenceCandidate& candidate,
     };
 }
 
+std::vector<int> displayed_groups(const EvidenceMatch& match, const TaskRequest& request,
+                                  const std::vector<BriefExecution>& executions, std::string_view preview) {
+    const auto& selection = executions[match.requirement_index].selection;
+    const auto& reference = selection.ordered.at(match.query_rank - 1);
+    auto fields = reference.type == BriefEvidenceType::section
+        ? section_match_fields(referenced_section(selection, reference).section)
+        : fact_match_fields(referenced_fact(selection, reference).fact);
+    std::erase_if(fields, [](const auto& field) {
+        return !field.primary || field.name == "document_id" || field.name == "identifier_references";
+    });
+    for (auto& field : fields) {
+        if (field.name == "indexed_text" || field.name == "preview") field.text = preview;
+    }
+    const auto& groups = request.requirements[match.requirement_index].query.prepared_term_groups;
+    auto supported = match.matched_group_indices;
+    std::erase_if(supported, [&](int index) {
+        const auto& group = groups.at(index);
+        return std::none_of(fields.begin(), fields.end(), [&](auto& field) {
+            return std::any_of(group.begin(), group.end(), [&](const auto& term) {
+                return field_contains_term(field, term);
+            });
+        });
+    });
+    return supported;
+}
+
+// A shared record has one excerpt. A later requirement may focus it only if
+// earlier requirements keep the groups visible in their original preview.
+void qualify_display_matches(EvidenceCandidate& candidate, const TaskRequest& request,
+                             const std::vector<BriefExecution>& executions) {
+    std::string_view preview;
+    if (candidate.evidence_type == "section") {
+        auto& stored = candidate.record.at("preview").get_ref<std::string&>();
+        for (auto current = candidate.matches.begin(); current != candidate.matches.end(); ++current) {
+            const auto& selection = executions[current->requirement_index].selection;
+            const auto& hit = referenced_section(selection, selection.ordered.at(current->query_rank - 1));
+            auto focused = compact_section_excerpt(hit, request.requirements[current->requirement_index].query);
+            if (focused == stored) continue;
+            const bool preserves_earlier = std::all_of(candidate.matches.begin(), current, [&](const auto& prior) {
+                const auto before = displayed_groups(prior, request, executions, stored);
+                const auto after = displayed_groups(prior, request, executions, focused);
+                return std::includes(after.begin(), after.end(), before.begin(), before.end());
+            });
+            if (preserves_earlier) {
+                stored = std::move(focused);
+                break;
+            }
+        }
+        preview = stored;
+    }
+    for (auto& match : candidate.matches)
+        match.matched_group_indices = displayed_groups(match, request, executions, preview);
+}
+
 void finalize_candidate_json(std::vector<EvidenceCandidate>& candidates,
-                             const TaskRequest& request) {
+                             const TaskRequest& request, const std::vector<BriefExecution>& executions) {
     for (EvidenceCandidate& candidate : candidates) {
+        qualify_display_matches(candidate, request, executions);
         candidate.serialized = candidate_json(candidate, request);
         candidate.serialized_bytes = candidate.serialized.dump().size();
     }
@@ -689,7 +744,7 @@ PackAssembly assemble_context_pack(const RuntimeOptions& options,
                             assembly.requirement_candidates);
     sort_requirement_candidates(assembly.requirement_candidates,
                                 assembly.candidates);
-    finalize_candidate_json(assembly.candidates, request);
+    finalize_candidate_json(assembly.candidates, request, executions);
     assembly.selection = select_pack_evidence(
         request, assembly.candidates, assembly.requirement_candidates);
 

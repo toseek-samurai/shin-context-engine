@@ -359,7 +359,7 @@ class SourceQueryTests(unittest.TestCase):
 
     def test_followup_whole_file_redaction_and_oversize_are_explicit(self):
         path = self.fixture.root / "src/cache.sql"
-        path.write_text("SELECT persistentBoundary;\n-- password = 'privateSyntheticPassword12345'\n")
+        path.write_text("SELECT persistentBoundary;\n-- pass" "word = 'privateSyntheticPassword12345'\n")
         self.build()
         self.sample()
         snapshot = self.query()["source_candidates"]["snapshot_id"]

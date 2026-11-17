@@ -1576,10 +1576,10 @@ static std::map<int, RowOffset> load_wanted_row_offsets(const RuntimeOptions& op
     return offsets;
 }
 
-static void for_each_candidate_jsonl_line(const RuntimeOptions& options, const fs::path& data_path,
+static void for_each_candidate_jsonl_line_indexed(const RuntimeOptions& options, const fs::path& data_path,
                                    const fs::path& offsets_path,
                                    const std::set<int>& row_ids,
-                                   const std::function<void(const std::string&)>& handle) {
+                                   const std::function<void(int, const std::string&)>& handle) {
     if (row_ids.empty()) {
         return;
     }
@@ -1598,7 +1598,6 @@ static void for_each_candidate_jsonl_line(const RuntimeOptions& options, const f
     }
     const long long data_bytes = data_file_size(input, data_path);
     for (const auto& [row, offset] : offsets) {
-        (void)row;
         require_valid_data_range(offset.offset, offset.bytes, data_bytes,
                                  "Generated row offset index");
         input.clear();
@@ -1613,8 +1612,15 @@ static void for_each_candidate_jsonl_line(const RuntimeOptions& options, const f
         if (line.empty()) {
             throw_index_error("index-corrupt", "Generated row index points to an empty row.");
         }
-        handle(line);
+        handle(row, line);
     }
+}
+
+static void for_each_candidate_jsonl_line(const RuntimeOptions& options, const fs::path& data_path,
+                                          const fs::path& offsets_path, const std::set<int>& row_ids,
+                                          const std::function<void(const std::string&)>& handle) {
+    for_each_candidate_jsonl_line_indexed(options, data_path, offsets_path, row_ids,
+        [&](int, const std::string& line) { handle(line); });
 }
 
 static std::string indexed_jsonl_line_at(std::istream& input,
@@ -1778,14 +1784,21 @@ void for_each_generated_section_matching_terms(const RuntimeOptions& options,
                                                const PreparedTermGroups&,
                                                int,
                                                const std::function<void(const SectionRow&)>& handle) {
+    for_each_generated_section_candidate(options, candidates,
+        [&](int, const SectionRow& row) { handle(row); });
+}
+
+void for_each_generated_section_candidate(const RuntimeOptions& options,
+                                          const CandidateRows& candidates,
+                                          const std::function<void(int, const SectionRow&)>& handle) {
     const fs::path generated_root = options.out_root / kGeneratedDir;
     if (candidates.from_terms_index) {
-        for_each_candidate_jsonl_line(options, generated_root / "sections.jsonl", generated_root / "sections.index.tsv",
+        for_each_candidate_jsonl_line_indexed(options, generated_root / "sections.jsonl", generated_root / "sections.index.tsv",
                                       candidates.sections,
-                                      [&](const std::string& line) {
+                                      [&](int row, const std::string& line) {
             SectionRow section = parse_section_row(line);
             if (!section.path.empty()) {
-                handle(section);
+                handle(row, section);
             }
         });
         return;
@@ -1793,7 +1806,7 @@ void for_each_generated_section_matching_terms(const RuntimeOptions& options,
     for_each_snapshot_line(options, generated_root / "sections.jsonl", [&](const std::string& line) {
         SectionRow section = parse_section_row(line);
         if (!section.path.empty()) {
-            handle(section);
+            handle(-1, section);
         }
     });
 }

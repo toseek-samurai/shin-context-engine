@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include <bit>
 
 namespace shin::context {
 
@@ -98,23 +99,19 @@ bool try_merge_candidate_group(CandidateRows& target, const CandidateRows& sourc
     return true;
 }
 
+auto planned_evidence_rank(int score, std::size_t groups, bool fact, int line,
+                           std::string_view id,
+                           std::pair<std::string_view, std::string_view> provenance) {
+    return std::tuple(-score, -static_cast<int>(groups), !fact, line, id, provenance);
+}
+
+auto planned_evidence_rank(const PlannedEvidence& evidence) {
+    return planned_evidence_rank(evidence.score(), evidence.matched_groups().size(), evidence.is_fact(),
+                                 evidence.line(), evidence.stable_id(), evidence.provenance());
+}
+
 bool planned_evidence_better(const PlannedEvidence& left, const PlannedEvidence& right) {
-    if (left.score() != right.score()) {
-        return left.score() > right.score();
-    }
-    if (left.matched_groups().size() != right.matched_groups().size()) {
-        return left.matched_groups().size() > right.matched_groups().size();
-    }
-    if (left.is_fact() != right.is_fact()) {
-        return left.is_fact();
-    }
-    if (left.line() != right.line()) {
-        return left.line() < right.line();
-    }
-    if (left.stable_id() != right.stable_id()) {
-        return left.stable_id() < right.stable_id();
-    }
-    return left.provenance() < right.provenance();
+    return planned_evidence_rank(left) < planned_evidence_rank(right);
 }
 
 std::string planned_evidence_type_key(const PlannedEvidence& evidence) {
@@ -124,6 +121,34 @@ std::string planned_evidence_type_key(const PlannedEvidence& evidence) {
     }
     const SectionRow& section = std::get<ContextHit>(evidence.value).section;
     return "sections\n" + section.evidence_kind + "\n" + section.verification_level;
+}
+
+bool section_cannot_improve_unit(const SectionRow& row, const PlannedUnit& unit,
+                                 const PreparedTermGroups& groups, std::uint64_t possible_groups, int ordinary_required,
+                                 bool include_near_complete) {
+    const int count = std::popcount(possible_groups);
+    // Ordinary/near-complete rows must remain available to final ranking and
+    // fragment refinement, even when they cannot improve a unit representative.
+    if (count == 0 || count >= ordinary_required ||
+        (include_near_complete && ordinary_required >= 4 && count >= ordinary_required - 1)) return false;
+    const auto type = unit.best_evidence_by_type.find(
+        "sections\n" + row.evidence_kind + "\n" + row.verification_level);
+    if (type == unit.best_evidence_by_type.end()) return false;
+    const auto retained = planned_evidence_rank(type->second);
+    auto worst = retained;
+    for (auto mask = possible_groups; mask; mask &= mask - 1) {
+        const auto group = unit.best_evidence_by_group.find(static_cast<int>(std::countr_zero(mask)));
+        if (group == unit.best_evidence_by_group.end()) return false;
+        worst = std::max(worst, planned_evidence_rank(group->second));
+    }
+    const auto cannot_win = [&](int bound) {
+        return !(planned_evidence_rank(bound, static_cast<std::size_t>(count), false, row.line, row.anchor,
+                    {row.evidence_kind, row.verification_level}) < worst);
+    };
+    // Use the exact tie order and an optimistic match count as well as the score.
+    // Every possible group already has no worse evidence in this provenance unit.
+    return cannot_win(section_match_upper_bound(row, static_cast<std::size_t>(count))) ||
+           cannot_win(section_match_upper_bound(row, groups, possible_groups));
 }
 
 void retain_planned_evidence(PlannedUnit& document, const PlannedEvidence& evidence) {
@@ -224,6 +249,44 @@ void count_planned_fact_group(BriefResult& result, const FactRow& fact) {
         ++result.matched_runbooks;
     } else {
         ++result.matched_other_facts;
+    }
+}
+
+// With one record per file, a short typed summary must not displace an allowed
+// section representative of a more complete document unit. Keep the chosen
+// unit's actual provenance; never lend its groups to the summary or source facts.
+void prefer_complete_document_sections(BriefResult& result, const QueryRequest& request,
+                                      const std::map<RetrievalUnitKey, PlannedUnit>& units) {
+    if (request.per_doc_limit != 1 ||
+        (!request.allowed_evidence_types.empty() &&
+         std::find(request.allowed_evidence_types.begin(), request.allowed_evidence_types.end(), "section") ==
+             request.allowed_evidence_types.end())) return;
+    const auto redundant = [&](const FactHit& hit) {
+        if (starts_with(hit.fact.source, "source-fact:") || hit.fact.source != hit.fact.path ||
+            hit.fact.start_line != 1 || hit.fact.end_line != 1 || hit.fact.summary.empty()) return false;
+        const auto key = retrieval_unit_key(hit.fact, result.planner_document_paths);
+        if (!key.whole_document) return false;
+        const auto own = units.find(key);
+        if (own == units.end()) return false;
+        const auto sections = result.section_hits_by_doc.find(key.path);
+        if (sections == result.section_hits_by_doc.end()) return false;
+        for (const auto& section : sections->second) {
+            const auto section_key = retrieval_unit_key(section.section, result.planner_document_paths);
+            if (section_key.status != key.status ||
+                (section_key.authority_level == "history" && key.authority_level != "history")) continue;
+            const auto selected = result.planner_unit_coverage.find(section_key);
+            if (selected == result.planner_unit_coverage.end() || !section_key.whole_document ||
+                selected->second.size() <= own->second.matched_groups.size()) continue;
+            std::string_view summary = hit.fact.summary;
+            if (summary.ends_with("...")) summary.remove_suffix(3);
+            if (summary.empty() || section.section.indexed_text.find(summary) == std::string::npos) continue;
+            if (std::includes(selected->second.begin(), selected->second.end(),
+                              own->second.matched_groups.begin(), own->second.matched_groups.end())) return true;
+        }
+        return false;
+    };
+    for (auto* hits : {&result.decisions, &result.contracts, &result.runbooks, &result.facts}) {
+        hits->erase(std::remove_if(hits->begin(), hits->end(), redundant), hits->end());
     }
 }
 
@@ -377,12 +440,41 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
         return result;
     }
 
+    // Complete postings provide a conservative row-level group superset.
+    // Missing/capped groups and rows outside that proof use ordinary scoring.
+    std::map<int, std::uint64_t> section_groups;
+    const auto& groups = request.prepared_term_groups;
+    // The scorer also accepts exact paths outside the posting vocabulary (e.g.
+    // >128 bytes). Such a term or alias makes posting absence inconclusive.
+    const bool posting_proof = !capped_group && groups.size() <= 64 &&
+        std::all_of(groups.begin(), groups.end(), [](const auto& group) {
+            return std::all_of(group.begin(), group.end(), [](const auto& term) {
+                return index_term_has_signal(term.raw);
+            });
+        });
+    if (posting_proof) {
+        for (const auto& group : candidate_groups)
+            for (const int row : group.rows.sections)
+                if (candidates.sections.contains(row))
+                    section_groups[row] |= std::uint64_t{1} << group.group_index;
+    }
+    std::size_t pruned_section_scores = 0;
     std::map<RetrievalUnitKey, PlannedUnit> units;
     std::set<RetrievalUnitKey> anchored_documents;
     std::vector<ContextHit> near_sections;
-    for_each_generated_section_matching_terms(options, candidates, request.prepared_term_groups, 1,
-                                               [&](const SectionRow& section) {
-        MatchScore match = score_section_match(section, request.prepared_term_groups, 1);
+    for_each_generated_section_candidate(options, candidates,
+                                         [&](int row, const SectionRow& section) {
+        const auto unit = retrieval_unit_key(section, result.planner_document_paths);
+        const auto possible = section_groups.find(row);
+        const auto known = units.find(unit);
+        if (unit.whole_document && possible != section_groups.end() && known != units.end() &&
+            (!supplement_near || anchored_documents.contains(unit)) &&
+            section_cannot_improve_unit(section, known->second, request.prepared_term_groups, possible->second,
+                                        required_group_matches, include_near_complete_sections)) {
+            ++pruned_section_scores;
+            return;
+        }
+        MatchScore match = score_section_match(section, request.prepared_term_groups, 1, nullptr, request.scoring.get());
         if (match.total <= 0) {
             return;
         }
@@ -397,7 +489,6 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
              section_has_non_body_query_match(section, request.prepared_term_groups, false))) {
             result.section_hits_by_doc[section.path].push_back(hit);
         }
-        const auto unit = retrieval_unit_key(section, result.planner_document_paths);
         if (supplement_near && unit.whole_document) {
             if (section_has_non_body_query_match(section, request.prepared_term_groups, false))
                 anchored_documents.insert(unit);
@@ -417,7 +508,7 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
     std::set<FactRow> matched_fact_keys;
     for_each_generated_fact_matching_terms(options, candidates, request.prepared_term_groups, 1,
                                             [&](const FactRow& fact) {
-        MatchScore match = score_fact_match(fact, request.prepared_term_groups, 1);
+        MatchScore match = score_fact_match(fact, request.prepared_term_groups, 1, nullptr, request.scoring.get());
         if (match.total <= 0) {
             return;
         }
@@ -499,12 +590,14 @@ BriefResult collect_brief_from_index_document_coverage_plan(const RuntimeOptions
         }
     }
 
+    prefer_complete_document_sections(result, request, units);
     std::sort(result.decisions.begin(), result.decisions.end(), fact_hit_better);
     std::sort(result.contracts.begin(), result.contracts.end(), fact_hit_better);
     std::sort(result.runbooks.begin(), result.runbooks.end(), fact_hit_better);
     std::sort(result.facts.begin(), result.facts.end(), fact_hit_better);
     result.planner_covered_groups = static_cast<int>(covered_groups.size());
     result.planner_selected_documents = 0;
+    if (pruned_section_scores) result.query_plan["section_score_prunes"] = pruned_section_scores;
     return result;
 }
 

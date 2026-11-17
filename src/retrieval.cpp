@@ -1,4 +1,6 @@
 #include "context_internal.h"
+#include "request_scoring.h"
+#include <bit>
 #include "unicode_text.h"
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
 #include "aggregate_recovery_experiment.h"
@@ -390,14 +392,6 @@ RetrievalDiagnostics make_retrieval_diagnostics(const QueryRequest& request,
 }
 
 PreparedTermGroups prepare_term_groups(const std::vector<std::vector<std::string>>& term_groups);
-MatchScore score_section_match(const SectionRow& section,
-                               const PreparedTermGroups& term_groups,
-                               int required_group_matches,
-                               std::vector<FieldMatchInput>* prepared_fields);
-MatchScore score_fact_match(const FactRow& fact,
-                            const PreparedTermGroups& term_groups,
-                            int required_group_matches,
-                            std::vector<FieldMatchInput>* prepared_fields);
 bool generated_index_available(const RuntimeOptions& options);
 int generated_index_source_count(const RuntimeOptions& options);
 IndexFreshness assess_index_freshness(const RuntimeOptions& options, bool require_current);
@@ -913,6 +907,83 @@ void append_brief_candidate(BriefSelection& selection,
     ++per_doc_counts[std::string(candidate.path)];
 }
 
+std::uint64_t matched_group_mask(const std::vector<int>& groups) {
+    std::uint64_t mask = 0;
+    for (const int group : groups) if (group >= 0 && group < 64) mask |= std::uint64_t{1} << group;
+    return mask;
+}
+
+// Preserve paths, record families, provenance and slot counts. Replace only a
+// redundant section when another admitted section of that exact document unit
+// adds query groups. A copied summary and its parent must not consume both slots
+// while a complementary rule farther down the same document remains undelivered.
+void refine_document_fragments(const BriefResult& result, BriefSelection& selection) {
+    // Direct CLI queries can exceed the bounded Pack/Eval group count.
+    // Preserve their ordinary ranked fragments when the mask cannot represent them.
+    if (!result.query_planner_used || result.total_term_groups > 64) return;
+    for (std::size_t index = 0; index < selection.sections.size(); ++index) {
+        auto& chosen = selection.sections[index];
+        const auto unit = retrieval_unit_key(chosen.section, result.planner_document_paths);
+        if (!unit.whole_document || !result.planner_unit_coverage.contains(unit)) continue;
+        const auto same_unit = [&](const SectionRow& row) {
+            return row.path == unit.path && row.status == unit.status && row.authority_level == unit.authority_level &&
+                row.evidence_kind == unit.evidence_kind && row.verification_level == unit.verification_level;
+        };
+        std::uint64_t redundant_before = 0, covered_before = 0;
+        // Improve each prefix of the evidence list: Pack may have a smaller
+        // final budget. Later evidence cannot make an earlier slot redundant.
+        for (const auto& reference : selection.ordered) {
+            if (reference.type == BriefEvidenceType::section) {
+                if (reference.index == index) break;
+                const auto& other = selection.sections[reference.index];
+                if (!same_unit(other.section)) continue;
+                covered_before |= matched_group_mask(other.matched_group_indices);
+                if (!chosen.section.indexed_text.empty() &&
+                    other.section.indexed_text.find(chosen.section.indexed_text) != std::string::npos)
+                    redundant_before |= matched_group_mask(other.matched_group_indices);
+                continue;
+            }
+            const FactHit* other = nullptr;
+            switch (reference.type) {
+                case BriefEvidenceType::contract: other = &selection.contracts[reference.index]; break;
+                case BriefEvidenceType::decision: other = &selection.decisions[reference.index]; break;
+                case BriefEvidenceType::runbook: other = &selection.runbooks[reference.index]; break;
+                case BriefEvidenceType::fact: other = &selection.facts[reference.index]; break;
+                case BriefEvidenceType::section: break;
+            }
+            if (!other) continue;
+            const auto& fact = other->fact;
+            std::string_view summary = fact.summary;
+            if (summary.ends_with("...")) summary.remove_suffix(3);
+            if (fact.path != unit.path || fact.status != unit.status || fact.source != fact.path ||
+                summary.empty() || (fact.authority_level == "history" && unit.authority_level != "history") ||
+                chosen.section.indexed_text.find(summary) == std::string::npos) continue;
+            redundant_before |= matched_group_mask(other->matched_group_indices);
+            covered_before |= matched_group_mask(other->matched_group_indices);
+        }
+        if ((matched_group_mask(chosen.matched_group_indices) & ~redundant_before) != 0) continue;
+        const auto found = result.section_hits_by_doc.find(unit.path);
+        if (found == result.section_hits_by_doc.end()) continue;
+        const ContextHit* best = nullptr;
+        int best_gain = 0;
+        for (const auto& candidate : found->second) {
+            if (!same_unit(candidate.section)) continue;
+            const int gain = std::popcount(matched_group_mask(candidate.matched_group_indices) & ~covered_before);
+            if (gain > best_gain || (gain > 0 && gain == best_gain && best && context_hit_better(candidate, *best))) {
+                best = &candidate; best_gain = gain;
+            }
+        }
+        if (best) {
+            const auto existing = std::find_if(selection.sections.begin(), selection.sections.end(), [&](const auto& selected) {
+                return selected.section == best->section;
+            });
+            // Move a later selected fragment forward without duplicating it.
+            if (existing != selection.sections.end()) std::swap(chosen, *existing);
+            else chosen = *best;
+        }
+    }
+}
+
 }  // namespace
 
 BriefSelection select_brief_evidence(const BriefResult& result,
@@ -990,6 +1061,7 @@ BriefSelection select_brief_evidence(const BriefResult& result,
         selected_records.insert({best.kind, best.index});
         ++returned_records;
     }
+    refine_document_fragments(result, selection);
     selection.budgeted_out_records = selection.eligible_records - returned_records;
     return selection;
 }
@@ -1510,10 +1582,69 @@ static MatchScore score_fields(std::vector<FieldMatchInput>& fields,
     return match;
 }
 
+static void apply_section_match_weights(MatchScore& match, const SectionRow& section) {
+    if (match.total <= 0) return;
+    if (section.row_type == "chunk") {
+        match.total += 1;
+        add_score_component(match, "row_type_boost", 1);
+    } else if (section.level == 1) {
+        match.total += 6;
+        add_score_component(match, "heading_level", 6);
+    } else if (section.level == 2) {
+        match.total += 3;
+        add_score_component(match, "heading_level", 3);
+    }
+    apply_authority_weight(match, section.authority_level, section.status);
+}
+
+int section_match_upper_bound(const SectionRow& section, std::size_t possible_groups) {
+    if (possible_groups == 0) return 0;
+    if (possible_groups > 64) return std::numeric_limits<int>::max();
+    int primary = 0, booster = 0;
+    // Use the scorer's own field bounds and bonuses. No body normalization or
+    // approximate lexical match can lower this bound below a real score.
+    for (const auto& field : section_match_fields(section)) {
+        if (field.text.empty()) continue;
+        auto& highest = field.primary ? primary : booster;
+        highest = std::max(highest, field.score);
+    }
+    MatchScore bound;
+    bound.total = static_cast<int>(possible_groups) * (primary + booster);
+    apply_section_match_weights(bound, section);
+    return bound.total;
+}
+
+int section_match_upper_bound(const SectionRow& section, const PreparedTermGroups& groups,
+                              std::uint64_t possible_groups) {
+    if (groups.size() > 64 ||
+        (groups.size() < 64 && (possible_groups >> groups.size()) != 0))
+        return std::numeric_limits<int>::max();
+    auto fields = section_match_fields(section);
+    MatchScore bound;
+    for (std::size_t index = 0; index < groups.size(); ++index) {
+        if ((possible_groups & (std::uint64_t{1} << index)) == 0) continue;
+        int primary = 0, booster = 0;
+        for (auto& field : fields) {
+            if (field.text.empty()) continue;
+            // Published body membership is only a possibility. Use its full
+            // field score without normalizing or matching that large text.
+            const int score = field.name == "indexed_text" || field.name == "preview"
+                ? field.score : score_field_group(field, groups[index], groups.size() == 1);
+            auto& best = field.primary ? primary : booster;
+            best = std::max(best, score);
+        }
+        if (primary > 0) bound.total += primary + booster;
+    }
+    apply_section_match_weights(bound, section);
+    return bound.total;
+}
+
 MatchScore score_section_match(const SectionRow& section,
                                const PreparedTermGroups& term_groups,
                                int required_group_matches,
-                               std::vector<FieldMatchInput>* prepared_fields) {
+                               std::vector<FieldMatchInput>* prepared_fields,
+                               RequestScoring* scoring) {
+    if (scoring) return scoring->section(section, term_groups, required_group_matches, prepared_fields);
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
     experiment::record_aggregate_score();
 #endif
@@ -1537,27 +1668,16 @@ MatchScore score_section_match(const SectionRow& section,
     match = score_fields(fields, term_groups, required_group_matches);
 #endif
     }
-    if (match.total <= 0) {
-        return match;
-    }
-    if (section.row_type == "chunk") {
-        match.total += 1;
-        add_score_component(match, "row_type_boost", 1);
-    } else if (section.level == 1) {
-        match.total += 6;
-        add_score_component(match, "heading_level", 6);
-    } else if (section.level == 2) {
-        match.total += 3;
-        add_score_component(match, "heading_level", 3);
-    }
-    apply_authority_weight(match, section.authority_level, section.status);
+    apply_section_match_weights(match, section);
     return match;
 }
 
 MatchScore score_fact_match(const FactRow& fact,
                             const PreparedTermGroups& term_groups,
                             int required_group_matches,
-                            std::vector<FieldMatchInput>* prepared_fields) {
+                            std::vector<FieldMatchInput>* prepared_fields,
+                            RequestScoring* scoring) {
+    if (scoring) return scoring->fact(fact, term_groups, required_group_matches, prepared_fields);
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
     experiment::record_aggregate_score();
 #endif

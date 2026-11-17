@@ -550,6 +550,7 @@ struct PreparedMatchTerm {
     std::string compact;
     bool allow_prefix = false;
     std::vector<std::string> phrase_keys;
+    bool operator==(const PreparedMatchTerm&) const = default;
 };
 
 enum class LexicalMatchKind { none, prefix, exact };
@@ -904,6 +905,8 @@ struct DiscoveryResult {
 
 using SteadyClock = std::chrono::steady_clock;
 
+class RequestScoring;
+
 struct QueryRequest {
     std::string query;
     std::vector<std::string> terms;
@@ -913,6 +916,8 @@ struct QueryRequest {
     int per_doc_limit = 0;
     bool require_current = false;
     std::vector<std::string> allowed_evidence_types;
+    // Owned by one Brief execution, never a resident/session readiness cache.
+    std::shared_ptr<RequestScoring> scoring;
 };
 
 enum class BriefProjection {

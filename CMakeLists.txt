@@ -95,6 +95,7 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/generated_row_decoder.cpp
     src/generated_snapshot.cpp
     src/retrieval.cpp
+    src/request_scoring.cpp
     src/lexical_matching.cpp
     src/document_candidates.cpp
     src/document_lifecycle.cpp
@@ -525,7 +526,9 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
     add_executable(shin-secret-assignment-tests tests/core/secret_assignment_test.cpp)
     target_link_libraries(shin-secret-assignment-tests PRIVATE shin-context-core)
     target_compile_options(shin-secret-assignment-tests PRIVATE ${SHIN_CXX_WARNINGS})
-    add_test(NAME shin-context-secret-assignment COMMAND shin-secret-assignment-tests)
+    add_test(NAME shin-context-secret-assignment COMMAND shin-secret-assignment-tests
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/core/secret_assignment_test.cpp"
+        "${CMAKE_CURRENT_SOURCE_DIR}/observer/tests/source_query_test.py")
     add_executable(shin-scanner-prototype-tests tests/core/scanner_prototypes.c)
     set_target_properties(shin-scanner-prototype-tests PROPERTIES C_STANDARD 11 C_STANDARD_REQUIRED ON C_EXTENSIONS OFF)
     target_link_libraries(shin-scanner-prototype-tests PRIVATE shin-syntax-vendor)
@@ -555,6 +558,10 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
         COMMAND ${Python3_EXECUTABLE} ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/planner-contract/test_planner_contract.py
                 $<TARGET_FILE:shin-context>)
     set_tests_properties(shin-context-planner-contract PROPERTIES TIMEOUT 90)
+    add_test(NAME shin-context-project-flexibility
+        COMMAND ${Python3_EXECUTABLE} -B ${CMAKE_CURRENT_SOURCE_DIR}/tests/fixtures/project-flexibility/test_project_flexibility.py
+                $<TARGET_FILE:shin-context>)
+    set_tests_properties(shin-context-project-flexibility PROPERTIES TIMEOUT 120)
     add_executable(shin-execution-report-tests
         tests/fixtures/execution-report/runner.cpp
         src/execution_report.cpp src/execution_report_junit.cpp src/execution_report_playwright.cpp
@@ -634,6 +641,11 @@ if(BUILD_TESTING AND SHIN_CONTEXT_BUILD_CLI)
     target_compile_options(shin-retrieval-scoring-tests PRIVATE ${SHIN_CXX_WARNINGS})
     add_test(NAME shin-context-retrieval-scoring COMMAND $<TARGET_FILE:shin-retrieval-scoring-tests>)
     set_tests_properties(shin-context-retrieval-scoring PROPERTIES TIMEOUT 30)
+    add_executable(shin-request-scoring-tests tests/core/request_scoring_test.cpp)
+    target_link_libraries(shin-request-scoring-tests PRIVATE shin-context-core)
+    target_compile_options(shin-request-scoring-tests PRIVATE ${SHIN_CXX_WARNINGS})
+    add_test(NAME shin-context-request-scoring COMMAND shin-request-scoring-tests)
+    set_tests_properties(shin-context-request-scoring PROPERTIES TIMEOUT 30)
     add_executable(shin-profile-quality-tests tests/core/profile_quality_test.cpp)
     target_link_libraries(shin-profile-quality-tests PRIVATE shin-context-core)
     target_compile_options(shin-profile-quality-tests PRIVATE ${SHIN_CXX_WARNINGS})

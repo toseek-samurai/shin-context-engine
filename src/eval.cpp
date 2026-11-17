@@ -216,7 +216,10 @@ static EvalCaseResult run_eval_query(const RetrievalSession& session,
         result.returned_paths.push_back(path.path);
     }
     result.returned_record_types = execution.returned_record_types;
-    result.evidence = assess_evidence(selected_brief_records(selection), item.must_evidence, item.must_not_evidence);
+    if (!item.must_evidence.empty() || !item.must_not_evidence.empty()) {
+        result.evidence = assess_evidence(compact_brief_evidence_json(selection, request),
+                                          item.must_evidence, item.must_not_evidence);
+    }
     std::set<std::string> returned(result.returned_paths.begin(), result.returned_paths.end());
     std::map<std::string, int> returned_ranks;
     for (std::size_t index = 0; index < result.returned_paths.size(); ++index) {

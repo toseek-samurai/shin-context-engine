@@ -145,8 +145,8 @@ PackEvalCaseResult run_pack_eval_case(const RuntimeOptions& options,
         eval_options.require_current,
         false
     };
-    result.compact_bytes = render_agent_context_pack(
-        options, render_options, prepared.request, session, serial).dump(2).size();
+    result.compact_bytes = serialize_agent_context_pack(render_agent_context_pack(
+        options, render_options, prepared.request, session, serial), PackProjection::compact).size();
 
     const std::set<std::string> returned_paths = pack_paths(serial);
     for (const std::string& path : config.must_paths) {

@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "request_scoring.h"
 #include "retrieval_plan.h"
 #include "document_lifecycle.h"
 #ifdef SHIN_EXPERIMENT_AGGREGATE_RECOVERY
@@ -160,7 +161,7 @@ static ContextIndexResult collect_context_from_index(const RuntimeOptions& optio
     for_each_generated_section_matching_terms(options, candidates, request.prepared_term_groups,
                                               required_group_matches,
                                               [&](const SectionRow& section) {
-        MatchScore match = score_section_match(section, request.prepared_term_groups, required_group_matches);
+        MatchScore match = score_section_match(section, request.prepared_term_groups, required_group_matches, nullptr, request.scoring.get());
         if (match.total > 0) {
             ++result.matched_sections;
             push_top_context_hit(result.section_hits_by_doc[section.path],
@@ -172,7 +173,7 @@ static ContextIndexResult collect_context_from_index(const RuntimeOptions& optio
     for_each_generated_fact_matching_terms(options, candidates, request.prepared_term_groups,
                                            required_group_matches,
                                            [&](const FactRow& fact) {
-        MatchScore match = score_fact_match(fact, request.prepared_term_groups, required_group_matches);
+        MatchScore match = score_fact_match(fact, request.prepared_term_groups, required_group_matches, nullptr, request.scoring.get());
         if (match.total > 0) {
             ++result.matched_facts;
             push_top_fact_hit(result.fact_hits,
@@ -229,7 +230,7 @@ static ContextIndexResult collect_context_from_sources(const RuntimeOptions&,
     ContextIndexResult result;
     result.diagnostics = make_retrieval_diagnostics(request, required_group_matches, fallback_used);
     for (const SectionRow& section : corpus.sections) {
-        MatchScore match = score_section_match(section, request.prepared_term_groups, required_group_matches);
+        MatchScore match = score_section_match(section, request.prepared_term_groups, required_group_matches, nullptr, request.scoring.get());
         if (match.total > 0) {
             ++result.matched_sections;
             push_top_context_hit(result.section_hits_by_doc[section.path],
@@ -238,7 +239,7 @@ static ContextIndexResult collect_context_from_sources(const RuntimeOptions&,
         }
     }
     for (const FactRow& fact : corpus.facts) {
-        MatchScore match = score_fact_match(fact, request.prepared_term_groups, required_group_matches);
+        MatchScore match = score_fact_match(fact, request.prepared_term_groups, required_group_matches, nullptr, request.scoring.get());
         if (match.total > 0) {
             ++result.matched_facts;
             push_top_fact_hit(result.fact_hits,
@@ -438,13 +439,13 @@ static BriefResult collect_brief_from_candidates(const RuntimeOptions& options,
                                               required_group_matches,
                                               [&](const SectionRow& section) {
         if (!identifier_key.empty()) return;
-        MatchScore match = score_section_match(section, request.prepared_term_groups, required_group_matches);
+        MatchScore match = score_section_match(section, request.prepared_term_groups, required_group_matches, nullptr, request.scoring.get());
         push_brief_section_match(result, section, match, request.per_doc_limit);
     });
     for_each_generated_fact_matching_terms(options, candidates, request.prepared_term_groups,
                                            required_group_matches,
                                            [&](const FactRow& fact) {
-        MatchScore match = score_fact_match(fact, request.prepared_term_groups, required_group_matches);
+        MatchScore match = score_fact_match(fact, request.prepared_term_groups, required_group_matches, nullptr, request.scoring.get());
         if (!identifier_key.empty()) {
             bool confirmed = false;
             if (!starts_with(fact.source, "source-fact:")) return;
@@ -606,7 +607,7 @@ static bool brief_has_only_diffuse_deep_body_matches(const BriefResult& result,
             auto compact = hit.section;
             compact.indexed_text.clear();
             if (score_section_match(compact, request.prepared_term_groups,
-                                    strict_required_group_matches(request)).total > 0) return false;
+                                    strict_required_group_matches(request), nullptr, request.scoring.get()).total > 0) return false;
             // Status, authority and record-type qualifiers are explicit intent,
             // even when a higher-weight body match wins their score diagnostics.
             compact.heading.clear();
@@ -887,7 +888,16 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
     // Saturated relaxed rows do not establish complete document-owner coverage.
     // Like strict compound results, they retain bounded document planning; the
     // output limit constrains final selection rather than disabling this route.
-    const bool planner_candidate = strict_required_group_matches(request) >= kCompoundQueryCoverageThreshold;
+    int single_document_coverage = -1;
+    if (relaxed_has_results && groups >= 4 && groups < kCompoundQueryCoverageThreshold &&
+        brief_distinct_path_count(relaxed) == 1) {
+        single_document_coverage = query_coverage_covered_groups(make_brief_execution(request, relaxed).coverage);
+    }
+    // Ordinary prose split into sections needs document corroboration even
+    // below eight groups. Only try this extra route for incomplete single-file
+    // evidence and accept it when final selected coverage actually improves.
+    const bool incomplete_document = single_document_coverage >= 0 && single_document_coverage < groups;
+    const bool planner_candidate = groups >= kCompoundQueryCoverageThreshold || incomplete_document;
     if (planner_candidate && plan.admits(kMaxIndexedCandidateRows)) {
         const bool preserve_row_ranking = relaxed_has_results && brief_distinct_path_count(relaxed) >= 2;
         // Retain ordinary evidence and supplement only missing document owners.
@@ -900,7 +910,9 @@ BriefResult collect_brief_from_index_with_fallback(const RuntimeOptions& options
         const int minimum_coverage = std::max(2, relaxed_required_group_matches(request));
         auto planned_execution = make_brief_execution(request, std::move(planned));
         const bool planned_has_results = !planned_execution.selection.ordered.empty();
-        if (planned_has_results && query_coverage_covered_groups(planned_execution.coverage) >= minimum_coverage) {
+        const int planned_coverage = query_coverage_covered_groups(planned_execution.coverage);
+        if (planned_has_results && planned_coverage >= minimum_coverage &&
+            (!incomplete_document || planned_coverage > single_document_coverage)) {
             SHIN_STAGE_RETURN plan.finish(std::move(planned_execution.retrieval));
         }
         BriefResult& fallback = relaxed_has_results ? relaxed : (has_results ? result : relaxed);
@@ -1054,8 +1066,12 @@ static int run_brief_from_index(const RuntimeOptions& options,
 
 BriefExecution RetrievalSession::brief_execution(const QueryRequest& request) const {
     if (request.require_current) require_current_index_or_throw(freshness_);
-    return make_brief_execution(request, supplement_document_lifecycle(options_, request, manifest(),
-                                collect_brief_from_index_with_fallback(options_, request, &manifest())));
+    auto scoped = request;
+    scoped.scoring = std::make_shared<RequestScoring>(scoped.prepared_term_groups);
+    auto execution = make_brief_execution(scoped, supplement_document_lifecycle(options_, scoped, manifest(),
+                                collect_brief_from_index_with_fallback(options_, scoped, &manifest())));
+    execution.retrieval.query_plan["scoring_work"] = scoped.scoring->metrics();
+    return execution;
 }
 
 Json RetrievalSession::brief(const QueryRequest& request, BriefProjection projection) const {

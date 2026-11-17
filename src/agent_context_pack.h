@@ -76,6 +76,7 @@ Json render_agent_context_pack(const RuntimeOptions& options,
                                const TaskRequest& request,
                                const RetrievalSession& session,
                                const AgentContextPack& pack);
+std::string serialize_agent_context_pack(const Json& document, PackProjection projection);
 Json pack_telemetry_json(const PackTelemetry& telemetry);
 
 }  // namespace shin::context

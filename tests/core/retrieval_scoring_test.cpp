@@ -146,6 +146,38 @@ void check_row_vocabulary_reuse() {
     }
 }
 
+void check_section_score_bounds() {
+    SectionRow row;
+    row.document_id = "guide-needle";
+    row.path = "docs/guide-needle.md";
+    row.heading = "Needle café состояние";
+    row.indexed_text = "A needle phrase describes the operating state.";
+    row.preview = row.indexed_text;
+    row.topics = {"needle", "состояние"};
+    auto groups = prepare_term_groups({{"needle", "need"}, {"café"}, {"состояние"}, {"needle phrase"}, {"absent"}});
+    for (bool prefix : {false, true}) {
+        for (auto& group : groups) for (auto& term : group) term.allow_prefix = prefix;
+        for (const auto* authority : {"source-of-truth", "accepted", "advisory", "review", "history"})
+            for (const auto* status : {"active", "accepted", "superseded", "draft"})
+                for (const auto* type : {"section", "chunk"})
+                    for (int level : {1, 2, 4}) {
+                        row.authority_level = authority; row.status = status;
+                        row.row_type = type; row.level = level;
+                        const auto score = score_section_match(row, groups, 1);
+                        std::uint64_t mask = 0;
+                        for (const int group : score.matched_group_indices) mask |= std::uint64_t{1} << group;
+                        if (section_match_upper_bound(row, groups, mask) < score.total ||
+                            section_match_upper_bound(row, groups, 31) < score.total)
+                            throw std::runtime_error("metadata/body bound excludes a real section score");
+                        for (auto count = static_cast<std::size_t>(score.matched_groups); count <= 64; ++count)
+                            if (section_match_upper_bound(row, count) < score.total)
+                                throw std::runtime_error("section score bound excludes real evidence");
+                    }
+    }
+    if (section_match_upper_bound(row, 0) != 0)
+        throw std::runtime_error("empty posting coverage has a positive score bound");
+}
+
 }  // namespace
 }  // namespace shin::context
 
@@ -158,7 +190,8 @@ int main() {
         shin::context::check_normalization_and_source_penalty();
         shin::context::check_normalization_bytes();
         shin::context::check_row_vocabulary_reuse();
-        std::cout << "retrieval scoring: 7 checks passed\n";
+        shin::context::check_section_score_bounds();
+        std::cout << "retrieval scoring: 8 checks passed\n";
         return 0;
     } catch (const std::exception& error) {
         std::cerr << error.what() << '\n';

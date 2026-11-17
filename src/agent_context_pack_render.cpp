@@ -373,6 +373,12 @@ Json render_agent_context_pack(const RuntimeOptions& options,
     return render_full_context_pack(options, render_options, request, session, pack);
 }
 
+std::string serialize_agent_context_pack(const Json& document, PackProjection projection) {
+    // The compact ceiling and telemetry must measure the same bytes that the
+    // command emits. Keep all fields; indentation is presentation-only overhead.
+    return projection == PackProjection::compact ? document.dump() : document.dump(2);
+}
+
 Json pack_telemetry_json(const PackTelemetry& telemetry) {
     auto rounded_ms = [](double value) {
         return std::round(value * 1000.0) / 1000.0;

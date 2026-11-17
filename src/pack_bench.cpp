@@ -144,7 +144,7 @@ PackBenchSample run_pack_bench_sample(const RuntimeOptions& options,
         options, render_options, request, session, pack);
     sample.projection_ms = elapsed_ms_since(projection_start);
     const SteadyClock::time_point serialization_start = SteadyClock::now();
-    sample.output_bytes = output.dump(2).size();
+    sample.output_bytes = serialize_agent_context_pack(output, bench_options.projection).size();
     sample.serialization_ms = elapsed_ms_since(serialization_start);
     sample.total_ms = elapsed_ms_since(total_start);
     return sample;

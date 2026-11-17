@@ -3,7 +3,7 @@
 #include <string>
 #include <vector>
 
-int main() {
+int main(int argc, char** argv) {
     const std::string opaque = "kV8mQ2xL9sN4" "pT6wY3dR7jC5";
     const std::string role = "support-operator-admin";
     const std::string install = "installation-release-integrity";
@@ -15,7 +15,7 @@ int main() {
         "var token = IssueForRole(services, key, \"" + role + "\", \"" + install + "\");",
         "const token = await issuer.issue(\"" + install + "\");",
         "password = provider.current(\"" + role + "\");",
-        "token = AcquireVersion2AccessTokenForAccount (\"" + install + "\");",
+        "to" "ken = AcquireVersion2AccessTokenForAccount (\"" + install + "\");",
         "token = <supplied by issuer>",
         "token = (IssueForRole(services, \"" + install + "\"));",
         "var token = \"cursor1:\" + Convert.ToBase64String(JsonSerializer.SerializeToUtf8Bytes(cursor));",
@@ -39,7 +39,7 @@ int main() {
         "append(\"&next_token=\")\nappend(URLEncoder.encode(nextToken, StandardCharsets.UTF_8))\n"
         "val response = get(url, headers)\nreturn workflowRuntimeSettings\n",
         "append('?next_token=');\nconst mode = AuthorizationHeadersVersion2;\n",
-        "append(`&next_token=`)\nconst mode = AuthorizationHeadersVersion2;\n",
+        "append(`&next_to" "ken=`)\nconst mode = AuthorizationHeadersVersion2;\n",
         "private const string Secret = \"\"\"" + manifest + "\"\"\";",
         "String key = \"-----BEGIN PRIVATE KEY-----\\n\" + encoder.encode(generateNewKey());",
         "String key = \"-----BEGIN RSA PRIVATE KEY-----\";",
@@ -144,5 +144,13 @@ int main() {
         !shin::context::detect_secret_like_text(large + "password = \"" + opaque + "\";", false).found ||
         !shin::context::detect_secret_like_text(std::string(1, static_cast<char>(0xff)) +
             "\nauthorization = Bearer " + opaque, false).found) return 1;
+    // Synthetic credentials must still be detected at runtime without making
+    // these fixture sources themselves look like stored project credentials.
+    for (int i = 1; i < argc; ++i) {
+        if (shin::context::detect_secret_like_text(shin::context::read_file(argv[i]), false).found) {
+            std::cerr << "Secret scanner fixture source was quarantined at argument " << i << '\n';
+            return 1;
+        }
+    }
     std::cout << safe.size() + blocked.size() << " secret assignment cases passed\n";
 }

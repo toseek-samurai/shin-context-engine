@@ -59,6 +59,43 @@ fragments and add related current owners under existing output and safety budget
 Cycles, drafts and incomplete relation inventories remain explicit uncertainty.
 The [lexical contract](machine/lexical-retrieval-v1.json) owns these rules.
 
+Development source also recovers ordinary prose split across Markdown sections
+when a shorter query initially returns incomplete context from one document.
+With one record per file, an allowed section representing a more complete
+document unit can replace its shorter typed summary. The selected unit keeps
+its own status, authority and provenance; independent source facts and restricted
+evidence types cannot borrow its coverage. The engine handles this layout change
+without aliases, repeated query headings or profile edits.
+When a summary and section duplicate query context, a complementary section
+from the same qualified document unit can use the existing slot. Already selected
+fragments move forward without duplication, preserving useful evidence when a
+Pack has a smaller final budget. Compact excerpts
+focus on matching published body text under their byte bound. Full-coverage Pack
+checks still require the words in actual delivered records; document corroboration
+alone cannot make an incomplete answer complete.
+
+Each indexed Brief execution owns bounded scoring reuse across its retrieval
+passes. Exact row contents and prepared query groups identify reusable work;
+the original minimum-group threshold still applies at each call. Retention is
+limited to 1024 rows and a conservative 4 MiB payload estimate per query.
+Exhaustion continues normal scoring. Nothing survives the query or substitutes
+for admission, source verification or safety checks. Full Brief/Eval diagnostics
+separate computed and reused scores from the unchanged logical visit counters.
+The estimate describes retained scoring data, not process RSS.
+
+Development source also bounds planned section scores before normalizing large
+bodies. Complete posting groups establish a conservative membership superset.
+A section may skip full scoring only when it cannot enter ordinary/near-complete
+ranking or improve any group/type representative in its exact provenance unit,
+including the original tie order. Missing/capped posting proof uses normal
+scoring. Candidate discovery and optional-work ceilings still account for the
+whole admitted row set; full diagnostics report `section_score_prunes` separately.
+
+Compact Pack output uses unindented JSON in development source. The CLI, Pack
+evaluation, benchmark and telemetry share its serializer, so byte ceilings measure
+the emitted representation before the record-terminating newline. Evidence,
+verification, completion and receipts remain identical to the full projection.
+
 The MCP adapter can pin a follow-up snapshot for one real session and project after
 a successful query. An explicit snapshot remains strict; overlapping queries,
 unknown identities and a new connection require a snapshot or fresh query.

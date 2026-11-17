@@ -135,6 +135,7 @@
     },
     "compact": {
       "schema": "shin.agent-context-pack-compact.v1",
+      "serialization": "Development source emits compact Pack as unindented UTF-8 JSON. CLI, Pack-eval, Pack-bench and telemetry use the same serializer. Byte counts exclude the record-terminating newline; evidence, requirements and verification are not trimmed to save formatting bytes. Full projection retains its indented JSON formatting.",
       "selectionIdentity": "receipt_id, request_fingerprint, evidence_set_fingerprint, evidence ids, evidence records, verification paths, completion, and budget accounting are identical to full projection for the same request and snapshot.",
       "retained": [
         "completion and exact budget accounting",
@@ -170,14 +171,14 @@
       "total_before_emit"
     ],
     "memory": "process_peak_rss_bytes uses getrusage on POSIX, normalizes Linux KiB to bytes, uses native bytes on Apple platforms, and is null when unavailable.",
-    "payload": "projected_payload_bytes measures pretty serialized output before telemetry is appended."
+    "payload": "projected_payload_bytes measures the selected projection's actual serialized JSON before telemetry is appended, excluding the record-terminating newline."
   },
   "evidence": {
     "schema": {
       "evidence_id": "FNV-1a-64 identity of evidence type plus the complete canonical stable record JSON, including section indexed_text. Full keys are compared and hash collisions fail closed before display projection.",
       "evidence_type": "One canonical supported evidence type.",
       "location": "Repository-relative path and exact start/end line range for source verification.",
-      "record": "Fixed display projection without query scores or section indexed_text. indexed_text_bytes and indexed_text_omitted_bytes retain the publication bounds; preview remains the display excerpt. Evidence kind and verification level are preserved.",
+      "record": "The record carries display fields and original publication byte counts. Development source selects one bounded section preview across requirements, using the first improved query excerpt that preserves earlier requirements’ visible groups in request order. Evidence kind and verification level are preserved.",
       "matches": "Every task requirement that retrieved the record, including requirement kind, per-query rank, score, matched fields, and matched query-group indices."
     },
     "deduplicationPolicy": "canonical-record-v1",
@@ -202,7 +203,7 @@
     "satisfiedRequirement": "satisfied requires evidence_satisfied and the optional selected-evidence coverage policy. The default any-evidence policy preserves prior completion behavior.",
     "complete": "Every required scope and must requirement is satisfied under its selected policy. Optional should requirements do not affect completeness.",
     "coverageComplete": "completion.coverage_complete is independently true only when selected Pack match edges cover every normalized group for every required requirement. It may be false while completion.complete is true under default or minimum-group policy.",
-    "selectedCoverage": "selected_query_coverage uses only matched_group_indices retained on selected Pack evidence edges. It cannot claim planner-only or budget-excluded support.",
+    "selectedCoverage": "Development source confirms each selected match edge against the shared displayed record. Only groups supported by visible primary fields contribute to selected_query_coverage. It cannot claim planner-only or budget-excluded support.",
     "queryCoverageBoundary": "The existing query_coverage object describes retrieval and planner support before global Pack selection. selected_query_coverage and coverage_complete describe only evidence actually transported in the Pack.",
     "nonStrict": "An incomplete non-strict pack remains an operationally successful result with ok=true and completion.complete=false.",
     "strict": "--strict emits the complete diagnostic result with ok=false and exits 1 when any required requirement is unsatisfied.",

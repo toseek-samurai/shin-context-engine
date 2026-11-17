@@ -227,7 +227,7 @@ BriefResult supplement_document_lifecycle(const RuntimeOptions& options, const Q
             for (auto& [path, hits] : related.section_hits_by_doc) {
                 if (!replacement && selection.sections.empty()) continue;
                 for (auto& hit : hits) {
-                    auto score = score_section_match(hit.section, request.prepared_term_groups, 1);
+                    auto score = score_section_match(hit.section, request.prepared_term_groups, 1, nullptr, request.scoring.get());
                     hit.score = !replacement ? std::min(score.total, support_ceiling) :
                         hit.section.authority_level == "history" ? score.total : score.total + priority;
                     if (replacement && result.document_owner_scope_used) hit.score = std::min(hit.score, priority - 2);
@@ -242,7 +242,7 @@ BriefResult supplement_document_lifecycle(const RuntimeOptions& options, const Q
             const auto append_facts = [&](auto& source, auto& target, bool had_family) {
                 if (!replacement && !had_family) return;
                 for (auto& hit : source) {
-                    auto score = score_fact_match(hit.fact, request.prepared_term_groups, 1);
+                    auto score = score_fact_match(hit.fact, request.prepared_term_groups, 1, nullptr, request.scoring.get());
                     hit.score = !replacement ? std::min(score.total, support_ceiling) :
                         hit.fact.authority_level == "history" ? score.total : score.total + priority;
                     if (replacement && result.document_owner_scope_used) hit.score = std::min(hit.score, priority - 2);

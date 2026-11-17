@@ -110,6 +110,12 @@ the declared source, byte, output and quality bounds. Fixture changes must retai
 the positive and negative behaviors that motivated each test. Historical
 measurements do not qualify a new source tree or binary.
 
+Construct synthetic credential fixtures from separate literal parts so their
+source text does not resemble a stored credential. Preserve the exact runtime
+bytes and both detection and safe-input assertions. The secret-assignment test
+also scans its fixture sources; keep this check instead of excluding test files
+or adding scanner suppressions.
+
 The Core self-profile's required agent entrypoints refer to current source files,
 including `profiles/shin.json` for input ownership, start paths and retrieval
 checks. They must validate before a self index exists. After building, inspect

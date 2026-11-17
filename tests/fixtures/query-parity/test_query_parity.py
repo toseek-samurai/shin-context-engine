@@ -269,7 +269,7 @@ class QueryParityTests(unittest.TestCase):
                 self.assertNotIn(secret.encode(), path.read_bytes(), path.name)
 
     def test_pack_keeps_search_text_out_of_budget_but_in_exact_identity(self):
-        body = "ordinary filler " * 500 + "LatePublishedNeedle tailalpha"
+        body = "ordinary filler " * 120 + "tailalpha " + "ordinary filler " * 380 + "LatePublishedNeedle"
         path = self.root / "docs" / "pack-body.md"
         path.write_text("# Pack body\n" + body + "\n")
         request = self.base / "request.json"
@@ -290,7 +290,8 @@ class QueryParityTests(unittest.TestCase):
         self.assertEqual(len(evidence["matches"]), 2)
         self.assertGreater(evidence["record"]["indexed_text_bytes"], 4000)
         self.assertNotIn("indexed_text", evidence["record"])
-        self.assertNotIn("LatePublishedNeedle", evidence["record"]["preview"])
+        self.assertIn("LatePublishedNeedle", evidence["record"]["preview"])
+        self.assertNotIn("tailalpha", evidence["record"]["preview"])
         self.assertLessEqual(len(json.dumps(pack["evidence"], separators=(",", ":")).encode()), 4000)
         path.write_text("# Pack body\n" + body.replace("tailalpha", "tailomega") + "\n")
         self.invoke("build")

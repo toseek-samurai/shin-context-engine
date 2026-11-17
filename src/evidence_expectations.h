@@ -13,6 +13,5 @@ struct EvidenceAssessment {
     bool passed() const { return missing.empty() && forbidden.empty(); }
 };
 EvidenceAssessment assess_evidence(const Json& records, const Json& required, const Json& forbidden);
-Json selected_brief_records(const BriefSelection& selection);
 
 } // namespace shin::context

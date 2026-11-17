@@ -310,6 +310,8 @@ void add_query_coverage_evidence(QueryCoverage& coverage,
 void merge_planner_query_coverage(QueryCoverage& coverage, const BriefResult& result);
 int query_coverage_covered_groups(const QueryCoverage& coverage);
 Json query_coverage_json(const QueryCoverage& coverage);
+std::string compact_section_excerpt(const ContextHit& hit, const QueryRequest& request);
+Json compact_brief_evidence_json(const BriefSelection& selection, const QueryRequest& request);
 Json make_compact_brief_json(const RuntimeOptions& options,
                              const QueryRequest& request,
                              const std::string& index_mode,
@@ -320,11 +322,16 @@ Json make_compact_brief_json(const RuntimeOptions& options,
 MatchScore score_section_match(const SectionRow& section,
                                const PreparedTermGroups& term_groups,
                                int required_group_matches,
-                               std::vector<FieldMatchInput>* prepared_fields = nullptr);
+                               std::vector<FieldMatchInput>* prepared_fields = nullptr,
+                               RequestScoring* scoring = nullptr);
+int section_match_upper_bound(const SectionRow& section, std::size_t possible_groups);
+int section_match_upper_bound(const SectionRow& section, const PreparedTermGroups& groups,
+                              std::uint64_t possible_groups);
 MatchScore score_fact_match(const FactRow& fact,
                             const PreparedTermGroups& term_groups,
                             int required_group_matches,
-                            std::vector<FieldMatchInput>* prepared_fields = nullptr);
+                            std::vector<FieldMatchInput>* prepared_fields = nullptr,
+                            RequestScoring* scoring = nullptr);
 bool context_hit_better(const ContextHit& a, const ContextHit& b);
 bool fact_hit_better(const FactHit& a, const FactHit& b);
 void push_top_search_hit(std::vector<SearchHit>& hits, const SearchHit& hit, int limit);
@@ -422,6 +429,11 @@ void for_each_generated_section_matching_terms(
     const PreparedTermGroups& term_groups,
     int required_group_matches,
     const std::function<void(const SectionRow&)>& handle);
+// Indexed row identity is local to this immutable generated store. Scan fallback
+// reports -1 and cannot support posting-based score bounds.
+void for_each_generated_section_candidate(
+    const RuntimeOptions& options, const CandidateRows& candidates,
+    const std::function<void(int, const SectionRow&)>& handle);
 void for_each_generated_fact_matching_terms(
     const RuntimeOptions& options,
     const CandidateRows& candidates,

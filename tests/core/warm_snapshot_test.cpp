@@ -637,8 +637,11 @@ void assert_section_publication(const fs::path& parent) {
     options.profile.markdown_chunk_lines = 0;
     write_generation_a(options);
     std::string body;
-    for (int i = 0; i < 600; ++i) body += "ordinary filler ";
-    body += "LateResidentNeedle tailalpha";
+    for (int i = 0; i < 600; ++i) {
+        if (i == 200) body += "tailalpha ";
+        body += "ordinary filler ";
+    }
+    body += "LateResidentNeedle";
     const auto body_path = options.root / "docs/full-body.md";
     write_text(body_path, "# Full body\n" + body + "\n");
     std::string secret = "sk-";
@@ -687,6 +690,9 @@ void assert_section_publication(const fs::path& parent) {
            "Pack search text escaped display projection or lost match edges");
     expect(evidence.at("record").at("indexed_text_bytes") == body.size() &&
                pack.at("evidence").dump().size() <= 4000, "Pack body consumed the display budget");
+    const auto& preview = evidence.at("record").at("preview").get_ref<const std::string&>();
+    expect(preview.find("LateResidentNeedle") != std::string::npos &&
+               preview.find("tailalpha") == std::string::npos, "Pack must display the matched term within budget");
     expect_equal(pack, render_pack(options, request, resident, 2), "resident serial/parallel body Pack");
     {
         RetrievalSession disk(options, RetrievalSessionOpenMode::verified_snapshot);
@@ -706,7 +712,7 @@ void assert_section_publication(const fs::path& parent) {
     }
     fs::rename(hidden, generated);
 
-    body.replace(body.size() - 9, 9, "tailomega");
+    body.replace(body.find("tailalpha"), 9, "tailomega");
     write_text(body_path, "# Full body\n" + body + "\n");
     publish_generation(options);
     const auto next_snapshot = GeneratedSnapshot::load(options);

@@ -104,7 +104,94 @@ Json compact_brief_verification_paths(const BriefSelection& selection) {
     return output;
 }
 
-Json compact_brief_evidence_json(const BriefSelection& selection) {
+bool excerpt_matches_group(FieldMatchInput& field, const PreparedTermGroup& group) {
+    return std::any_of(group.begin(), group.end(), [&](const auto& term) { return field_contains_term(field, term); });
+}
+
+}  // namespace
+
+// Match through the ordinary lexical interface at original whitespace offsets.
+// Case folding/composition may change byte lengths; normalized offsets must
+// never be used to slice original UTF-8 or select a different source range.
+std::string compact_section_excerpt(const ContextHit& hit, const QueryRequest& request) {
+    const auto& row = hit.section;
+    if (row.indexed_text.empty() ||
+        std::find(hit.matched_fields.begin(), hit.matched_fields.end(), "indexed_text") == hit.matched_fields.end())
+        return row.preview;
+    const auto count = [&](FieldMatchInput& field) {
+        int found = 0;
+        for (const int group : hit.matched_group_indices)
+            if (group >= 0 && static_cast<std::size_t>(group) < request.prepared_term_groups.size() &&
+                excerpt_matches_group(field, request.prepared_term_groups[group])) ++found;
+        return found;
+    };
+    FieldMatchInput preview("excerpt", row.preview, 0, true);
+    const int shown = count(preview);
+    if (shown == static_cast<int>(hit.matched_group_indices.size())) return row.preview;
+    FieldMatchInput body("excerpt", row.indexed_text, 0, true);
+    const PreparedTermGroup* missing = nullptr;
+    for (const int group : hit.matched_group_indices) {
+        if (group < 0 || static_cast<std::size_t>(group) >= request.prepared_term_groups.size()) continue;
+        const auto& terms = request.prepared_term_groups[group];
+        if (!excerpt_matches_group(preview, terms) && excerpt_matches_group(body, terms)) { missing = &terms; break; }
+    }
+    if (!missing) return row.preview;
+    std::vector<std::size_t> ends;
+    const std::string_view text(row.indexed_text);
+    for (std::size_t i = 1; i <= text.size(); ++i)
+        if (!is_ascii_space(static_cast<unsigned char>(text[i - 1])) &&
+            (i == text.size() || is_ascii_space(static_cast<unsigned char>(text[i])))) ends.push_back(i);
+    if (ends.empty()) return row.preview;
+    std::size_t low = 0, high = ends.size() - 1;
+    while (low < high) {
+        const auto middle = low + (high - low) / 2;
+        FieldMatchInput prefix("excerpt", text.substr(0, ends[middle]), 0, true);
+        if (excerpt_matches_group(prefix, *missing)) high = middle;
+        else low = middle + 1;
+    }
+    constexpr std::size_t payload = 900 - 8; // Leave room for both ellipses.
+    const auto matched_end = ends[low];
+    std::size_t token_start = low == 0 ? 0 : ends[low - 1];
+    while (token_start < matched_end && is_ascii_space(static_cast<unsigned char>(text[token_start])))
+        ++token_start;
+    const auto continuation = [&](std::size_t i) {
+        return i < text.size() && (static_cast<unsigned char>(text[i]) & 0xc0U) == 0x80U;
+    };
+    std::string best = row.preview;
+    int best_count = shown;
+    const auto consider = [&](std::size_t begin, std::size_t end) {
+        while (continuation(begin)) ++begin;
+        while (continuation(end)) --end;
+        FieldMatchInput window("excerpt", text.substr(begin, end - begin), 0, true);
+        const auto hits = count(window);
+        if (hits > best_count && excerpt_matches_group(window, *missing)) {
+            best_count = hits;
+            best = (begin ? "... " : "") + std::string(window.text) + (end < text.size() ? " ..." : "");
+        }
+    };
+    if (matched_end - token_start > payload) {
+        // A path or identifier can itself exceed the display budget. Compare
+        // overlapping windows in its original bytes, including its final suffix.
+        for (auto start = token_start; start + payload < matched_end; start += payload / 2)
+            consider(start, start + payload);
+        consider(matched_end - payload, matched_end);
+    } else {
+        auto begin = matched_end > 120 ? matched_end - 120 : 0;
+        while (begin < token_start && begin > 0 && !is_ascii_space(static_cast<unsigned char>(text[begin - 1])))
+            ++begin;
+        begin = std::min(begin, token_start);
+        auto end = std::min(text.size(), begin + payload);
+        if (end < text.size()) {
+            auto boundary = end;
+            while (boundary > matched_end && !is_ascii_space(static_cast<unsigned char>(text[boundary]))) --boundary;
+            if (boundary > matched_end) end = boundary;
+        }
+        consider(begin, end);
+    }
+    return best;
+}
+
+Json compact_brief_evidence_json(const BriefSelection& selection, const QueryRequest& request) {
     Json evidence = Json::array();
     for (std::size_t index = 0; index < selection.ordered.size(); ++index) {
         const BriefEvidenceRef& reference = selection.ordered[index];
@@ -118,7 +205,7 @@ Json compact_brief_evidence_json(const BriefSelection& selection) {
                 {"start_line", hit.section.start_line},
                 {"end_line", hit.section.end_line},
                 {"heading", hit.section.heading},
-                {"excerpt", hit.section.preview},
+                {"excerpt", compact_section_excerpt(hit, request)},
                 {"indexed_text_bytes", hit.section.indexed_text.size()},
                 {"indexed_text_omitted_bytes", hit.section.indexed_text_omitted_bytes},
                 {"status", hit.section.status},
@@ -152,8 +239,6 @@ Json compact_brief_evidence_json(const BriefSelection& selection) {
     }
     return evidence;
 }
-
-}  // namespace
 
 Json make_compact_brief_json(const RuntimeOptions& options,
                              const QueryRequest& request,
@@ -190,7 +275,7 @@ Json make_compact_brief_json(const RuntimeOptions& options,
     };
     output["ranking_policy"] = "global-evidence-order-unique-path-v1";
     output["ranked_paths"] = std::move(ranked_paths);
-    output["evidence"] = compact_brief_evidence_json(selection);
+    output["evidence"] = compact_brief_evidence_json(selection, request);
     output["verification_paths"] = compact_brief_verification_paths(selection);
     return output;
 }

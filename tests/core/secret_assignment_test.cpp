@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "source_read.h"
 #include <iostream>
 #include <string>
 #include <vector>
@@ -138,6 +139,21 @@ int main(int argc, char** argv) {
     const auto suppressed = "token = \"" + opaque + "\"; // GiTlEaKs:AlLoW";
     if (shin::context::detect_secret_like_text(suppressed, true).found ||
         !shin::context::detect_secret_like_text(suppressed, false).found) return 1;
+    for (const std::string newline : {"\n", "\r\n"}) {
+        const auto empty_secret = "APP_CLIENT" "SECRET=" + newline;
+        const auto template_content = empty_secret + "APP_INSTALLATIONID=enterprise-scope-18" + newline;
+        constexpr std::string_view template_path = "deploy/service.env.example";
+        using shin::context::source_range_secret;
+        if (source_range_secret(template_content, template_path).found ||
+            !source_range_secret(template_content, "config.js").found ||
+            !source_range_secret(template_content + "APP_API_" "TOKEN=" + opaque, template_path).found ||
+            !source_range_secret(empty_secret + "\"" + opaque + "\"", template_path).found ||
+            !source_range_secret("APP_API_" "TOKEN=" + opaque + newline + template_content, template_path).found ||
+            !source_range_secret(template_content + "HEADER=Bearer " + opaque, template_path).found) {
+            std::cerr << "dotenv empty assignment or secret detection regressed\n";
+            return 1;
+        }
+    }
     // Neither long safe prefixes nor non-UTF-8 source bytes waive later findings.
     const auto large = std::string(1024 * 1024, 'x') + "\n";
     if (shin::context::detect_secret_like_text(large, false).found ||

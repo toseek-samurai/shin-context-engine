@@ -1173,7 +1173,7 @@ static void scan_doctor_source_secrets(const RuntimeOptions& options, DoctorResu
             if (!fs::is_regular_file(full_path)) continue;
             if (isolated != quarantined.end()) content = read_file(full_path);
         }
-        if (isolated != quarantined.end() && isolated->second == fnv1a64(content) && source_range_secret(content).found) {
+        if (isolated != quarantined.end() && isolated->second == fnv1a64(content) && source_range_secret(content, path).found) {
             ++result.counts.secret_findings;
             ++result.counts.quarantined_files;
             add_doctor_issue(result.issues, result.counts, "info", "source-quarantined", path, 0,

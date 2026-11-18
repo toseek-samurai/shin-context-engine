@@ -154,7 +154,8 @@ bool extension_allowed(const std::vector<std::string>& extensions, const std::st
 std::string basename_of(const std::string& path);
 bool contains_any(const std::string& lower_text, const std::vector<std::string>& terms);
 void append_unique_string(std::vector<std::string>& values, const std::string& value);
-SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression = true);
+SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression = true,
+                                     std::string_view source_path = {});
 std::string redact_sensitive_text(const std::string& text);
 std::string detect_area(const std::string& path);
 std::string detect_doc_type(const std::string& path,

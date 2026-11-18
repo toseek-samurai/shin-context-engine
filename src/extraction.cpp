@@ -378,13 +378,15 @@ static LinkRow classify_link(const fs::path& root,
         row.status = project->link_status(row.resolved_path);
         if (row.status != "broken") return row;
     }
-    // Managed Markdown uses document-relative paths. Standalone profiles and
-    // extracted JSON references keep their repository-root path conventions.
-    const bool implicit_root = (!project || kind == "path-reference") &&
+    // JSON catalogs use repository paths unless they give an explicit
+    // document-relative prefix. Keep standalone profiles' existing conventions.
+    const bool catalog_root = project && kind == "path-reference" &&
+        !starts_with(target_path, "./") && !starts_with(target_path, "../");
+    const bool profile_root = !project &&
         (starts_with(target_path, "docs/") || starts_with(target_path, "README.md") ||
          starts_with(target_path, "tests/") || starts_with(target_path, "include/") ||
          starts_with(target_path, "src/") || starts_with(target_path, "deploy/"));
-    const auto resolved_rel = (project && explicit_root) || implicit_root
+    const auto resolved_rel = (project && explicit_root) || catalog_root || profile_root
         ? fs::path(target_path).lexically_normal() : document_relative;
     row.resolved_path = resolved_rel.generic_string();
     row.status = project ? project->link_status(row.resolved_path) : (fs::exists(root / resolved_rel) ? "ok" : "broken");
@@ -421,7 +423,7 @@ static std::vector<std::pair<std::string, std::string>> extract_markdown_links(c
     return links;
 }
 
-static std::vector<std::string> extract_doc_path_references(const std::string& line) {
+static std::vector<std::string> extract_doc_path_references(const std::string& line, bool preserve_prefix) {
     std::vector<std::string> refs;
     std::size_t pos = 0;
     while (pos < line.size()) {
@@ -439,7 +441,15 @@ static std::vector<std::string> extract_doc_path_references(const std::string& l
         while (end < line.size() && is_doc_path_char(line[end])) {
             ++end;
         }
-        std::string candidate = line.substr(doc_pos, end - doc_pos);
+        std::size_t start = doc_pos;
+        if (preserve_prefix && doc_pos > 0 && is_doc_path_char(line[doc_pos - 1])) {
+            if (line[doc_pos - 1] != '/') {
+                pos = end;
+                continue;
+            }
+            while (start > 0 && is_doc_path_char(line[start - 1])) --start;
+        }
+        std::string candidate = line.substr(start, end - start);
         std::size_t json_pos = candidate.find(".json");
         if (json_pos != std::string::npos) {
             refs.push_back(candidate.substr(0, json_pos + 5));
@@ -485,7 +495,7 @@ std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, c
         if (doc.kind == "json" && profile.json_path_references &&
             !external_path_namespace) {
             std::set<std::string> seen_on_line;
-            for (const std::string& target : extract_doc_path_references(line)) {
+            for (const std::string& target : extract_doc_path_references(line, project != nullptr)) {
                 if (!seen_on_line.insert(target).second) {
                     continue;
                 }
@@ -1743,7 +1753,7 @@ SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::p
                          SourceFactSource& source, SourceRelationInputs& relations) -> bool {
         std::string content;
         if (!load_source_fact_content(profile, root, path, source, content)) return false;
-        const auto secret = source_range_secret(content);
+        const auto secret = source_range_secret(content, path);
         if (secret.found) {
             // Preserve the byte binding for freshness and redacted follow-up reads,
             // but publish no searchable facts or relations from this file.

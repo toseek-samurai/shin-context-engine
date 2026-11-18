@@ -376,7 +376,7 @@ void SourceDiscoveryIndex::Impl::build_source_chunks(sqlite3* raw) {
         const auto content = read_bound_source(options.root, path, hash, maximum_file_bytes);
         total_bytes += content.size();
         require(total_bytes <= kSourceBytes, "source-discovery-byte-limit");
-        const bool redacted = source_range_secret(content).found;
+        const bool redacted = source_range_secret(content, path).found;
         read_scan_ms += elapsed_ms_since(read_started);
         if (redacted) { ++redacted_files; continue; }
         const auto chunk_started = SteadyClock::now();
@@ -482,7 +482,7 @@ Json SourceDiscoveryIndex::Impl::refine_file_routes(sqlite3* raw, const std::str
         if ((!inserted && observation->second != before) ||
             source_file_metadata(options.root / path, "verify-source-metadata") != before)
             throw_source_changed_during_verification("verify-source-metadata");
-        require(content.size() == bytes && !source_range_secret(content).found, "source-cache-source-mismatch");
+        require(content.size() == bytes && !source_range_secret(content, path).found, "source-cache-source-mismatch");
         work.bytes += bytes;
         const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
         require(plan.coverage_complete, "source-discovery-incomplete-source");
@@ -782,7 +782,8 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         std::map<std::string, int> per_path;
         const auto append_candidate = [&](Json candidate) {
             if (!file_routing && (at_snapshot || cache_status == "restored")) {
-                const auto content = read_bound_source(options.root, candidate.at("path"),
+                const auto& path = candidate.at("path").get_ref<const std::string&>();
+                const auto content = read_bound_source(options.root, path,
                                                        candidate.at("source_content_hash"), source_file_budget(options));
                 const auto begin = candidate.at("byte_start").get<std::size_t>();
                 const auto end = candidate.at("byte_end").get<std::size_t>();
@@ -790,7 +791,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
                 require(end <= content.size() && fnv1a64(content.substr(begin, end - begin)) == candidate.at("span_hash").get<std::string>() &&
                         static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), begin) - offsets.begin()) == candidate.at("start_line").get<std::size_t>() &&
                         static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) == candidate.at("end_line").get<std::size_t>() &&
-                        !source_range_secret(content).found, "source-cache-source-mismatch");
+                        !source_range_secret(content, path).found, "source-cache-source-mismatch");
             }
             candidate["rank"] = candidates.size() + 1;
             candidates.push_back(std::move(candidate));

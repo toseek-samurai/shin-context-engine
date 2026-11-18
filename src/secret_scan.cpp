@@ -265,6 +265,8 @@ struct SecretPatterns {
     RE2 jwt{R"((?:^|[^A-Za-z0-9_])(eyJ[A-Za-z0-9_-]+\.[A-Za-z0-9_-]+\.[A-Za-z0-9_./+=-]+))", scanner_options()};
     RE2 bearer{R"((?i:\bbearer)[ \t]+([A-Za-z0-9_./+=-]{20,}))", scanner_options()};
     RE2 assignment{R"((?:^|[^A-Za-z0-9_$])["']?((?i:(?:[A-Za-z_$][A-Za-z0-9_$.-]*)?(?:secret|password|token|api_?key|access_key|private_key)(?:value)?))["']?[ \t]*[:=][ \t]*)", scanner_options()};
+    RE2 dotenv_key{R"([A-Za-z_][A-Za-z0-9_]*)", scanner_options()};
+    RE2 dotenv_next_assignment{R"(^\r?\n[ \t]*[A-Za-z_][A-Za-z0-9_]*[ \t]*=)", scanner_options()};
     RE2 literals{R"re("((?:\\(?s:.)|[^"\\])*)(?:"|$)|'((?:\\(?s:.)|[^'\\])*)(?:'|$)|`((?:\\(?s:.)|[^`\\])*)(?:`|$))re", scanner_options()};
     RE2 bare{R"(^[ \t\r\n]*([A-Za-z0-9_./+=-]{16,})[ \t]*(?:$|[,;}\r\n]))", scanner_options()};
     RE2 manifest_version{R"((?m)^[ \t]*apiVersion:[ \t]+[A-Za-z0-9./_-]+[ \t]*\r?$)", scanner_options()};
@@ -272,11 +274,25 @@ struct SecretPatterns {
     RE2 manifest_name{R"((?m)^[ \t]*metadata:[ \t]*\{[ \t]*name:[ \t]*([a-z0-9](?:[-a-z0-9.]*[a-z0-9])?)[ \t]*[,}])", scanner_options()};
 
     SecretPatterns() {
-        for (const auto* rule : {&private_key, &aws, &openai, &jwt, &bearer, &assignment, &literals, &bare,
+        for (const auto* rule : {&private_key, &aws, &openai, &jwt, &bearer, &assignment,
+                                &dotenv_key, &dotenv_next_assignment, &literals, &bare,
                                 &manifest_version, &manifest_kind, &manifest_name})
             if (!rule->ok()) throw std::logic_error("Invalid built-in secret scanner rule");
     }
 };
+
+bool dotenv_source(std::string_view path) {
+    return path.ends_with(".env") || path.ends_with(".env.example") ||
+        path.ends_with(".env.sample") || path.ends_with(".env.template") || path.ends_with(".env.dist");
+}
+
+bool empty_dotenv_assignment(Piece input, Piece key, Piece remainder, const SecretPatterns& rules) {
+    const auto key_start = static_cast<std::size_t>(key.data() - input.data());
+    const auto separator = key_start + key.size();
+    return (key_start == 0 || input[key_start - 1] == '\n') &&
+        separator < input.size() && input[separator] == '=' &&
+        RE2::FullMatch(key, rules.dotenv_key) && RE2::PartialMatch(remainder, rules.dotenv_next_assignment);
+}
 
 // Keep value inspection local. Newlines in literals/continued expressions are
 // retained, but a declaration cannot borrow identifiers from later statements.
@@ -422,7 +438,7 @@ bool ternary_branch(Piece input, Piece key, Piece remaining) {
 }
 }  // namespace
 
-SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression) {
+SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression, std::string_view source_path) {
     if (allow_source_suppression && contains_ascii_case_insensitive(text, "gitleaks:allow")) return {};
     static const SecretPatterns rules;
     const Piece input(text.data(), text.size());
@@ -440,10 +456,14 @@ SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source
         return {true, "bearer-token"};
 
     Piece remaining = input, key;
+    const bool dotenv = dotenv_source(source_path);
     while (RE2::FindAndConsume(&remaining, rules.assignment, &key)) {
         if (key.size() > 128 || !credential_key_side_is_sensitive(std::string(key)) || remaining.empty() ||
             remaining.front() == '=' || remaining.front() == '>') continue;
         if (ternary_branch(input, key, remaining)) continue;
+        // In dotenv, a new assignment starts a separate field. It will still
+        // be scanned under its own key, along with the whole-file signatures.
+        if (dotenv && empty_dotenv_assignment(input, key, remaining, rules)) continue;
         auto value = remaining;
         if (const auto tail = query_fragment_tail(input, key, remaining)) {
             if (tail->empty()) continue;

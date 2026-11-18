@@ -1002,7 +1002,7 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
         rows.docs = read_sources(profile, root);
     }
     for (auto& doc : rows.docs) {
-        const auto secret = source_range_secret(doc.content);
+        const auto secret = source_range_secret(doc.content, doc.path);
         if (!secret.found) continue;
         doc.quarantine_reason = secret.kind;
         doc.title = "Quarantined source";

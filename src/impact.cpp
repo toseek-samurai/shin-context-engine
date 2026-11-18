@@ -177,7 +177,7 @@ Json path_evidence(const RuntimeOptions& options, const std::string& path, const
         const auto content = read_bound_source(options.root, path, current->content_hash,
                                                static_cast<std::size_t>(current->byte_count));
         read_bytes += content.size();
-        if (source_range_secret(content).found) {
+        if (source_range_secret(content, path).found) {
             record["current_reread_omitted"] = true;
             record["omission_reason"] = "redacted";
             record["current_scope_candidates"] = nullptr;

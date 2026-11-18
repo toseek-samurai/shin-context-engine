@@ -225,7 +225,7 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
             if (fnv1a64(raw) != row.span_hash)
                 throw_index_error("source-read-span-mismatch", "Selected span does not match its source bytes.", false);
             if (ranges.contains(key)) continue;
-            const auto hit = source_range_secret(raw);
+            const auto hit = source_range_secret(raw, path);
             Json body = {{"path", path}, {"start_line", row.start}, {"end_line", row.end},
                 {"span_hash", row.span_hash}, {"source_content_hash", hash}, {"source_range_bytes", raw.size()},
                 {"state", hit.found ? "redacted" : "complete"},

@@ -260,7 +260,7 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         try {
             const auto content = core::read_bound_source(state.config.root, path,
                 found->second->at("content_hash"), selected_bytes_limit);
-            if (core::source_range_secret(content).found) { omitted.insert(path); return false; }
+            if (core::source_range_secret(content, path).found) { omitted.insert(path); return false; }
             return true;
         } catch (const core::CliError&) { omitted.insert(path); return false; }
     };

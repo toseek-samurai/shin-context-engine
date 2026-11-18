@@ -270,6 +270,12 @@ void automatic_document_links_resolve_from_the_document(const fs::path& parent) 
     write("docs/catalog/index.json", "{\"entry\": \"README.md\"}\n");
     write("docs/catalog/README.md", "# Catalog\n");
     write("docs/changelog/index.json", "{\"entry\": \"README.md\"}\n");
+    write("docs/catalog/contracts.json", "{\n"
+        "  \"primary\": \"packages/widget/docs/machine/bridge.json\",\n"
+        "  \"relative\": \"./docs/machine/local.json\"\n"
+        "}\n");
+    write("packages/widget/docs/machine/bridge.json", "{\"status\": \"active\"}\n");
+    write("docs/catalog/docs/machine/local.json", "{\"status\": \"active\"}\n");
 
     Profile profile;
     profile.automatic_project_files = true;
@@ -296,6 +302,9 @@ void automatic_document_links_resolve_from_the_document(const fs::path& parent) 
     expect(has_link("docs/catalog/index.json", "docs/catalog/README.md", "ok") &&
            has_link("docs/changelog/index.json", "README.md", "ok"),
            "bare README references in JSON catalogs prefer siblings and can refer to the project README");
+    expect(has_link("docs/catalog/contracts.json", "packages/widget/docs/machine/bridge.json", "ok") &&
+           has_link("docs/catalog/contracts.json", "docs/catalog/docs/machine/local.json", "ok"),
+           "JSON contract references preserve the package prefix and explicit relative paths");
 }
 
 void explicit_document_inventory_at_scale(const fs::path& parent) {

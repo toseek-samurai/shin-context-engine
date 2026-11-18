@@ -46,9 +46,11 @@ void redact_model_input(const fs::path& root, const fs::path& input_path) {
         }
         // Inspect the full source span as well as published text, including
         // values hidden by summary clipping or source suppression comments.
-        auto hit = source_range_secret(source_physical_range(content, offsets, row.at("start_line").get<int>(), row.at("end_line").get<int>()));
+        auto hit = source_range_secret(source_physical_range(content, offsets, row.at("start_line").get<int>(),
+                                                             row.at("end_line").get<int>()), path);
         std::string text = row.at("text").get<std::string>();
-        if (!hit.found) hit = source_range_secret(text);
+        // Published text can be a summary with different syntax from the file.
+        if (!hit.found) hit = source_range_secret(text, {});
         if (hit.found) text = "[REDACTED:" + hit.kind + "]";
         std::cout << Json({{"index", count}, {"text", text}, {"redacted", hit.found}}).dump() << '\n';
         ++count;
@@ -65,7 +67,7 @@ Json project_range(const FactRow& row, const std::string& content,
     }
     // Inspect the complete range before compaction/clipping; source suppression
     // comments cannot authorize exporting a credential into model input.
-    const SecretScanHit hit = source_range_secret(raw);
+    const SecretScanHit hit = source_range_secret(raw, row.path);
     std::string text = compact_whitespace(raw);
     if (hit.found) text = "[REDACTED:" + hit.kind + "]";
     const auto redacted_bytes = text.size();
@@ -158,7 +160,7 @@ void export_structural_file(const std::string& path, const std::string& hash, co
     const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
     const auto offsets = source_line_offsets(content);
     // Scan the entire file before partitioning: a secret can straddle pieces.
-    const auto secret = source_range_secret(content);
+    const auto secret = source_range_secret(content, path);
     const auto covered = plan.chunks.empty() ? 0 : plan.chunks.back().end;
     std::cout << Json({{"type", "file"}, {"path", path}, {"source_content_hash", hash},
         {"supported", plan.supported}, {"syntax_complete", plan.syntax_complete},

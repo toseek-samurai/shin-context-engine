@@ -83,7 +83,7 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
                 candidate.at("start_line").get<std::size_t>() &&
             static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) ==
                 candidate.at("end_line").get<std::size_t>());
-        if (source_range_secret(content).found) { omit(path, "redacted", "selected"); continue; }
+        if (source_range_secret(content, path).found) { omit(path, "redacted", "selected"); continue; }
         append_body(candidate, text, "selected");
         if (std::find(seeds.begin(), seeds.end(), path) == seeds.end()) seeds.push_back(path);
     }
@@ -149,7 +149,7 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
         if (!sources.contains(path)) { omit_related("not-scanned-source"); continue; }
         if (attempted_related == kRelatedBodies && !contents.contains(path)) { omit_related("related-body-budget"); continue; }
         const auto& content = read(path);
-        if (source_range_secret(content).found) {
+        if (source_range_secret(content, path).found) {
             if (attempted_related < kRelatedBodies) ++attempted_related;
             omit_related("redacted"); continue;
         }

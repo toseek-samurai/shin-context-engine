@@ -6,6 +6,7 @@
 #include "mcp_activity_tracker.h"
 #include "mcp_session_tools.h"
 #include "mcp_followups.h"
+#include <mcp/Methods.hpp>
 #include <mcp/server/McpServer.hpp>
 #include <mcp/Transport.hpp>
 #include <atomic>
@@ -481,6 +482,10 @@ int run(int argc, char** argv, char** environment) {
             return output;
         });
     }
+    // The SDK wires server/discover during tool registration with a draft
+    // response shape. Leave that method unavailable on stdio so clients
+    // can negotiate a supported version through initialize.
+    server->GetSessionHandler().SetRequestHandler(mcp::methods::kDiscover, {});
     std::signal(SIGINT, stop);
     std::signal(SIGTERM, stop);
 #ifndef _WIN32

@@ -345,7 +345,8 @@ class McpTests(unittest.TestCase):
             self.assertEqual(cancelled['error']['code'], 'service-request-cancelled')
             self.wait_service_state(lambda s: s['waiting_requests'] == 0)
 
-    def adapter(self, root=None, roots=None, executable=MCP, config=None, client='command-code'):
+    def adapter(self, root=None, roots=None, executable=MCP, config=None, client='command-code',
+                protocol_version='2025-11-25', probe_discovery=False):
         argv = [str(executable), '--home', str(self.home)]
         if config:
             argv += ['--client-config',str(config),'--client-format',client]
@@ -368,14 +369,24 @@ class McpTests(unittest.TestCase):
                 child.communicate()
                 self.fail('MCP adapter did not stop')
         self.addCleanup(cleanup)
-        response = self.rpc(child, 'initialize', {'protocolVersion': '2025-11-25', 'capabilities': {},
+        if probe_discovery:
+            discovery = self.rpc(child, 'server/discover', {})
+            self.assertEqual(discovery['error']['code'], -32601, discovery)
+        response = self.rpc(child, 'initialize', {'protocolVersion': protocol_version, 'capabilities': {},
             'clientInfo': {'name': 'shin-native-test', 'version': '1'}})
-        self.assertEqual(response['result']['protocolVersion'], '2025-11-25')
+        self.assertEqual(response['result']['protocolVersion'], protocol_version)
         self.assertEqual(response['result']['serverInfo']['name'], 'shin')
         child.initialization = response['result']
         child.stdin.write(b'{"jsonrpc":"2.0","method":"notifications/initialized"}\n')
         child.stdin.flush()
         return child
+
+    def test_discovery_probe_falls_back_to_version_negotiated_initialize(self):
+        for version in ('2024-11-05', '2025-11-25'):
+            with self.subTest(version=version):
+                child = self.adapter(protocol_version=version, probe_discovery=True)
+                self.assertTrue(self.tool(child, 'shin_help', {})['ok'])
+                self.finish_adapter(child)
 
     def runtime_kit(self, prefix, version=None, marker='original', version_newline='\n'):
         """A disposable code cohort, never an installed consumer kit."""

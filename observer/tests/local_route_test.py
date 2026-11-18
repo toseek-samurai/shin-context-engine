@@ -103,6 +103,76 @@ class LocalRouteTests(unittest.TestCase):
         self.build()
         return path, value
 
+    def test_installed_kit_prepares_enrolled_source_without_old_settings(self):
+        marker, _ = self.marker()
+        self.managed(service=True)
+        old_identity = self.ce('identity')['identity']
+        self.stop_service()
+        workspace = self.workspace()
+        protected = [workspace / 'state.json', workspace / 'publication/state.json',
+                     workspace / 'identity/state.json', self.home / 'registry/state.json',
+                     self.home / 'identity/state.json', marker, self.owner_path()]
+        original = {path: path.read_bytes() for path in protected}
+        external = {path: path.read_bytes() for path in self.f.out.rglob('*') if path.is_file()}
+        history = self.home / 'service/history/telemetry.sqlite'
+        history_inode = history.stat().st_ino
+        self.f.profile_path.unlink()
+        self.f.config.unlink()
+        (self.f.root / 'src/limits.js').write_text('export function readLimit() { return 83; }\n')
+
+        # A package starts at its normal bin entry point. All settings and
+        # service processes used here are confined to this fixture.
+        kit = self.base / 'kit'
+        (kit / 'bin').mkdir(parents=True)
+        executable = kit / 'bin/shin-ce'
+        shutil.copy2(CE, executable)
+        for library in CE.parent.glob('*.dylib'):
+            shutil.copy2(library, executable.parent / library.name)
+        registry = Path(__file__).resolve().parents[2] / 'profiles'
+        shutil.copytree(registry, kit / 'share/shin-context/profiles')
+        def installed(command, *args):
+            return self.invoke(executable, command, *args, '--home', str(self.home),
+                               '--root', str(self.f.root), one_shot=False)
+
+        def stop_installed():
+            installed('service-stop')
+            end = time.monotonic() + 10
+            while (self.home / 'service/rpc.sock').exists():
+                self.assertLess(time.monotonic(), end, 'fixture service did not stop')
+                time.sleep(.02)
+
+        try:
+            installed('service-start')
+            answer = installed('query', 'readLimit')
+            self.assertEqual(answer['transport'], 'local-socket-v1')
+            self.assertTrue(answer['local_ready'])
+            self.assertIn('return 83;', answer['source_context'])
+            self.assertNotIn('return 7;', answer['source_context'])
+            self.assertEqual(Path(answer['index']), workspace / 'automatic/index')
+            self.assertIn('return 83;', installed('read', 'src/limits.js', '--snapshot', answer['snapshot_id'])['source_context'])
+            self.assertEqual(installed('identity')['identity'], old_identity)
+            self.assertEqual(history.stat().st_ino, history_inode)
+            self.assertEqual({path: path.read_bytes() for path in protected}, original)
+            self.assertEqual({path: path.read_bytes() for path in self.f.out.rglob('*') if path.is_file()}, external)
+            self.assertFalse(self.f.profile_path.exists())
+            self.assertFalse(self.f.config.exists())
+            row = installed('storage-status')['projects'][0]
+            self.assertGreater(row['index_bytes'], 0)
+            self.assertGreater(row['cache_bytes'], 0)
+            stop_installed()
+            refused = self.invoke(executable, 'profile-relocate', '--profile-dir', str(registry), '--root',
+                                  str(self.f.root), '--home', str(self.home), expected=2)
+            self.assertEqual(refused['error']['code'], 'binding-mode-conflict')
+            self.assertEqual({path: path.read_bytes() for path in protected}, original)
+            installed('service-start')
+            self.assertIn('return 83;', installed('query', 'readLimit')['source_context'])
+            installed('detach')
+            self.assertTrue(installed('storage-status')['projects'][0]['detached'])
+            self.assertEqual(self.owner_path().read_bytes(), original[self.owner_path()])
+        finally:
+            if (self.home / 'service/rpc.sock').exists():
+                stop_installed()
+
     def test_storage_sizes_include_external_canonical_index_once(self):
         self.attach()
         before = self.canonical_files()

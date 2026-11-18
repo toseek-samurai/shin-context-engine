@@ -88,6 +88,18 @@ def duplicate_paragraphs(files):
     return errors
 
 
+def managed_setup_errors(page):
+    text = page.read_text(encoding="utf-8")
+    errors = []
+    if ".shinignore" not in text:
+        errors.append({"id": "missing-managed-exclusion-guidance", "path": str(page)})
+    for command in ("profile-review", "profile-accept", "adoption-plan", "marker-accept",
+                    "profile-check --strict", "eval --strict"):
+        if command in text:
+            errors.append({"id": "core-command-in-managed-setup", "path": str(page), "command": command})
+    return errors
+
+
 def check_bundle(root, maximum_entry_bytes):
     root = root.resolve()
     entry = root / "SKILL.md"
@@ -135,6 +147,14 @@ def check_repository(root):
             expected = f"{relative}/{page}"
             if expected not in profile["rootFiles"]:
                 errors.append({"id": "guidance-not-enrolled", "path": expected})
+    for page in (skill_root / "SKILL.md", skill_root / "references/setup-and-adoption.md",
+                 root / BUNDLES["hermes"][0] / "SKILL.md",
+                 root / BUNDLES["hermes"][0] / "references/route-and-publication.md",
+                 root / "integrations/mcp/skills/shin-context/SKILL.md"):
+        if page.is_file():
+            errors.extend(managed_setup_errors(page))
+        else:
+            errors.append({"id": "missing-managed-setup-page", "path": str(page)})
     agent = root / "AGENTS.md"
     agent_bytes = agent.stat().st_size
     if agent_bytes > 4000:

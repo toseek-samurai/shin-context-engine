@@ -54,7 +54,7 @@ search; partial source coverage has its own column. Enter opens the cause,
 next step and any reported excluded file paths.
 
 Project details also explain nonblocking documentation warnings.
-The default bootstrap route keeps serving verified context when local links are
+The managed service keeps serving verified context when local links are
 broken; `documentation_warnings` counts these warnings in readiness and service
 project rows. Strict Core audits still report the documentation defect.
 
@@ -144,18 +144,26 @@ outside explicit update actions, the dashboard observes existing state.
 the selected service, their search and observer states, recent memory usage,
 active queries, and request counters for the current run. Omit `--text` for JSON.
 
-Since dev.120, native query responses include `source_scope` with the selected
-source roots, extension allowlist, limits and omitted-entry counts. It describes
-source search, independently of `document_context`. Files outside that scope
-need direct reads; `whole_project_coverage=false` is informational, not an alert.
-Styles and templates use exact bounded-text fragments rather than compiler or
-browser semantics.
+Query responses include `source_scope`. In the development source,
+`selection=automatic-project-text` describes discovery throughout the selected
+folder. The empty `extensions` list means eligible text may have any extension
+or none. Project `.gitignore` files set the baseline and a root `.shinignore` can override it. Inspect limits, omissions
+and source coverage when a result is empty. `whole_project_coverage=false`
+records the bound on evidence. A stylesheet or template can supply exact
+source excerpts without establishing browser or compiler behavior.
+When the service has a verified managed reader, `shin-ce status --service
+--text` also shows counts of excluded entries, oversized files and binary files.
 
 Text status distinguishes missing measurements from zero and preparing or
 standby readers from blocked projects. A standby project is still observed; its
 search reader warms when needed.
 
-Since preview dev.57, a permanent-profile search miss can return `local_ready=true`
+For a managed project, `project_quality=automatic` identifies the kit's checks
+and `readiness_scope=automatic-project-files` identifies the selected folder.
+Use `retrieval_ready`, or a successful `local_ready=true` where returned, to
+determine availability. No project-authored quality suite is needed.
+
+On an explicitly attached standalone profile route, a search miss can return `local_ready=true`
 and `retrieval_ready=true` with `canonical_ready=false`, `project_quality=degraded`
 and a bounded `quality_warning`. These responses contain verified current context;
 they do not claim that strict quality checks passed. The warning survives resident
@@ -213,7 +221,6 @@ Project details provide technical reports. Earlier desktop previews and the TUI 
 | History: recorded calls and session details | TUI Activity / Journal; `shin-ce service-status` JSON |
 | Projects: add a folder and connect coding agents | `shin-ce project-add --root /absolute/path/to/project`; follow the reviewed client setup procedure for agent connections |
 | Storage inventory and cleanup plan | TUI Storage or `shin-ce storage-status` JSON; cleanup remains a separate command requiring the reported revision |
-| Profile changes requiring review | `shin-ce profile-review`; acceptance is a separate explicit action |
 | History / Agents: model usage | TUI Activity / Agents reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
 
 The TUI shares Monitor's project-state and request-timing calculations. It uses
@@ -498,12 +505,11 @@ index or replays an installation.
 ### Windows MSI project preparation
 
 Windows provides `shin-ce prepare-projects [--home DIR] [--check]`.
-After a successful MSI installation, it prepares all currently enrolled projects
-with the installed Core and existing approvals, then verifies their service
-readiness. It runs as the normal desktop user; policy failures are reported per
-project in the private `windows-setup` journal. `--check` is read-only and refuses
-missing, interrupted or outdated completion. It does not approve profiles or
-re-enroll detached projects. See the [Windows guide](windows-desktop.md#monitor-setup-and-updates)
+After a successful MSI installation, it prepares enrolled folders with the
+new kit and their existing access grants, then checks service readiness. It
+runs as the normal desktop user and records failures per project in the private
+`windows-setup` journal. `--check` is read-only and refuses missing, interrupted
+or outdated completion. Detached projects stay detached. See the [Windows guide](windows-desktop.md#monitor-setup-and-updates)
 for the MSI completion action and unattended installation boundaries.
 
 ### Agent access and live catalogs

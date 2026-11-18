@@ -309,7 +309,7 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 const auto& histories = field(field(telemetry, "history"), "projects");
                 if (histories.is_array()) for (const auto& item : histories) if (field(item, "id") == field(row, "id"))
                     out.push_back({shin::ui::tr("Retained requests: ") + number(field(item, "requests")) + shin::ui::tr(" | Errors: ") + number(field(item, "errors"))});
-                out.push_back({}); out.push_back({shin::ui::tr("Esc back  |  shin-ce profile-review --root PATH for pending configuration changes")});
+                out.push_back({}); out.push_back({shin::ui::tr("Esc back")});
                 for (const auto& line : ui::service_activity_lines(row)) out.push_back({line});
             }
         }

@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "project_files.h"
 #include "request_scoring.h"
 #include "retrieval_plan.h"
 #include "document_lifecycle.h"
@@ -213,13 +214,16 @@ static int run_context_from_index(const RuntimeOptions& options, const QueryRequ
 }
 
 Json RetrievalSession::context(const QueryRequest& request) const {
+    verify_project_exclusions();
     if (request.require_current) require_current_index_or_throw(freshness_);
     ContextIndexResult result = collect_context_from_index_with_fallback(options_, request);
     const std::vector<ContextHit> selected_hits =
         select_context_sections(result.section_hits_by_doc, request.limit, request.per_doc_limit);
-    return make_context_json(options_, request, "generated-index", freshness_, freshness_.source_count,
+    auto output = make_context_json(options_, request, "generated-index", freshness_, freshness_.source_count,
                              result.matched_sections, result.matched_facts, selected_hits,
                              result.fact_hits, result.diagnostics);
+    verify_project_exclusions();
+    return output;
 }
 
 static ContextIndexResult collect_context_from_sources(const RuntimeOptions&,
@@ -283,6 +287,7 @@ static int run_context_from_sources(const RuntimeOptions& options, const QueryRe
     ContextIndexResult result = collect_context_from_sources_with_fallback(options, request, corpus);
     std::vector<ContextHit> selected_hits =
         select_context_sections(result.section_hits_by_doc, request.limit, request.per_doc_limit);
+    require_project_exclusions(options.root, corpus.exclusions);
     return emit_context_json(options, request, "source-scan", freshness,
                              static_cast<int>(corpus.documents.size()),
                              result.matched_sections, result.matched_facts,
@@ -1041,6 +1046,7 @@ std::vector<BriefExecution> experiment::batch_brief_executions(
     for (std::size_t i = 0; i < requests.size(); ++i)
         executions.push_back(make_brief_execution(requests[i], supplement_document_lifecycle(session.options(),
             requests[i], session.manifest(), std::move(results.at(i)))));
+    session.verify_project_exclusions();
     return executions;
 }
 
@@ -1052,6 +1058,7 @@ std::vector<Json> experiment::batch_brief_documents(
     for (std::size_t i = 0; i < requests.size(); ++i)
         documents.push_back(make_brief_json(session.options(), requests[i], "generated-index",
             session.freshness(), session.freshness().source_count, executions[i], BriefProjection::full));
+    session.verify_project_exclusions();
     return documents;
 }
 #endif
@@ -1071,12 +1078,15 @@ BriefExecution RetrievalSession::brief_execution(const QueryRequest& request) co
     auto execution = make_brief_execution(scoped, supplement_document_lifecycle(options_, scoped, manifest(),
                                 collect_brief_from_index_with_fallback(options_, scoped, &manifest())));
     execution.retrieval.query_plan["scoring_work"] = scoped.scoring->metrics();
+    verify_project_exclusions();
     return execution;
 }
 
 Json RetrievalSession::brief(const QueryRequest& request, BriefProjection projection) const {
-    return make_brief_json(options_, request, "generated-index", freshness_, freshness_.source_count,
+    auto output = make_brief_json(options_, request, "generated-index", freshness_, freshness_.source_count,
                            brief_execution(request), projection);
+    verify_project_exclusions();
+    return output;
 }
 
 static BriefResult collect_brief_from_sources(const RuntimeOptions&,
@@ -1126,6 +1136,7 @@ static int run_brief_from_sources(const RuntimeOptions& options,
         require_complete_source_scan_or_throw(freshness);
     }
     BriefResult result = collect_brief_from_sources_with_fallback(options, request, corpus);
+    require_project_exclusions(options.root, corpus.exclusions);
     return emit_brief_json(options, request, "source-scan", freshness,
                            static_cast<int>(corpus.documents.size()), result, projection);
 }

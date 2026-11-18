@@ -1,4 +1,6 @@
 #include "context_internal.h"
+#include "project_files.h"
+#include "../shared/runtime_path.h"
 #include "generated_row_decoder.h"
 #include "generated_io.h"
 #include "profile_policy.h"
@@ -6,7 +8,8 @@
 namespace shin::context {
 
 int run_discover(const RuntimeOptions& options) {
-    const DiscoveryResult result = discover_project(options.root);
+    const ProjectFiles project = ProjectFiles::scan(options.profile, options.root);
+    const DiscoveryResult result = discover_project(options.root, &project);
     std::cout << "{\n"
               << "  \"schema_version\": \"shin.discovery.v1\",\n"
               << "  \"tool\": \"shin-context\",\n"
@@ -22,6 +25,7 @@ int run_discover(const RuntimeOptions& options) {
               << "  \"build_systems\": " << json_string_array(result.build_systems) << ",\n"
               << "  \"project_kinds\": " << json_string_array(result.project_kinds) << ",\n"
               << "  \"signals\": " << json_string_array(result.signals) << ",\n"
+              << "  \"project_files\": " << project.summary().dump() << ",\n"
               << "  \"recommended_profiles\": " << json_string_array(result.recommended_profiles) << ",\n"
               << "  \"recommended_extractors\": " << json_string_array(result.recommended_extractors) << ",\n"
               << "  \"bootstrap\": {\"state\":" << json_string(result.bootstrap_state)
@@ -30,7 +34,7 @@ int run_discover(const RuntimeOptions& options) {
               << ",\"project_mutation_required\":" << (result.project_mutation_required ? "true" : "false")
               << ",\"primary_profile\":"
               << (result.primary_profile.empty() ? "null" : json_string(result.primary_profile))
-              << ",\"profile_mode\":\"bootstrap\""
+              << ",\"profile_mode\":\"automatic-project-text\""
               << ",\"next_steps\":" << json_string_array(result.next_steps) << "},\n"
               << "  \"warnings\": " << json_string_array(result.warnings) << ",\n"
               << "  \"counts\": {"
@@ -150,7 +154,7 @@ int run(int argc, char** argv) {
         throw_usage_error("missing-command", "A command is required.");
     }
     RuntimeOptions options;
-    std::string profile_id = "shin";
+    std::string profile_id = "generic-source";
     fs::path profile_dir = "profiles";
     bool profile_set = false;
     bool profile_dir_set = false;
@@ -242,8 +246,22 @@ int run(int argc, char** argv) {
         require_no_command_args(args, command);
         return run_version();
     }
+    if (!profile_dir_set && !profile_set) {
+        const auto image = ::shin::running_program_path();
+        if (image.empty()) throw_index_error("installation-unavailable", "Cannot locate the running Shin Core kit.", false);
+        const auto bin = image.parent_path();
+        profile_dir = bin.parent_path() / "share/shin-context/profiles";
+        for (const auto& prefix : {bin.parent_path(), bin}) {
+            const auto bundled = prefix / "share/shin-context/profiles";
+            if (fs::is_regular_file(bundled / "generic-source.json")) {
+                profile_dir = bundled;
+                break;
+            }
+        }
+    }
     if (command == "discover") {
         require_no_command_args(args, command);
+        options.profile = make_profile("generic-source", profile_dir);
         return run_discover(options);
     }
     if (command == "snapshot-diff") {

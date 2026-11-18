@@ -2,7 +2,7 @@
   "schemaVersion": "shin.hermes-agent-integration.v1",
   "document": "hermes-agent-integration",
   "status": "active-contract",
-  "summary": "Historical Python plugin contract. Current Hermes integration uses native Shin2.0 MCP and its workflow skill; Core stays agent-neutral and consumer AGENTS.md and adoption contracts retain authority.",
+  "summary": "Read-only tools in the historical Hermes Python plugin resolved each adopted project's external index and checked its readiness before serving evidence. Current Hermes agents use native MCP for registered folders under mcp-service-v1.json.",
   "ownership": {
     "shin": "Deterministic project discovery, route validation, freshness, retrieval, diagnostics, and Agent Context Pack semantics.",
     "hermes": "Agent session, model routing, tool invocation, skills, delegation, and optional automation.",
@@ -77,7 +77,7 @@
     "runtime": "native shin-mcp with shin_status, shin_query, shin_inspect and shin_read",
     "guidance": "docs/native-client-setup.md",
     "boundary": "Hermes owns conversation and compression; Shin owns verified project evidence, not chat memory.",
-    "plugin": "The Python plugin below is retained compatibility source, not the default client route."
+    "plugin": "The standalone compatibility plugin still requires the adopted project's marker and verified external index. Its Brief, Pack and Diagnose tools fail closed when readiness fails. This contract grants no authority to create a marker or change a managed project."
   },
   "upstreamReferences": {
     "verifiedOn": "2026-08-11",

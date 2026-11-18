@@ -5,7 +5,7 @@ namespace shin::observer {
 // External-only storage management. Never writes under a project root.
 Json local_storage(const fs::path& home, const std::optional<fs::path>& root = {},
                    const std::string& revision = {}, const std::optional<bool>& automatic = {});
-void guard_project_storage(const fs::path& home, const fs::path& root);
+void guard_project_storage(const fs::path& home, const fs::path& root, bool private_connection = false);
 void guard_external_storage(const fs::path& home, const fs::path& root, const fs::path& output);
 void automatic_local_storage(const fs::path& home);
 void verify_storage_capacity(std::uintmax_t used, std::uintmax_t requested, std::uintmax_t available);

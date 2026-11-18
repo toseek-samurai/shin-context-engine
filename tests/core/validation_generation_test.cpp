@@ -22,7 +22,7 @@ void test(const fs::path& base, const fs::path& registry) {
     RuntimeOptions options;
     options.root = base / "root"; options.out_root = base / "index"; options.profile_dir = base / "profiles";
     auto profile = parse_json_text(read_file(registry / "generic-source.json"), "profile");
-    profile["sourceExtensions"] = {".md"}; profile["sourceFactRoots"] = {"src", "apps"};
+    profile["sourceExtensions"] = {".md"}; profile["sourceFactRoots"] = {"."};
     profile["sourceFactExtensions"] = {".js", ".rsx"};
     write(options.profile_dir / "generic-source.json", profile.dump());
     options.profile = make_profile("generic-source", options.profile_dir);
@@ -102,8 +102,11 @@ void test(const fs::path& base, const fs::path& registry) {
                 [&] { write(options.root / "target.bin", "present"); });
     invalidates([&] { write(options.root / "apps/CRM/metadata.json", "{}"); },
                 [&] { fs::remove(options.root / "apps/CRM/metadata.json"); });
-    invalidates([&] { fs::create_directory(options.root / "apps/CRM/screen/.positions"); },
-                [&] { fs::remove(options.root / "apps/CRM/screen/.positions"); });
+    const auto layout = options.root / "apps/CRM/screen/.positions";
+    fs::create_directory(layout);
+    invalidates([&] { write(layout / "panel.json", "{}"); },
+                [&] { fs::remove(layout / "panel.json"); });
+    fs::remove(layout);
     invalidates([&] { auto edited = profile; edited["summary"] = "new policy";
                      write(options.profile_dir / "generic-source.json", edited.dump()); },
                 [&] { write(options.profile_dir / "generic-source.json", profile.dump()); });

@@ -111,7 +111,7 @@ with tempfile.TemporaryDirectory(prefix='shin-source-limit-update-', dir='/tmp')
                 if 'step' not in frame:
                     rejected = frame; continue
                 if frame['step'] == 13 and not injected:
-                    changed = json.loads(binding); changed['core_version'] = 'unsupported-core'
+                    changed = json.loads(binding); changed['root_identity'] = 'fixture-replaced-root'
                     save(binding_path, changed); injected = True
                 if frame['step'] == 16 and injected:
                     binding_path.write_bytes(binding)
@@ -145,20 +145,11 @@ with tempfile.TemporaryDirectory(prefix='shin-source-limit-update-', dir='/tmp')
         result = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
         assert result['changed'] and result['version'] == target['version'], result
         assert call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)['integrity_verified']
-        # Old partial context is not evidence under a new kit's safety policy.
-        # The source limit remains intact and visible; it cannot lose enrollment
-        # or make the installer revive the previous kit's derived generation.
-        deadline = time.monotonic() + 15
-        while True:
-            status = ce('service-status')
-            rows = [row for row in status['telemetry']['project_states'] if row['root'] == str(f.root)]
-            if rows and rows[0]['phase'] == 'blocked':
-                break
-            assert time.monotonic() < deadline, status
-            time.sleep(.02)
-        assert rows[0]['error_code'] == 'incomplete-source-observation', rows
-        context = ce('query', 'readLimit', '--root', f.root, error='incomplete-source-observation')
-        assert 'source_context' not in context
+        # The additional source now belongs to automatic discovery. The
+        # original explicit publication and policy remain available for rollback.
+        context = ce('query', 'growth', '--root', f.root)
+        assert context['local_ready'] and 'return 8' in context['source_context'], context
+        assert Path(context['index']) == workspace / 'automatic/index'
         assert binding_path.read_bytes() == binding
         assert (workspace / 'publication/state.json').read_bytes() == grant
         assert (f.out / 'docs/kb/generated/manifest.json').read_bytes() == manifest

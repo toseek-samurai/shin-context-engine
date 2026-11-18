@@ -132,16 +132,15 @@ class MultiWatchTests(unittest.TestCase):
         child = self.start(roots)
         self.wait(roots, child, lambda s: s.get('phase') == 'current')
         before = self.file_map(self.workspace(roots[0]) / 'index')
-        marker = roots[0] / 'docs/machine/shin-project-adoption-v1.json'
-        marker.parent.mkdir(parents=True)
-        marker.write_text('{}')
+        exclusions = roots[0] / '.shinignore'
+        exclusions.write_bytes(b'\xff')
         for index, root in enumerate(roots):
             (root / 'limits.js').write_text(f'export function readLimit() {{ return {400 + index}; }}\n')
         self.wait(roots[:1], child, lambda s: s.get('phase') == 'blocked')
         self.wait(roots[1:], child, lambda s: s.get('phase') == 'current' and s['publications'] == 1)
         self.query_all(roots[1:], 401)
         self.assertEqual(before, self.file_map(self.workspace(roots[0]) / 'index'))
-        marker.unlink()
+        exclusions.unlink()
         self.wait(roots[:1], child, lambda s: s.get('phase') == 'current' and s['publications'] == 1)
         self.assertIn('return 400;', self.run_ce('query', 'readLimit')['source_context'])
 

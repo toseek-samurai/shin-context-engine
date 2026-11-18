@@ -135,13 +135,13 @@ class LocalWatchTests(unittest.TestCase):
         registry = self.base / 'profiles'
         registry.mkdir()
         profile = json.loads((fixtures.REGISTRY / 'generic-source.json').read_text())
-        profile['sourceFactMaxFileBytes'] = 2 * 1024 * 1024
+        profile['sourceFactMaxFiles'] = 2
         (registry / 'generic-source.json').write_text(json.dumps(profile))
         self.init(profile_dir=registry)
         index = self.workspace() / 'index'
         before = self.file_map(index)
         binding = (self.workspace() / 'state.json').read_bytes()
-        (self.root / 'large.js').write_text(' ' * (2 * 1024 * 1024 + 1))
+        (self.root / 'third.js').write_text('export function newLimit() { return 19; }\n')
         result = self.run_ce('watch', '--samples', '3')
         self.assertGreaterEqual(result['watch']['failures'], 1)
         self.assertEqual(result['watch']['publications'], 0)
@@ -212,18 +212,18 @@ class LocalWatchTests(unittest.TestCase):
         self.assertTrue(state_path.is_symlink())
         self.assertEqual(json.loads(target.read_text()), value)
 
-    def test_duplicate_controller_and_later_adoption_fail_closed(self):
+    def test_duplicate_controller_is_refused_and_later_marker_keeps_private_authority(self):
         self.init()
         child = self.start()
         self.wait_state(lambda s: s['phase'] == 'current', child)
         self.assertEqual(self.run_ce('watch', '--samples', '1', expected=2)['error']['code'], 'writer-busy')
-        before = self.file_map(self.workspace() / 'index')
         marker = self.root / 'docs/machine/shin-project-adoption-v1.json'
         marker.parent.mkdir(parents=True)
         marker.write_text('{}')
-        state = self.wait_state(lambda s: s['phase'] == 'blocked', child)
-        self.assertEqual(state['last_result']['error']['code'], 'existing-project-adoption')
-        self.assertEqual(before, self.file_map(self.workspace() / 'index'))
+        (self.root / 'limits.js').write_text('export function readLimit() { return 32; }\n')
+        self.wait_state(lambda state: state['phase'] == 'current' and state['publications'] > 0, child)
+        self.assertIn('return 32;', self.run_ce('query', 'readLimit')['source_context'])
+        self.assertEqual(marker.read_text(), '{}')
 
     def test_recovers_prepared_receipt_gap_without_republishing(self):
         self.init()

@@ -1,5 +1,6 @@
 #include "context_internal.h"
 #include "worktree_state.h"
+#include "project_files.h"
 
 namespace shin::context {
 namespace {
@@ -122,13 +123,15 @@ void verify_inventory_stable(const RuntimeOptions& options,
                              const CurrentInventory& inventory,
                              const std::vector<std::string>& document_paths,
                              const SourceFactPathResult& source_fact_paths) {
-    const std::vector<std::string> after_documents = observe_source("enumerate-source-entry", [&] {
+    const auto project = options.profile.automatic_project_files
+        ? std::optional(ProjectFiles::scan(options.profile, options.root)) : std::nullopt;
+    const auto after_documents = project ? project->documents : observe_source("enumerate-source-entry", [&] {
         return enumerate_source_paths(options.profile, options.root);
     });
     if (after_documents != document_paths) {
         throw_source_changed_during_verification("enumerate-source-entry");
     }
-    const SourceFactPathResult after = enumerate_source_fact_paths(options.profile, options.root);
+    const SourceFactPathResult after = project ? project->sources : enumerate_source_fact_paths(options.profile, options.root);
     if (after.paths != source_fact_paths.paths ||
         after.candidate_file_count != source_fact_paths.candidate_file_count ||
         after.capped_file_count != source_fact_paths.capped_file_count) {
@@ -138,6 +141,8 @@ void verify_inventory_stable(const RuntimeOptions& options,
 }
 
 void verify_source_metadata(const RuntimeOptions& options, const WorktreeInventory& inventory) {
+    if (options.profile.automatic_project_files && !inventory.exclusions.current(options.root))
+        throw_source_changed_during_verification("verify-project-exclusions");
     auto verify_states = [&](const std::map<std::string, SourceState>& states) {
         for (const auto& [path, state] : states) {
             try {
@@ -155,14 +160,22 @@ void verify_source_metadata(const RuntimeOptions& options, const WorktreeInvento
 }
 
 CurrentInventory load_current_inventory(const RuntimeOptions& options) {
-    const std::vector<std::string> document_paths = observe_source("enumerate-source-root", [&] {
+    CurrentInventory inventory;
+    const auto project = options.profile.automatic_project_files
+        ? std::optional(ProjectFiles::scan(options.profile, options.root)) : std::nullopt;
+    const auto document_paths = project ? project->documents : observe_source("enumerate-source-root", [&] {
         return enumerate_source_paths(options.profile, options.root);
     });
-    const SourceFactPathResult source_fact_paths =
-        enumerate_source_fact_paths(options.profile, options.root);
-    CurrentInventory inventory;
-    inventory.documents = current_document_sources(options, document_paths);
+    const auto source_fact_paths = project ? project->sources : enumerate_source_fact_paths(options.profile, options.root);
     inventory.source_facts = current_source_fact_sources(options, source_fact_paths);
+    if (project) {
+        inventory.exclusions = project->exclusions;
+        for (const auto& path : document_paths) {
+            auto document = inventory.source_facts.at(path);
+            document.status.clear();
+            inventory.documents.emplace(path, std::move(document));
+        }
+    } else inventory.documents = current_document_sources(options, document_paths);
     inventory.source_fact_candidate_files = source_fact_paths.candidate_file_count;
     inventory.source_fact_capped_files = source_fact_paths.capped_file_count;
     verify_inventory_stable(options, inventory, document_paths, source_fact_paths);
@@ -262,6 +275,7 @@ Json inventory_identity(const RuntimeOptions& options,
     };
     append("document", inventory.documents);
     append("source-fact", inventory.source_facts);
+    if (!inventory.exclusions.revision.empty()) identity["project_exclusions"] = inventory.exclusions.revision;
     return identity;
 }
 
@@ -377,6 +391,11 @@ Json compare_worktree(const RuntimeOptions& options, const Json& manifest,
             });
         }
     };
+    if (options.profile.automatic_project_files) {
+        const auto previous = manifest.value("project_files", Json::object()).value("exclusion_revision", "");
+        if (previous != inventory.exclusions.revision)
+            append_metadata_change("project_exclusions", previous, inventory.exclusions.revision);
+    }
     if (!generator_current) {
         append_metadata_change("generator_version", generator, kGeneratorVersion);
     }

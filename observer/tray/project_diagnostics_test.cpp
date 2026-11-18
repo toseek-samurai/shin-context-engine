@@ -78,10 +78,13 @@ int check_language() try {
         {"refresh-timeout", RecoveryAction::report}, {"route-revision-conflict", RecoveryAction::profile},
         {"refresh-validation-failed", RecoveryAction::search}, {"storage-free-space-low", RecoveryAction::storage},
         {"access-denied", RecoveryAction::folder}, {"incomplete-source-observation", RecoveryAction::folder},
+        {"invalid-project-exclusions", RecoveryAction::folder}, {"unsafe-project-exclusions", RecoveryAction::folder},
         {"refresh-authority-changed", RecoveryAction::report}, {"unknown-code", RecoveryAction::report}}) {
         Json row{{"phase", "blocked"}, {"active_issue", true}, {"error_code", code}};
         const auto options = recovery_options(row, true);
         assert(options.action == action && !options.title.empty() && !options.next.empty());
+        if (code == "invalid-project-exclusions" || code == "unsafe-project-exclusions")
+            assert(options.next.find(".shinignore") != std::string::npos);
         assert(options.automatic == (code == "refresh-timeout"));
         assert(recovery_options(row, false).action == RecoveryAction::none);
         row["active_issue"] = false; row["phase"] = "current";

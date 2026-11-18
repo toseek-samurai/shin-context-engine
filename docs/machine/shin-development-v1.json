@@ -16,8 +16,8 @@
     "maintenance": "The compatibility baseline identifies contract provenance only. It does not qualify current public source or delivery."
   },
   "developmentLane": {
-    "coreVersion": "2.0.5-dev.31",
-    "observerSourceVersion": "2.0.5-dev.126",
+    "coreVersion": "2.0.5-dev.32",
+    "observerSourceVersion": "2.0.5-dev.127",
     "artifactRetention": {
       "policy": "Generated build outputs and measurements are disposable unless explicitly retained by a separate reviewed process.",
       "releaseClaim": false
@@ -36,7 +36,7 @@
     "contractBaselineVersion": "2.0.4",
     "contractBaselineGenerator": "shin-generator-v21-cpp-syntax",
     "contractBaselinePolicy": "Historical compatibility baseline identity only; it is not current release evidence.",
-    "generatorTransitionPolicy": "Snapshot compatibility is checked by generator identity. An incompatible snapshot requires an explicit rebuild; no implicit migration is performed.",
+    "generatorTransitionPolicy": "Each new kit rebuilds managed evidence from its registered folders and current exclusions. Standalone Core builds target an explicit external output. The generator identifies the snapshot format and no historical reader is used.",
     "sameRepository": true,
     "separateCheckoutAndBuilds": true,
     "currentScope": "The public source contains independently versioned Core and Observer, including the native CLI, MCP and Monitor.",

@@ -1,3 +1,4 @@
+#include "project_files.h"
 #include "validation_generation.h"
 #include "context_internal.h"
 #include "generated_row_decoder.h"
@@ -27,7 +28,7 @@ void ValidationGeneration::verify_inputs(const RuntimeOptions& options) {
         ++inventory_checks_;
         require_worktree_stable(options, sources_);
         for (const auto& [path, exists] : links_)
-            if (fs::exists(root_ / path) != exists) changed();
+            if (observed_link_exists(options.profile.automatic_project_files, root_, path) != exists) changed();
         if (retool_ && retool_generation_environment(root_, fact_paths_) != retool_environment_) changed();
     };
     fence();
@@ -65,7 +66,7 @@ std::shared_ptr<const GeneratedOutput> ValidationGeneration::acquire(const Runti
             if (extractor != "language" && extractor != "retool") {
                 disabled_ = true; fallback_reason_ = "unsupported-dependencies"; return {};
             }
-            retool_ = retool_ || extractor == "retool";
+            if (extractor == "retool" && !options.profile.automatic_project_files) retool_ = true;
         }
         sources_ = observe_worktree(options);
         if (!worktree_observation_complete(sources_)) {

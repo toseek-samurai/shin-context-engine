@@ -17,6 +17,7 @@ struct WorktreeSourceState {
 struct WorktreeInventory {
     std::map<std::string, WorktreeSourceState> documents;
     std::map<std::string, WorktreeSourceState> source_facts;
+    ProjectIgnoreBinding exclusions;
     int source_fact_candidate_files = 0;
     int source_fact_capped_files = 0;
 };

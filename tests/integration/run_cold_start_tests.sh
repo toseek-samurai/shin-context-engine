@@ -66,7 +66,7 @@ validate_source_profile() {
 
   "$tool" --root "$root" discover >"$work_root/discover-$name.json"
   assert_contains "$work_root/discover-$name.json" '"state":"source-only"'
-  assert_contains "$work_root/discover-$name.json" "\"primary_profile\":\"$profile\""
+  assert_contains "$work_root/discover-$name.json" '"primary_profile":"generic-source"'
   assert_contains "$work_root/discover-$name.json" '"project_mutation_required":false'
 
   "$tool" --profile "$profile" --profile-dir "$profile_dir" --root "$root" profile-check --strict \
@@ -127,7 +127,7 @@ assert_contains "$work_root/out-local-tool-caches/docs/kb/generated/facts.jsonl"
 assert_not_contains "$work_root/out-local-tool-caches/docs/kb/generated/manifest.json" '.dotnet'
 assert_not_contains "$work_root/out-local-tool-caches/docs/kb/generated/manifest.json" '.playwright-mcp'
 "$tool" --root "$cache_root" discover >"$work_root/discover-local-tool-caches.json"
-assert_contains "$work_root/discover-local-tool-caches.json" '"primary_profile":"generic-node"'
+assert_contains "$work_root/discover-local-tool-caches.json" '"primary_profile":"generic-source"'
 
 # Styles and templates alone are usable source inputs without adding docs or
 # installing a framework. Discovery must not recommend a declaration-only route.
@@ -162,8 +162,8 @@ for index in 1 2 3 4 5 6 7 8; do
     "$kotlin_dominant_root/src/main/kotlin/example/Dominant$index.kt"
 done
 "$tool" --root "$kotlin_dominant_root" discover >"$work_root/discover-kotlin-dominant.json"
-assert_contains "$work_root/discover-kotlin-dominant.json" '"primary_profile":"generic-kotlin"'
-assert_contains "$work_root/discover-kotlin-dominant.json" '"recommended_profiles": ["generic-kotlin","generic-source","generic-node"]'
+assert_contains "$work_root/discover-kotlin-dominant.json" '"primary_profile":"generic-source"'
+assert_contains "$work_root/discover-kotlin-dominant.json" '"recommended_profiles": ["generic-source"]'
 
 gradle_metadata_root="$work_root/gradle-metadata-only"
 mkdir -p "$gradle_metadata_root"
@@ -171,8 +171,8 @@ cp "$fixture/kotlin/build.gradle.kts" "$fixture/kotlin/settings.gradle.kts" "$gr
 "$tool" --root "$gradle_metadata_root" discover >"$work_root/discover-gradle-metadata-only.json"
 assert_contains "$work_root/discover-gradle-metadata-only.json" '"build_systems": ["gradle"]'
 assert_contains "$work_root/discover-gradle-metadata-only.json" '"kotlin_files":0'
-assert_contains "$work_root/discover-gradle-metadata-only.json" '"state":"empty"'
-assert_contains "$work_root/discover-gradle-metadata-only.json" '"primary_profile":null'
+assert_contains "$work_root/discover-gradle-metadata-only.json" '"state":"source-only"'
+assert_contains "$work_root/discover-gradle-metadata-only.json" '"primary_profile":"generic-source"'
 
 mixed_root="$(prepare_root mixed)"
 mixed_out="$work_root/out-mixed"
@@ -189,7 +189,7 @@ docs_root="$(prepare_root docs)"
 docs_out="$work_root/out-docs"
 "$tool" --root "$docs_root" discover >"$work_root/discover-docs.json"
 assert_contains "$work_root/discover-docs.json" '"state":"documented"'
-assert_contains "$work_root/discover-docs.json" '"primary_profile":"generic-docs"'
+assert_contains "$work_root/discover-docs.json" '"primary_profile":"generic-source"'
 "$tool" --profile generic-docs --profile-dir "$profile_dir" --root "$docs_root" profile-check --strict \
   >"$work_root/profile-docs.json"
 "$tool" --profile generic-docs --profile-dir "$profile_dir" --root "$docs_root" --out-dir "$docs_out" build \
@@ -197,6 +197,17 @@ assert_contains "$work_root/discover-docs.json" '"primary_profile":"generic-docs
 "$tool" --profile generic-docs --profile-dir "$profile_dir" --root "$docs_root" --out-dir "$docs_out" \
   brief "cold start architecture" --require-current >"$work_root/brief-docs.json"
 assert_contains "$work_root/brief-docs.json" 'docs/architecture.md'
+
+wiki_root="$work_root/wiki"
+mkdir -p "$wiki_root"
+printf '# Handbook\n' >"$wiki_root/Home.md"
+printf '# Shift handover\n\nThe rota changes each evening.\n' >"$wiki_root/Rotation.md"
+"$tool" --root "$wiki_root" discover >"$work_root/discover-wiki.json"
+assert_contains "$work_root/discover-wiki.json" '"primary_profile":"generic-source"'
+"$tool" --profile generic-docs --profile-dir "$profile_dir" --root "$wiki_root" --out-dir "$work_root/out-wiki" build >"$work_root/build-wiki.json"
+"$tool" --profile generic-docs --profile-dir "$profile_dir" --root "$wiki_root" --out-dir "$work_root/out-wiki" \
+  brief "shift handover" --require-current >"$work_root/brief-wiki.json"
+assert_contains "$work_root/brief-wiki.json" 'Rotation.md'
 
 broken_docs_root="$(prepare_root docs)"
 broken_docs_out="$work_root/out-broken-docs"
@@ -225,6 +236,9 @@ assert_contains "$work_root/brief-broken-docs.json" '"current":true'
 assert_contains "$work_root/brief-broken-docs.json" 'broken local links recorded as diagnostics'
 
 empty_root="$(prepare_root empty)"
+"$tool" --root "$empty_root" discover >"$work_root/discover-plain-text.json"
+assert_contains "$work_root/discover-plain-text.json" '"indexable":true'
+rm "$empty_root/notes.txt"
 ln -s "$fixture/node/package.json" "$empty_root/package.json"
 "$tool" --root "$empty_root" discover >"$work_root/discover-empty.json"
 assert_contains "$work_root/discover-empty.json" '"state":"empty"'
@@ -238,14 +252,14 @@ mkdir -p "$metadata_root"
 printf '%s\n' '{"name":"metadata-only","private":true}' >"$metadata_root/package.json"
 "$tool" --root "$metadata_root" discover >"$work_root/discover-metadata-only.json"
 assert_contains "$work_root/discover-metadata-only.json" '"build_systems": ["node"]'
-assert_contains "$work_root/discover-metadata-only.json" '"state":"empty"'
-assert_contains "$work_root/discover-metadata-only.json" '"indexable":false'
+assert_contains "$work_root/discover-metadata-only.json" '"state":"source-only"'
+assert_contains "$work_root/discover-metadata-only.json" '"indexable":true'
 
 partial_retool_root="$work_root/partial-retool"
 mkdir -p "$partial_retool_root/apps/Partial"
 cp "$fixture/retool/apps/Fixture/main.rsx" "$partial_retool_root/apps/Partial/main.rsx"
 "$tool" --root "$partial_retool_root" discover >"$work_root/discover-partial-retool.json"
-assert_contains "$work_root/discover-partial-retool.json" '"primary_profile":"generic-retool"'
+assert_contains "$work_root/discover-partial-retool.json" '"primary_profile":"generic-source"'
 "$tool" --profile generic-retool --profile-dir "$profile_dir" --root "$partial_retool_root" \
   profile-check --strict >"$work_root/profile-partial-retool.json"
 assert_contains "$work_root/profile-partial-retool.json" '"ok": true'

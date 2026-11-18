@@ -189,6 +189,8 @@ struct Profile {
     std::string config_hash;
     std::vector<std::string> root_files;
     std::vector<std::string> optional_root_files;
+    bool include_root_wiki_pages = false;
+    bool automatic_project_files = false;
     std::vector<std::string> source_extensions = {".md", ".json"};
     std::vector<std::string> source_fact_roots;
     std::vector<std::string> source_fact_extensions;
@@ -395,9 +397,11 @@ struct SourceFactSource {
     FileMetadata metadata;
     bool has_metadata = false;
     std::string quarantine_reason{};
+    std::string routing_terms{};
 };
 
 struct SourceFactBuildResult {
+    bool file_routing = false;
     std::vector<FactRow> rows;
     std::vector<LinkRow> relations;
     std::vector<SourceFactSource> sources;
@@ -407,7 +411,19 @@ struct SourceFactBuildResult {
     int capped_file_count = 0;
 };
 
+struct ProjectIgnoreBinding {
+    std::string revision;
+    // Relative directories whose .gitignore can change this publication.
+    // The project root is implicit. Absence of a rules file is an observation.
+    std::vector<std::string> directories;
+    // The optional observer receives the exact contents of nonempty policy files.
+    bool current(const fs::path& root,
+                 const std::function<void(const std::string&, const std::string&)>& observe = {}) const;
+    static ProjectIgnoreBinding from_summary(const Json& summary);
+};
+
 struct SourceScanCorpus {
+    ProjectIgnoreBinding exclusions;
     std::vector<SourceDoc> documents;
     SourceFactBuildResult source_facts;
     std::vector<SectionRow> sections;
@@ -434,6 +450,7 @@ struct SourceFactPathResult {
     std::vector<std::string> paths;
     int candidate_file_count = 0;
     int capped_file_count = 0;
+    std::uintmax_t text_bytes = 0;
 };
 
 struct GeneratedOutput {
@@ -458,6 +475,7 @@ struct GeneratedOutput {
 };
 
 struct GeneratedRows {
+    Json project_files;
     Json document_lifecycle = Json::object();
     std::vector<SourceDoc> docs;
     std::vector<SectionRow> sections;

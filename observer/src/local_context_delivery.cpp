@@ -57,7 +57,7 @@ void LocalContextDelivery::summarize(double measured_retrieval_ms) const {
     if (!result.value("quality_warning", Json()).is_null() || resource_warning) {
         result["context_result"]["search_checks"] = "warning";
         result["context_result"]["diagnostic_owner"] = "shin";
-        result["context_result"]["notice"] = "Safe context remains available. Shin owns search diagnosis; review a project profile for actual owner/contract changes. Continue product work without document rewrites or search-counter tuning.";
+        result["context_result"]["notice"] = "Verified context is available. Inspect the returned evidence and omissions. Report a reproducible search miss to Shin with the original query and expected location.";
     }
 }
 } // namespace shin::observer

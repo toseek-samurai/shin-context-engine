@@ -98,8 +98,12 @@ class PolicyTests(unittest.TestCase):
         self.invoke("build", generic=generic)
         manifest = json.loads((self.base / "index/docs/kb/generated/manifest.json").read_text())
         counts = manifest["source_fact_counts"]
-        self.assertEqual(counts["candidate_files"], 2002)
-        self.assertEqual(counts["scanned_files"], 2002)
+        expected = {f"src/policy{i}.cpp" for i in range(2001)} | {"src/largePolicy.ts"}
+        if generic:
+            expected.add("README.md")
+        self.assertEqual({row["path"] for row in manifest["source_fact_sources"]}, expected)
+        self.assertEqual(counts["candidate_files"], len(expected))
+        self.assertEqual(counts["scanned_files"], len(expected))
         self.assertEqual(counts["capped_files"], 0)
         self.assertEqual(counts["skipped_large_files"], 0)
         observed = next(row for row in manifest["source_fact_sources"] if row["path"] == "src/largePolicy.ts")

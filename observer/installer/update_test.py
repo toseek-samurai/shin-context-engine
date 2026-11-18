@@ -127,6 +127,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         return value
 
     def stop_service():
+        if not (home / 'service/rpc.sock').exists(): return
         call('service-stop', '--home', home, executable=prefix / 'bin/shin-ce')
         until = time.monotonic() + 15
         while (home / 'service/rpc.sock').exists():
@@ -157,8 +158,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
     update = ['update', '--prefix', str(prefix)]
     adoption = [*update, '--adopt-existing', '--home', str(home), '--bin-dir', str(bin_dir)]
     previous_fixture()
-    # A bootstrap capacity update must migrate its pinned profile even when
-    # the Core identity is unchanged. Other policy changes remain unapproved.
+    # The old kit had a different private bootstrap policy on the same Core.
     previous_profile = prefix / 'share/shin-context/profiles/generic-source.json'
     previous_policy = json.loads(previous_profile.read_text())
     assert previous_policy['sourceFactMaxFiles'] == 30000
@@ -172,7 +172,6 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
     try:
         call('init', '--home', home, executable=prefix / 'bin/shin-ce')
         bootstrap_binding_path = home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest() / 'state.json'
-        previous_binding = json.loads(bootstrap_binding_path.read_text())
         call('query', 'updateQuota', '--home', home, executable=prefix / 'bin/shin-ce')
         quality = Fixture(work, 'quality-canonical')
         quality.write_source('# Contract\n\nThe retry ceiling belongs to readLimit.\n')
@@ -189,8 +188,21 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         call('--root', quality.root, '--profile', 'observer-fixture', '--profile-dir', quality.profiles,
              '--out-dir', quality.out, 'build', executable=prefix / 'bin/shin-context')
         call('sample', '--config', quality.config, executable=prefix / 'bin/shin-observer')
-        call('init', '--root', quality.root, '--home', home, '--observer-config', quality.config,
+        stop_service()
+        # The old package here is simulated by a manifest around this candidate
+        # executable. Seed the prior registration shape after obtaining a real
+        # native external binding, identity, token and qualified publication.
+        call('init', '--no-service', '--root', quality.root, '--home', home, '--observer-config', quality.config,
              '--manage-index', executable=prefix / 'bin/shin-ce')
+        previous_binding = json.loads(bootstrap_binding_path.read_text())
+        previous_binding.pop('source_selection')
+        write_json(bootstrap_binding_path, previous_binding, True)
+        quality_ws = home / 'projects' / hashlib.sha256(str(quality.root).encode()).hexdigest()
+        attached = json.loads((quality_ws / 'state.json').read_text())
+        inventory = json.loads((home / 'registry/state.json').read_text())
+        inventory['projects'].append({key: attached[key] for key in ('root', 'root_identity', 'workspace_identity')})
+        write_json(home / 'registry/state.json', inventory, True)
+        old_external = (quality.out / 'docs/kb/generated/manifest.json').read_bytes()
         if managed:
             call('service-install', '--home', home, executable=prefix / 'bin/shin-ce')
         registry = (home / 'registry/state.json').read_bytes()
@@ -214,14 +226,11 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         # A current, safe project with a search warning must not block adoption.
         # Stale publications during a Core transition are exercised below.
         quality.write_source('# Other\n\nNo relevant evidence here.\n')
-        call('watch', '--root', quality.root, '--home', home, '--samples', '2', executable=prefix / 'bin/shin-ce')
         migrated = call(*adoption, progress="json")
         assert migrated['changed'] and migrated['data_preserved'] and migrated['service_restored']
         next_binding = json.loads(bootstrap_binding_path.read_text())
-        assert previous_binding['core_version'] == next_binding['core_version'] == manifest['core_version']
-        assert previous_binding['profile_config_hash'] != next_binding['profile_config_hash']
-        preserved_fields = set(previous_binding) - {'profile_config_hash', 'prepared_snapshot'}
-        assert all(previous_binding[key] == next_binding[key] for key in preserved_fields)
+        assert previous_binding == next_binding
+        assert (quality.out / 'docs/kb/generated/manifest.json').read_bytes() == old_external
         receipt = json.loads((prefix / '.shin-installation.json').read_text())
         state_file = Path(receipt['control']) / 'state.json'
         stage = Path(receipt['control']) / 'update-payload'
@@ -230,7 +239,8 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         call('service-start', executable=prefix / 'bin/shin-ce')
         available = call('query', 'readLimit', '--root', quality.root, '--home', home, executable=prefix / 'bin/shin-ce')
         assert available['local_ready'] and not available['canonical_ready']
-        assert available['quality_warning']['state'] == 'degraded'
+        assert available['readiness_scope'] == 'automatic-project-files'
+        assert Path(available['index']) == quality_ws / 'automatic/index'
         assert 'return 17;' in available['source_context']
         assert not call(*update, progress='text')['changed']
         assert not call(*update, progress='text', language='ru_RU.UTF-8')['changed']
@@ -280,9 +290,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
             write_json(binding_path, old_patch_binding, True)
             assert call(*update)['changed']
             current_binding = json.loads(binding_path.read_text())
-            assert current_binding['core_version'] == manifest['core_version']
-            for key in old_patch_binding.keys() - {'core_version', 'prepared_snapshot'}:
-                assert current_binding[key] == old_patch_binding[key], key
+            assert current_binding == old_patch_binding
         # Core ordering is not a derived-data compatibility promise. The kit
         # version must advance; its engine always builds current source anew.
         previous_fixture(owned=True, version='2.0.5-dev.15', core_version='9.9.9')
@@ -313,10 +321,8 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         out, err = child.communicate(timeout=20)
         assert killed, (out, err)
         pending_recovery = json.loads(state_file.read_text())['update']
-        assert pending_recovery['recover_publications'] is True
         assert pending_recovery['runtime']['unready_roots'] == []
         assert pending_recovery['runtime']['running'] is False
-        assert [row['root'] for row in pending_recovery['bootstrap_migrations']] == [str(root)]
         assert (prefix / 'shin-kit.json').read_bytes() == previous_manifest
         assert (home / 'registry/state.json').read_bytes() == registry
         recovery_child = subprocess.Popen([str(tool), *update], cwd=root, env=env,
@@ -325,7 +331,7 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         until = time.monotonic() + 25
         while recovery_child.poll() is None and time.monotonic() < until:
             journal = json.loads(state_file.read_text())
-            if journal['phase'] == 'activating' and journal['update']['recover_publications']:
+            if journal['phase'] == 'activating':
                 recovery_child.kill()
                 interrupted_recovery = True
                 break
@@ -339,9 +345,8 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         recovered_query = call('query', 'updateQuota', executable=prefix / 'bin/shin-ce')
         assert recovered_query['local_ready'] and 'return 42;' in recovered_query['source_context']
         migrated_binding = json.loads(binding_path.read_text())
-        assert migrated_binding['core_version'] == manifest['core_version']
-        for key in old_binding.keys() - {'core_version', 'prepared_snapshot'}:
-            assert migrated_binding[key] == old_binding[key], key
+        assert migrated_binding == old_binding
+        assert json.loads((binding_path.parent / 'automatic/state.json').read_text())['core_version'] == manifest['core_version']
 
         # Model the atomic rename committing just before the journal acknowledgement.
         # Both real payloads/identities are those produced by the successful update.
@@ -438,18 +443,18 @@ with tempfile.TemporaryDirectory(prefix='shin-up-', dir='/tmp') as temporary:
         pending.pop('previous')
         binding_bytes = binding_path.read_bytes()
         unsupported = json.loads(binding_bytes)
-        unsupported['core_version'] = 'unsupported-core'
+        unsupported['root_identity'] = 'replaced-checkout-identity'
         write_json(binding_path, unsupported, True)
         try:
             # Settle the enrollment refusal before activation. Otherwise this
             # cause can arrive through either service startup or qualification.
             refused_start = call('service-start', '--home', home, executable=prefix / 'bin/shin-ce')
-            assert refused_start['enrollment_errors'].get(str(root)) == 'refresh-engine-changed', refused_start
+            assert refused_start['enrollment_errors'].get(str(root)) == 'local-identity-conflict', refused_start
             write_json(state_file, pending, True)
             rejected = call(*update, error='installation-update-recovery-required')
-            assert 'refresh-engine-changed' in json.dumps(rejected['error']['diagnostic']), rejected
+            assert 'local-identity-conflict' in json.dumps(rejected['error']['diagnostic']), rejected
             activation = [gate for gate in rejected['error']['diagnostic']['gates'] if gate['id'] == 'activation']
-            assert any('refresh-engine-changed' in case.get('reasons', [])
+            assert any('local-identity-conflict' in case.get('reasons', [])
                        for gate in activation for case in gate['cases']), rejected
             assert str(root) not in json.dumps(rejected['error']['diagnostic']), rejected
             assert 'resume_runtime' in json.loads(state_file.read_text())

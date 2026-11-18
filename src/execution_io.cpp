@@ -32,10 +32,8 @@ private:
                    1, false, "Review the explicitly selected local input path.");
 }
 
-}  // namespace
-
-std::string read_execution_file(const fs::path& root, const std::string& relative_path,
-                                std::size_t maximum_bytes) {
+std::string read_regular_file(const fs::path& root, const std::string& relative_path,
+                              std::size_t maximum_bytes, bool source) {
     if (!profile_relative_path_valid(relative_path)) unavailable();
 #ifdef _WIN32
     try {
@@ -43,21 +41,29 @@ std::string read_execution_file(const fs::path& root, const std::string& relativ
         return file.read(maximum_bytes);
     } catch (const std::length_error&) {
         throw_usage_error("execution-input-too-large", "Execution input exceeds its byte budget.");
+    } catch (const std::system_error& error) {
+        if (source) throw_source_observation_error("read-source-content", error.code());
+        unavailable();
     } catch (const std::exception&) { unavailable(); }
 #else
+    const auto io_failure = [source](int error) {
+        if (source) throw_source_observation_error("read-source-content", {error, std::generic_category()});
+        unavailable();
+    };
     Descriptor directory(::open(root.c_str(), O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW));
-    if (directory.get() < 0) unavailable();
+    if (directory.get() < 0) io_failure(errno);
     const fs::path relative(relative_path);
     for (const fs::path& component : relative.parent_path()) {
         const int child = ::openat(directory.get(), component.c_str(),
                                    O_RDONLY | O_DIRECTORY | O_CLOEXEC | O_NOFOLLOW);
-        if (child < 0) unavailable();
+        if (child < 0) io_failure(errno);
         directory.replace(child);
     }
     Descriptor file(::openat(directory.get(), relative.filename().c_str(),
                              O_RDONLY | O_CLOEXEC | O_NOFOLLOW | O_NONBLOCK));
     struct stat status {};
-    if (file.get() < 0 || ::fstat(file.get(), &status) != 0 || !S_ISREG(status.st_mode) || status.st_size < 0) unavailable();
+    if (file.get() < 0 || ::fstat(file.get(), &status) != 0) io_failure(errno);
+    if (!S_ISREG(status.st_mode) || status.st_size < 0) unavailable();
     if (static_cast<std::uintmax_t>(status.st_size) > maximum_bytes) {
         throw_usage_error("execution-input-too-large", "Execution input exceeds its byte budget.");
     }
@@ -74,7 +80,7 @@ std::string read_execution_file(const fs::path& root, const std::string& relativ
     for (;;) {
         const ssize_t count = ::read(file.get(), buffer.data(), buffer.size());
         if (count < 0 && errno == EINTR) continue;
-        if (count < 0) unavailable();
+        if (count < 0) io_failure(errno);
         if (count == 0) break;
         if (static_cast<std::size_t>(count) > maximum_bytes - content.size()) {
             throw_usage_error("execution-input-too-large", "Execution input grew beyond its byte budget.");
@@ -87,6 +93,16 @@ std::string read_execution_file(const fs::path& root, const std::string& relativ
     }
     return content;
 #endif
+}
+
+}  // namespace
+
+std::string read_execution_file(const fs::path& root, const std::string& relative_path, std::size_t maximum_bytes) {
+    return read_regular_file(root, relative_path, maximum_bytes, false);
+}
+
+std::string read_bounded_source_file(const fs::path& root, const std::string& relative_path, std::size_t maximum_bytes) {
+    return read_regular_file(root, relative_path, maximum_bytes, true);
 }
 
 std::string read_execution_report_file(const fs::path& path, std::size_t maximum_bytes) {

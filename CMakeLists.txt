@@ -84,6 +84,8 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/core.cpp
     src/secret_scan.cpp
     src/profiles.cpp
+    src/project_ignore.cpp
+    src/project_files.cpp
     src/profile_policy.cpp
     src/extraction.cpp
     src/identifier_extraction.cpp
@@ -119,6 +121,7 @@ set(SHIN_CONTEXT_CORE_SOURCES
     src/inspect.cpp
     src/read.cpp
     src/source_read.cpp
+    src/source_routing.cpp
     src/task_request.cpp
     src/agent_context_pack.cpp
     src/agent_context_pack_render.cpp
@@ -174,6 +177,8 @@ target_compile_options(shin-context-core PRIVATE ${SHIN_CXX_WARNINGS})
 include(shared/cmake/CoreAllocator.cmake)
 if(SHIN_CONTEXT_BUILD_CLI)
     add_executable(shin-context src/main.cpp)
+    # Developer binaries use the same relocatable selection rules as an installed CLI.
+    configure_file(profiles/generic-source.json share/shin-context/profiles/generic-source.json COPYONLY)
     target_link_libraries(shin-context PRIVATE shin-context-core)
     target_compile_options(shin-context PRIVATE ${SHIN_CXX_WARNINGS})
     if(SHIN_CORE_ALLOCATOR STREQUAL "mimalloc")
@@ -341,6 +346,8 @@ if(SHIN_CONTEXT_BUILD_SOURCE_DISCOVERY)
         add_executable(shin-resident-storage-bench tests/benchmarks/resident_storage_bench.cpp)
         target_link_libraries(shin-resident-storage-bench PRIVATE shin-source-discovery-provider)
         add_test(NAME shin-context-source-discovery COMMAND shin-source-discovery-tests ${CMAKE_CURRENT_BINARY_DIR})
+        add_test(NAME shin-context-large-automatic-source COMMAND shin-source-discovery-tests ${CMAKE_CURRENT_BINARY_DIR} --large-automatic)
+        set_tests_properties(shin-context-large-automatic-source PROPERTIES TIMEOUT 60 PROCESSORS 4)
         # This suite launches eight readers internally and exercises shared
         # storage. Reserve the four-slot qualification workload rather than
         # nesting it beside three other full lifecycle/storage suites.

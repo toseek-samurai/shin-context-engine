@@ -110,7 +110,7 @@
         [stack addArrangedSubview:self.setupProject];
         self.setupChoose = live_button("Choose project folder…", self, @selector(beginSetupProject:));
         [stack addArrangedSubview:self.setupChoose];
-        self.setupAgentsHeading = live_label("2. Select coding agents and profiles", false);
+        self.setupAgentsHeading = live_label("2. Select coding agents", false);
         self.setupAgentsHeading.font = [NSFont systemFontOfSize:16 weight:NSFontWeightMedium];
         [stack addArrangedSubview:self.setupAgentsHeading];
         self.setupAdvanced = live_button("Advanced agent settings", self, @selector(toggleSetupAdvanced:), true);
@@ -164,7 +164,7 @@
         if (self.setupWindow.contentView.bounds.size.height < 620)
             [self.setupWindow setContentSize:NSMakeSize(self.setupWindow.contentView.bounds.size.width, 620)];
         self.setupAdvanced.hidden = self.setupConnect.hidden = self.setupCheck.hidden = self.setupLogin.hidden = self.setupNote.hidden = NO;
-        live_text(self.setupAgentsHeading, @"stringValue", "2. Select coding agents and profiles");
+        live_text(self.setupAgentsHeading, @"stringValue", "2. Select coding agents");
         self.setupStatus.textColor = NSColor.labelColor;
         [self refreshSetup:nil];
     }
@@ -210,13 +210,13 @@
     self.setupAdvancedViews = [NSMutableArray array];
     self.setupTargets = [NSMutableArray array]; self.setupTargetButtons = [NSMutableArray array]; self.setupFileButtons = [NSMutableArray array];
     if (!self.setupRoot.length) {
-        NSTextField* empty = live_label("Available agents and profiles will appear after you choose a project.");
+        NSTextField* empty = live_label("Available agent connections will appear after you choose a project.");
         empty.font = [NSFont systemFontOfSize:15];
         [self.setupAgents addView:empty inGravity:NSStackViewGravityTop];
         [empty.widthAnchor constraintEqualToAnchor:self.setupAgents.widthAnchor constant:-24].active = YES;
         return;
     }
-    live_text(self.setupStatus, @"stringValue", "Finding agents and profiles…");
+    live_text(self.setupStatus, @"stringValue", "Finding agent settings…");
     [self runCLI:@"client-targets" arguments:@[@"--root", self.setupRoot] completion:^(Json result, NSString* failure) {
         if (epoch != self.setupEpoch) return;
         if (failure || !result.value("ok", false)) { self.setupStatus.stringValue = failure ? failure : ui_text("Could not discover agent settings."); return; }

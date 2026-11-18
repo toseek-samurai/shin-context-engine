@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "project_files.h"
 #include "request_scoring.h"
 #include <bit>
 #include "unicode_text.h"
@@ -1291,9 +1292,12 @@ static int emit_search_result(const RuntimeOptions& options,
 }
 
 Json RetrievalSession::search(const QueryRequest& request) const {
+    verify_project_exclusions();
     if (request.require_current) require_current_index_or_throw(freshness_);
-    return make_search_result(options_, request, "generated-index", freshness_,
+    auto result = make_search_result(options_, request, "generated-index", freshness_,
                               collect_search_from_index_with_fallback(options_, request));
+    verify_project_exclusions();
+    return result;
 }
 
 static int run_search_from_index(const RuntimeOptions& options, const QueryRequest& request) {
@@ -1405,6 +1409,7 @@ static int run_search_from_sources(const RuntimeOptions& options, const QueryReq
         require_complete_source_scan_or_throw(freshness);
     }
     SearchIndexResult result = collect_search_from_sources_with_fallback(options, request, corpus);
+    require_project_exclusions(options.root, corpus.exclusions);
     return emit_search_result(options, request, "source-scan", freshness, result);
 }
 

@@ -90,6 +90,7 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
     const std::vector<std::string> locator_columns = {"path", "start_line", "end_line", "byte_start", "byte_end",
         "range_origin", "source_content_hash", "span_hash", "state", "role", "reason", "source_path", "source_line", "target_symbol"};
     if (context) {
+        if (evidence.contains("file_coverage")) header["file_coverage"] = evidence.at("file_coverage");
         header["audit_relations"] = evidence.at("relations").size();
         header["body_selection"] = "one-dependency-then-ranked-fragments-v1";
         header["locator_columns"] = locator_columns;

@@ -1,6 +1,6 @@
 ---
 name: shin-context
-description: Retrieve verified Shin code/docs before broad repository scans or after context loss, and review source ownership after product refactors.
+description: Retrieve verified Shin code/docs before broad repository scans or after context loss. Use direct readers for known files and exact symbols.
 ---
 
 # Shin Context
@@ -10,7 +10,7 @@ Read [reader selection](references/reader-selection.md) before discovery or read
 
 Use Shin v2.0.0 or newer with `shin-generator-v24-objective-cpp`.
 Older indexes require rebuilding. The offline service needs no account or backend.
-Retrieval grants no execution, publication or installation authority. Read the repository's applicable `AGENTS.md` and named adoption marker.
+Retrieval grants no execution, publication or installation authority. Read the repository's applicable `AGENTS.md` before using retrieved evidence.
 
 ## Normal Work
 
@@ -46,15 +46,15 @@ when `retrieval_ready=true`, even if `canonical_ready=false`. Do not claim full
 coverage. Changed/deleted/quarantined files stay withheld until qualified refresh.
 
 Report blockers by project/reason; use direct sources and retain them in handoff.
-`route-revision-conflict` requires owner review. Editing a profile is not approval.
-Follow [profile maintenance and review](references/setup-and-adoption.md#project-profile-maintenance)
-when selected owners or product contracts change; engine misses belong to Shin.
+An explicit grant, identity or route conflict requires operator review. An
+ordinary refactor needs no Shin maintenance. Report reproducible misses to Shin
+with the expected evidence and a bounded diagnostic.
 
 A preparing status is pending: submit the useful `shin_query`. It waits up to
 20 seconds inside one call. No manual sleeps or status polling. After that wait
 expires or a real blocker appears, use direct sources; return at a useful
 checkpoint. No call quotas.
-Do not manually build a managed index, alter budgets or profiles, release its
+Do not manually build a managed index, alter limits or exclusions, release its
 ownership, select another index or use historical evidence to bypass refusal.
 Ordinary `rg`, `jq` and direct source reads remain valid; Shin use is not a quota.
 
@@ -71,13 +71,11 @@ verified root and service home from the existing project/client configuration:
 Do not guess the kit/home, use an archived source checkout or start a second
 service to make a refusal disappear. A missing connection is not a corrupt index.
 For an unconnected project, report missing setup and navigate source directly.
-User-authorized adoption uses `shin-ce init` once; an existing marker requires
-the reviewed canonical route, not generic bootstrap. Enrollment, detach, profile
-or marker approval and publication grants are owner operations, never MCP reads.
-
-An explicit adoption marker takes precedence over generic discovery.
-Prefer the consumer-owned `docs/machine/shin-profiles/<profile.id>.json`.
-Never merge registries or copy a consumer profile into Shin Core.
+To register a project, the owner chooses its folder and the agents that may use
+it. The service discovers eligible text at any depth, including unfamiliar file
+types. Project `.gitignore` rules apply. A root `.shinignore` can override them.
+Registration needs no project profile, adoption marker or evaluation suite.
+A fresh kit rebuilds the registered folders and preserves agent access.
 
 ## Conditional Procedures
 
@@ -86,7 +84,7 @@ Load only the relevant reference.
 
 | Task | Procedure |
 | --- | --- |
-| Authorized initial adoption, source selection or MDC enrollment | [Setup and adoption](references/setup-and-adoption.md) |
+| Registering a project, optional exclusions or coverage diagnostics | [Project setup](references/setup-and-adoption.md) |
 | Explicit unmanaged publication or read-only change analysis | [Publication and maintenance](references/publication-and-maintenance.md), [impact](references/impact.md) |
 | Requested Core Pack, retrieval diagnostics or comparisons | [Pack](references/pack-and-diagnostics.md), [routing](references/routing-and-comparisons.md) |
 | Truncated evidence or conflicting source authority | [Trust boundaries](references/trust-boundaries.md) |

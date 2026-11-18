@@ -309,7 +309,9 @@ void image_digest_directory_events(const fs::path& base) {
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(3);
     int reads = 0;
     while (reads < 24 || changes.sequence() == before) {
-        check(std::chrono::steady_clock::now() < deadline, "directory invalidation fixture did not settle");
+        if (std::chrono::steady_clock::now() >= deadline)
+            throw std::runtime_error("directory invalidation fixture did not settle: reads=" + std::to_string(reads) +
+                ", events=" + std::to_string(changes.sequence() - before));
         check(qualification_image_digest(binary, true) == expected,
               "directory events changed an unchanged executable digest");
         ++reads;
@@ -331,11 +333,10 @@ void canonical_authority(const fs::path& base, const fs::path& profiles) {
     for (const auto& path : {request.root, request.home, registry, index, state}) ensure_private_directory(path, true);
     write(request.root / "README.md", "# Quota\n\nquotaLimit owns the request quota.\n");
     write(request.root / "quota.cpp", "int quotaLimit() { return 55; }\n");
-    auto profile = parse_json(read_text(profiles / "generic-source.json", 1024 * 1024, false));
+    auto profile = parse_json(read_text(profiles / "generic-cpp.json", 1024 * 1024, false));
     profile["id"] = "idle-permanent"; profile["document"] = "shin-profile-idle-permanent";
     profile["rootFiles"] = Json::array({"README.md"});
-    auto& optional = profile["optionalRootFiles"];
-    optional.erase(std::remove(optional.begin(), optional.end(), "README.md"), optional.end());
+    profile["optionalRootFiles"] = Json::array();
     profile["bootstrapOnly"] = false;
     profile["evalCases"] = Json::array({{{"id", "quota-doc"}, {"query", "request quota"},
         {"mustPaths", Json::array({"README.md"})}}});

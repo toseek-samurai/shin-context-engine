@@ -64,7 +64,7 @@
       "kotlin-source"
     ],
     "extractor": "kotlin-source-facts",
-    "dominanceRule": "A language with at least 10 files and at least four times all other recognized source files is recommended before generic-source; genuinely mixed corpora retain generic-source first.",
+    "selection": "Automatic discovery selects generic-source for eligible Kotlin, mixed or metadata-only folders. The explicit standalone adoption planner can prefer generic-kotlin when Kotlin has at least 10 files and four times as many as all other recognized source files.",
     "caseInsensitiveRootAliasPolicy": "Optional root aliases that resolve to the same filesystem entry are indexed once."
   }
 }

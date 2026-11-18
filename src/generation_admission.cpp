@@ -1,3 +1,4 @@
+#include "project_files.h"
 #include "generation_admission.h"
 #include "context_internal.h"
 #include "generated_row_decoder.h"
@@ -57,13 +58,14 @@ GenerationAdmission::GenerationAdmission(const RuntimeOptions& options, const Ve
         const auto link = decode_generated_link_row(line);
         if (link.kind == "markdown-link" || link.kind == "path-reference") {
             if (link.status == "ok" || link.status == "broken")
-                links_[link.resolved_path] = fs::exists(root_ / link.resolved_path);
+                links_[link.resolved_path] = observed_link_exists(options.profile.automatic_project_files, root_, link.resolved_path);
         }
     }
     for (const auto& extractor : options.profile.source_fact_extractors) {
         if (extractor != "language" && extractor != "retool")
             throw_index_error("generation-admission-unsupported", "Extractor dependency closure is not known.");
-        retool_ = retool_ || extractor == "retool";
+        // Automatic Retool layout is derived solely from the admitted inventory.
+        if (extractor == "retool" && !options.profile.automatic_project_files) retool_ = true;
     }
     if (retool_) retool_environment_ = retool_generation_environment(root_, fact_paths(sources_));
     Json identity{{"policy", "generation-inputs-and-output-v1"},
@@ -114,7 +116,7 @@ void GenerationAdmission::verify_sources(const RuntimeOptions& options, bool com
         require_worktree_metadata_stable(options, sources_);
     else require_worktree_stable(options, sources_);
     for (const auto& [path, exists] : links_)
-        if (fs::exists(root_ / path) != exists) changed();
+        if (observed_link_exists(options.profile.automatic_project_files, root_, path) != exists) changed();
     if (retool_ && retool_generation_environment(root_, fact_paths(sources_)) != retool_environment_) changed();
 }
 

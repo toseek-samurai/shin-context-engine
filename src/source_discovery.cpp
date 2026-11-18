@@ -1,8 +1,10 @@
 #include "source_discovery.h"
 #include "context_internal.h"
+#include "project_files.h"
 #include "generated_io.h"
 #include "generated_snapshot.h"
 #include "source_read.h"
+#include "source_routing.h"
 #include "source_syntax.h"
 #include "source_cache.h"
 #include "source_context.h"
@@ -15,11 +17,13 @@
 namespace shin::context {
 Json source_discovery_scope(const Profile& profile) {
     Json result = {{"schema_version", "shin.source-scope.v1"},
-        {"selection", "profile-roots-and-extension-allowlist"},
+        {"selection", profile.automatic_project_files ? "automatic-project-text" : "profile-roots-and-extension-allowlist"},
         {"representation", "syntax-or-bounded-text-fallback"},
         {"whole_project_coverage", false}, {"compiler_semantics", false},
         {"max_files", profile.source_fact_max_files}, {"max_file_bytes", profile.source_fact_max_file_bytes},
-        {"notice", "Source search covers selected profile roots and extensions; exclusions, safety checks and limits still apply. Other files require a direct reader. Text fallback does not evaluate CSS cascade or render templates."}};
+        {"notice", profile.automatic_project_files
+            ? "Source search covers eligible project text, including files without extensions. Project exclusions, safety checks and resource limits apply."
+            : "Source search covers selected profile roots and extensions; exclusions, safety checks and limits still apply. Other files require a direct reader. Text fallback does not evaluate CSS cascade or render templates."}};
     const auto bounded = [&](const auto& values, const char* key, std::size_t count, std::size_t bytes) {
         Json items = Json::array();
         std::size_t used = 2;
@@ -34,14 +38,18 @@ Json source_discovery_scope(const Profile& profile) {
         result[std::string("omitted_") + key] = values.size() - result.at(key).size();
     };
     bounded(profile.source_fact_roots, "roots", 16, 1024);
-    bounded(profile.source_fact_extensions, "extensions", 64, 2048);
+    if (profile.automatic_project_files) {
+        result["extensions"] = Json::array();
+        result["omitted_extensions"] = 0;
+    } else bounded(profile.source_fact_extensions, "extensions", 64, 2048);
     return result;
 }
 
 namespace {
 constexpr std::size_t kFileBytes = 1024 * 1024;
-constexpr std::size_t kSourceBytes = 64 * 1024 * 1024;
-constexpr std::size_t kRows = 65536;
+constexpr std::size_t kSourceBytes = kSourceIndexBytes;
+constexpr std::size_t kRows = kSourceIndexRows;
+constexpr std::size_t kFileWindow = 16;
 constexpr std::size_t kQueryTokens = 64;
 constexpr std::size_t kExpandedTerms = 256;
 std::size_t source_file_budget(const RuntimeOptions& options) {
@@ -93,6 +101,41 @@ struct SourceQuery {
     bool distinct_paths_first;
 };
 
+struct FileRefinementWork {
+    std::size_t bytes = 0, chunks = 0, projected = 0;
+    std::map<std::string, FileMetadata> observed;
+};
+
+struct IndexedFragment {
+    const std::string* path;
+    SyntaxChunk chunk;
+    std::size_t first_line, last_line;
+    std::string span_hash;
+
+    Json locator(const std::string& source_hash) const {
+        return {{"path", *path}, {"source_content_hash", source_hash}, {"span_hash", span_hash},
+                {"byte_start", chunk.begin}, {"byte_end", chunk.end}, {"start_line", first_line}, {"end_line", last_line},
+                {"range_origin", chunk.fallback ? "bounded-text-fallback" : "syntax-partition"}};
+    }
+};
+
+IndexedFragment index_fragment(const std::string& path, SyntaxChunk chunk,
+                               const std::vector<std::size_t>& offsets, std::string_view text) {
+    const auto line_at = [&](std::size_t offset) {
+        return static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), offset) - offsets.begin());
+    };
+    return {&path, chunk, line_at(chunk.begin), line_at(chunk.end - 1), fnv1a64(text)};
+}
+
+class FragmentTransaction {
+public:
+    explicit FragmentTransaction(sqlite3* db) : db_(db) { execute(db_, "BEGIN"); }
+    ~FragmentTransaction() { if (db_) sqlite3_exec(db_, "ROLLBACK", nullptr, nullptr, nullptr); }
+    void commit() { execute(db_, "COMMIT"); db_ = nullptr; }
+private:
+    sqlite3* db_;
+};
+
 SourceQuery prepare_source_query(sqlite3* db, const std::string& query) {
     execute(db, "DELETE FROM query_text;");
     auto input = prepare(db, "INSERT INTO query_text(body) VALUES (?)");
@@ -133,27 +176,6 @@ void validate_source_discovery_query_budget(const std::string& query) {
     (void)prepare_source_query(db.get(), query);
 }
 
-std::string source_search_projection(std::string_view text) {
-    std::string additions;
-    std::size_t at = 0;
-    const auto identifier_byte = [](unsigned char byte) { return is_ascii_alnum(byte) || byte == '_'; };
-    while (at < text.size()) {
-        if (!identifier_byte(static_cast<unsigned char>(text[at]))) { ++at; continue; }
-        const auto start = at;
-        while (at < text.size() && identifier_byte(static_cast<unsigned char>(text[at]))) ++at;
-        const auto token = text.substr(start, at - start);
-        bool compound = false;
-        for (std::size_t i = 1; i < token.size(); ++i) compound = compound || identifier_word_boundary(token, i);
-        if (!compound) continue;
-        if (!additions.empty()) additions += ' ';
-        for (std::size_t i = 0; i < token.size(); ++i) {
-            if (identifier_word_boundary(token, i)) additions += ' ';
-            additions += token[i];
-        }
-    }
-    return std::string(text) + (additions.empty() ? "" : "\n" + additions);
-}
-
 struct SourceDiscoveryIndex::Impl {
     Impl(RuntimeOptions value, const fs::path& cache_directory, const GenerationAdmission* preparation_admission);
     Json query(const RuntimeOptions& binding, const std::vector<std::string>& queries,
@@ -161,12 +183,16 @@ struct SourceDiscoveryIndex::Impl {
     void persist_published_cache(const RuntimeOptions& destination, const fs::path& cache_directory);
     Json preparation_metrics() const;
     void configure(sqlite3* db);
+    void build_file_routes(sqlite3* raw);
+    void build_source_chunks(sqlite3* raw);
+    Json refine_file_routes(sqlite3* raw, const std::string& expression, FileRefinementWork& work, Json& coverage);
     bool restore(const std::string& bytes, const Json& binding, const Json& schema,
                  const std::map<std::string, std::string>& sources);
     void persist(SourceCache& cache, const Json& binding);
     IndexFreshness validate_current(const GenerationAdmission* preparation_admission = nullptr);
     void check_time() const { require(SteadyClock::now() < deadline, "source-discovery-timeout"); }
     void check_profile() const {
+        require_project_exclusions(options.root, exclusions);
         if (!options.profile.config_source.empty()) {
             const auto path = fs::absolute(options.profile.config_source).lexically_normal();
             (void)read_bound_source(path.parent_path(), path.filename().generic_string(), profile_hash, kFileBytes);
@@ -175,6 +201,11 @@ struct SourceDiscoveryIndex::Impl {
 
     RuntimeOptions options;
     std::string profile_hash;
+    ProjectIgnoreBinding exclusions;
+    bool file_routing = false;
+    std::map<std::string, std::size_t> routed_sizes;
+    std::set<std::string> quarantined;
+    std::uintmax_t selected_source_bytes = 0;
     std::string snapshot_id;
     mutable std::mutex mutex;
     SteadyClock::time_point deadline;
@@ -295,6 +326,12 @@ bool SourceDiscoveryIndex::Impl::restore(const std::string& bytes, const Json& b
             require(restored < kRows && sqlite3_column_int64(records.get(), 0) ==
                     static_cast<sqlite3_int64>(restored) + 1, "source-cache-records");
             auto row = Json::parse(column_text(records.get(), 1));
+            if (file_routing) {
+                require(row.is_string() && sources.contains(row.get_ref<const std::string&>()) &&
+                        !quarantined.contains(row.get_ref<const std::string&>()), "source-cache-records");
+                ++restored;
+                continue;
+            }
             require(row.is_object() && row.size() == 8 && row.at("path").is_string() &&
                     row.at("source_content_hash").is_string() && row.at("span_hash").is_string() &&
                     row.at("range_origin").is_string() && row.at("byte_start").is_number_unsigned() &&
@@ -327,6 +364,165 @@ bool SourceDiscoveryIndex::Impl::restore(const std::string& bytes, const Json& b
       catch (const Json::exception&) { return false; }
     database = std::move(loaded);
     return true;
+}
+
+void SourceDiscoveryIndex::Impl::build_source_chunks(sqlite3* raw) {
+    auto insert = prepare(raw, "INSERT INTO chunks(rowid,body) VALUES (?,?)");
+    auto record = prepare(raw, "INSERT INTO cache_meta(id,payload) VALUES (?,?)");
+    const auto maximum_file_bytes = source_file_budget(options);
+    for (const auto& [path, hash] : sources) {
+        check_time();
+        const auto read_started = SteadyClock::now();
+        const auto content = read_bound_source(options.root, path, hash, maximum_file_bytes);
+        total_bytes += content.size();
+        require(total_bytes <= kSourceBytes, "source-discovery-byte-limit");
+        const bool redacted = source_range_secret(content).found;
+        read_scan_ms += elapsed_ms_since(read_started);
+        if (redacted) { ++redacted_files; continue; }
+        const auto chunk_started = SteadyClock::now();
+        const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
+        require(plan.coverage_complete, "source-discovery-incomplete-source");
+        const auto offsets = source_line_offsets(content);
+        chunking_ms += elapsed_ms_since(chunk_started);
+        for (const auto& chunk : plan.chunks) {
+            require(chunks < kRows, "source-discovery-row-limit");
+            const auto text = content.substr(chunk.begin, chunk.end - chunk.begin);
+            const Json metadata = index_fragment(path, chunk, offsets, text).locator(hash);
+            ++chunks;
+            const auto index_started = SteadyClock::now();
+            require(sqlite3_bind_int64(record.get(), 1, static_cast<sqlite3_int64>(chunks)) == SQLITE_OK,
+                    "source-discovery-sql");
+            bind_text(record, 2, metadata.dump());
+            require(sqlite3_step(record.get()) == SQLITE_DONE && sqlite3_reset(record.get()) == SQLITE_OK,
+                    "source-discovery-sql");
+            fallback_chunks += chunk.fallback;
+            require(sqlite3_bind_int64(insert.get(), 1, static_cast<sqlite3_int64>(chunks)) == SQLITE_OK,
+                    "source-discovery-sql");
+            const auto projected = source_search_projection(path + "\n" + text);
+            indexed_text_bytes += projected.size();
+            require(indexed_text_bytes <= SourceCache::maximum_bytes, "source-discovery-byte-limit");
+            bind_text(insert, 2, projected);
+            require(sqlite3_step(insert.get()) == SQLITE_DONE, "source-discovery-sql");
+            require(sqlite3_reset(insert.get()) == SQLITE_OK, "source-discovery-sql");
+            sql_index_ms += elapsed_ms_since(index_started);
+        }
+    }
+}
+
+void SourceDiscoveryIndex::Impl::build_file_routes(sqlite3* raw) {
+    auto insert = prepare(raw, "INSERT INTO chunks(rowid,body) VALUES (?,?)");
+    auto record = prepare(raw, "INSERT INTO cache_meta(id,payload) VALUES (?,?)");
+    GeneratedInput input(options, options.out_root / kSourceRoutingFile);
+    auto source = sources.begin();
+    for (std::string line; std::getline(input, line);) {
+        check_time();
+        require(line.size() + 1 <= kSourceBytes - total_bytes, "source-discovery-byte-limit");
+        total_bytes += line.size() + 1;
+        const auto row = Json::parse(line);
+        require(source != sources.end() && row.is_array() && row.size() == 3 && row[0] == source->first &&
+                row[1] == source->second && row[2].is_string(), "source-discovery-incomplete-source");
+        const auto& words = row[2].get_ref<const std::string&>();
+        require(!quarantined.contains(source->first) || words.empty(), "source-discovery-incomplete-source");
+        for (std::size_t start = 0; start < words.size();) {
+            constexpr std::size_t block_bytes = 8192;
+            auto end = std::min(start + block_bytes, words.size());
+            if (end < words.size()) end = words.rfind(' ', end);
+            require(end != std::string::npos && end > start, "source-discovery-incomplete-source");
+            require(chunks < kRows, "source-discovery-row-limit");
+            ++chunks;
+            require(sqlite3_bind_int64(record.get(), 1, static_cast<sqlite3_int64>(chunks)) == SQLITE_OK &&
+                    sqlite3_bind_int64(insert.get(), 1, static_cast<sqlite3_int64>(chunks)) == SQLITE_OK, "source-discovery-sql");
+            bind_text(record, 2, row[0].dump());
+            bind_text(insert, 2, words.substr(start, end - start));
+            indexed_text_bytes += end - start;
+            require(sqlite3_step(record.get()) == SQLITE_DONE && sqlite3_reset(record.get()) == SQLITE_OK &&
+                    sqlite3_step(insert.get()) == SQLITE_DONE && sqlite3_reset(insert.get()) == SQLITE_OK, "source-discovery-sql");
+            start = end + 1;
+        }
+        ++source;
+    }
+    require(input.eof() && !input.bad() && source == sources.end(), "source-discovery-incomplete-source");
+    redacted_files = quarantined.size();
+}
+
+Json SourceDiscoveryIndex::Impl::refine_file_routes(sqlite3* raw, const std::string& expression,
+        FileRefinementWork& work, Json& coverage) {
+    auto search = prepare(raw, "SELECT rowid FROM chunks WHERE chunks MATCH ? ORDER BY bm25(chunks),rowid");
+    bind_text(search, 1, expression);
+    auto record = prepare(raw, "SELECT payload FROM cache_meta WHERE id=?");
+    std::set<std::string> seen;
+    std::vector<std::string> selected;
+    bool more_files = false;
+    int rc;
+    while ((rc = sqlite3_step(search.get())) == SQLITE_ROW) {
+        check_time();
+        require(sqlite3_bind_int64(record.get(), 1, sqlite3_column_int64(search.get(), 0)) == SQLITE_OK &&
+                sqlite3_step(record.get()) == SQLITE_ROW, "source-discovery-row-binding");
+        auto path = Json::parse(column_text(record.get(), 0)).get<std::string>();
+        require(sqlite3_reset(record.get()) == SQLITE_OK && routed_sizes.contains(path), "source-discovery-row-binding");
+        if (!seen.insert(path).second) continue;
+        if (selected.size() == kFileWindow) { more_files = true; break; }
+        selected.push_back(std::move(path));
+    }
+    require(rc == SQLITE_DONE || rc == SQLITE_ROW, "source-discovery-sql");
+    execute(raw, "CREATE VIRTUAL TABLE IF NOT EXISTS temp.route_fragments USING fts5(body, tokenize='porter unicode61');"
+                 "DELETE FROM temp.route_fragments;");
+    FragmentTransaction transaction(raw);
+    auto fragment = prepare(raw, "INSERT INTO temp.route_fragments(rowid,body) VALUES (?,?)");
+    std::vector<IndexedFragment> ranges;
+    std::size_t verified_files = 0;
+    bool work_limited = false;
+    for (const auto& path : selected) {
+        check_time();
+        const auto bytes = routed_sizes.at(path);
+        if (bytes > kSourceBytes - work.bytes) { work_limited = true; break; }
+        const auto before = source_file_metadata(options.root / path, "read-source-metadata");
+        const auto content = read_bound_source(options.root, path, sources.at(path), source_file_budget(options));
+        const auto [observation, inserted] = work.observed.emplace(path, before);
+        if ((!inserted && observation->second != before) ||
+            source_file_metadata(options.root / path, "verify-source-metadata") != before)
+            throw_source_changed_during_verification("verify-source-metadata");
+        require(content.size() == bytes && !source_range_secret(content).found, "source-cache-source-mismatch");
+        work.bytes += bytes;
+        const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
+        require(plan.coverage_complete, "source-discovery-incomplete-source");
+        if (plan.chunks.size() > kRows - work.chunks) { work_limited = true; break; }
+        work.chunks += plan.chunks.size();
+        const auto offsets = source_line_offsets(content);
+        for (const auto& part : plan.chunks) {
+            const auto text = content.substr(part.begin, part.end - part.begin);
+            ranges.push_back(index_fragment(path, part, offsets, text));
+            require(sqlite3_bind_int64(fragment.get(), 1, static_cast<sqlite3_int64>(ranges.size())) == SQLITE_OK,
+                    "source-discovery-sql");
+            const auto projected = source_search_projection(path + "\n" + text);
+            require(projected.size() <= SourceCache::maximum_bytes - work.projected, "source-discovery-byte-limit");
+            work.projected += projected.size();
+            bind_text(fragment, 2, projected);
+            require(sqlite3_step(fragment.get()) == SQLITE_DONE && sqlite3_reset(fragment.get()) == SQLITE_OK,
+                    "source-discovery-sql");
+        }
+        ++verified_files;
+    }
+    transaction.commit();
+    coverage = {{"policy", "file-vocabulary-then-verified-fragments-v1"}, {"file_window", kFileWindow},
+                {"verified_files", verified_files}, {"more_matching_files", more_files},
+                {"query_work_limited", work_limited}, {"matching_files_complete", !more_files && !work_limited}};
+    auto rank = prepare(raw, "SELECT rowid,bm25(route_fragments) AS score FROM temp.route_fragments"
+                             " WHERE route_fragments MATCH ? ORDER BY score,rowid");
+    bind_text(rank, 1, expression);
+    Json matches = Json::array();
+    std::map<std::string, int> per_path;
+    while ((rc = sqlite3_step(rank.get())) == SQLITE_ROW) {
+        const auto id = sqlite3_column_int64(rank.get(), 0);
+        require(id > 0 && static_cast<std::size_t>(id) <= ranges.size(), "source-discovery-row-binding");
+        const auto& range = ranges[static_cast<std::size_t>(id - 1)];
+        if (++per_path[*range.path] > 2) continue;
+        auto candidate = range.locator(sources.at(*range.path));
+        candidate["bm25"] = sqlite3_column_double(rank.get(), 1);
+        matches.push_back(std::move(candidate));
+    }
+    require(rc == SQLITE_DONE, "source-discovery-sql");
+    return matches;
 }
 
 void SourceDiscoveryIndex::Impl::persist(SourceCache& cache, const Json& binding) {
@@ -369,6 +565,19 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
         return RetrievalSession(options, RetrievalSessionOpenMode::verified_snapshot);
     }();
     snapshot_id = session.freshness().snapshot_id;
+    if (options.profile.automatic_project_files)
+        exclusions = published_project_exclusions(options.profile, session.manifest());
+    file_routing = session.manifest().value("source_routing", "") == "file-vocabulary-v1";
+    if (file_routing) {
+        require(options.profile.automatic_project_files, "source-discovery-binding-mismatch");
+        for (const auto& source : session.manifest().at("source_fact_sources")) {
+            const auto path = source.at("path").get<std::string>();
+            const auto bytes = source.at("bytes").get<std::size_t>();
+            selected_source_bytes += bytes;
+            routed_sizes.emplace(path, bytes);
+            if (!json_string_value(source, "quarantine_reason").empty()) quarantined.insert(path);
+        }
+    }
     (void)validate_current(preparation_admission);
     const auto& source_counts = session.manifest().at("source_fact_counts");
     deadline = SteadyClock::now() + std::chrono::seconds(30);
@@ -402,50 +611,8 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
     }
     execute(raw, "BEGIN");
     files = sources.size();
-    auto insert = prepare(raw, "INSERT INTO chunks(rowid,body) VALUES (?,?)");
-    auto record = prepare(raw, "INSERT INTO cache_meta(id,payload) VALUES (?,?)");
-    const auto maximum_file_bytes = source_file_budget(options);
-    for (const auto& [path, hash] : sources) {
-        check_time();
-        const auto read_started = SteadyClock::now();
-        const auto content = read_bound_source(options.root, path, hash, maximum_file_bytes);
-        total_bytes += content.size();
-        require(total_bytes <= kSourceBytes, "source-discovery-byte-limit");
-        const bool redacted = source_range_secret(content).found;
-        read_scan_ms += elapsed_ms_since(read_started);
-        if (redacted) { ++redacted_files; continue; }
-        const auto chunk_started = SteadyClock::now();
-        const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
-        require(plan.coverage_complete, "source-discovery-incomplete-source");
-        const auto offsets = source_line_offsets(content);
-        chunking_ms += elapsed_ms_since(chunk_started);
-        for (const auto& chunk : plan.chunks) {
-            require(chunks < kRows, "source-discovery-row-limit");
-            const auto text = content.substr(chunk.begin, chunk.end - chunk.begin);
-            const Json metadata = {{"path", path}, {"source_content_hash", hash}, {"span_hash", fnv1a64(text)},
-                {"byte_start", chunk.begin}, {"byte_end", chunk.end},
-                {"start_line", std::upper_bound(offsets.begin(), offsets.end(), chunk.begin) - offsets.begin()},
-                {"end_line", std::upper_bound(offsets.begin(), offsets.end(), chunk.end - 1) - offsets.begin()},
-                {"range_origin", chunk.fallback ? "bounded-text-fallback" : "syntax-partition"}};
-            ++chunks;
-            const auto index_started = SteadyClock::now();
-            require(sqlite3_bind_int64(record.get(), 1, static_cast<sqlite3_int64>(chunks)) == SQLITE_OK,
-                    "source-discovery-sql");
-            bind_text(record, 2, metadata.dump());
-            require(sqlite3_step(record.get()) == SQLITE_DONE && sqlite3_reset(record.get()) == SQLITE_OK,
-                    "source-discovery-sql");
-            fallback_chunks += chunk.fallback;
-            require(sqlite3_bind_int64(insert.get(), 1, static_cast<sqlite3_int64>(chunks)) == SQLITE_OK,
-                    "source-discovery-sql");
-            const auto projected = source_search_projection(path + "\n" + text);
-            indexed_text_bytes += projected.size();
-            require(indexed_text_bytes <= SourceCache::maximum_bytes, "source-discovery-byte-limit");
-            bind_text(insert, 2, projected);
-            require(sqlite3_step(insert.get()) == SQLITE_DONE, "source-discovery-sql");
-            require(sqlite3_reset(insert.get()) == SQLITE_OK, "source-discovery-sql");
-            sql_index_ms += elapsed_ms_since(index_started);
-        }
-    }
+    if (file_routing) build_file_routes(raw);
+    else build_source_chunks(raw);
     execute(raw, "COMMIT;");
     (void)validate_current(preparation_admission);
     if (cache) {
@@ -577,6 +744,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
     sqlite3* raw = database.get();
     auto record = prepare(raw, "SELECT payload FROM cache_meta WHERE id=?");
     Json results = Json::array();
+    FileRefinementWork work;
     for (const auto& query : queries) {
         check_time();
         const auto query_started = SteadyClock::now();
@@ -613,7 +781,7 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         Json deferred = Json::array();
         std::map<std::string, int> per_path;
         const auto append_candidate = [&](Json candidate) {
-            if (at_snapshot || cache_status == "restored") {
+            if (!file_routing && (at_snapshot || cache_status == "restored")) {
                 const auto content = read_bound_source(options.root, candidate.at("path"),
                                                        candidate.at("source_content_hash"), source_file_budget(options));
                 const auto begin = candidate.at("byte_start").get<std::size_t>();
@@ -627,7 +795,16 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
             candidate["rank"] = candidates.size() + 1;
             candidates.push_back(std::move(candidate));
         };
-        if (!expression.empty()) {
+        Json file_coverage;
+        if (file_routing && !expression.empty()) {
+            auto matches = refine_file_routes(raw, expression, work, file_coverage);
+            for (auto& candidate : matches) {
+                const auto occurrence = ++per_path[candidate.at("path").get_ref<const std::string&>()];
+                if (distinct_paths_first && occurrence == 2) deferred.push_back(std::move(candidate));
+                else append_candidate(std::move(candidate));
+                if (candidates.size() == 8) break;
+            }
+        } else if (!expression.empty()) {
             auto search = prepare(raw, "SELECT rowid,bm25(chunks) AS score FROM chunks WHERE chunks MATCH ? ORDER BY score,rowid");
             bind_text(search, 1, expression);
             while ((rc = sqlite3_step(search.get())) == SQLITE_ROW) {
@@ -645,18 +822,28 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
                 if (candidates.size() == 8) break;
             }
             require(rc == SQLITE_ROW || rc == SQLITE_DONE, "source-discovery-sql");
-            for (auto& candidate : deferred) {
-                if (candidates.size() == 8) break;
-                append_candidate(std::move(candidate));
-            }
+        }
+        for (auto& candidate : deferred) {
+            if (candidates.size() == 8) break;
+            append_candidate(std::move(candidate));
         }
         results.push_back({{"query", query}, {"candidates", candidates}, {"query_ms", elapsed_ms_since(query_started)},
                            {"distinct_paths_first", distinct_paths_first},
                            {"answer_complete", false}, {"source_inspection_required", true}});
+        if (!file_coverage.is_null()) results.back()["file_coverage"] = std::move(file_coverage);
     }
     const auto collection_started = SteadyClock::now();
     Json context;
-    if (materialize) context = collect_source_context(options, snapshot_id, results[0].at("candidates"), sources);
+    if (materialize) {
+        context = collect_source_context(options, snapshot_id, results[0].at("candidates"), sources);
+        if (results[0].contains("file_coverage")) {
+            context["file_coverage"] = results[0].at("file_coverage");
+            if (context.at("file_coverage").at("matching_files_complete") == false)
+                context["collection_complete"] = false;
+            require(context.dump().size() <= context.at("limits").at("max_serialized_bytes").get<std::size_t>(),
+                    "source-discovery-output-limit");
+        }
+    }
     const auto collection_ms = elapsed_ms_since(collection_started);
     // Explicit snapshot calls verify returned sources above; the owner supplies
     // final source/authority checks. Regular calls still recheck the corpus.
@@ -690,6 +877,17 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         {"revalidation_ms", elapsed_ms_since(revalidation_started)},
         {"process_peak_rss_bytes", process_peak_rss_bytes()}, {"sqlite_process_memory_bytes", sqlite3_memory_used()},
         {"results", std::move(results)}};
+    if (file_routing) {
+        result["preparation_input"] = "verified-file-vocabulary";
+        result["selected_source_bytes"] = selected_source_bytes;
+        result["refinement_source_bytes"] = work.bytes;
+        result["refinement_chunks"] = work.chunks;
+        for (const auto& [path, observed] : work.observed) {
+            if (profile_path_contains_symlink(options.root, path) ||
+                source_file_metadata(options.root / path, "verify-source-metadata") != observed)
+                throw_source_changed_during_verification("verify-source-metadata");
+        }
+    }
     if (materialize) {
         result["schema_version"] = "shin.source-context.v1";
         result["context"] = std::move(context);

@@ -1,6 +1,8 @@
 #include "context_internal.h"
+#include "project_files.h"
 #include "source_relations.h"
 #include "source_read.h"
+#include "source_routing.h"
 #include "source_syntax.h"
 #include <iterator>
 
@@ -330,7 +332,8 @@ static LinkRow classify_link(const fs::path& root,
                       int line,
                       const std::string& kind,
                       const std::string& text,
-                      const std::string& target) {
+                      const std::string& target,
+                      const std::set<std::string>& wiki_pages, const ProjectFiles* project) {
     LinkRow row;
     row.path = path;
     row.line = line;
@@ -353,6 +356,16 @@ static LinkRow classify_link(const fs::path& root,
         row.resolved_path = path;
         return row;
     }
+    // A bare wiki page name refers to a sibling Markdown document. Use the
+    // admitted inventory so an excluded file or symlink cannot satisfy the link.
+    if (wiki_pages.contains(path) && !fs::path(target_path).has_extension()) {
+        const auto page = target_path + ".md";
+        if (wiki_pages.contains(page)) {
+            row.resolved_path = page;
+            row.status = "ok";
+            return row;
+        }
+    }
     if (starts_with(target_path, "/")) {
         target_path.erase(target_path.begin());
     }
@@ -365,7 +378,7 @@ static LinkRow classify_link(const fs::path& root,
         resolved_rel = (fs::path(path).parent_path() / target_path).lexically_normal();
     }
     row.resolved_path = resolved_rel.generic_string();
-    row.status = fs::exists(root / resolved_rel) ? "ok" : "broken";
+    row.status = project ? project->link_status(row.resolved_path) : (fs::exists(root / resolved_rel) ? "ok" : "broken");
     return row;
 }
 
@@ -439,7 +452,8 @@ static bool json_path_references_belong_to_external_namespace(const SourceDoc& d
     return schema == "shin.profile.v1" || schema == "shin.profile-routing.v1";
 }
 
-std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, const SourceDoc& doc) {
+std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, const SourceDoc& doc,
+                                 const std::set<std::string>& wiki_pages, const ProjectFiles* project) {
     std::vector<LinkRow> rows;
     bool in_fence = false;
     const bool external_path_namespace =
@@ -456,7 +470,7 @@ std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, c
         if (doc.kind == "markdown") {
             for (const auto& [text, target] : extract_markdown_links(line)) {
                 rows.push_back(classify_link(root, doc.path, static_cast<int>(i + 1), "markdown-link",
-                                             text, target));
+                                             text, target, wiki_pages, project));
             }
         }
         if (doc.kind == "json" && profile.json_path_references &&
@@ -467,7 +481,7 @@ std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, c
                     continue;
                 }
                 rows.push_back(classify_link(root, doc.path, static_cast<int>(i + 1), "path-reference",
-                                             target, target));
+                                             target, target, wiki_pages, project));
             }
         }
     }
@@ -1016,7 +1030,12 @@ void add_source_fact_row(std::vector<FactRow>& rows,
     const std::string record_type = language + "-" + kind;
     const std::string title = language + " " + kind + " " + name;
     const std::string summary = truncate_text(redact_sensitive_text(compact_whitespace(declaration)), 420);
-    FactRow row{"source-" + slugify(path + "-" + std::to_string(line) + "-" + record_type + "-" + name),
+    // Slugs discard punctuation and non-ASCII bytes. Automatic inventory can
+    // select distinct files whose names have exactly the same slug.
+    const auto id = profile.automatic_project_files
+        ? fnv1a64(path + '\0' + std::to_string(line) + '\0' + record_type + '\0' + name).substr(8)
+        : slugify(path + "-" + std::to_string(line) + "-" + record_type + "-" + name);
+    FactRow row{"source-" + id,
                 record_type,
                 path,
                 status,
@@ -1451,14 +1470,13 @@ static bool is_web_text_extension(std::string_view extension) {
            extension == ".htm" || extension == ".razor" || extension == ".cshtml";
 }
 
-static void scan_web_text(const Profile& profile, const std::string& path,
-                          const std::string& content, std::vector<FactRow>& rows) {
-    // Real lexical evidence also keeps a styles-only index useful to Brief and
-    // its ordinary integrity checks. Do not invent declarations or waive an
-    // empty dictionary. Small windows retain their complete searchable text.
-    const auto plan = chunk_source_syntax(content, extension_of(path), 384, 16384);
+static void scan_lexical_text(const Profile& profile, const std::string& path, const std::string& content,
+                              std::vector<FactRow>& rows, const std::string& language, bool file_routing) {
+    // Each nonempty window contributes real searchable text to Brief, including
+    // repositories with no documents or declarations. These rows describe text, not symbols.
+    const auto plan = chunk_source_syntax(content, "", 384, 16384);
     if (!plan.coverage_complete)
-        throw CliError("source-text-budget", "validation", "Selected web text exceeds bounded extraction capacity.",
+        throw CliError("source-text-budget", "validation", "Selected text exceeds bounded extraction capacity.",
                        2, false, "Review selected source size and the profile scope.");
     const auto offsets = source_line_offsets(content);
     for (const auto& chunk : plan.chunks) {
@@ -1468,10 +1486,11 @@ static void scan_web_text(const Profile& profile, const std::string& path,
         const auto last = static_cast<int>(std::upper_bound(offsets.begin(), offsets.end(), chunk.end - 1) - offsets.begin());
         // Include the byte offset: minified files can have several windows on
         // one physical line. These are text records, not observed symbols.
-        add_source_fact_row(rows, profile, path, first, "web", "text",
+        add_source_fact_row(rows, profile, path, first, language, "text",
             path + ":" + std::to_string(chunk.begin), text, "observed", "source-of-truth", last);
         rows.back().symbol_name.clear();
         rows.back().range_origin = "lexical";
+        if (file_routing) break;
     }
 }
 
@@ -1487,6 +1506,7 @@ bool should_skip_source_fact_dir(const std::string& name) {
 }
 
 SourceFactPathResult enumerate_source_fact_paths(const Profile& profile, const fs::path& root) {
+    if (profile.automatic_project_files) return ProjectFiles::scan(profile, root).sources;
     SourceFactPathResult result;
     if (profile.source_fact_roots.empty() || profile.source_fact_extensions.empty()) {
         return result;
@@ -1619,7 +1639,9 @@ static bool load_source_fact_content(const Profile& profile,
         source.status = "skipped-large";
         return false;
     }
-    content = read_file(full_path);
+    content = profile.automatic_project_files
+        ? read_project_text(root, path, static_cast<std::size_t>(profile.source_fact_max_file_bytes))
+        : read_file(full_path);
     source.byte_count = content.size();
     source.content_hash = fnv1a64(content);
     source.status = "scanned";
@@ -1628,11 +1650,12 @@ static bool load_source_fact_content(const Profile& profile,
 
 void inspect_source_fact_content(const Profile& profile, const fs::path& root,
                                  const std::string& path, const std::string& content,
-                                 std::vector<FactRow>& rows, SourceRelationInputs& relations) {
+                                 std::vector<FactRow>& rows, SourceRelationInputs& relations,
+                                 const std::vector<std::string>& selected_paths, bool file_routing) {
     const std::vector<std::string> lines = split_lines(content);
     const std::string ext = extension_of(path);
     std::string language;
-    if (is_web_text_extension(ext)) scan_web_text(profile, path, content, rows);
+    if (is_web_text_extension(ext)) scan_lexical_text(profile, path, content, rows, "web", file_routing);
     for (const std::string& extractor : profile.source_fact_extractors) {
         if (extractor == "language") {
             if (ext == ".java") {
@@ -1653,7 +1676,7 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
                 scan_cpp_source_facts(profile, path, lines, rows);
             }
         } else if (extractor == "retool") {
-            scan_retool_source_facts(profile, root, path, content, lines, rows, relations);
+            scan_retool_source_facts(profile, root, path, content, lines, rows, relations, selected_paths);
         }
     }
     if (!language.empty()) {
@@ -1662,12 +1685,22 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
         }
         enrich_language_source_facts(profile, path, language, lines, rows);
     }
+    if (profile.automatic_project_files && rows.empty() && !ProjectFiles::is_document(path)) {
+        scan_lexical_text(profile, path, content, rows, "source", file_routing);
+    }
     std::vector<std::size_t> offsets{0};
     for (std::size_t i = 0; i < content.size(); ++i) {
         if (content[i] == '\n') offsets.push_back(i + 1);
     }
     std::map<std::pair<int, int>, std::string> hashes;
+    std::unordered_map<std::string, unsigned> occurrences;
     for (FactRow& row : rows) {
+        // Lexical adapters can report multiple occurrences of a tag or symbol on one
+        // physical line. Preserve each occurrence even when they share a read span.
+        if (profile.automatic_project_files) {
+            const auto occurrence = ++occurrences[row.id];
+            if (occurrence > 1) row.id += "-n" + std::to_string(occurrence);
+        }
         if (row.path != path || row.start_line < 1 || row.end_line < row.start_line ||
             static_cast<std::size_t>(row.end_line) > offsets.size()) continue;
         const std::pair<int, int> range{row.start_line, row.end_line};
@@ -1686,8 +1719,15 @@ void inspect_source_fact_content(const Profile& profile, const fs::path& root,
 }
 
 SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::path& root) {
+    return build_source_fact_rows(profile, root, enumerate_source_fact_paths(profile, root));
+}
+
+SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::path& root,
+                                            const SourceFactPathResult& paths) {
     SourceFactBuildResult result;
-    SourceFactPathResult paths = enumerate_source_fact_paths(profile, root);
+    const bool large_corpus = profile.automatic_project_files && exceeds_eager_source_work(paths);
+    result.file_routing = profile.automatic_project_files && needs_source_file_routing(paths);
+    std::atomic<std::size_t> routing_bytes{0}, source_chunks{0};
     result.candidate_file_count = paths.candidate_file_count;
     result.capped_file_count = paths.capped_file_count;
     auto scan_path = [&](const std::string& path, std::vector<FactRow>& rows,
@@ -1701,7 +1741,16 @@ SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::p
             source.quarantine_reason = secret.kind;
             return true;
         }
-        inspect_source_fact_content(profile, root, path, content, rows, relations);
+        if (result.file_routing) {
+            std::size_t chunks = 0;
+            source.routing_terms = source_routing_terms(path, content, chunks);
+            source_chunks.fetch_add(chunks, std::memory_order_relaxed);
+            const auto bytes = source.routing_terms.size();
+            if (routing_bytes.fetch_add(bytes, std::memory_order_relaxed) + bytes > kSourceIndexBytes &&
+                large_corpus)
+                throw_index_error("source-discovery-byte-limit", "The complete file search vocabulary exceeds its byte limit.");
+        }
+        inspect_source_fact_content(profile, root, path, content, rows, relations, paths.paths, large_corpus);
         return true;
     };
 
@@ -1713,6 +1762,21 @@ SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::p
         scan_status[index] = scan_path(paths.paths[index], rows_by_file[index], sources_by_file[index],
                                       relations_by_file[index]) ? 1 : 2;
     });
+    result.file_routing = large_corpus || source_chunks.load() > kSourceIndexRows;
+    if (result.file_routing && !large_corpus) {
+        // The actual chunk count selected the file-first route. Its vocabulary
+        // already includes every source window. Retain an observed read locator
+        // per lexical-only file in Brief alongside all its structural facts.
+        for (auto& rows : rows_by_file) {
+            bool retained = false;
+            std::erase_if(rows, [&](const FactRow& row) {
+                if (row.record_type != "source-text" && row.record_type != "web-text") return false;
+                return std::exchange(retained, true);
+            });
+        }
+    }
+    if (!result.file_routing && routing_bytes.load() > 0)
+        for (auto& source : sources_by_file) std::string{}.swap(source.routing_terms);
     std::size_t total_rows = 0;
     for (const auto& rows : rows_by_file) total_rows += rows.size();
     result.rows.reserve(total_rows);
@@ -1786,25 +1850,59 @@ static bool discovery_directory(const fs::path& path) {
     return !ec && fs::is_directory(status);
 }
 
-DiscoveryResult discover_project(const fs::path& root) {
+static std::vector<std::string> planner_discovery_paths(const fs::path& root) {
+    std::vector<std::string> files;
+    for (fs::recursive_directory_iterator it(root), end; it != end; ++it) {
+        std::error_code entry_ec;
+        if (it->is_symlink(entry_ec)) {
+            it.disable_recursion_pending();
+            continue;
+        }
+        const fs::path rel_path = fs::relative(it->path(), root);
+        const std::string rel = rel_path.generic_string();
+        const auto name = rel_path.filename().string();
+        if (it->is_directory()) {
+            if (should_skip_discovery_dir(name, rel)) {
+                it.disable_recursion_pending();
+            }
+            continue;
+        }
+        if (!it->is_regular_file()) {
+            continue;
+        }
+        files.push_back(rel);
+    }
+    return files;
+}
+
+DiscoveryResult discover_project(const fs::path& root, const ProjectFiles* project) {
     DiscoveryResult result;
     result.has_git = discovery_directory(root / ".git") || discovery_regular_file(root / ".git");
-    result.has_docs_dir = discovery_directory(root / "docs");
-    result.has_readme = discovery_regular_file(root / "README.md") || discovery_regular_file(root / "readme.md");
-    result.has_agents = discovery_regular_file(root / "AGENTS.md");
-    result.has_pom = discovery_regular_file(root / "pom.xml");
-    result.has_gradle = discovery_regular_file(root / "build.gradle") ||
-                        discovery_regular_file(root / "build.gradle.kts") ||
-                        discovery_regular_file(root / "settings.gradle") ||
-                        discovery_regular_file(root / "settings.gradle.kts");
-    result.has_package_json = discovery_regular_file(root / "package.json");
-    result.has_cmake = discovery_regular_file(root / "CMakeLists.txt");
-    result.has_makefile = discovery_regular_file(root / "Makefile") || discovery_regular_file(root / "makefile");
-    result.has_retool_source_roots = discovery_directory(root / "apps") &&
-                                     discovery_directory(root / "resources") &&
-                                     discovery_directory(root / "workflows");
+    const auto has_file = [&](const std::string& relative) {
+        return project ? project->contains(relative) : discovery_regular_file(root / relative);
+    };
+    const auto has_dir = [&](const std::string& relative) {
+        if (!project) return discovery_directory(root / relative);
+        const auto prefix = relative + "/";
+        const auto next = std::lower_bound(project->sources.paths.begin(), project->sources.paths.end(), prefix);
+        return next != project->sources.paths.end() && next->starts_with(prefix);
+    };
+    result.has_docs_dir = has_dir("docs");
+    result.has_readme = has_file("README.md") || has_file("readme.md");
+    result.has_agents = has_file("AGENTS.md");
+    result.has_pom = has_file("pom.xml");
+    result.has_gradle = has_file("build.gradle") ||
+                        has_file("build.gradle.kts") ||
+                        has_file("settings.gradle") ||
+                        has_file("settings.gradle.kts");
+    result.has_package_json = has_file("package.json");
+    result.has_cmake = has_file("CMakeLists.txt");
+    result.has_makefile = has_file("Makefile") || has_file("makefile");
+    result.has_retool_source_roots = has_dir("apps") &&
+                                     has_dir("resources") &&
+                                     has_dir("workflows");
     const fs::path generated_kb_root = root / "docs" / "kb" / "generated";
-    if (discovery_directory(generated_kb_root)) {
+    if (!project && discovery_directory(generated_kb_root)) {
         for (const auto& entry : fs::directory_iterator(generated_kb_root)) {
             std::error_code entry_ec;
             if (!entry.is_symlink(entry_ec) && entry.is_regular_file(entry_ec)) {
@@ -1818,25 +1916,10 @@ DiscoveryResult discover_project(const fs::path& root) {
                        2, false, "Select an existing --root path and retry.");
     }
 
-    for (fs::recursive_directory_iterator it(root), end; it != end; ++it) {
-        std::error_code entry_ec;
-        if (it->is_symlink(entry_ec)) {
-            it.disable_recursion_pending();
-            continue;
-        }
-        const fs::path rel_path = fs::relative(it->path(), root);
-        const std::string rel = rel_path.generic_string();
-        const std::string name = it->path().filename().string();
-        if (it->is_directory()) {
-            if (should_skip_discovery_dir(name, rel)) {
-                it.disable_recursion_pending();
-            }
-            continue;
-        }
-        if (!it->is_regular_file()) {
-            continue;
-        }
-
+    const auto planner_paths = project ? std::vector<std::string>{} : planner_discovery_paths(root);
+    for (const auto& rel : (project ? project->sources.paths : planner_paths)) {
+        const fs::path rel_path(rel);
+        const auto name = rel_path.filename().string();
         result.max_depth_scanned = std::max(result.max_depth_scanned, path_depth(rel_path));
         const std::string lower_name = to_lower(name);
         const std::string lower_rel = to_lower(rel);
@@ -1973,7 +2056,9 @@ DiscoveryResult discover_project(const fs::path& root) {
         add_unique(result.signals, "retool-source-roots");
         add_unique(result.recommended_extractors, "retool-source-facts");
     }
-    if (!result.has_readme && result.docs_files < 3 && result.markdown_files < 3 && result.profile_files == 0) {
+    const bool wiki_home = project ? project->contains(kRootWikiHome) : has_root_wiki_home(root);
+    if (wiki_home) add_unique(result.signals, "root-wiki-home");
+    if (!result.has_readme && !wiki_home && result.docs_files < 3 && result.markdown_files < 3 && result.profile_files == 0) {
         result.warnings.push_back("low-doc-coverage");
     }
     if ((result.has_pom || result.pom_files > 0) && result.docs_files < 3) {
@@ -1995,6 +2080,17 @@ DiscoveryResult discover_project(const fs::path& root) {
         add_unique(result.signals, "agents-entrypoint");
     }
 
+    if (project) {
+        result.indexable = !project->sources.paths.empty();
+        result.bootstrap_state = !result.indexable ? "empty" : (project->documents.empty() ? "source-only" : "documented");
+        result.warnings.clear();
+        if (result.indexable) {
+            result.primary_profile = "generic-source";
+            result.recommended_profiles = {result.primary_profile};
+            result.next_steps = {"shin-ce init"};
+        } else result.warnings.push_back("no-indexable-content");
+        return result;
+    }
     const bool has_java = result.java_files > 0;
     const bool has_kotlin = result.kotlin_files > 0;
     const bool has_node = result.ts_files > 0;
@@ -2005,7 +2101,7 @@ DiscoveryResult discover_project(const fs::path& root) {
     const int language_families = static_cast<int>(has_java) + static_cast<int>(has_kotlin) +
                                   static_cast<int>(has_node) +
                                   static_cast<int>(has_cpp) + static_cast<int>(has_dotnet);
-    const bool has_documents = result.has_readme || result.has_agents || result.indexable_docs_files > 0;
+    const bool has_documents = result.has_readme || wiki_home || result.has_agents || result.indexable_docs_files > 0;
     const bool has_sources = language_families > 0 || result.web_files > 0 || has_retool;
 
     if (result.web_files > 0) {

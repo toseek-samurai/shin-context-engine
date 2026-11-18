@@ -101,7 +101,9 @@ ctest --test-dir /tmp/shin-observer-build --parallel 4 --output-on-failure
 ```
 
 This produces `shin-ce`, `shin-observer`, `shin-mcp` and `shin-usage` in the
-build directory. For a new project, use an explicit private data home:
+build directory. For a development build, point `--profile-dir` at the
+kit registry from this Shin checkout. A project owner only chooses the folder
+and which agents may use it. For example, use a private data home:
 
 ```sh
 /tmp/shin-observer-build/shin-ce init --root /path/to/project \

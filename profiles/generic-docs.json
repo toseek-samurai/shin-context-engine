@@ -6,6 +6,7 @@
   "id": "generic-docs",
   "sourceLabel": "Generic project documentation",
   "rootFiles": [],
+  "includeRootWikiPages": true,
   "optionalRootFiles": ["README.md", "readme.md", "AGENTS.md"],
   "sourceExtensions": [".md", ".json", ".jsonl", ".yaml", ".yml"],
   "sourceFactRoots": [],

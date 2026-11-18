@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "project_files.h"
 #include "compact_terms.h"
 #include "generated_snapshot.h"
 #include "generated_row_decoder.h"
@@ -245,9 +246,9 @@ static void validate_profile_paths(const RuntimeOptions& options,
                           "Profile root does not exist.");
     }
     if (profile.root_files.empty() && profile.optional_root_files.empty() &&
-        profile.source_fact_roots.empty()) {
+        profile.source_fact_roots.empty() && !profile.include_root_wiki_pages) {
         add_profile_issue(issues, counts, "error", "profile-inputs-missing", profile.config_source,
-                          "Profile must define rootFiles, optionalRootFiles, or sourceFactRoots.");
+                          "Profile must configure document or source-fact inputs.");
     }
     std::set<std::string> configured_root_files;
     for (const std::string& path : profile.root_files) {
@@ -291,6 +292,7 @@ static void validate_profile_paths(const RuntimeOptions& options,
             add_profile_issue(issues, counts, "error", "optional-root-file-excluded-by-document-policy", path,
                               "Profile document path policy excludes an optionalRootFiles entry.");
         }
+        if (profile.automatic_project_files) continue;
         std::error_code optional_ec;
         const fs::file_status optional_status = fs::symlink_status(options.root / path, optional_ec);
         if (profile_path_contains_symlink(options.root, path)) {
@@ -414,7 +416,12 @@ static void validate_profile_source_facts(const RuntimeOptions& options,
                               "sourceFactRoots entry does not exist under --root.");
         }
     }
-    if (!profile.source_fact_roots.empty() && profile.source_fact_extensions.empty()) {
+    if (profile.automatic_project_files &&
+        (profile.source_fact_roots.size() != 1 || profile.source_fact_roots.front() != ".")) {
+        add_profile_issue(issues, counts, "error", "automatic-project-root-invalid", profile.config_source,
+                          "Automatic project selection requires the project root as its sole sourceFactRoots entry.");
+    }
+    if (!profile.automatic_project_files && !profile.source_fact_roots.empty() && profile.source_fact_extensions.empty()) {
         add_profile_issue(issues, counts, "error", "source-fact-extensions-missing", profile.config_source,
                           "sourceFactRoots requires sourceFactExtensions.");
     }
@@ -426,7 +433,10 @@ static void validate_profile_source_facts(const RuntimeOptions& options,
         add_profile_issue(issues, counts, "error", "negative-source-fact-limit", profile.config_source,
                           "sourceFactMaxFiles and sourceFactMaxFileBytes must be zero or positive.");
     }
-    if (!profile.source_fact_roots.empty() && !profile.source_fact_extensions.empty() &&
+    if (profile.automatic_project_files && (profile.source_fact_max_files <= 0 || profile.source_fact_max_file_bytes <= 0)) {
+        add_profile_issue(issues, counts, "error", "automatic-project-limits-missing", profile.config_source,
+                          "Automatic project selection requires positive source file and per-file byte limits.");
+    } else if (!profile.source_fact_roots.empty() && (profile.automatic_project_files || !profile.source_fact_extensions.empty()) &&
         enumerate_source_fact_paths(profile, options.root).candidate_file_count == 0 &&
         enumerate_source_paths(profile, options.root).empty()) {
         add_profile_issue(issues, counts, "warning", "no-indexable-source-files", profile.config_source,
@@ -892,11 +902,14 @@ static void validate_doctor_generated_files(const RuntimeOptions& options,
     }
 }
 
-static void read_doctor_manifest_counts(DoctorResult& result, const fs::path& manifest_path) {
+static ProjectIgnoreBinding read_doctor_manifest_counts(DoctorResult& result, const fs::path& manifest_path,
+                                               const RuntimeOptions& options) {
     if (!fs::exists(manifest_path)) {
-        return;
+        return {};
     }
     const Json manifest_json = parse_json_text(read_file(manifest_path), manifest_path.string());
+    const auto exclusions = published_project_exclusions(options.profile, manifest_json);
+    require_project_exclusions(options.root, exclusions);
     result.counts.manifest_source_count = json_int_value(manifest_json, "source_count", 0);
     result.counts.manifest_broken_local_links = json_int_value(manifest_json, "broken_local_link_count", 0);
     const Json* source_fact_counts = find_json_field(manifest_json, "source_fact_counts");
@@ -922,6 +935,7 @@ static void read_doctor_manifest_counts(DoctorResult& result, const fs::path& ma
         result.counts.jsonl_capped_rows =
             json_int_value(*structured_data_counts, "jsonl_capped_rows", 0);
     }
+    return exclusions;
 }
 
 static void scan_doctor_documents(const RuntimeOptions& options,
@@ -1086,13 +1100,13 @@ static void scan_doctor_fact_rows(DoctorResult& result, const fs::path& generate
 static std::vector<std::string> doctor_secret_scan_paths(const Profile& profile,
                                                   const fs::path& root,
                                                   int& excluded_files) {
-    std::vector<std::string> paths = enumerate_source_paths(profile, root);
-    SourceFactPathResult source_paths = enumerate_source_fact_paths(profile, root);
-    for (const std::string& path : source_paths.paths) {
-        append_unique_string(paths, path);
+    auto paths = enumerate_source_fact_paths(profile, root).paths;
+    if (!profile.automatic_project_files) {
+        const auto documents = enumerate_source_paths(profile, root);
+        paths.insert(paths.end(), documents.begin(), documents.end());
+        std::sort(paths.begin(), paths.end());
+        paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
     }
-    std::sort(paths.begin(), paths.end());
-    paths.erase(std::unique(paths.begin(), paths.end()), paths.end());
     paths.erase(std::remove_if(paths.begin(), paths.end(), [&](const std::string& path) {
                     const bool excluded =
                         path_matches_any_profile_prefix(path, profile.secret_scan_exclude_prefixes);
@@ -1150,23 +1164,27 @@ static void scan_doctor_source_secrets(const RuntimeOptions& options, DoctorResu
     for (const std::string& path :
          doctor_secret_scan_paths(options.profile, options.root, result.counts.secret_scan_excluded_files)) {
         const fs::path full_path = options.root / path;
-        if (!fs::exists(full_path) || !fs::is_regular_file(full_path)) {
-            continue;
-        }
         const auto isolated = quarantined.find(path);
-        const std::string isolated_content = isolated != quarantined.end() ? read_file(full_path) : std::string{};
-        if (isolated != quarantined.end() && isolated->second == fnv1a64(isolated_content) &&
-            source_range_secret(isolated_content).found) {
+        const bool automatic = options.profile.automatic_project_files;
+        std::string content;
+        if (automatic) {
+            content = read_project_text(options.root, path, static_cast<std::size_t>(options.profile.source_fact_max_file_bytes));
+        } else {
+            if (!fs::is_regular_file(full_path)) continue;
+            if (isolated != quarantined.end()) content = read_file(full_path);
+        }
+        if (isolated != quarantined.end() && isolated->second == fnv1a64(content) && source_range_secret(content).found) {
             ++result.counts.secret_findings;
             ++result.counts.quarantined_files;
             add_doctor_issue(result.issues, result.counts, "info", "source-quarantined", path, 0,
                              "Source file withheld from retrieval after secret detection. Coverage is partial; values omitted.");
             continue;
         }
-        std::ifstream input(full_path, std::ios::binary);
-        if (!input) {
-            continue;
-        }
+        std::istringstream selected_text(std::move(content));
+        std::ifstream file;
+        if (!automatic) file.open(full_path, std::ios::binary);
+        std::istream& input = automatic ? static_cast<std::istream&>(selected_text) : file;
+        if (!input) continue;
         std::string line;
         int line_number = 0;
         int findings_in_file = 0;
@@ -1315,7 +1333,7 @@ DoctorResult inspect_generated_kb_health(const RuntimeOptions& options, bool str
     const fs::path manifest_path = generated_root / "manifest.json";
     const fs::path documents_path = generated_root / "documents.jsonl";
     validate_doctor_generated_files(options, result, generated_root, manifest_path);
-    read_doctor_manifest_counts(result, manifest_path);
+    const auto exclusions = read_doctor_manifest_counts(result, manifest_path, options);
 
     std::set<std::string> document_ids;
     std::set<std::string> fact_ids;
@@ -1346,6 +1364,7 @@ DoctorResult inspect_generated_kb_health(const RuntimeOptions& options, bool str
     scan_doctor_row_offsets(result, generated_root, "facts.jsonl", result.counts.facts);
     scan_doctor_source_secrets(options, result);
     validate_doctor_consistency(options, result, manifest_path, documents_path);
+    require_project_exclusions(options.root, exclusions);
     return result;
 }
 

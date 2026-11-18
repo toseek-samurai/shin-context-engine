@@ -8,8 +8,7 @@ skill. Avoid duplicating those procedures into this document.
 ## Source and state
 
 New kit installations rebuild managed indexes, reader caches and qualification
-state from current project sources using that kit's rules. Preserve enrollment,
-project-owned profiles and approvals, agent settings and history. Derived data
+state from current project sources using that kit's rules. Preserve enrolled roots, agent settings, grants and history. Derived data
 from an earlier kit is disposable, even when its source files did not change.
 Do not add historical index readers, version allowlists or incremental migrations
 of old derived results. Keep source and authority fences and transactional
@@ -134,15 +133,22 @@ require direct reads; declaring an extension is not parser support. For MCP, ver
 exact checkout root independently: a passing self-profile does not enroll a
 worktree or change an existing connection.
 
-## Consumer profile maintenance
+## Managed project discovery
 
-When Shin is installed and the project is enrolled, the agent performing an
-authorized refactor maintains its project-owned retrieval profile alongside the
-change. Follow the [profile maintenance procedure](../integrations/codex/skills/shin-context/references/setup-and-adoption.md#project-profile-maintenance):
-review coverage and affected checks, preserve broad queries and quality bounds,
-distinguish obsolete contracts from engine misses, and complete native approval
-and current-route verification. Without installed Shin this creates no setup,
-build or CI requirement. The same procedure ships in the Hermes and MCP guidance.
+The installed service takes a project folder. Agent access comes from the
+selected client settings. Discover eligible text under the folder regardless
+of filename, extension or layout. Apply project `.gitignore` files and root
+`.shinignore` overrides. Honor the kit's built-in exclusions, limits, source
+safety and freshness checks. Never
+create project configuration on enrollment. New kits re-discover the enrolled
+roots and preserve agent selections.
+
+A product refactor can add, move or delete files. The service must notice these
+changes itself. Agents follow current source locators, report omissions, and
+continue authorized work with direct readers if necessary. Treat a reproducible
+engine miss as a Shin issue. Preserve its query, expected evidence and bounds in
+a synthetic regression fixture. Strict profiles and evals for standalone Core
+development are maintained with the engine.
 
 ## Homebrew packaging
 
@@ -193,65 +199,18 @@ are different workloads. A full record budget does not itself prove complete
 document coverage. Preserve the original expected owners and profile checks
 when investigating delivery misses; do not weaken them to match a smaller view.
 
-Exact macOS archives also exercise the pinned previous published release in
-`.github/fixtures/macos-previous-release.json`: a changed project must remain
-pending without blocking a same-Core upgrade, while a changed approved profile
-must still refuse it. Keep that pin on a published predecessor. If Core changes, this gate exercises
-its real forward transition and interrupted rollback instead; synthetic same-Core
-coverage remains in the native suite. The separate
-previous-generator suite remains mandatory for format transitions.
+Exact macOS archives exercise the pinned previous release in
+`.github/fixtures/macos-previous-release.json` and a previous generator in
+`.github/fixtures/macos-previous-generator.json`. Keep the pins on published
+kits. Qualify the source rebuild, readiness of the new active generation and
+interrupted rollback in disposable installations.
 
-On a generator cutover, update the pinned previous-generator kit fixture and
-qualify a complete source rebuild across formats, including resumed rollback.
-The fixture is regression evidence, not a runtime list of supported old formats.
-Kit-owned bootstrap policy is prepared under the installation journal; a new kit
-never replaces project-owned canonical profiles or their approvals.
-
-Applying a qualified kit update also authorizes its bounded generator-pin
-transition for already approved managed project routes. The installer journals
-both marker revisions, preserves every byte except the generator value, and
-uses native `marker-accept`. Rollback restores the original bytes and approval
-through the previous CLI. Pending owner edits are never included in this
-approval. Ordinary agent work and Core reads still cannot modify or approve
-markers. Qualify updates with a real pinned adoption marker, not only markerless
-routes; preserve native review failures and interrupted rollback coverage.
-
-<!-- shin-profile-maintenance-start -->
-
-## Project profile maintenance
-
-Applies only when Shin is installed and this exact project is enrolled. The
-project owns source selection and product scenarios; Shin owns retrieval algorithms,
-execution budgets, regression fixtures and diagnostics. Ordinary code/document
-edits do not create a separate Shin maintenance task.
-
-Review the profile when a selected root, owning path or product contract actually
-moves or changes. Update affected paths and scenario assertions alongside that
-refactor; retain useful natural-language queries, negative assertions, rank/coverage
-requirements and resource limits. Do not reorganize otherwise sound documentation,
-repeat query wording in headings, or split files to reduce search counters.
-`mustEvidence` and `mustNotEvidence` can describe the selected fragment, statement
-and lifecycle status; matching a file alone does not establish a useful answer.
-
-When current sources still satisfy the intended scenario and Shin misses it,
-continue authorized product work with direct sources. Preserve the original query,
-expected fragment/owner, version and bounded diagnostic for Shin's backlog. Engine
-regressions and resource-counter warnings belong to Shin maintainers; consumers do
-not tune algorithms, limits or wording until the indicator turns green. Keep
-private source, profiles and diagnostics out of public reports.
-
-Never remove failures, weaken assertions, raise limits, enroll evaluation answers
-or move required checks into advisory/history suites to hide an engine miss.
-Retire obsolete scenarios only for an explained, owner-reviewed product change.
-Scope, safety and approval rules still apply: a prepared profile edit is not
-runtime acceptance. Use native `shin-ce profile-review`; act on existing explicit
-authority only for the exact reviewed change. MCP grants no approval authority.
-Never re-enroll, switch indexes or manually rebuild a managed index.
-
-After an approved profile change, let the service refresh on its canonical route.
-Run the affected checks and the applicable full suite before claiming quality
-restored, then verify a representative query/read with the fresh snapshot. If
-unavailable, record pending validation and continue product work. Handoff records
-remaining engine misses; application tests do not prove Shin recovery.
-
-<!-- shin-profile-maintenance-end -->
+Cover an already enrolled project with a previous canonical profile and pinned
+marker. The fresh kit must select the same folder under automatic rules even
+if its legacy profile was edited or removed. Preserve the exact marker bytes,
+project-owned outputs, root and workspace identities, grants, agent settings
+and history. The service must consume current files and optional exclusions
+before returning evidence. Rollback restores the previous binding and verified
+kit. Its original policy determines which projects it can serve. Exercise
+changed identity and access refusals without requiring a profile or marker
+approval on the new managed route.

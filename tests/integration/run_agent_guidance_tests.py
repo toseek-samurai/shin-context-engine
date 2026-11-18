@@ -103,6 +103,14 @@ class GuidanceTests(unittest.TestCase):
     def test_current_repository_policy_and_enrollment(self):
         self.assertTrue(GUIDANCE.check_repository(ROOT)["ok"])
 
+    def test_managed_setup_detects_a_return_to_profile_authoring(self):
+        self.entry.write_text("Before using the folder, run profile-check --strict.")
+        errors = GUIDANCE.managed_setup_errors(self.entry)
+        self.assertEqual({row["id"] for row in errors},
+                         {"missing-managed-exclusion-guidance", "core-command-in-managed-setup"})
+        self.entry.write_text("Choose a folder and its agents. Use a root .shinignore for exclusions.")
+        self.assertEqual(GUIDANCE.managed_setup_errors(self.entry), [])
+
 
 if __name__ == "__main__":
     unittest.main()

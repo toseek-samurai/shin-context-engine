@@ -12,6 +12,7 @@
 #include "shin/observer/local_updates.h"
 #include "shin/observer/local_client_setup.h"
 #include "shin/observer/local_package.h"
+#include "local_route_guard.h"
 #include "shin/observer/model_usage.h"
 #include "context_internal.h"
 #include "../ui/project_progress.h"
@@ -108,15 +109,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce query TEXT [--root DIR]\n"
                      "Project reads/status accept --session-id ID and --model-id ID (host-provided only); read/inspect accept --parent-request-id ID.\n"
                      "Read commands accept --diagnostic to label operator/test traffic in telemetry.\n"
-                     "Advanced setup: init --observer-config FILE [--marker FILE] connects an existing managed index.\n"
-                     "Add --manage-index once to authorize automatic publication of that existing index.\n"
-                     "shin-ce refresh-release [--root DIR] [--home DIR] returns it to read-only attachment.\n"
-                     "shin-ce profile-review [--root DIR] [--home HOME] previews a pending profile change.\n"
-                     "shin-ce profile-accept HASH [--root DIR] [--home DIR] explicitly approves a reviewed profile revision.\n"
-                     "shin-ce marker-accept SHA256 [--root DIR] [--home DIR] explicitly approves a reviewed marker revision.\n"
-                     "shin-ce config-accept SHA256 [--root DIR] [--home DIR] approves same-route operational settings after refresh-release.\n"
-                     "shin-ce profile-relocate --profile-dir DIR [--root DIR] [--home DIR] moves the same approved profile registry with the service stopped.\n"
-                     "Init options: --offline, --no-service, --home DIR, --profile-dir DIR (new local projects only).\n"
+                     "Init options include --offline, --no-service and --home DIR. Source builds also accept --profile-dir DIR for the kit registry.\n"
                      "shin-ce watch [--root DIR ...] [--home DIR] [--samples N]\n"
                      "shin-ce serve --root DIR [--root DIR ...] [--home DIR]\n"
                      "shin-ce serve --registered [--home DIR]\n"
@@ -368,6 +361,8 @@ int run(int argc, char** argv, char** environment) {
         std::cout << (text_status ? setup.at("configuration").get<std::string>() : setup.dump(2) + "\n");
         return 0;
     }
+    if (request.command == "init" && request.observer_config && !no_service && packaged_managed_routes())
+        throw Error("invalid-arguments", "Connect a managed source folder with shin-ce init. Explicit external inspection uses shin-ce attach.");
     if ((request.command == "init" || request.command == "project-add") && !request.profile_dir) request.profile_dir = bundled_profiles();
     if (request.command == "stats") {
 #ifndef _WIN32
@@ -443,7 +438,7 @@ int run(int argc, char** argv, char** environment) {
             };
         }
         if (request.maintenance_progress) request.maintenance_progress("checking-project");
-        guard_project_storage(fs::absolute(request.home).lexically_normal(),request.root);
+        guard_project_storage(fs::absolute(request.home).lexically_normal(), request.root, true);
         request.command = "init";
         result = initialize_local_service(request, executable_path());
     }

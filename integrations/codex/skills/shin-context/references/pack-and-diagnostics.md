@@ -82,6 +82,8 @@ Inspect `budget.pressure` before accepting a nearly saturated Pack. `warning` or
 headroom and `top_records`/`top_documents` identify where a reviewed request
 should be narrowed instead of blindly increasing limits.
 
+For standalone Core qualification, run `pack-eval --strict` with the chosen
+fixture and preserve its assertions, including any declared `queryVariants`.
 For a failed quality suite, prefer `eval --failed-only` or
 `pack-eval --failed-only`. These projections retain whole failed cases, suite
 reason codes, omission counts, and safe non-executing diagnose argv while

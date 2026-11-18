@@ -180,6 +180,9 @@ std::vector<std::string> detect_topics(const Profile& profile,
                                        const std::string& title,
                                        const std::string& content);
 bool path_matches_any_profile_prefix(const std::string& path, const std::vector<std::string>& prefixes);
+inline constexpr char kRootWikiHome[] = "Home.md";
+bool has_root_wiki_home(const fs::path& root);
+bool profile_selects_root_wiki_page(const Profile& profile, const std::string& relative_path);
 bool document_path_allowed(const Profile& profile, const std::string& path);
 bool profile_relative_path_valid(const std::string& path, bool allow_dot = false);
 bool profile_path_contains_symlink(const fs::path& root, const std::string& relative_path);
@@ -189,11 +192,15 @@ std::string normalize_repository_file_argument(const fs::path& root,
 bool shin_internal_control_path(const std::string& path);
 std::vector<std::string> enumerate_source_paths(const Profile& profile, const fs::path& root);
 std::vector<SourceDoc> read_sources(const Profile& profile, const fs::path& root);
+std::vector<SourceDoc> read_selected_documents(const Profile& profile, const fs::path& root,
+                                               const std::vector<std::string>& paths);
 
 std::vector<SectionRow> build_sections(const Profile& profile,
                                        const SourceDoc& doc,
                                        StructuredDataCounts* structured_counts = nullptr);
-std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, const SourceDoc& doc);
+struct ProjectFiles;
+std::vector<LinkRow> build_links(const Profile& profile, const fs::path& root, const SourceDoc& doc,
+                                 const std::set<std::string>& wiki_pages, const ProjectFiles* project = nullptr);
 Json retool_generation_environment(const fs::path& root, const std::vector<std::string>& paths);
 DocumentFactBuildResult build_fact_rows(const Profile& profile, const SourceDoc& doc);
 FactRow query_fact_row(const DecisionRow& row);
@@ -209,6 +216,8 @@ bool evidence_kind_valid(std::string_view value) noexcept;
 bool verification_level_valid(std::string_view value) noexcept;
 SourceFactPathResult enumerate_source_fact_paths(const Profile& profile, const fs::path& root);
 SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::path& root);
+SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::path& root,
+                                            const SourceFactPathResult& paths);
 SourceScanCorpus build_source_scan_corpus(const Profile& profile, const fs::path& root);
 void add_source_fact_row(std::vector<FactRow>& rows,
                          const Profile& profile,
@@ -231,7 +240,8 @@ bool should_skip_source_fact_dir(const std::string& name);
 struct SourceRelationInputs;
 void inspect_source_fact_content(const Profile& profile, const fs::path& root,
                                  const std::string& path, const std::string& content,
-                                 std::vector<FactRow>& rows, SourceRelationInputs& relations);
+                                 std::vector<FactRow>& rows, SourceRelationInputs& relations,
+                                 const std::vector<std::string>& selected_paths, bool file_routing = false);
 void apply_syntax_source_facts(const Profile& profile, const std::string& path,
                                const std::string& content, const std::vector<std::string>& lines,
                                std::string& language, std::vector<FactRow>& rows,
@@ -242,9 +252,10 @@ void scan_retool_source_facts(const Profile& profile,
                               const std::string& content,
                               const std::vector<std::string>& lines,
                               std::vector<FactRow>& rows,
-                              SourceRelationInputs& relations);
+                              SourceRelationInputs& relations,
+                              const std::vector<std::string>& selected_paths);
 void finalize_retool_source_facts(const Profile& profile, std::vector<FactRow>& rows);
-DiscoveryResult discover_project(const fs::path& root);
+DiscoveryResult discover_project(const fs::path& root, const ProjectFiles* project = nullptr);
 
 GeneratedOutput generate_outputs(const Profile& profile,
                                  const fs::path& root,

@@ -57,13 +57,13 @@ SOURCE follow-ups require the same project and query snapshot. Document paths in
 and build files without SOURCE locators. Refusal does not prove a file is absent.
 After snapshot mismatch, query the same project once; do not retry the old read.
 
-When returned, `source_scope` lists the profile's source roots/extensions and
-limits; omitted-entry counts make truncation explicit. It describes source
-search, independently of document evidence and readiness. An empty result does
-not establish absence outside this scope. CSS/SCSS, HTML and Razor text can carry
-exact `bounded-text-fallback` locators without evaluating cascade or templates.
-Use direct readers for uncovered files; engine misses do not require rewriting
-project documentation or relaxing a project profile.
+When `source_scope.selection=automatic-project-text`, Shin searches eligible
+text under the registered folder, including unusual and extensionless files.
+An empty `extensions` list in this mode means extensions do not restrict
+selection. Use the returned scope, limits and omissions. Structured evidence
+is available for supported formats. Other text can have exact
+`bounded-text-fallback` locators. Use direct readers when evidence is missing.
+An empty result does not prove absence.
 
 Select each repository's allowed handle; single-root MCP cannot serve other roots.
 Use a verified existing CLI route or authorized direct reads; never guess homes/grants.

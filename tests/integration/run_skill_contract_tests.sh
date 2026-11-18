@@ -15,7 +15,7 @@ require_text() {
   local file="$1"
   local expected="$2"
   local -a owners=("$file")
-  if [[ "${file##*/}" == SKILL.md ]]; then
+  if [[ "${file##*/}" == SKILL.md && -d "${file%/*}/references" ]]; then
     owners+=("${file%/*}"/references/*.md)
   fi
   if ! grep -Fq "$expected" "${owners[@]}"; then
@@ -52,28 +52,17 @@ if grep -Eq '1\.27\.|generator-v20|Legacy Adopted Routes' "$skill_md"; then
 fi
 require_text "$skill/references/trust-boundaries.md" 'release-approved source policy'
 require_text "$skill/references/trust-boundaries.md" 'same canonical external index'
-require_text "$skill_md" 'An explicit adoption marker takes precedence over generic discovery.'
-require_text "$skill_md" 'docs/machine/shin-profiles/<profile.id>.json'
-require_text "$skill_md" 'Never merge registries or copy a consumer profile into Shin Core.'
-require_text "$skill_md" '$SHIN_CONTEXT_BIN'
-require_text "$skill_md" '$SHIN_CONTEXT_PROFILE_DIR'
-require_text "$skill_md" 'docs/machine/shin-project-adoption-v1.json'
-require_text "$skill_md" 'adoption-check --marker <marker-path> --strict'
-require_text "$skill_md" 'validate --marker <marker-path> --strict'
-require_text "$skill_md" 'Add `--summary` for normal'
-require_text "$skill_md" 'adoption-plan --marker <marker-path> --agent-entry AGENTS.md'
-require_text "$skill_md" '<external-output-base>/<index.key>'
-require_text "$skill_md" 'A passing ad hoc command does not close adoption'
-require_text "$skill_md" 'Replace or retire older bootstrap/profile-id output routes.'
-require_text "$skill_md" 'Permanent adoption is not'
-require_text "$skill_md" 'shin.adoption-plan.v1'
-require_text "$skill_md" 'marker-authoring-ready'
-require_text "$skill_md" 'readiness.adoption_validated'
-require_text "$skill_md" 'bootstrap.primary_profile'
-require_text "$skill_md" 'project_mutation_required'
-require_text "$skill_md" 'doctor --strict'
-require_text "$skill_md" 'Bootstrap profiles publish broken local links as explicit diagnostics'
-require_text "$skill_md" 'Require `doctor` to report zero errors'
+for workflow in "$skill_md" "$source_root/integrations/hermes/plugins/shin-context/skills/workflow/SKILL.md" "$source_root/integrations/mcp/skills/shin-context/SKILL.md"; do
+  require_text "$workflow" 'automatic-project-text'
+  require_text "$workflow" 'bounded-text-fallback'
+  require_text "$workflow" 'shin_projects'
+  require_text "$workflow" 'shin_status'
+  require_text "$workflow" 'shin_query'
+done
+require_text "$skill/references/setup-and-adoption.md" 'one pattern'
+require_text "$skill/references/setup-and-adoption.md" 'Project `.gitignore` files apply'
+require_text "$skill/references/setup-and-adoption.md" '`!/local-notes/handbook.md`'
+require_text "$skill/references/setup-and-adoption.md" 'last matching Shin rule wins'
 require_text "$skill_md" 'worktree-diff'
 require_text "$skill_md" 'Use `impact` before rebuilding'
 require_text "$skill/references/impact.md" 'historical snapshot ranges'
@@ -124,8 +113,6 @@ require_text "$skill_md" 'index-prune --cache-dir <external-output-base> --keep-
 require_text "$skill_md" 'The first `index-prune` is a dry-run.'
 require_text "$skill_md" 'Use `--prune-unreferenced` only when every active key'
 require_text "$skill_md" 'snapshot-diff --from <old-output> --to <new-output>'
-require_text "$skill_md" 'generic-retool'
-require_text "$skill_md" 'Do not run `eval --strict`'
 require_text "$agent_yaml" 'display_name: "Shin Context"'
 require_text "$agent_yaml" 'default_prompt: "Use $shin-context'
 

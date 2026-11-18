@@ -81,10 +81,14 @@ agents with the [reviewed CLI setup](docs/native-client-setup.md#automatic-setup
 registration and agent access are separate steps. The `PATH` change above lasts
 for this terminal session; installation leaves shell startup files unchanged.
 
-Indexes and history live in a separate private data home. Adding a project
-leaves its source tree unchanged. A default profile gets you started; project
-profiles describe source selection and optional product scenarios. Projects
-need no documentation rewrite or algorithm tuning to use Shin.
+In the current development source, choose a project folder and the agents that
+may use it. Shin discovers eligible text throughout the folder, including files
+with unfamiliar names or extensions. It follows the folder’s `.gitignore` rules
+and watches additions, edits, moves and removals. An optional root `.shinignore`
+can hide more paths or include a specific Git-ignored file. Setup requires no
+project profile, adoption marker or evaluation cases. A new kit rebuilds
+previously registered folders under these rules and keeps their
+agent connections and history. Indexes live in the private data home.
 [Setup, startup and recovery](docs/local-kit.md) · [Inspect and read evidence](docs/cli.md#inspect-evidence).
 
 ## See your project's state

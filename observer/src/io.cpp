@@ -1,4 +1,5 @@
 #include "shin/observer/io.h"
+#include "../../shared/runtime_path.h"
 
 #include <array>
 #include <algorithm>
@@ -325,20 +326,9 @@ std::string read_user_config(const fs::path& path, std::size_t maximum_bytes) {
 }
 
 fs::path current_executable_path() {
-    std::array<char, 4096> path{};
-#ifdef __APPLE__
-    std::uint32_t size = path.size();
-    if (_NSGetExecutablePath(path.data(), &size) != 0)
-        throw Error("installation-unavailable", "Cannot locate the native installation.");
-#else
-    const auto count = ::readlink("/proc/self/exe", path.data(), path.size() - 1);
-    if (count < 0 || static_cast<std::size_t>(count) >= path.size() - 1)
-        throw Error("installation-unavailable", "Cannot locate the native installation.");
-#endif
-    std::error_code error;
-    const auto canonical = fs::canonical(path.data(), error);
-    if (error) throw Error("installation-unavailable", "The executing image path is no longer available; restart with one matched kit.");
-    return canonical;
+    const auto path = ::shin::running_program_path();
+    if (path.empty()) throw Error("installation-unavailable", "The executing image path is unavailable; restart with one matched kit.");
+    return path;
 }
 
 std::string executing_image_identity() {

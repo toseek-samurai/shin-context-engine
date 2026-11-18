@@ -372,7 +372,8 @@ Json update_local_autostart(const LocalProjectRequest& input, const fs::path& ex
             for (;;) {
                 try {
                     const auto state = qualify_local_project(project, executable);
-                    require(state.value("ok", false) && state.value("local_ready", false),
+                    require((state.value("ok", false) && state.value("local_ready", false)) ||
+                            (state.value("state", "") == "preparing" && state.value("readiness_scope", "") == "automatic-project-files"),
                         "service-update-project-not-ready", "A registered project is not ready under the replacement engine; the running service was not changed.");
                     break;
                 } catch (const Error& error) {

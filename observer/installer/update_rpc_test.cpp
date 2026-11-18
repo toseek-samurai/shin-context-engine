@@ -67,6 +67,11 @@ int main() {
         check(!previous_update_project_unready(Json(), "/fixture/root"));
         const Json failed_gate{{"id", "eval"}, {"status", "failed"}, {"error", {{"code", "project-check-failed"}}}};
         const Json failed_step{{"id", "validate"}, {"status", "failed"}, {"result", {{"gates", Json::array({failed_gate})}}}};
+        const Json prior_refusals{{"/prior-root", "route-revision-conflict"}, {"/empty", ""}};
+        check(recorded_update_refusal(prior_refusals, "/prior-root", "route-revision-conflict"));
+        check(!recorded_update_refusal(prior_refusals, "/prior-root", "binding-identity-changed"));
+        check(!recorded_update_refusal(prior_refusals, "/missing", ""));
+        check(!recorded_update_refusal(prior_refusals, "/empty", ""));
         const auto project_diagnostic = update_project_diagnostic("/private/fixture-root", "installation-project-not-ready",
             {{"steps", Json::array({failed_step})}});
         check(project_diagnostic.dump().find(digest("/private/fixture-root")) != std::string::npos);

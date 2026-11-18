@@ -4,6 +4,7 @@
 #include "generated_snapshot.h"
 #include "source_cache.h"
 #include "source_context.h"
+#include "source_routing.h"
 #include "generation_admission.h"
 
 #include <chrono>
@@ -190,6 +191,182 @@ void web_source_checks(const fs::path& parent) {
         bounded.at("extensions").size() == 64 && bounded.at("omitted_extensions") == 36, "source scope bound");
     f.write("src/theme.css", ".changed { outline: none; }\n");
     rejected([&] { discover_source_candidates(f.options, {"focus"}); });
+}
+
+void automatic_source_checks(const fs::path& parent) {
+    Fixture f(parent);
+    fs::remove(f.options.root / "README.md");
+    auto& profile = f.options.profile;
+    profile.root_files.clear();
+    profile.automatic_project_files = true;
+    profile.source_fact_roots = {"."};
+    profile.source_fact_extensions.clear();
+    profile.source_fact_extractors = {"language", "retool"};
+    const std::string shell = "#!/bin/sh\nprintf 'Quillrotation\\n'\n";
+    f.write("bin/rotate", shell);
+    f.write("infra/deploy.tf", "variable \"Cedarvolumes\" { type = string }\n");
+    f.write("data/lookup.sql", "SELECT Marbleledger FROM reports;\n");
+    f.write("src/packed.js", "class A { run() {} } class B { run() {} }\n");
+    f.write("config/batch#one", "harvest_period = 12\n");
+    f.write("config/batch-one", "startup_delay = 4\n");
+    const std::string exclusions = "apps/desk/metadata.json\napps/desk/nested/lib/private.sql\nignored/\n";
+    f.write(".shinignore", exclusions);
+    f.write("apps/desk/metadata.json", "{}\n");
+    f.write("apps/desk/nested/main.rsx", "<SqlQuery id=\"Report\" query={include(\"./lib/private.sql\")} />\n");
+    f.write("apps/desk/nested/lib/private.sql", "SELECT Ignoredpayload FROM archive;\n");
+    const auto secret = "sk-" + std::string(64, 'Q');
+    f.write("config/isolated.custom", "Shellquarantine " + secret + "\n");
+    f.write("ignored/second.custom", "Unselectedquarantine " + secret + "\n");
+    f.write("binary.custom", std::string("Binarywitness\0xyz", 17));
+    f.publish();
+
+    const auto doctor = inspect_generated_kb_health(f.options, true);
+    expect(doctor.counts.errors == 0 && doctor.counts.warnings == 0 && doctor.counts.documents == 0 &&
+           doctor.counts.quarantined_files == 1 && doctor.counts.facts > 3, "automatic source-only doctor and quarantine");
+    const auto facts = read_file(f.options.out_root / kGeneratedDir / "facts.jsonl");
+    const auto links = read_file(f.options.out_root / kGeneratedDir / "links.jsonl");
+    expect(facts.find("app=apps/desk/nested") != std::string::npos &&
+           facts.find("app=apps/desk ") == std::string::npos && facts.find("private.sql") == std::string::npos &&
+           links.find("private.sql") == std::string::npos, "excluded Retool owners and payload bindings");
+
+    auto binding = f.options;
+    binding.generated_snapshot = GeneratedSnapshot::load(f.options);
+    RetrievalSession session(binding.generated_snapshot, false);
+    SourceDiscoveryIndex reader(binding);
+    const auto found = reader.query_at_snapshot(binding, {"Quillrotation", "Cedarvolumes", "Marbleledger",
+        "Ignoredpayload", "Unselectedquarantine", "Binarywitness", "Shellquarantine"});
+    const auto& hits = found.at("results");
+    expect(hits[0].at("candidates")[0].at("path") == "bin/rotate" &&
+           hits[1].at("candidates")[0].at("path") == "infra/deploy.tf" &&
+           hits[2].at("candidates")[0].at("path") == "data/lookup.sql", "automatic structural and extensionless inputs");
+    for (std::size_t i = 3; i < hits.size(); ++i)
+        expect(hits[i].at("candidates").empty(), "excluded and quarantined files must be absent");
+    const auto& scope = found.at("source_scope");
+    expect(scope.at("selection") == "automatic-project-text" && scope.at("roots") == Json::array({"."}) &&
+           scope.at("extensions").empty() && scope.at("whole_project_coverage") == false, "effective automatic scope");
+    const auto query = make_command_query_request(profile, {"Marbleledger"}, 4, 2);
+    const auto brief = session.brief(query);
+    expect(std::any_of(brief.at("facts").begin(), brief.at("facts").end(), [](const auto& row) {
+        return row.at("path") == "data/lookup.sql" && row.at("record_type") == "source-text";
+    }), "Brief returns real source-only lexical evidence");
+    std::set<std::string> method_ids;
+    for (const auto& row : session.inspect("src/packed.js").at("records").get<std::vector<Json>>())
+        if (row.at("record_type") == "ts-method" && row.at("symbol_name") == "run" &&
+            row.at("start_line") == 1 && row.at("end_line") == 1)
+            method_ids.insert(row.at("id").get<std::string>());
+    expect(method_ids.size() == 2, "same-line declarations retain distinct syntax identities");
+    const auto inspected = session.inspect("bin/rotate");
+    const auto& record = inspected.at("records")[0];
+    expect(record.at("record_type") == "source-text" && !record.contains("symbol_name") &&
+           record.at("range_origin") == "lexical", "extensionless source has a lexical record");
+    const auto request = Json{{"schema_version", "shin.source-read-request.v1"}, {"snapshot_id", session.freshness().snapshot_id},
+                              {"record_ids", Json::array({record.at("id")})}}.dump();
+    const auto read = session.read_selected(request);
+    expect(read.at("evidence").at("bodies")[0].at("text") == shell, "bounded snapshot read of extensionless source");
+    f.write(".shinignore", exclusions + "bin/rotate\n");
+    rejected([&] { session.inspect("bin/rotate"); }, "project-exclusions-changed");
+    rejected([&] { session.read_selected(request); }, "project-exclusions-changed");
+    rejected([&] { session.brief(query); }, "project-exclusions-changed");
+    rejected([&] { reader.query_at_snapshot(binding, {"Quillrotation"}); }, "project-exclusions-changed");
+    rejected([&] { RetrievalSession stale(f.options, RetrievalSessionOpenMode::verified_snapshot); }, "project-exclusions-changed");
+
+    Fixture empty(parent);
+    fs::remove(empty.options.root / "README.md");
+    empty.options.profile = profile;
+    empty.write("unknown.data", std::string("\0\1\2", 3));
+    empty.publish();
+    const auto binary_only = inspect_generated_kb_health(empty.options, true);
+    expect(binary_only.counts.errors > 0 && binary_only.counts.facts == 0 &&
+           binary_only.counts.source_fact_candidate_files == 0, "a binary-only tree cannot qualify as searchable text");
+    empty.write("changed.custom", "Initially selected text\n");
+    const auto selected = enumerate_source_fact_paths(profile, empty.options.root);
+    empty.write("changed.custom", std::string("\0\1\2", 3));
+    rejected([&] { build_source_fact_rows(profile, empty.options.root, selected); }, "file-changed-during-verification");
+}
+
+void large_automatic_source_checks(const fs::path& parent) {
+    SourceFactPathResult tiny_files;
+    tiny_files.paths.resize(8192);
+    tiny_files.text_bytes = tiny_files.paths.size();
+    expect(!needs_source_file_routing(tiny_files), "small files within the eager read budget use direct fragments");
+    tiny_files.paths.emplace_back("last");
+    expect(exceeds_eager_source_work(tiny_files), "many tiny files reuse their verified file vocabulary");
+    Fixture f(parent);
+    f.options.profile.automatic_project_files = true;
+    f.options.profile.source_fact_roots = {"."};
+    const std::string padding = "/*" + std::string(2 * 1024 * 1024 - 5, ' ') + "*/\n";
+    for (int i = 0; i < 33; ++i) f.write("fillers/unit" + std::to_string(i) + ".js", padding);
+    for (int i = 0; i < 20; ++i) f.write("parts/unit" + std::to_string(i), "Orchardcommon noun\n");
+    const std::string last = "first line\n" + std::string(2100, ' ') +
+        "\nThe Quillmarimba identifier crosses the final archive boundary. Лимонник cr\xc3\xa8me.\n";
+    f.write("zz/final", last);
+    f.write("src/owners.ts", "export class Grove {\n  harvest() {}\n  plant() {}\n}\n");
+    const auto secret = "sk-" + std::string(64, 'Q');
+    f.write("private.custom", "Routedquarantine " + secret + "\n");
+    f.publish();
+    const auto routing = f.options.out_root / kSourceRoutingFile;
+    expect(fs::exists(routing), "large automatic publication has a file vocabulary");
+    const auto terms = read_file(routing);
+    expect(terms.find("Routedquarantine") == std::string::npos && terms.find(secret) == std::string::npos,
+           "quarantined terms never enter the file vocabulary");
+    {
+        auto binding = f.options;
+        binding.generated_snapshot = GeneratedSnapshot::load(f.options);
+        const auto cache = f.base / "route-cache";
+        auto reader = std::make_unique<SourceDiscoveryIndex>(binding, cache);
+        const auto result = reader->context_at_snapshot(binding, "Quillmarimba");
+        expect(result.at("selected_source_bytes").get<std::size_t>() > kSourceIndexBytes &&
+               result.at("source_bytes").get<std::size_t>() < kSourceIndexBytes &&
+               result.at("refinement_source_bytes") == last.size(), "bounded file routing covers a larger source corpus");
+        const auto& body = result.at("context").at("bodies")[0];
+        const auto begin = body.at("byte_start").get<std::size_t>();
+        const auto end = body.at("byte_end").get<std::size_t>();
+        expect(result.at("results")[0].at("candidates")[0].at("path") == "zz/final" && begin > 384 &&
+               end > begin && end - begin <= 1024 && body.at("text") == last.substr(begin, end - begin) &&
+               body.at("text").get_ref<const std::string&>().find("Quillmarimba") != std::string::npos &&
+               result.at("context").at("file_coverage").at("matching_files_complete") == true,
+               "rare body-only marker in the final file returns exact verified source");
+        RetrievalSession session(binding.generated_snapshot, false);
+        const auto sample = session.inspect("zz/final").at("records");
+        expect(sample.size() == 1 && sample[0].at("record_type") == "source-text" && sample[0].at("end_line") == 1,
+               "routed Brief retains one real lexical locator");
+        const auto symbols = session.inspect("src/owners.ts").at("records");
+        expect(std::count_if(symbols.begin(), symbols.end(), [](const Json& row) {
+            return row.at("record_type") == "ts-method";
+        }) == 2, "file routing keeps every structural declaration");
+        const Json read = {{"schema_version", "shin.source-read-request.v2"}, {"snapshot_id", session.freshness().snapshot_id},
+                           {"file_paths", Json::array({"zz/final"})}};
+        expect(session.read_selected(read.dump()).at("evidence").at("bodies")[0].at("text") == last, "large corpus exact file read");
+        const auto broad = reader->context_at_snapshot(binding, "Orchardcommon").at("context");
+        expect(broad.at("collection_complete") == false && broad.at("file_coverage").at("more_matching_files") == true &&
+               broad.at("file_coverage").at("verified_files") == 16, "bounded broad query reports its file window");
+        reader.reset();
+        SourceDiscoveryIndex restored(binding, cache);
+        const auto again = restored.query_at_snapshot(binding, {"Quillmarimba", "Routedquarantine", "QUILLMARIMBA",
+                                                                "ЛИМОННИК", "creme"});
+        expect(again.at("cache").at("status") == "restored" && again.at("results")[1].at("candidates").empty() &&
+               again.at("results")[0].at("candidates") == result.at("results")[0].at("candidates"),
+               "file routing survives cache restore with identical locators");
+        for (std::size_t i = 2; i < 5; ++i)
+            expect(again.at("results")[i].at("candidates")[0].at("path") == "zz/final",
+                   "routed search preserves Unicode case and accent matching");
+    }
+    fs::remove_all(f.options.root / "fillers");
+    f.publish();
+    expect(!fs::exists(routing) && !discover_source_candidates(f.options, {"Quillmarimba"}).contains("preparation_input"),
+           "shrinking a project restores ordinary fragment ranking and removes the routing artifact");
+
+    // Two neighboring physical lines cannot share a 1 KiB fallback window.
+    // These files fit the byte budget and exceed the native fragment row limit.
+    const std::string line = "// ordinary " + std::string(548, 'x') + "\n";
+    std::string dense;
+    for (int i = 0; i < 1900; ++i) dense += line;
+    for (int i = 0; i < 35; ++i) f.write("fillers/dense" + std::to_string(i) + ".js", dense);
+    f.publish();
+    const auto row_limited = discover_source_candidates(f.options, {"Quillmarimba"});
+    expect(row_limited.at("selected_source_bytes").get<std::size_t>() < kSourceIndexBytes &&
+           row_limited.at("results")[0].at("candidates")[0].at("path") == "zz/final",
+           "actual fragment count routes a byte-bounded project without losing its final source");
 }
 
 void natural_language_checks(const fs::path& parent) {
@@ -780,10 +957,15 @@ void published_cache_transfer_checks(const fs::path& parent) {
 
 int main(int argc, char** argv) {
     try {
+        if (argc == 3 && std::string_view(argv[2]) == "--large-automatic") {
+            shin::context::large_automatic_source_checks(argv[1]);
+            return 0;
+        }
         if (argc != 2) return 2;
         shin::context::check(argv[1]);
         shin::context::natural_language_checks(argv[1]);
         shin::context::web_source_checks(argv[1]);
+        shin::context::automatic_source_checks(argv[1]);
         shin::context::resident_checks(argv[1]);
         shin::context::snapshot_checks(argv[1]);
         shin::context::context_checks(argv[1]);

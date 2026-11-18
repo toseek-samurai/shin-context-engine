@@ -3,7 +3,8 @@
   "document": "shin-project-adoption-v1",
   "status": "accepted",
   "release": "2.0.4",
-  "summary": "A project can adopt Shin through one location-independent marker whose permanent profile, external index ownership, quality gates, and agent routing are validated by Core.",
+  "summary": "Standalone Core can validate a location-independent marker for an explicit profile, external index ownership, quality gates, and agent routing.",
+  "applicability": "This contract governs explicit standalone Core workflows. Installed managed registration takes a project folder and selected agent settings, with automatic text discovery, project .gitignore files and optional root .shinignore overrides.",
   "marker": {
     "schemaVersion": "shin.project-adoption.v1",
     "pathPolicy": "The marker is stored and reported as a canonical repository-relative regular file below --root. CLI input may be that relative path or an absolute/dot-segment spelling that resolves lexically below --root; Core normalizes it before profile and agent coherence checks. Outside-root and symlink paths are rejected.",

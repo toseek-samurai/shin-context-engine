@@ -1,5 +1,6 @@
 #pragma once
 #include "context_internal.h"
+#include "project_files.h"
 
 namespace shin::observer {
 inline bool local_path_below(const fs::path& path, const fs::path& parent) {
@@ -16,9 +17,14 @@ inline bool local_source_relevant(const shin::context::RuntimeOptions& options, 
     if (local_path_below(path, options.out_root / core::kGeneratedDir) || local_path_below(path, options.root / core::kGeneratedDir) ||
         core::shin_internal_control_path(relative)) return false;
     const auto& profile = options.profile;
+    if (profile.automatic_project_files) return core::automatic_project_event_relevant(options.root, relative, directory);
     for (const auto* files : {&profile.root_files, &profile.optional_root_files})
         for (const auto& file : *files)
             if (relative == file || (directory && local_path_below(options.root / file, path))) return true;
+    // Home removal changes the whole wiki inventory. Check event paths even
+    // when the marker or the affected page no longer exists on disk.
+    if (profile.include_root_wiki_pages &&
+        (relative == core::kRootWikiHome || core::profile_selects_root_wiki_page(profile, relative))) return true;
     if (local_path_below(path, options.root / "docs")) {
         if (directory) return true;
         if (core::document_path_allowed(profile, relative) && core::extension_allowed(profile.source_extensions, relative)) return true;

@@ -10,19 +10,24 @@ SOURCE follow-ups require the same project and query snapshot. Document paths in
 and build files without SOURCE locators. Refusal does not prove a file is absent.
 After snapshot mismatch, query the same project once; do not retry the old read.
 
-When returned, `source_scope` lists the profile's source roots/extensions and
-limits; omitted-entry counts make truncation explicit. It describes source
-search, independently of document evidence and readiness. An empty result does
-not establish absence outside this scope. CSS/SCSS, HTML and Razor text can carry
-exact `bounded-text-fallback` locators without evaluating cascade or templates.
-Use direct readers for uncovered files; engine misses do not require rewriting
-project documentation or relaxing a project profile.
+When `source_scope.selection=automatic-project-text`, Shin searches eligible
+text under the registered folder, including unusual and extensionless files.
+An empty `extensions` list in this mode means extensions do not restrict
+selection. Use the returned scope, limits and omissions. Structured evidence
+is available for supported formats. Other text can have exact
+`bounded-text-fallback` locators. Use direct readers when evidence is missing.
+An empty result does not prove absence.
 
 Select each repository's allowed handle; single-root MCP cannot serve other roots.
 Use a verified existing CLI route or authorized direct reads; never guess homes/grants.
 Pass real host session IDs only, with the query's request ID for follow-ups.
 Missing correlation is unknown. Never infer model identity, success or token savings
 from call counts; client token usage and Shin requests measure different things.
+
+On large automatic indexes, the SOURCE header can include `file_coverage`.
+When `matching_files_complete=false`, only the reported file window was
+examined for this question. Use a distinctive term, symbol or known path for
+a narrower follow-up. This limit concerns the query; registration is unchanged.
 
 ## Request attribution
 
@@ -38,15 +43,11 @@ read/inspect following a query, also pass its `request_trace.request_id` as
 
 ## Availability and quality
 
-Honor explicit `retrieval_ready` when present. Otherwise a successful `ok=true`,
-`local_ready=true` response permits retrieval, including bootstrap routes.
-`canonical_ready=false` can retain a quality-only warning; report it
-and preserve failed strict eval/Pack results. It does not waive authority,
-freshness, integrity, safety or mandatory resource/output refusals. Readiness
-describes the selected scope, not complete repository coverage or answer quality.
-Kit-owned bootstrap profiles need no project maintenance. Review custom profiles
-only for actual owner/root/contract changes; engine misses and resource warnings
-belong to Shin. Follow the existing native review and approval procedure.
+Honor explicit `retrieval_ready` when present. Otherwise use a successful
+`ok=true`, `local_ready=true` response. Managed projects qualify current
+evidence under the kit's automatic checks. Report partial coverage, quarantine
+and real warnings. A source entry can still be withheld after a change.
+Respect authority, freshness, integrity, safety and resource refusals.
 
 ## Pending reader status
 

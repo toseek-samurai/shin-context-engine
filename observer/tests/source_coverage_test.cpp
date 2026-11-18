@@ -83,6 +83,15 @@ int main(int argc, char** argv) {
         }
         // Remain just beyond the bundled bootstrap's reviewed 2 MiB budget.
         std::ofstream(f.root / "limits.js") << std::string(2097153, 'x');
+        check(f.sample().at("status") == "unpublished", "oversized file should leave other automatic text eligible");
+        // The engine still refuses a genuinely truncated source inventory.
+        const auto custom = f.base / "profiles";
+        fs::create_directory(custom);
+        auto policy = Json::parse(std::ifstream(f.config.profile_dir / "generic-source.json"));
+        policy["sourceFactMaxFiles"] = 1;
+        std::ofstream(custom / "generic-source.json") << policy.dump();
+        f.config.profile_dir = custom;
+        std::ofstream(f.root / "more.js") << "const more = 1;";
         const auto incomplete = f.sample();
         check(incomplete.at("reason_code") == "incomplete-source-observation" && !incomplete.contains("diagnostic"), "source cap changed");
         std::cout << "observation diagnostics passed\n";

@@ -494,17 +494,11 @@ void config_revision_during_final_verification(const fs::path& profiles, bool so
     ensure_private_directory(external_index, true);
     ensure_private_directory(external_state, true);
     ensure_private_directory(permanent_profiles, true);
-    auto profile = core::parse_json_text(core::read_file(profiles / "generic-source.json"),
-                                         "neutral profile fixture");
-    profile["document"] = "shin-profile-race-permanent";
-    profile["id"] = "race-permanent";
-    profile["summary"] = "Neutral permanent profile for route revision race coverage.";
-    profile["rootFiles"] = Json::array({"README.md"});
-    auto optional_root_files = profile.at("optionalRootFiles");
-    optional_root_files.erase(std::remove(optional_root_files.begin(), optional_root_files.end(), "README.md"),
-                              optional_root_files.end());
-    profile["optionalRootFiles"] = std::move(optional_root_files);
-    profile["bootstrapOnly"] = false;
+    Json profile{{"id", "race-permanent"}, {"sourceLabel", "Neutral route revision fixture"}, {"defaultTopic", "source"},
+                 {"topicRules", Json::array({{{"id", "source"}, {"description", "Fixture source"}, {"keywords", {"source"}}}})},
+                 {"rootFiles", {"README.md"}}, {"sourceFactRoots", {"."}},
+                 {"sourceFactExtensions", {".js"}}, {"sourceFactExtractors", {"language"}},
+                 {"bootstrapOnly", false}};
     profile["evalCases"] = Json::array({{{"id", "route-doc"}, {"query", "retry ceiling"},
         {"mustPaths", Json::array({"README.md"})}}});
     profile["packEvalCases"] = Json::array({{{"id", "route-pack"},

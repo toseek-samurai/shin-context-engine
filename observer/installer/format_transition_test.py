@@ -24,7 +24,7 @@ parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--previous-kit', required=True, type=Path)
 parser.add_argument('--candidate-kit', required=True, type=Path)
 parser.add_argument('--report', required=True, type=Path)
-parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted', 'profile-policy-rejected', 'marker-edit-rejected'], default='forward')
+parser.add_argument('--scenario', choices=['forward', 'rollback', 'rollback-resume', 'interrupted', 'missing-profile', 'edited-marker'], default='forward')
 parser.add_argument('--with-marker', action='store_true')
 parser.add_argument('--fresh-updater', action='store_true', help='exercise the independent updater entry for the forward transition')
 args = parser.parse_args()
@@ -36,7 +36,6 @@ new_manifest = json.loads((candidate / 'shin-kit.json').read_text())
 old_identity = json.loads(subprocess.check_output([str(old / 'bin/shin-context'), '--version'], text=True))
 new_identity = json.loads(subprocess.check_output([str(candidate / 'bin/shin-context'), '--version'], text=True))
 assert old_identity['version'] == old_manifest['core_version'] and new_identity['version'] == new_manifest['core_version']
-generator_changed = old_identity['generator_version'] != new_identity['generator_version']
 evidence = {'previous': old_manifest['version'], 'candidate': new_manifest['version'],
             'scenario': args.scenario, 'live_installation_changed': False}
 
@@ -111,7 +110,7 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             marker_permissions = stat.S_IMODE(marker.stat().st_mode)
             protected[f.root / 'AGENTS.md'] = (f.root / 'AGENTS.md').read_bytes()
         grant_path = workspaces[0] / 'publication/state.json'
-        grant = json.loads(grant_path.read_text()); grant.pop('last_snapshot')
+        grant = grant_path.read_bytes()
         history = home / 'service/history/telemetry.sqlite'; inode = history.stat().st_ino
         history_deadline = time.monotonic() + 5
         while True:
@@ -120,26 +119,15 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             if sum(row[0] == 'request' and row[3] == 'query' for row in retained) >= 2: break
             assert time.monotonic() < history_deadline, 'both service queries must reach retained history'
             time.sleep(.02)
-        if args.scenario == 'marker-edit-rejected':
+        if args.scenario == 'edited-marker':
             assert marker
             edited = json.loads(marker.read_text()); edited['summary'] += ' Owner edit awaiting review.'
             marker.write_text(json.dumps(edited, indent=2) + '\n')
             protected[marker] = marker.read_bytes()
-            evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix,
-                                      error='installation-marker-transition-conflict')
-        elif args.scenario == 'profile-policy-rejected':
-            # New kit-owned defaults are authoritative. A project-owned
-            # canonical policy still needs its existing approval workflow.
-            original_policy = f.profile_path.read_bytes()
-            unapproved = json.loads(original_policy)
-            unapproved['sourceFactMaxFiles'] = unapproved.get('sourceFactMaxFiles', 1024) + 1
-            f.profile_path.write_text(json.dumps(unapproved) + '\n')
-            changed_policy = f.profile_path.read_bytes()
-            evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix,
-                error='installation-marker-transition-conflict' if marker and generator_changed else 'route-revision-conflict')
-            assert f.profile_path.read_bytes() == changed_policy, 'update overwrote unapproved owner edits'
-            f.profile_path.write_bytes(original_policy)
-        elif args.scenario == 'forward':
+        if args.scenario == 'missing-profile':
+            protected.pop(f.profile_path)
+            f.profile_path.unlink()
+        if args.scenario in ('forward', 'missing-profile', 'edited-marker'):
             evidence['update'] = call(candidate / 'bin/shin-updater', 'install-local', '--kit', candidate, '--prefix', prefix) if args.fresh_updater else \
                 call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
             evidence['fresh_updater'] = args.fresh_updater
@@ -169,7 +157,7 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                             if args.scenario == 'interrupted': child.kill(); break
                             boundary_binding = binding_file.read_bytes()
                             invalid = json.loads(boundary_binding)
-                            invalid['core_version'] = 'unsupported-core'
+                            invalid['root_identity'] = 'fixture-replaced-root'
                             binding_file.write_text(json.dumps(invalid)); binding_file.chmod(0o600)
                             os.kill(child.pid, signal.SIGCONT)
                         if frame.get('step') == 16 and injected and args.scenario != 'rollback-resume':
@@ -188,16 +176,33 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                     assert child.returncode == 2 and value['error']['code'] == expected_error, value
                     if args.scenario == 'rollback-resume':
                         binding_file.write_bytes(boundary_binding)
-                        evidence['resumed_rollback'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, error='installation-update-rolled-back')
+                        # The protected previous CLI can refuse ordinary commands
+                        # before its rollback journal completes. Resume only via
+                        # the same verified candidate. A prior controller's
+                        # still-observed fixture identity refusal can settle
+                        # after the filesystem binding is restored.
+                        admission_deadline = time.monotonic() + 60
+                        while True:
+                            resumed = subprocess.run([str(candidate / 'bin/shin-ce'), 'update', '--prefix', str(prefix)],
+                                cwd=work, env=env, capture_output=True, text=True, timeout=150)
+                            finish = json.loads(resumed.stdout or resumed.stderr)
+                            assert resumed.returncode == 2, finish
+                            code = finish['error']['code']
+                            if code == 'installation-update-rolled-back': break
+                            diagnostic = json.dumps(finish['error'].get('diagnostic', {}))
+                            assert code in ('installation-service-not-ready', 'installation-update-recovery-required') and (
+                                'binding-identity-changed' in diagnostic or 'local-identity-conflict' in diagnostic), finish
+                            assert time.monotonic() < admission_deadline, finish
+                            time.sleep(.2)
+                        evidence['resumed_rollback'] = finish
                 else:
                     evidence['update'] = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
                 child = None
-        old_preserved = args.scenario in ['rollback','rollback-resume','profile-policy-rejected','marker-edit-rejected']
+        old_preserved = args.scenario in ['rollback','rollback-resume']
         expected = old_manifest if old_preserved else new_manifest
         installed = call(prefix / 'bin/shin-ce', 'installation', '--prefix', prefix)
         assert installed['version'] == expected['version'] and installed['integrity_verified'] and not installed['recovery_pending'], installed
         for root in roots:
-            if args.scenario == 'marker-edit-rejected' and root == f.root: continue
             ready_deadline = time.monotonic() + 60
             while True:
                 probe = subprocess.run([str(prefix / 'bin/shin-ce'), 'query', 'readLimit', '--service', '--root', str(root), '--home', str(home)],
@@ -207,47 +212,24 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
                 assert time.monotonic() < ready_deadline, (probe.stdout, probe.stderr)
                 time.sleep(.1)
             assert result['local_ready'] and 'readLimit' in result['source_context'] and result['transport'] == 'local-socket-v1', result
-        after_generators = generators()
-        assert after_generators == ([before_generators[0]] * 2 if old_preserved else [new_identity['generator_version']] * 2), after_generators
-        profile_revisions = []
+        # The old publication and receipt remain usable by the previous kit
+        # during rollback. Only current private outputs qualify the new kit.
+        assert generators() == before_generators
+        selected = outputs if old_preserved else [workspace / 'automatic/index' for workspace in workspaces]
+        after_generators = [json.loads((out / 'docs/kb/generated/manifest.json').read_text())['generator_version'] for out in selected]
+        assert after_generators == [old_identity['generator_version'] if old_preserved else new_identity['generator_version']] * 2
         for workspace, before in zip(workspaces, bindings):
-            after = json.loads((workspace / 'state.json').read_text())
-            rebuilt_fields = {'core_version','generator_version','prepared_snapshot'}
-            if before.get('profile_config_hash') != after.get('profile_config_hash'):
-                assert expected == new_manifest and before['schema_version'] == 'shin.local-project-binding.v1'
-                assert before['profile_dir'] == str(prefix / 'share/shin-context/profiles')
-                target_profile = candidate / 'share/shin-context/profiles/generic-source.json'
-                new_policy = json.loads(target_profile.read_text())
-                # Pack cases are optional in the profile schema; omission is
-                # the empty suite. Null/malformed/nonempty values still fail.
-                assert new_policy['bootstrapOnly'] and not new_policy['evalCases'] and new_policy.get('packEvalCases', []) == []
-                revision = 1469598103934665603
-                for byte in target_profile.read_bytes():
-                    revision = ((revision ^ byte) * 1099511628211) & ((1 << 64) - 1)
-                assert after['profile_config_hash'] == f'fnv1a64:{revision:016x}'
-                profile_revisions.append({'from': before['profile_config_hash'], 'to': after['profile_config_hash']})
-                rebuilt_fields.add('profile_config_hash')
-            assert {k:v for k,v in before.items() if k not in rebuilt_fields} == {
-                k:v for k,v in after.items() if k not in rebuilt_fields}
+            assert json.loads((workspace / 'state.json').read_text()) == before
+            if not old_preserved:
+                current = json.loads((workspace / 'automatic/state.json').read_text())
+                assert current['source_selection'] == 'automatic-project-files'
+                assert current['workspace_identity'] == before['workspace_identity']
         if marker:
-            expected_marker = protected[marker]
-            if generator_changed and not old_preserved:
-                expected_marker = expected_marker.replace(old_identity['generator_version'].encode(), new_identity['generator_version'].encode())
-            if generator_changed and args.scenario not in ('profile-policy-rejected', 'marker-edit-rejected'):
-                # Native approval records an explicit marker hash (v3), including
-                # when rollback restores the implicit original v2 approval.
-                grant['approved_marker_hash'] = hashlib.sha256(expected_marker).hexdigest()
-                grant['schema_version'] = 'shin.local-publication.v3'
-            assert marker.read_bytes() == expected_marker
+            assert marker.read_bytes() == protected[marker]
             assert stat.S_IMODE(marker.stat().st_mode) == marker_permissions
-            protected[marker] = expected_marker
-            evidence['marker_transition'] = {
-                'only_generator_pin_changed': generator_changed and not old_preserved,
-                'restored': generator_changed and old_preserved,
-                'approved_hash': grant.get('approved_marker_hash', grant['route']['marker_hash']),
-            }
-        after_grant = json.loads(grant_path.read_text()); after_grant.pop('last_snapshot')
-        assert after_grant == grant, (after_grant, grant)
+            evidence['marker_preserved'] = True
+        assert grant_path.read_bytes() == grant
+        if args.scenario == 'missing-profile': assert not f.profile_path.exists()
         assert all(p.read_bytes() == content for p, content in protected.items())
         assert history.stat().st_ino == inode
         with closing(sqlite3.connect(f'file:{history}?mode=ro', uri=True)) as db:
@@ -255,7 +237,7 @@ with tempfile.TemporaryDirectory(prefix='shin-format-update-', dir=Path.home() i
             assert all(row in current for row in retained)
             assert db.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
         evidence.update(ok=True, generators=after_generators, retained_events=len(retained),
-                        bindings_preserved=True, profile_revisions=profile_revisions, authority_preserved=True, history_preserved=True)
+                        bindings_preserved=True, private_outputs=not old_preserved, authority_preserved=True, history_preserved=True)
     finally:
         if child and child.poll() is None: child.kill(); child.communicate(timeout=20)
         if (home / 'service/rpc.sock').exists():

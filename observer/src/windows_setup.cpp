@@ -1,5 +1,6 @@
 #include "shin/observer/windows_setup.h"
 #include "shin/observer/local_registry.h"
+#include "shin/observer/local_package.h"
 #include "shin/observer/local_service.h"
 #include "local_scm_windows.h"
 #include "context_internal.h"
@@ -56,8 +57,11 @@ Json prepare_windows_projects(const fs::path& input_home, const fs::path& execut
             const auto lifecycle=require_local_project_active(workspace);
             project.maintenance_lifecycle_revision=lifecycle.revision;
             project.command="init";
-            // Existing native init retains root/workspace identities, route,
-            // profile approval, marker approval and publication ownership.
+            project.profile_dir=bundled_profile_registry(executable);
+            if (!project.profile_dir) throw Error("profiles-unavailable","The package's automatic source policy is missing.");
+            project.profile_dir_explicit=true;
+            // Prepare current sources in private storage through the same
+            // enrollment and lifecycle fences as ordinary project connection.
             const auto prepared=initialize_local_service(project,executable);
             row["ok"]=prepared.value("ok",false) && prepared.value("service_enrolled",false);
             row["rebuilt"]=prepared.value("rebuilt",false);

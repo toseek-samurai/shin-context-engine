@@ -1,6 +1,6 @@
 ---
 name: shin-context
-description: Retrieve verified Shin project context after context loss or before broad investigation; review source ownership after product refactors. Read known files directly.
+description: Retrieve verified Shin project context after context loss or before broad investigation. Read known files directly.
 version: 2.0.0
 platforms: [macos, linux]
 metadata:
@@ -18,8 +18,8 @@ Require Shin v2.0.0 or newer with `shin-generator-v24-objective-cpp`.
 Older indexes require rebuilding. Local use needs no login. Configure native MCP separately;
 a Python plugin does not replace it.
 
-1. Read the repository's `AGENTS.md` chain and adoption marker. Do not
-   add `.hermes.md` to override that route or infer the root from a chat title.
+1. Read the repository's applicable `AGENTS.md`. Use the actual project path.
+   A chat title or an agent configuration name cannot establish its identity.
 2. If `shin_projects` exists, choose the exact host-allowed workspace and pass
    its `project` handle in project calls. Otherwise the adapter pins one root.
    Call `shin_status` and verify the returned root. Hosts may prefix tool names.
@@ -48,18 +48,19 @@ when `retrieval_ready=true`, even if `canonical_ready=false`. Do not claim full
 coverage. Changed/deleted/quarantined files stay withheld until qualified refresh.
 
 Report blockers by project/reason; use direct sources and retain them in handoff.
-`route-revision-conflict` requires owner review. Editing a profile is not approval.
-Follow [profile maintenance and review](references/route-and-publication.md#project-profile-maintenance)
-after refactors; verify readiness after acceptance.
+Grant, binding and route conflicts require owner review. The service follows
+file moves and edits. Report engine misses with the original query and expected
+evidence, and continue authorized source work.
 
 A preparing status is pending: submit the useful `shin_query`. It waits up to
 20 seconds inside one call. No manual sleeps or status polling. After that wait
 expires or a real blocker appears, use direct sources; return at a useful
 checkpoint. No call quotas.
-Do not guess another home or
-select a source-checkout binary. Missing setup is not permission to bootstrap
-over a canonical marker. `init`, detach, profile/marker approval and grants are
-explicit owner operations; MCP navigation and reads grant no new access.
+Use the installed kit and the verified root and home. To register a project,
+the owner selects its folder and the agents that may use it. Shin discovers
+eligible text automatically. Project `.gitignore` rules apply. A root `.shinignore` can override them.
+Registration needs no project profile, adoption marker or evaluation suite.
+A fresh kit rebuilds the enrolled roots and preserves agent access.
 
 ## Conversation And Compression Boundary
 
@@ -72,14 +73,14 @@ change model/client settings.
 
 Use only for the named explicit task, never as a failed-native fallback:
 
-- [Route and publication](references/route-and-publication.md): authorized adoption and maintenance.
+- [Project setup](references/route-and-publication.md) for registration, exclusions or stale context.
 - [Source verification](references/source-verification.md): truncated/ambiguous evidence and trust.
 - [Retrieval playbook](references/retrieval-playbook.md): misses and commissioned evaluation.
 - [Session and execution](references/session-and-execution.md): explicit checkpoints and execution evidence.
 
 Resolve the selected Core2.0 contracts from `<shin-home>/docs/machine` for its
 active source checkout or `<prefix>/share/shin-context/contracts` in a portable
-kit. Use `project-adoption-v1.json`, `lexical-retrieval-v1.json`,
+kit. Use `mcp-service-v1.json`, `lexical-retrieval-v1.json`,
 `trust-boundary-hardening-v1.json` and `execution-evidence-v1.json` as appropriate.
 No credentials, gateway restart, automatic continuation or forced Shin use is
 implied. Graphify and other context engines are optional, not dependencies.

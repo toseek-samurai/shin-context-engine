@@ -14,6 +14,10 @@ inline bool recoverable_update_project_error(const std::string& code) {
     return transient_update_project_error(code) || code == "project-check-failed" ||
         code == "refresh-validation-failed" || code == "project-not-ready" || code == "incomplete-source-observation";
 }
+inline bool recorded_update_refusal(const Json& previous, const std::string& root, const Json& code) {
+    return previous.is_object() && code.is_string() && !code.get_ref<const std::string&>().empty() &&
+        previous.value(root, Json()) == code;
+}
 inline bool previous_update_project_unready(const Json& status, const std::string& root) {
     if (!status.is_object() || status.value("ok", Json()) != true ||
         status.value("service_running", Json()) != true || status.value("enrollment_mode", Json()) != "registry" ||

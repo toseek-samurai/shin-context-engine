@@ -243,7 +243,7 @@ assert_contains "$work_root/discover.json" '"has_retool_source_roots": true'
 assert_contains "$work_root/discover.json" '"rsx_files":4'
 assert_contains "$work_root/discover.json" '"retool_workflow_files":2'
 assert_contains "$work_root/discover.json" '"retool_resource_files":1'
-assert_contains "$work_root/discover.json" '"generic-retool"'
+assert_contains "$work_root/discover.json" '"recommended_profiles": ["generic-source"]'
 assert_contains "$work_root/discover.json" '"retool-source-facts"'
 
 shin build >"$work_root/build.txt"

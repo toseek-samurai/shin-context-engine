@@ -93,17 +93,16 @@ Wait for search readiness in `status --text`; on a large first import, inspect
 the setup without starting the service. Adding a project does not modify its
 source files.
 
-A project using the default bootstrap profile keeps serving
-verified context when local Markdown links are broken. Projects and project details
-show a documentation warning, which clears after the corrected sources qualify.
-Index integrity, source freshness, secrets and resource checks remain required.
-Shin separates retrieval availability from declared search quality
-for explicit project profiles. Ordinary eval/Pack misses become a bounded search
-warning while a safe, current candidate is published and served. Strict Core
-`eval`, `validate` and `ready` verdicts and exit codes remain unchanged for CI.
-Source/authority checks, index integrity, malformed configuration, runtime
-errors, forbidden-result checks and mandatory resource ceilings still block
-admission. No profile or evaluation expectation is rewritten to clear a warning.
+A wiki with a root `Home.md` can connect without a README. Shin indexes the
+Markdown pages next to `Home.md`, including `_Sidebar.md` and `_Footer.md`, and
+tracks additions, edits and removals. A wiki link whose destination is
+`Rotation#handover` resolves to the sibling `Rotation.md`. Hidden files and
+symlinks are excluded.
+
+Broken local Markdown links appear as documentation warnings while verified
+context stays available. The warning clears after the corrected sources qualify.
+Secret quarantine, source freshness, index integrity, agent grants and resource
+limits still apply. Project details show omissions and the reason for a refusal.
 
 Open the menu bar application:
 
@@ -181,69 +180,67 @@ The installer refuses an unowned destination, conflicting command links, or an
 existing data home it cannot safely adopt. Read the reported error and choose
 fresh locations; do not delete existing state to force installation.
 
-### Project source budgets
+### Project text and exclusions
 
-New projects connected through `init` or `project-add` use the bundled
-`generic-source` profile, which explicitly allows 30,000 source files and 2 MiB
-per file. The language-specific bootstrap profiles allow 10,000 files and 1 MiB
-per file. These are extraction budgets, not the amount of text sent to an agent
-or a guarantee about peak indexing memory.
+The development source registers the project folder and discovers eligible
+text recursively, including extensionless files and unfamiliar suffixes. Known
+formats can supply structured evidence. Other text supplies bounded lexical
+excerpts with source locations. Adding a README, defining a source layout or
+writing a project profile, adoption marker or evaluation suite is unnecessary.
 
-Private bootstrap indexes have a 256 MiB aggregate load budget; an individual
-generated artifact may use that budget, including a large facts or terms file.
-This is separate from the 2 MiB limit on an individual source file. Project-owned
-Observer configurations keep their explicit snapshot and artifact limits. An
-unfinished first import can be retried with the current bootstrap template;
-prepared projects retain their pinned profile revision until an approved update.
-Source discovery follows the profile's file count and per-file size budgets;
-its 64 MiB aggregate source-text and 256 MiB cache budgets remain separate.
-Sources between 1 and 2 MiB use bounded text windows for discovery, while the
-syntax parser retains its 1 MiB, node-count and progress limits.
+Shin reads `.gitignore` in the chosen folder and its subdirectories. Patterns
+match paths case-sensitively, including tracked files that match a rule. A nested
+`.gitignore` refines rules for its subtree. Git's index, global excludes and
+`.git/info/exclude` are outside this selection. The same rules work in a folder
+without a Git repository or Git executable. [Git pattern reference](https://git-scm.com/docs/gitignore#_pattern_format).
 
-Core defaults to 10,000 files and 1 MiB per file
-when a profile omits those fields, matching the language-specific templates.
-The bundled new-project template declares its budgets explicitly. An existing
-permanent project keeps its explicit reviewed limits. `profile-policy` reports
-the effective values and whether each came from the profile or Core. Check that
-output for the installed kit; explicit project limits take precedence over defaults.
+An optional UTF-8 `.shinignore` at the project root takes precedence. Use it
+to exclude another path or start a rule with `!` to bring back eligible text,
+even inside a Git-ignored directory. The last matching Shin rule wins.
+Registration creates no file. For example, if `.gitignore` contains
+`/local-notes/`, this `.shinignore` keeps just the handbook searchable and
+also hides scratch files throughout the project.
 
-Set deliberate budgets in a permanent profile and approve its exact revision
-through the native profile-review/approval workflow. Let the existing managed
-publisher validate the new snapshot, then verify readiness and the observed,
-capped and skipped source counts. Increasing a budget does not approve changed
-roots, waive quality gates or make a previous snapshot current. Avoid removing
-budgets: size, validation time and memory still need independent bounds.
-
-### Moving an existing permanent profile
-
-Keep project-specific profiles with their project, for example under
-`profiles/`. Choose a directory outside the profile's selected document and source
-roots so the configuration does not become retrieval evidence itself.
-The generated index and local history remain in
-their existing external storage. This does not make Shin a project build dependency.
-
-`profile-relocate` moves an enrolled, active,
-managed route to an existing directory containing an exact copy of its approved
-`PROFILE.json`. Stop the local service first, then run:
-
-```sh
-shin-ce profile-relocate --root /path/to/project \
-  --profile-dir /path/to/project/profiles
-shin-ce service-start
+```text
+!/local-notes/handbook.md
+*.scratch
 ```
 
-The command preserves publisher permission, project identities, approvals,
-profile revision history and index contents. It changes the profile directory
-in the Observer configuration and its dependent binding records. A private
-journal supports resuming the same command after interruption; unknown edits
-or replaced directories require review and are never overwritten.
+Patterns use `/` between components. A leading slash anchors a pattern to the
+rules file's directory, a bare name matches at any depth, and a trailing slash
+selects directories. Use `*`, `?` or bracket ranges within a component and
+`**/` to match any number of directories. Blank lines and lines starting with
+`#` are ignored. The root `.shinignore` accepts up to 256 rules of 1,024 bytes
+each in 32 KiB. Each project `.gitignore` can be up to 1 MiB. A symlinked
+`.shinignore` is refused. A symlinked `.gitignore` supplies no rules.
 
-Relocation alone does not certify readiness. The managed publisher detects
-the changed profile provenance, validates and publishes the matching generation.
-Verify project readiness before deleting the old profile copy. To reverse a
-completed move while both copies remain available, stop the service and use
-the same command with the previous directory. Repeated completed requests
-for the current directory are harmless.
+The service observes changes to exclusions and project files. It verifies the
+new scope before serving affected evidence. The kit skips Git metadata,
+dependency trees such as `node_modules`, generated build output, symlinks
+and known credential files. Configuration such as `.github/workflows` can
+provide eligible text. File safety checks apply with or without a rules file.
+Use the reported coverage and omissions when interpreting an empty result.
+
+The managed reader's `project_files` identifies the exclusion revision and
+reports excluded entries, oversized files and binary content. An excluded
+directory counts once, regardless of how many children it contains. Secret
+quarantine is reported separately in `source_coverage`.
+
+For projects with more than 8,192 eligible files or too much text for the
+full fragment index, Shin first ranks
+files using terms from each eligible source. It then reads matching files
+against their snapshot hashes and returns exact source ranges. The
+`file_coverage` field reports the number of files examined and whether more
+matched the question. A narrower question or an exact file path can help
+when a broad query fills that window.
+
+The bundled policy allows 30,000 eligible files and 2 MiB per file.
+`source_scope.max_files` and `source_scope.max_file_bytes` report the active
+limits. Aggregate indexing, parser work and the response to each query have
+their own bounds. Text discovery accepts UTF-8 text and rejects binary control bytes. Files
+without a supported parser may still provide text evidence. Binary,
+unsafe or unreadable input cannot supply source excerpts. A reported refusal
+or quarantine includes the available diagnostic and preserves the limits.
 
 ### Automatic model statistics (dev.12)
 
@@ -414,9 +411,8 @@ Updating with the exact installed archive is a no-op. A changed archive must hav
 a newer version; downgrades and altered same-version kits are refused. The updater
 applies the version and project-qualification rules described in
 [Core transitions and index rebuilds](#core-transitions-and-index-rebuilds).
-The extracted-kit command does not download releases or change shell, client or
-model-usage configuration. Its bounded generator-pin transition is described below;
-other project settings and profile policy are preserved.
+The extracted-kit command uses the local archive and keeps shell, client and
+model-usage settings. The project view shows preparation progress.
 
 ### Preview publication and CI
 
@@ -551,12 +547,11 @@ python3 -B observer/installer/previous_generator_test.py \
   --proof /tmp/shin-previous-generator-proof
 ```
 
-This downloads and verifies the pinned old archive, then runs forward update,
-interrupted rollback/resume and refusal of unapproved profile-policy or marker
-edits in disposable installations. Canonical and bootstrap projects use real
-adoption markers pinned to the old generator. The checks retain registry,
-identity, grants, source bytes and SQLite history. No live installation or managed
-index is repaired. GitHub offer discovery and the interactive Monitor handoff
+This downloads and verifies the pinned old archive and exercises a forward
+update and interrupted rollback/resume in disposable installations. Include
+previously enrolled folders with legacy profile and marker files. Compare the
+original source, marker and external index bytes across the transition, and
+verify enrollment, identity, grants and SQLite history. GitHub offer discovery and the interactive Monitor handoff
 remain separate checks. The older `previous_update_test.py` is a historical
 Core dev.3 → dev.4 regression fixture, not a current-kit qualification command.
 
@@ -570,22 +565,25 @@ there is no historical index reader, format conversion or version-pair allowlist
 Downgrades are not normal updates. Transactional rollback uses the verified
 previous payload retained by the installation journal.
 
-The current generator is `shin-generator-v24-objective-cpp`. Enrollment,
-project-owned profiles and their approvals, source files, client settings and
-history are preserved. The kit reapplies its own bundled bootstrap policy;
-canonical project policy still requires its ordinary approval workflow.
-Canonical publications are regenerated by Observer under the existing grants.
+The current generator is `shin-generator-v24-objective-cpp`. A fresh kit
+keeps the enrolled project folders, agent settings, grants and history. It
+rebuilds managed evidence from current files with its own discovery rules and
+each project's `.gitignore` files and optional root `.shinignore`. Existing client selections continue
+to govern access after the new generation qualifies. A previous project profile
+or generator-pinned marker can remain in the source tree. Its contents are
+unneeded for managed registration and rebuilding, even if a profile changed or
+is missing. The kit leaves those files and existing external indexes intact.
 
 A confirmed kit/service update may report projects as preparing or blocked.
 They stay visible in Monitor and provide no context until the new generation
-passes source, integrity, safety and quality checks. Installation does not wait
+passes the required source, integrity, safety and resource checks. Installation does not wait
 for every active worktree to settle and does not treat previous indexes as
 readiness proof for the new kit.
 
 A project already exceeding its declared source limits may therefore remain
 blocked after a kit change. Previously retained partial context does not bypass
-the new generation's safety checks. Review current coverage with the project's
-owner; the updater never raises its profile limits or weakens its checks.
+the new generation's safety checks. Inspect the reported limits and omissions.
+An owner may choose exclusions for material outside the intended search scope.
 
 Monitor and `shin-ce stats` distinguish automatic recovery from an action that
 needs your help. Technical preparation failures retry in the background. The
@@ -593,17 +591,10 @@ project view offers the relevant settings/search review, project folder,
 storage review or diagnostic report. These actions preserve approval and safety
 checks; opening a report or a folder does not repair or approve a project.
 
-If an already approved project marker pins the previous generator, the installer
-journals the original and replacement bytes, changes only that generator value
-and uses native `marker-accept` before rebuilding. Pending owner edits or an
-unapproved profile remain refusals. Rollback restores the original marker bytes
-and approval through the previous CLI. This is a bounded installation operation;
-ordinary agents and MCP reads cannot approve marker changes.
-
 Interrupted recovery resumes from the same archive. Failed activation restores
 the previous kit and rebuilds its derived indexes when necessary, including the
-owned bootstrap retirement described above. Source files, project settings,
-canonical grants and history remain preserved throughout activation and recovery.
+owned index retirement described above. Source files, project settings,
+grants and history are preserved throughout activation and recovery.
 
 ### Release offers in Monitor
 
@@ -676,8 +667,8 @@ shin-ce update-status
 The current native preview separates installation from project readiness. A verified
 kit and healthy service can complete an update while individual projects refresh
 or retain a search/validation diagnostic. Those projects keep their normal
-freshness, policy and quality gates; installation does not approve new profiles,
-raise limits or make withheld context readable.
+freshness, authority, safety and resource checks. The verified generation and
+current source bindings determine what context can be read.
 
 The saved result distinguishes a retryable refusal before replacement, an
 interrupted native transaction requiring recovery, and a confirmed installation.

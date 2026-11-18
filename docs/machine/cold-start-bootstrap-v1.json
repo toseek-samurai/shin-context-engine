@@ -2,12 +2,13 @@
   "schemaVersion": "shin.cold-start-bootstrap.v1",
   "document": "shin-context-engine-cold-start-bootstrap",
   "status": "active",
-  "summary": "Agent-visible bootstrap contract for loading bounded Shin context from undocumented, source-only, mixed-language, documentation-only, or empty repositories without mutating the consumer.",
+  "summary": "Automatic project-file discovery for undocumented, source-only, mixed, metadata-only and documentation-only folders. Explicit standalone Core profile fixtures and the adoption planner have separate selection rules.",
+  "applicability": "The installed service and the discover command use the same bounded project-file inventory with project .gitignore files and optional root .shinignore overrides. Register a folder and its agents to use it through MCP. The standalone planner, language profiles and explicit marker checks below are Core developer tools.",
   "release": {
     "productVersion": "1.25.0",
     "generator": "shin-generator-v17-explicit-authority"
   },
-  "goal": "An agent entering an unfamiliar repository can discover Shin globally, classify available evidence, build an external deterministic index, and request a bounded brief before broad scanning.",
+  "goal": "Discover eligible project text and describe its scope without modifying the selected folder.",
   "architectureBoundary": {
     "languageSpecificationsRequired": false,
     "reason": "Bootstrap profiles reuse bounded language declaration extraction and point agents to primary source files; Shin is not a compiler, type checker, LSP, or full call-graph engine.",
@@ -16,8 +17,11 @@
     "llmOrRagDependency": false
   },
   "discoveryContract": {
+    "gitSelection": "Apply project-local .gitignore files to eligible paths independently of Git tracking. The root .shinignore takes precedence and can exclude paths or re-include an eligible path with !. Kit safety and resource limits apply to both.",
     "command": "shin-context --root <consumer-root> discover",
     "schema": "shin.discovery.v1",
+    "selection": "When at least one eligible regular text file is selected, recommended_profiles contains only generic-source, bootstrap.primary_profile is generic-source and bootstrap.next_steps contains shin-ce init. This includes unfamiliar suffixes, extensionless files, build metadata, mixed repositories, Retool exports and documentation-only folders. Language and build-system signals describe the selected inputs and cannot change this choice.",
+    "inventory": "project_files reports selection=automatic-project-text, the exclusion revision and counts of excluded entries, oversized files and binary content. The absence of a README, a recognized language or a project-specific eval suite has no bearing on indexability.",
     "bootstrapFields": [
       "state",
       "indexable",
@@ -28,14 +32,16 @@
       "next_steps"
     ],
     "states": {
-      "empty": "No recognized source family or indexable project documentation exists; build metadata alone remains a structural signal and does not promise retrievable context.",
-      "source-only": "Supported source or build metadata exists without product documentation; documentation is not required for bootstrap.",
-      "documented": "Project documentation or a root README exists and can be combined with recognized source facts."
+      "empty": "The automatic inventory selected no eligible text after path, safety and resource checks.",
+      "source-only": "At least one eligible text file is selected and none belong to the document projection. A lone package.json, build.gradle.kts or unfamiliar text file can satisfy this state.",
+      "documented": "The selected inventory includes documentation. Documents can coexist with any other eligible text."
     },
     "emptyBehavior": {
       "indexable": false,
       "primaryProfile": null,
-      "nextAction": "Add source code or machine documentation, then rerun discover."
+      "recommendedProfiles": [],
+      "nextSteps": [],
+      "warning": "no-indexable-content"
     }
   },
   "bootstrapProfiles": [
@@ -65,23 +71,25 @@
     },
     {
       "id": "generic-source",
-      "evidence": "Mixed Java, Kotlin, C#, TypeScript, JavaScript and C-family source trees, including Objective-C/Objective-C++, with bounded CSS/SCSS, HTML/HTM and Razor/CSHTML text"
+      "evidence": "Automatic bounded text selection throughout the project. Known formats may contribute structured records and other text contributes lexical evidence. No extension or conventional source folder is required."
     },
     {
       "id": "generic-docs",
-      "evidence": "README, AGENTS, and docs tree when no supported source family is recognized"
+      "evidence": "Explicit standalone Core documentation fixture including README, AGENTS and documentation trees."
     }
   ],
   "webSourceText": {
     "extensions": [".css", ".scss", ".html", ".htm", ".razor", ".cshtml"],
-    "discovery": "Web-only trees are source-only and recommend generic-source. Its web_files counter includes these formats. Mixed web trees retain the mixed profile first; Retool recognition keeps its own precedence.",
+    "discovery": "Web-only and mixed folders select generic-source. The web_files counter includes these recognized formats even though other eligible text is also admitted.",
     "retrieval": "Native source candidates and Observer queries use existing bounded-text-fallback chunks with exact byte, line and hash bindings.",
-    "scope": "source_scope exposes selected roots/extensions and existing file limits, with bounded delivery and omitted-entry counts. It is independent of readiness and never promises whole-project coverage.",
+    "scope": "Automatic source_scope reports roots [.], an empty extensions list and the actual file limits. Empty extensions means there is no extension allowlist. Bounded results and omissions still apply.",
     "nonGoals": ["CSS cascade evaluation", "Template rendering", "Framework component resolution"],
     "safety": "Source exclusions, file/query/chunk budgets, secret quarantine, freshness and snapshot-bound reads remain required. Permanent consumer profiles are not rewritten."
   },
   "profileContract": {
+    "automaticProjectFiles": "Kit-owned generic-source selects eligible text and documents from the same ProjectFiles inventory. Project .gitignore files and optional root .shinignore overrides determine eligible paths. Other explicit standalone profiles can retain their own source selectors.",
     "rootFiles": "Required project-specific entry files; may be empty when other inputs are configured.",
+    "includeRootWikiPages": "A root Home.md and its sibling pages, including _Sidebar.md and _Footer.md, support bare extensionless wiki links such as Rotation#handover to the selected Rotation.md. Missing pages keep their broken-link diagnostic and symlinks are excluded. Managed discovery also selects eligible Markdown outside root wikis. In standalone generic-docs, includeRootWikiPages activates sibling page collection alongside explicit entries.",
     "optionalRootFiles": "Conventional root metadata included only when present; missing candidates are not errors.",
     "sourceFactRoots": "May independently back a fact-only index without source documents; missing conventional roots are informational for bootstrapOnly profiles while permanent profiles retain strict warnings.",
     "bootstrapOnly": "Marks a generic discovery profile that intentionally has no project-specific golden eval cases.",
@@ -92,19 +100,17 @@
   },
   "safeTraversal": {
     "genericSourceRoot": ".",
-    "excludedDirectoryNames": [
+    "excludedDirectoryExamples": [
       ".cache",
       ".git",
       ".gradle",
       ".idea",
-      ".mvn",
       ".next",
       ".nuxt",
       ".output",
       ".venv",
       ".vs",
       "artifacts",
-      "bin",
       "build",
       "coverage",
       "dist",
@@ -112,26 +118,19 @@
       "node_modules",
       "obj",
       "out",
-      "packages",
       "target",
       "third_party",
       "vendor",
       "venv"
     ],
     "symlinkPolicy": "Profile inputs, optional roots, source roots, agent start paths, recursive source files, and discovery signals fail closed or are skipped when the entry or any relative ancestor is a symlink; lexical parent traversal is rejected.",
-    "caps": "Profiles bound candidate file count and per-file bytes; strict doctor reports caps or unsupported empty input."
+    "caps": "The kit bounds candidate file count and per-file bytes. Explicit standalone profile limits continue to apply to their own Core workflows."
   },
   "agentWorkflow": [
-    "Locate Shin through the global shin-context Codex skill.",
-    "Check only conventional AGENTS and Shin adoption marker paths; an adopted consumer profile takes precedence over generic bootstrap.",
-    "Run make in the Shin repository so the binary matches source and VERSION.",
-    "Run discover against the consumer root and trust bootstrap.primary_profile.",
-    "Stop when bootstrap.indexable is false.",
-    "Run profile-check --strict with the selected generic profile.",
-    "Build into a Shin-owned build/context/bootstrap/<consumer-name> out directory.",
-    "Run check and non-strict doctor; require zero errors and surface every warning.",
-    "Run brief <task-query> --projection compact --require-current before broad source scans.",
-    "Open only returned primary source paths needed to verify important claims."
+    "The owner selects a folder and grants access through the intended agent settings. Project .gitignore files are honored and the owner may override them in the optional root .shinignore.",
+    "Discover authorized folders with shin_projects, verify the root with shin_status and ask a focused shin_query. Keep its snapshot for shin_inspect and shin_read.",
+    "Report exclusions, quarantine and resource limits when relevant. Preserve grant, safety, integrity and freshness refusals.",
+    "New kits rescan the already enrolled roots with their saved agent connections."
   ],
   "codexSkill": {
     "canonicalSource": "integrations/codex/skills/shin-context",
@@ -144,6 +143,7 @@
     "implicitTrigger": "Unknown, undocumented, source-only, newly created, or documentation-heavy repository before broad scanning."
   },
   "promotionContract": {
+    "scope": "Explicit standalone Core adoption planning only. Managed projects are ready for retrieval after the service qualifies current evidence.",
     "bootstrapProfileIsPermanentAuthority": false,
     "planner": {
       "command": "shin-context --profile <candidate-permanent-profile> --profile-dir <profile-dir> --root <consumer-root> adoption-plan [--marker <relative-file>] [--agent-entry <relative-file>]",
@@ -163,7 +163,7 @@
     ]
   },
   "adoptionPrecedence": {
-    "rule": "An explicit project-local Shin adoption marker takes precedence over discovery bootstrap profiles.",
+    "rule": "Explicit standalone adoption planning may resolve a project-local marker and validate its profile. Installed managed registration and automatic file discovery ignore legacy marker selection.",
     "conventionalEntries": [
       {
         "base": "consumer-root",

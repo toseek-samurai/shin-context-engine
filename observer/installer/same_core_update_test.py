@@ -63,9 +63,9 @@ with tempfile.TemporaryDirectory(prefix='shin-same-core-', dir='/tmp') as direct
         registry = (home / 'registry/state.json').read_bytes()
         binding = home / 'projects' / hashlib.sha256(str(roots[0]).encode()).hexdigest() / 'state.json'
         original_binding = binding.read_bytes()
-        changed = json.loads(original_binding); changed['profile_config_hash'] = 'fnv1a64:0000000000000000'
+        changed = json.loads(original_binding); changed['root_identity'] = 'fixture-replaced-root'
         binding.write_text(json.dumps(changed)); binding.chmod(0o600)
-        call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, error='profile-policy-revision-conflict')
+        call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix, error='local-identity-conflict')
         assert (prefix / '.shin-installation.json').read_bytes() == receipt
         binding.write_bytes(original_binding)
         (roots[0] / 'quota.cpp').write_text('int quota() { return 2; }\n')
@@ -82,7 +82,7 @@ with tempfile.TemporaryDirectory(prefix='shin-same-core-', dir='/tmp') as direct
             assert call(prefix / 'bin/shin-ce', 'status', '--home', home, '--root', root)['local_ready']
         stop()
         # A strict canonical eval failure already present under the old engine
-        # must not block replacing the runtime. Its context remains withheld.
+        # must not block an independent build from current project files.
         prefix, home, commands = user / 'kit-quality', user / 'data-quality', user / 'bin-quality'
         call(old / 'bin/shin-ce', 'install', '--prefix', prefix, '--bin-dir', commands, '--home', home)
         fixture = Fixture(work, 'quality')
@@ -111,15 +111,13 @@ with tempfile.TemporaryDirectory(prefix='shin-same-core-', dir='/tmp') as direct
             assert time.monotonic() < end, observed
             time.sleep(.1)
         pending = call(candidate / 'bin/shin-ce', 'update', '--prefix', prefix)
-        assert pending['changed'] and pending['projects_pending'] == 1, pending
+        assert pending['changed'], pending
         assert call(prefix / 'bin/shin-ce', 'service-status', '--home', home)['service_running']
         assert fixture.profile_path.read_bytes() == policy
-        refused = subprocess.run([str(prefix / 'bin/shin-ce'), 'query', 'retry ceiling',
-            '--root', str(fixture.root), '--home', str(home)], env=env, capture_output=True, text=True, timeout=45)
-        assert refused.returncode != 0, refused.stdout
-        assert 'source_context' not in (refused.stdout + refused.stderr)
+        answer = call(prefix / 'bin/shin-ce', 'query', 'retry ceiling', '--root', fixture.root, '--home', home)
+        assert answer['local_ready'] and answer['readiness_scope'] == 'automatic-project-files', answer
         evidence['preexisting_strict_eval_did_not_block_update'] = True
-        evidence['unqualified_context_remains_withheld'] = True
+        evidence['current_source_rebuilt_privately'] = True
         # Capture a ready baseline, then change project content while a native
         # activation is journaled and force a real damaged-payload rollback.
         fixture.write_source('# Ceiling\n\nBounded retry ceiling.\n')

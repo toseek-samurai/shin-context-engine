@@ -149,10 +149,10 @@ files and project-owned profiles are not rewritten; revision checks remain stric
 
 After Windows Installer confirms success and the installed inventory is verified,
 the helper runs the newly installed `shin-ce prepare-projects` as the ordinary
-desktop user. The new kit rebuilds derived indexes for enrolled projects using
-their approved profiles and original source/workspace identities. Preparation is
-complete once the current service admits every enrolled project. Changed profile
-approvals, missing roots and concurrent enrollment changes require review.
+desktop user. The development source rebuilds managed indexes from enrolled
+folders with their `.gitignore` files and optional root `.shinignore` and preserves agent settings.
+Preparation is complete once the current service admits every enrolled project.
+Changed identities, missing roots and concurrent enrollment changes require review.
 
 The full MSI wizard offers a checked **Finish project setup and open Shin Monitor**
 action. It runs the same helper unelevated after the Installer transaction has
@@ -389,4 +389,4 @@ from replacing one version with another.
 
 Since dev.111, Monitor shows the verified MSI result and project preparation
 separately. If projects are pending, use **Retry project preparation** to prepare
-them under the installed kit with the existing project approvals.
+the enrolled folders under the installed kit with their saved agent connections.

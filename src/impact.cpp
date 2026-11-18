@@ -1,6 +1,7 @@
 #include "context_internal.h"
 #include "impact.h"
 #include "source_relations.h"
+#include "source_read.h"
 #include "worktree_state.h"
 #include "execution_evidence.h"
 
@@ -136,23 +137,10 @@ Json scope_json(const FactRow& row, const std::string& basis, const std::string&
             {"authority_level", row.authority_level}};
 }
 
-std::string read_observed_source(const fs::path& path, const WorktreeSourceState& expected) {
-    const FileFingerprint before = fingerprint_file(path);
-    if (!expected.has_metadata || before.metadata != expected.metadata || before.content_hash != expected.content_hash) {
-        throw_file_changed_during_verification(path);
-    }
-    std::ifstream stream(path, std::ios::binary);
-    std::string content(static_cast<std::size_t>(expected.byte_count), '\0');
-    if (!stream || !stream.read(content.data(), static_cast<std::streamsize>(content.size())) ||
-        stream.peek() != std::char_traits<char>::eof() || fnv1a64(content) != expected.content_hash) {
-        throw_file_changed_during_verification(path);
-    }
-    return content;
-}
-
 Json path_evidence(const RuntimeOptions& options, const std::string& path, const ImpactPath& candidate,
                    const SourceGraph& graph, const WorktreeInventory& inventory,
-                   const std::map<std::string, std::string>& baseline, std::size_t& read_bytes) {
+                   const std::map<std::string, std::string>& baseline, std::size_t& read_bytes,
+                   const std::vector<std::string>& selected_paths, bool file_routing) {
     const std::string state = source_state(inventory, baseline, path);
     const WorktreeSourceState* current = current_source(inventory, path);
     Json record = {{"path", path}, {"depth", candidate.depth},
@@ -183,14 +171,22 @@ Json path_evidence(const RuntimeOptions& options, const std::string& path, const
     if (current != nullptr && !current->content_hash.empty() && inventory.source_facts.contains(path) &&
         current->byte_count <= 2U * 1024U * 1024U && read_bytes + current->byte_count <= 16U * 1024U * 1024U) {
         const fs::path full_path = options.root / path;
-        std::error_code error;
-        if (fs::is_symlink(fs::symlink_status(full_path, error)) || error) {
+        if (!current->has_metadata || file_metadata(full_path) != current->metadata) {
             throw_file_changed_during_verification(full_path);
         }
-        const std::string content = read_observed_source(full_path, *current);
+        const auto content = read_bound_source(options.root, path, current->content_hash,
+                                               static_cast<std::size_t>(current->byte_count));
         read_bytes += content.size();
+        if (source_range_secret(content).found) {
+            record["current_reread_omitted"] = true;
+            record["omission_reason"] = "redacted";
+            record["current_scope_candidates"] = nullptr;
+            record["scopes_omitted"] = nullptr;
+            record["unlocalized_source_change"] = state != "unchanged";
+            return record;
+        }
         SourceRelationInputs unused_relations;
-        inspect_source_fact_content(options.profile, options.root, path, content, rows, unused_relations);
+        inspect_source_fact_content(options.profile, options.root, path, content, rows, unused_relations, selected_paths, file_routing);
         std::vector<FactRow> changed;
         for (FactRow& row : rows) {
             if (row.evidence_kind == "test-source") record["test_source"] = true;
@@ -273,10 +269,15 @@ Json evaluate_impact(const RuntimeOptions& input, const ImpactEvaluationOptions&
         index_current = freshness.current && freshness.fully_verified && freshness.snapshot_id == snapshot_id;
     }
     const auto baseline = baseline_hashes(session->manifest());
+    const bool file_routing = session->manifest().value("source_routing", "") == "file-vocabulary-v1";
     std::set<std::string> owned;
     for (const auto& [path, hash] : baseline) { (void)hash; owned.insert(path); }
     for (const auto& [path, state] : inventory.documents) { (void)state; owned.insert(path); }
-    for (const auto& [path, state] : inventory.source_facts) { (void)state; owned.insert(path); }
+    std::vector<std::string> selected_paths;
+    for (const auto& [path, state] : inventory.source_facts) {
+        owned.insert(path);
+        if (options.profile.automatic_project_files && state.status == "scanned") selected_paths.push_back(path);
+    }
     const SourceGraph graph = load_source_graph(options);
     const auto candidates = impacted_paths(changes, graph, profile_current ? command.depth : 0, owned);
     std::vector<std::pair<std::string, ImpactPath>> ordered(candidates.begin(), candidates.end());
@@ -292,7 +293,7 @@ Json evaluate_impact(const RuntimeOptions& input, const ImpactEvaluationOptions&
     if (profile_current) {
         for (const auto& [path, candidate] : ordered) {
             if (evidence.size() == static_cast<std::size_t>(command.limit)) break;
-            Json record = path_evidence(options, path, candidate, graph, inventory, baseline, read_bytes);
+            Json record = path_evidence(options, path, candidate, graph, inventory, baseline, read_bytes, selected_paths, file_routing);
             const std::size_t size = record.dump().size() + (evidence.empty() ? 0 : 1);
             if (bytes + size > command.evidence_bytes) { byte_limited = true; break; }
             bytes += size;
@@ -352,6 +353,7 @@ Json evaluate_impact(const RuntimeOptions& input, const ImpactEvaluationOptions&
     const std::string serialized = output.dump();
     if (serialized.size() > 512U * 1024U) throw CliError("impact-output-too-large", "resource",
         "Impact envelope exceeds 512 KiB.", 1, false, "Reduce --limit or narrow the profile.");
+    session->verify_project_exclusions();
     return output;
 }
 

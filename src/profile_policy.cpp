@@ -14,6 +14,8 @@ std::vector<PolicyField> policy_fields(const Profile& p) {
     return {
         {"rootFiles", "root_files", p.root_files},
         {"optionalRootFiles", "optional_root_files", p.optional_root_files},
+        {"automaticProjectFiles", "", p.automatic_project_files},
+        {"includeRootWikiPages", "include_root_wiki_pages", p.include_root_wiki_pages},
         {"sourceExtensions", "source_extensions", p.source_extensions},
         {"sourceFactRoots", "source_fact_roots", p.source_fact_roots},
         {"sourceFactExtensions", "source_fact_extensions", p.source_fact_extensions},

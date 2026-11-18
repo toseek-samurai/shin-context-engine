@@ -589,7 +589,8 @@
     "sourceDocumentationRequired": false,
     "consumerMutationRequired": false,
     "bootstrapProfilesHaveGoldenEval": false,
-    "promotionRule": "Create a consumer-specific profile with evalCases before treating retrieval quality as a stable project contract."
+    "selection": "Automatic project text discovery selects generic-source for indexable folders, including metadata-only and unfamiliar text. The installed service preserves registered folders and agent selections across kit rebuilds.",
+    "promotionRule": "Standalone Core developers can commission profiles and strict evals for specific quality checks. Managed registration and ordinary agent retrieval require no promotion."
   },
   "kotlinSourceContract": {
     "path": "docs/machine/kotlin-source-bootstrap-v1.json",

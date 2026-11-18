@@ -241,11 +241,11 @@ int run(int argc, char** argv, char** environment) {
         " The catalog follows this agent's reviewed settings. After the user connects another project, call shin_projects again; no adapter restart is needed.";
     const std::string retrieval_guidance =
         "Honor explicit retrieval_ready when present; otherwise a successful local_ready=true response permits retrieval. "
-        "canonical_ready=false may report a quality-only warning; "
-        "keep strict eval/Pack failures visible. Never bypass authority, freshness, integrity, safety or mandatory resource/output refusals. "
-        "Kit-owned bootstrap profiles need no project maintenance. Review a custom profile only when selected owners, roots or contracts change, "
-        "preserving queries, assertions and limits. Engine misses and resource warnings belong to Shin; continue product work with direct sources "
-        "rather than rewriting documents or tuning checks. Profile edits require exact native review and owner authorization; MCP cannot approve them.";
+        "A managed project discovers eligible text throughout the selected folder regardless of its extension. "
+        "Project .gitignore rules apply first. The optional root .shinignore can exclude or re-include eligible paths. Project setup requires only the folder and selected agents. "
+        "Check source_scope and report omissions, quarantine or quality warnings. Preserve authority, freshness, integrity, "
+        "safety and resource/output refusals. MCP cannot approve changes to access. Report engine misses to Shin and continue "
+        "authorized work with direct sources.";
     options.server_instructions = options.server_instructions.value() + " Follow recovery guidance on refusals. shin_help provides static help and escalation guidance "
         "without a project argument or source access; it does not diagnose current project state or grant repair authority. "
         "shin_checkpoint stores only explicit compact task notes outside the project; other tools are read-only. "

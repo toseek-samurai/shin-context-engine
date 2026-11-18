@@ -1,5 +1,7 @@
 #include "validation_generation.h"
 #include "context_internal.h"
+#include "project_files.h"
+#include "source_routing.h"
 #include "document_lifecycle.h"
 #include "compact_terms.h"
 #include "generated_io.h"
@@ -573,7 +575,7 @@ static std::string manifest_json(const Profile& profile,
                           const StructuredDataCounts& structured_data,
                           const std::map<std::string, std::string>& generated_files,
                           int broken_local_link_count,
-                          const Json& document_lifecycle) {
+                          const Json& document_lifecycle, const Json& project_files) {
     const auto quarantined_count = std::count_if(source_facts.sources.begin(), source_facts.sources.end(),
         [](const auto& source) { return !source.quarantine_reason.empty(); });
     std::ostringstream out;
@@ -588,6 +590,8 @@ static std::string manifest_json(const Profile& profile,
         << "  \"profile_config\": " << json_string(manifest_profile_config_identity(profile)) << ",\n"
         << "  \"profile_config_hash\": " << json_string(profile_config_hash(profile)) << ",\n"
         << "  \"bootstrap_only\": " << (profile.bootstrap_only ? "true" : "false") << ",\n"
+        << (project_files.is_null() ? "" : "  \"project_files\": " + project_files.dump() + ",\n")
+        << (source_facts.file_routing ? "  \"source_routing\": \"file-vocabulary-v1\",\n" : "")
         << "  \"document_lifecycle\": " << document_lifecycle.dump() << ",\n"
         << "  \"required_root_files\": " << json_string_array(profile.root_files) << ",\n"
         << "  \"optional_root_files\": " << json_string_array(profile.optional_root_files) << ",\n"
@@ -667,6 +671,8 @@ static std::string manifest_json(const Profile& profile,
         << "    {\"name\":\"runbooks-index\",\"type\":\"tsv\",\"path\":\"docs/kb/generated/runbooks.index.tsv\",\"rows\":" << runbook_count << "},\n"
         << "    {\"name\":\"facts\",\"type\":\"jsonl\",\"path\":\"docs/kb/generated/facts.jsonl\",\"rows\":" << fact_count << "},\n"
         << "    {\"name\":\"facts-index\",\"type\":\"tsv\",\"path\":\"docs/kb/generated/facts.index.tsv\",\"rows\":" << fact_count << "},\n"
+        << (source_facts.file_routing ? "    {\"name\":\"source-routing\",\"type\":\"jsonl\",\"path\":" +
+            json_string(std::string(kSourceRoutingFile)) + ",\"rows\":" + std::to_string(source_facts.sources.size()) + "},\n" : "")
         << "    {\"name\":\"manifest\",\"type\":\"json\",\"path\":\"docs/kb/generated/manifest.json\",\"rows\":1}\n"
         << "  ],\n"
         << "  \"generated_file_integrity\": {\"algorithm\":\"fnv1a64\",\"files\":[\n";
@@ -710,10 +716,10 @@ static std::string manifest_json(const Profile& profile,
 static void append_generated_doc_rows(const Profile& profile,
                                const fs::path& root,
                                GeneratedRows& rows,
-                               const SourceDoc& doc) {
+                               const SourceDoc& doc, const std::set<std::string>& wiki_pages, const ProjectFiles* project) {
     std::vector<SectionRow> doc_sections = build_sections(profile, doc, &rows.structured_data);
     rows.sections.insert(rows.sections.end(), doc_sections.begin(), doc_sections.end());
-    std::vector<LinkRow> doc_links = build_links(profile, root, doc);
+    std::vector<LinkRow> doc_links = build_links(profile, root, doc, wiki_pages, project);
     rows.links.insert(rows.links.end(), doc_links.begin(), doc_links.end());
     DocumentFactBuildResult doc_facts = build_fact_rows(profile, doc);
     rows.structured_data.jsonl_candidate_rows += doc_facts.candidate_rows;
@@ -729,8 +735,8 @@ static void append_generated_doc_rows(const Profile& profile,
 }
 
 static void append_generated_source_fact_rows(const Profile& profile, const fs::path& root,
-                                              GeneratedRows& rows, bool retain_source_rows) {
-    rows.source_facts = build_source_fact_rows(profile, root);
+                                              GeneratedRows& rows, bool retain_source_rows, const ProjectFiles* project) {
+    rows.source_facts = project ? build_source_fact_rows(profile, root, project->sources) : build_source_fact_rows(profile, root);
     const auto append = [retain_source_rows](auto& combined, auto& source) {
         if (retain_source_rows) {
             combined.insert(combined.end(), source.begin(), source.end());
@@ -986,7 +992,15 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
                                           bool retain_source_rows, BuildPhaseTimings* timings = nullptr) {
     GeneratedRows rows;
     auto phase_start = SteadyClock::now();
-    rows.docs = read_sources(profile, root);
+    std::optional<ProjectFiles> project;
+    if (profile.automatic_project_files) {
+        project = ProjectFiles::scan(profile, root);
+        rows.project_files = project->summary();
+        rows.project_files["git_ignore_directories"] = project->exclusions.directories;
+        rows.docs = read_selected_documents(profile, root, project->documents);
+    } else {
+        rows.docs = read_sources(profile, root);
+    }
     for (auto& doc : rows.docs) {
         const auto secret = source_range_secret(doc.content);
         if (!secret.found) continue;
@@ -1005,9 +1019,18 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
     }
 
     phase_start = SteadyClock::now();
+    std::set<std::string> wiki_pages;
+    const bool wiki_home = std::any_of(rows.docs.begin(), rows.docs.end(), [](const SourceDoc& doc) {
+        return doc.path == kRootWikiHome && doc.quarantine_reason.empty();
+    });
+    if (profile.include_root_wiki_pages && wiki_home) {
+        for (const auto& doc : rows.docs)
+            if (doc.quarantine_reason.empty() && profile_selects_root_wiki_page(profile, doc.path))
+                wiki_pages.insert(doc.path);
+    }
     for (const SourceDoc& doc : rows.docs) {
         if (!doc.quarantine_reason.empty()) continue;
-        append_generated_doc_rows(profile, root, rows, doc);
+        append_generated_doc_rows(profile, root, rows, doc, wiki_pages, project ? &*project : nullptr);
     }
     if (timings != nullptr) {
         timings->document_rows_ms += elapsed_ms_since(phase_start);
@@ -1015,7 +1038,18 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
     }
 
     phase_start = SteadyClock::now();
-    append_generated_source_fact_rows(profile, root, rows, retain_source_rows);
+    append_generated_source_fact_rows(profile, root, rows, retain_source_rows, project ? &*project : nullptr);
+    if (project) {
+        // Documents and lexical source spans must be views of the same bytes.
+        auto source = rows.source_facts.sources.begin();
+        for (const auto& doc : rows.docs) {
+            while (source != rows.source_facts.sources.end() && source->path < doc.path) ++source;
+            if (source == rows.source_facts.sources.end() || source->path != doc.path ||
+                source->content_hash != doc.content_hash)
+                throw_source_changed_during_verification("read-source-content");
+        }
+        require_project_exclusions(root, project->exclusions);
+    }
     if (timings != nullptr) {
         timings->source_facts_ms += elapsed_ms_since(phase_start);
         timings->peak_rss_bytes["source_facts"] = process_peak_rss_bytes();
@@ -1054,6 +1088,7 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
 SourceScanCorpus build_source_scan_corpus(const Profile& profile, const fs::path& root) {
     GeneratedRows rows = build_generated_rows(profile, root, /*retain_source_rows=*/true);
     SourceScanCorpus corpus;
+    if (profile.automatic_project_files) corpus.exclusions = ProjectIgnoreBinding::from_summary(rows.project_files);
     corpus.documents = std::move(rows.docs);
     corpus.source_facts = std::move(rows.source_facts);
     corpus.sections = std::move(rows.sections);
@@ -1118,6 +1153,16 @@ static GeneratedOutput render_generated_output(const Profile& profile,
     generated.files[(kGeneratedDir / "contracts.jsonl").generic_string()] = typed_references_jsonl(rows.contracts);
     generated.files[(kGeneratedDir / "runbooks.jsonl").generic_string()] = typed_references_jsonl(rows.runbooks);
     generated.files[(kGeneratedDir / "facts.jsonl").generic_string()] = facts_jsonl(std::move(rows.facts));
+    if (rows.source_facts.file_routing) {
+        auto& output = generated.files[std::string(kSourceRoutingFile)];
+        for (auto& source : rows.source_facts.sources) {
+            const auto line = Json::array({source.path, source.content_hash, std::move(source.routing_terms)}).dump();
+            if (line.size() + 1 > kSourceIndexBytes - output.size())
+                throw_index_error("source-discovery-byte-limit", "The complete file routing table exceeds its byte limit.");
+            output += line;
+            output.push_back('\n');
+        }
+    }
     if (timings != nullptr) {
         timings->json_render_ms += elapsed_ms_since(phase_start);
     }
@@ -1137,7 +1182,7 @@ static GeneratedOutput render_generated_output(const Profile& profile,
                       generated.term_count, generated.decision_count, generated.contract_count,
                       generated.runbook_count, generated.fact_count, rows.source_facts, rows.structured_data,
                       generated.files,
-                      generated.broken_local_link_count, rows.document_lifecycle);
+                      generated.broken_local_link_count, rows.document_lifecycle, rows.project_files);
     if (timings != nullptr) {
         timings->json_render_ms += elapsed_ms_since(phase_start);
     }

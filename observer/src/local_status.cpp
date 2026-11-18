@@ -122,6 +122,11 @@ std::string local_status_text(const Json& status) {
             << " | State: " << label(field(status, "state")) << '\n';
         const auto& quality = field(status, "project_quality");
         if (quality.is_string()) out << "Project checks: " << label(quality) << '\n';
+        const auto& files = field(status, "project_files");
+        if (field(files, "selection") == "automatic-project-text")
+            out << "Excluded entries: " << number(field(files, "excluded_entries"))
+                << " | Oversized files: " << number(field(files, "oversized_files"))
+                << " | Binary files: " << number(field(files, "binary_files")) << '\n';
         if (quality_warning(status))
             out << "Search warning: some checks missed expected evidence; verified current context remains available.\n";
         const auto& coverage = field(status, "source_coverage");

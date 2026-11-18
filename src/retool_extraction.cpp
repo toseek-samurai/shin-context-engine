@@ -507,13 +507,39 @@ std::vector<RsxTag> scan_rsx_tags(const std::string& content) {
     return tags;
 }
 
-fs::path nearest_retool_owner(const fs::path& root,
-                              const std::string& path,
-                              const std::string& marker_file) {
+struct RetoolFiles {
+    const fs::path& root;
+    // Automatic layout/owner evidence must come from the same sorted files
+    // that this generation selected. Curated profiles retain their layout probes.
+    const std::vector<std::string>* selected = nullptr;
+
+    bool regular_file(const fs::path& relative) const {
+        if (selected) return std::binary_search(selected->begin(), selected->end(), relative.generic_string());
+        std::error_code ec;
+        return fs::is_regular_file(root / relative, ec);
+    }
+
+    bool directory(const fs::path& relative) const {
+        if (selected) {
+            const std::string prefix = relative.generic_string() + "/";
+            const auto first = std::lower_bound(selected->begin(), selected->end(), prefix);
+            return first != selected->end() && first->starts_with(prefix);
+        }
+        std::error_code ec;
+        return fs::is_directory(root / relative, ec);
+    }
+
+    bool admits_target(const std::string& owner, const std::string& target) const {
+        if (!selected) return true;
+        const auto relative = (fs::path(owner).parent_path() / target).lexically_normal();
+        return regular_file(relative);
+    }
+};
+
+fs::path nearest_retool_owner(const RetoolFiles& files, const std::string& path, const std::string& marker_file) {
     fs::path current = fs::path(path).parent_path();
     while (!current.empty() && current != current.root_path()) {
-        std::error_code ec;
-        if (fs::is_regular_file(root / current / marker_file, ec)) {
+        if (files.regular_file(current / marker_file)) {
             return current;
         }
         const fs::path parent = current.parent_path();
@@ -525,12 +551,12 @@ fs::path nearest_retool_owner(const fs::path& root,
     return fs::path(path).parent_path();
 }
 
-std::string app_owner(const fs::path& root, const std::string& path) {
-    return nearest_retool_owner(root, path, "metadata.json").generic_string();
+std::string app_owner(const RetoolFiles& files, const std::string& path) {
+    return nearest_retool_owner(files, path, "metadata.json").generic_string();
 }
 
-std::string workflow_owner(const fs::path& root, const std::string& path) {
-    return nearest_retool_owner(root, path, "workflow.yml").generic_string();
+std::string workflow_owner(const RetoolFiles& files, const std::string& path) {
+    return nearest_retool_owner(files, path, "workflow.yml").generic_string();
 }
 
 std::string physical_owner(const std::string& path) {
@@ -571,9 +597,10 @@ bool intrinsic_retool_resource(const std::string& resource_name, const std::stri
     return resource_display.empty() && intrinsic.contains(resource_name);
 }
 
-std::string compact_endpoint(const std::string& endpoint) {
+std::string compact_endpoint(const std::string& endpoint, const RetoolFiles& files, const std::string& path) {
     const std::string payload = first_quoted_argument(endpoint, "include");
-    return payload.empty() ? truncate_text(compact_whitespace(endpoint), 120) : payload;
+    if (payload.empty()) return truncate_text(compact_whitespace(endpoint), 120);
+    return files.admits_target(path, payload) ? payload : "";
 }
 
 std::string nearest_owner_id(const std::vector<RsxOwner>& stack) {
@@ -585,12 +612,17 @@ std::string nearest_owner_id(const std::vector<RsxOwner>& stack) {
     return "app-root";
 }
 
-std::string selected_attribute_summary(const Profile& profile, const RsxTag& tag) {
+std::string selected_attribute_summary(const Profile& profile, const RsxTag& tag,
+                                       const RetoolFiles& files, const std::string& path) {
     std::string summary;
     for (const std::string& key : profile.source_fact_attribute_keys) {
         const auto value = tag.attributes.find(key);
         if (value == tag.attributes.end()) {
             continue;
+        }
+        if (files.selected) {
+            const auto payload = first_quoted_argument(value->second, "include");
+            if (!payload.empty() && !files.admits_target(path, payload)) continue;
         }
         summary += " " + key + "=" +
                    truncate_text(compact_whitespace(value->second), 160);
@@ -610,13 +642,14 @@ void close_rsx_owner(std::vector<RsxOwner>& stack, const std::string& name) {
 
 void add_rsx_payload_fact(std::vector<FactRow>& rows,
                           const Profile& profile,
+                          const RetoolFiles& files,
                           const std::string& path,
                           const RsxTag& tag,
                           const std::string& owner_id,
                           const std::string& attribute_name,
                           const std::string& value) {
     const std::string payload = first_quoted_argument(value, "include");
-    if (payload.empty()) {
+    if (payload.empty() || !files.admits_target(path, payload)) {
         return;
     }
     const std::string source_id = attr(tag, "id").empty() ? owner_id : attr(tag, "id");
@@ -626,7 +659,7 @@ void add_rsx_payload_fact(std::vector<FactRow>& rows,
                     tag.end_line);
 }
 
-void scan_rsx_relations(const RsxTag& tag, const std::string& path,
+void scan_rsx_relations(const RsxTag& tag, const RetoolFiles& files, const std::string& path,
                         const std::string& scope, RelationWriter& relations) {
     const auto static_value = [&](const std::string& key) {
         const auto found = tag.attribute_sources.find(key);
@@ -634,7 +667,7 @@ void scan_rsx_relations(const RsxTag& tag, const std::string& path,
     };
     if (tag.name == "Include") {
         const std::string target = static_value("src");
-        if (!target.empty()) {
+        if (!target.empty() && files.admits_target(path, target)) {
             relations.direct(path, "source-include", target, tag.attribute_sources.at("src").line);
         }
     } else if (tag.name == "Event") {
@@ -665,7 +698,8 @@ void scan_rsx_relations(const RsxTag& tag, const std::string& path,
                         std::size_t end = start;
                         const std::string target = static_include(expression, end);
                         if (!target.empty()) {
-                            relations.direct(path, "source-payload", target, line);
+                            if (files.admits_target(path, target))
+                                relations.direct(path, "source-payload", target, line);
                             std::size_t tail = end;
                             skip_expression_trivia(expression, tail);
                             const bool script_query = tag.name == "JavascriptQuery" || tag.name == "SqlQuery" ||
@@ -699,17 +733,15 @@ void scan_rsx_relations(const RsxTag& tag, const std::string& path,
 }
 
 void scan_rsx(const Profile& profile,
-              const fs::path& root,
+              const RetoolFiles& files,
               const std::string& path,
               const std::string& content,
               std::vector<FactRow>& rows,
               RelationWriter& relations) {
-    const std::string app = app_owner(root, path);
+    const std::string app = app_owner(files, path);
     if (fs::path(path).filename() == "main.rsx") {
-        std::error_code ec;
-        const bool multi_page = fs::is_directory(root / app / ".positions", ec);
-        ec.clear();
-        const bool single_page = fs::is_regular_file(root / app / ".positions.json", ec);
+        const bool multi_page = files.directory(fs::path(app) / ".positions");
+        const bool single_page = files.regular_file(fs::path(app) / ".positions.json");
         const std::string architecture = multi_page ? "multi-page" : (single_page ? "single-page" : "unknown-layout");
         add_retool_fact(rows, profile, path, 1, "app", app + " " + architecture,
                         "app=" + app + " architecture=" + architecture);
@@ -721,23 +753,24 @@ void scan_rsx(const Profile& profile,
             close_rsx_owner(stack, tag.name);
             continue;
         }
-        scan_rsx_relations(tag, path, app, relations);
+        scan_rsx_relations(tag, files, path, app, relations);
         const std::string parent_id = nearest_owner_id(stack);
         const std::string id = attr(tag, "id");
         const std::string resource_name = attr(tag, "resourceName");
         const std::string resource_display = attr(tag, "resourceDisplayName");
         const std::string method = attr(tag, "method").empty() ? attr(tag, "type") : attr(tag, "method");
-        const std::string endpoint = attr(tag, "path").empty() ? attr(tag, "query") : attr(tag, "path");
+        const std::string endpoint = compact_endpoint(
+            attr(tag, "path").empty() ? attr(tag, "query") : attr(tag, "path"), files, path);
         const bool external_resource = (!resource_name.empty() || !resource_display.empty()) &&
                                        !intrinsic_retool_resource(resource_name, resource_display);
 
         if (tag.name == "Include") {
             const std::string target = attr(tag, "src");
-            if (!target.empty()) {
+            if (!target.empty() && files.admits_target(path, target)) {
                 add_retool_fact(rows, profile, path, tag.line, "include",
                                 parent_id + " includes " + target,
                                 "app=" + app + " owner=" + parent_id + " target=" + target +
-                                    selected_attribute_summary(profile, tag),
+                                    selected_attribute_summary(profile, tag, files, path),
                                 tag.end_line);
             }
         } else if (tag.name == "Event") {
@@ -749,7 +782,7 @@ void scan_rsx(const Profile& profile,
                             parent_id + " " + event + " " + action + " " + target + " " + event_type,
                             "app=" + app + " owner=" + parent_id + " event=" + event + " action=" + action +
                                 " target=" + target + " type=" + event_type +
-                                selected_attribute_summary(profile, tag),
+                                selected_attribute_summary(profile, tag, files, path),
                             tag.end_line);
         } else if (!id.empty()) {
             const std::string kind = classify_rsx_symbol(tag.name);
@@ -766,9 +799,9 @@ void scan_rsx(const Profile& profile,
                 summary += " resource=" + (resource_display.empty() ? resource_name : resource_display);
             }
             if (!endpoint.empty() && kind == "query") {
-                summary += " endpoint=" + compact_endpoint(endpoint);
+                summary += " endpoint=" + endpoint;
             }
-            summary += selected_attribute_summary(profile, tag);
+            summary += selected_attribute_summary(profile, tag, files, path);
             add_retool_fact(rows, profile, path, tag.line, kind, name,
                             summary, tag.end_line);
         }
@@ -776,16 +809,16 @@ void scan_rsx(const Profile& profile,
         if (!id.empty() && external_resource) {
             const std::string resource = resource_display.empty() ? resource_name : resource_display;
             add_retool_fact(rows, profile, path, tag.line, "resource-binding",
-                            id + " " + tag.name + " uses " + resource + " " + method + " " + compact_endpoint(endpoint),
+                            id + " " + tag.name + " uses " + resource + " " + method + " " + endpoint,
                             "app=" + app + " query=" + id + " resource_name=" + resource_name +
                                 " resource_display=" + resource_display + " method=" + method +
-                                " endpoint=" + compact_endpoint(endpoint) +
-                                selected_attribute_summary(profile, tag),
+                                " endpoint=" + endpoint +
+                                selected_attribute_summary(profile, tag, files, path),
                             tag.end_line);
             if (tag.name.size() <= 128) rows.back().identifier_terms.push_back(tag.name);
         }
         for (const auto& [key, value] : tag.attributes) {
-            add_rsx_payload_fact(rows, profile, path, tag, parent_id, key, value);
+            add_rsx_payload_fact(rows, profile, files, path, tag, parent_id, key, value);
         }
         std::string expressions;
         for (const auto& [key, value] : tag.attributes) {
@@ -995,12 +1028,12 @@ std::string yaml_block_data_scalar(const std::vector<std::string>& lines, const 
 }
 
 void scan_workflow_yaml(const Profile& profile,
-                        const fs::path& root,
+                        const RetoolFiles& files,
                         const std::string& path,
                         const std::vector<std::string>& lines,
                         std::vector<FactRow>& rows,
                         RelationWriter& relations) {
-    const std::string workflow = workflow_owner(root, path);
+    const std::string workflow = workflow_owner(files, path);
     if (fs::path(path).filename() == "workflow.yml") {
         const std::string name = yaml_scalar(lines, "name");
         const std::string id = yaml_scalar(lines, "workflowId");
@@ -1066,7 +1099,7 @@ void scan_workflow_yaml(const Profile& profile,
 }
 
 void scan_retool_json(const Profile& profile,
-                      const fs::path& root,
+                      const RetoolFiles& files,
                       const std::string& path,
                       const std::string& content,
                       std::vector<FactRow>& rows) {
@@ -1087,14 +1120,14 @@ void scan_retool_json(const Profile& profile,
         return;
     }
     if (starts_with(path, "apps/") && file.filename() == "metadata.json") {
-        const std::string app = app_owner(root, path);
+        const std::string app = app_owner(files, path);
         add_retool_fact(rows, profile, path, 1, "app-metadata", app,
                         "app=" + app + " metadata=metadata.json");
         return;
     }
     if (starts_with(path, "apps/") &&
         (path.find("/.positions/") != std::string::npos || ends_with(path, "/.positions.json"))) {
-        const std::string app = app_owner(root, path);
+        const std::string app = app_owner(files, path);
         const std::string layout = path.find("/.positions/") != std::string::npos ? "multi-page" : "single-page";
         add_retool_fact(rows, profile, path, 1, "layout",
                         app + " " + file.stem().generic_string(),
@@ -1135,14 +1168,13 @@ std::string workflow_field(const std::string& summary) {
 
 Json retool_generation_environment(const fs::path& root, const std::vector<std::string>& paths) {
     Json result = Json::array();
+    const RetoolFiles files{root};
     for (const auto& path : paths) {
         if (!starts_with(path, "apps/") && !starts_with(path, "workflows/") && !starts_with(path, "resources/")) continue;
-        const auto app = app_owner(root, path);
-        std::error_code error;
-        const bool multi = fs::is_directory(root / app / ".positions", error);
-        error.clear();
-        const bool single = fs::is_regular_file(root / app / ".positions.json", error);
-        result.push_back({path, app, workflow_owner(root, path), multi, single});
+        const auto app = app_owner(files, path);
+        const bool multi = files.directory(fs::path(app) / ".positions");
+        const bool single = files.regular_file(fs::path(app) / ".positions.json");
+        result.push_back({path, app, workflow_owner(files, path), multi, single});
     }
     return result;
 }
@@ -1153,22 +1185,24 @@ void scan_retool_source_facts(const Profile& profile,
                               const std::string& content,
                               const std::vector<std::string>& lines,
                               std::vector<FactRow>& rows,
-                              SourceRelationInputs& relations) {
+                              SourceRelationInputs& relations,
+                              const std::vector<std::string>& selected_paths) {
     if (!starts_with(path, "apps/") && !starts_with(path, "resources/") && !starts_with(path, "workflows/")) {
         return;
     }
     RelationWriter writer{relations};
+    const RetoolFiles files{root, profile.automatic_project_files ? &selected_paths : nullptr};
     const std::string extension = extension_of(path);
     if (extension == ".rsx") {
-        scan_rsx(profile, root, path, content, rows, writer);
+        scan_rsx(profile, files, path, content, rows, writer);
     } else if (starts_with(path, "workflows/") && (extension == ".yml" || extension == ".yaml")) {
-        scan_workflow_yaml(profile, root, path, lines, rows, writer);
+        scan_workflow_yaml(profile, files, path, lines, rows, writer);
     } else if (extension == ".json") {
-        scan_retool_json(profile, root, path, content, rows);
+        scan_retool_json(profile, files, path, content, rows);
     } else if (extension == ".js" || extension == ".sql" || extension == ".query" ||
                extension == ".css" || extension == ".html") {
         scan_payload(profile, path, lines, rows);
-        const std::string scope = starts_with(path, "workflows/") ? workflow_owner(root, path) : app_owner(root, path);
+        const std::string scope = starts_with(path, "workflows/") ? workflow_owner(files, path) : app_owner(files, path);
         if (extension == ".js") {
             scan_runtime_relations(content, path, scope, 1, writer);
         } else {

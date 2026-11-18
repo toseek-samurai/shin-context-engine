@@ -4,6 +4,8 @@
 #include "snapshot_verification.h"
 #include "source_cache.h"
 #include "shin/observer/local_registry.h"
+#include "local_route_guard.h"
+#include "local_index_rebuild.h"
 #include "shin/observer/local_service.h"
 #include <sqlite3.h>
 #include <set>
@@ -423,13 +425,15 @@ bool storage_overlap(const fs::path& a, const fs::path& b) {
     const auto pair = std::mismatch(a.begin(), a.end(), b.begin(), b.end());
     return pair.first == a.end() || pair.second == b.end();
 }
-struct StorageProject { fs::path workspace, root, output; Json binding; };
-std::vector<StorageProject> storage_projects(const fs::path& home) {
+struct StorageProject { fs::path workspace, root, output; Json binding; fs::path data; };
+std::vector<StorageProject> storage_projects(const fs::path& home, const fs::path& connecting = {}) {
     require(home.is_absolute() && fs::weakly_canonical(home) == home,
         "unsafe-project-storage", "Shin storage must have no symbolic-link components.");
     std::vector<StorageProject> projects;
     if (!candidate_present(home / "projects")) return projects;
     (void)directory_identity(home, true); (void)directory_identity(home / "projects", true);
+    std::optional<std::vector<LocalProjectRequest>> enrolled;
+    const auto bundled = packaged_managed_routes() ? bundled_profile_registry(current_executable_path()) : std::nullopt;
     unsigned count = 0;
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(5);
     for (const auto& entry : fs::directory_iterator(home / "projects")) {
@@ -461,7 +465,22 @@ std::vector<StorageProject> storage_projects(const fs::path& home) {
         require(!storage_overlap(home, root) && !storage_overlap(home, fs::weakly_canonical(root)),
             "unsafe-project-storage", "Shin storage overlaps a project directory.");
         fs::path output = entry.path() / "index";
-        if (binding->value("schema_version", "") == "shin.local-route-binding.v1") {
+        const bool external = binding->value("schema_version", "") == "shin.local-route-binding.v1";
+        const bool other_kit = !current_automatic_primary(*binding, bundled);
+        bool automatic = other_kit && (candidate_present(entry.path() / "automatic") || (external && root == connecting));
+        if (!automatic && external && (packaged_managed_routes() ||
+            (candidate_present(entry.path() / "index-generation") && !current_index_generation(entry.path()))) &&
+            candidate_present(home / "registry")) {
+            if (!enrolled) enrolled = registered_local_projects(home);
+            automatic = std::any_of(enrolled->begin(), enrolled->end(), [&](const auto& project) {
+                return project.root == root && project.maintenance_workspace_identity == identity;
+            });
+        }
+        if (automatic) {
+            // External indexes and their publisher tokens remain with their
+            // original owners. Managed storage counts only this private slot.
+            output = entry.path() / "automatic/index";
+        } else if (binding->value("schema_version", "") == "shin.local-route-binding.v1") {
             const auto config = load_config(binding->at("observer_config").get<std::string>());
             require(config.root == root && config.binding_key == binding->at("observer_binding_key").get<std::string>(),
                 "storage-binding-changed", "Project settings changed; no cleanup is allowed.");
@@ -470,7 +489,7 @@ std::vector<StorageProject> storage_projects(const fs::path& home) {
                 "storage-binding-changed","External index directory was replaced; it is preserved.");
         } else require(binding->value("schema_version", "") == "shin.local-project-binding.v1",
             "storage-inventory-invalid", "Unknown binding format.");
-        projects.push_back({entry.path(),root,output,*binding});
+        projects.push_back({entry.path(),root,output,*binding,automatic ? entry.path() / "automatic" : entry.path()});
     }
     std::sort(projects.begin(), projects.end(), [](const auto& a, const auto& b) { return a.root < b.root; });
     return projects;
@@ -535,8 +554,8 @@ Json storage_usage(const fs::path& home, const std::vector<StorageProject>& proj
             // Shared/ambiguous locations count once and are never guessed into a project.
             if (matches!=1) { shared+=bytes; continue; }
             const auto& project=projects[owner];
-            const bool cache=storage_contains(project.workspace/"source-cache",entry.path()) ||
-                storage_contains(project.workspace/"observer/source-cache",entry.path());
+            const bool cache=storage_contains(project.data/"source-cache",entry.path()) ||
+                storage_contains(project.data/"observer/source-cache",entry.path());
             const auto kind=cache ? 1 : storage_contains(project.output,entry.path()) ? 0 : 2;
             sizes[owner][kind]+=bytes;
         }
@@ -626,7 +645,7 @@ StoragePlan plan_storage(const fs::path& home, const std::optional<fs::path>& se
         Json row{{"root",project.root.string()},{"detached",detached},{"reclaimable_bytes",0ULL},
             {"reason",detached ? "external-caches-only" : "active-project-preserved"}};
         row.update(usage.at("by_root").at(project.root.string()));
-        if (detached) for (const auto& folder : {project.workspace / "source-cache",project.workspace / "observer/source-cache"}) {
+        if (detached) for (const auto& folder : {project.data / "source-cache",project.data / "observer/source-cache"}) {
             if (!candidate_present(folder)) continue;
             external_storage(folder,plan.projects);
             const auto folder_identity = directory_identity(folder,true);
@@ -655,18 +674,21 @@ StoragePlan plan_storage(const fs::path& home, const std::optional<fs::path>& se
 }
 }
 
-void guard_project_storage(const fs::path& home, const fs::path& root) {
-    auto projects = storage_projects(home);
+void guard_project_storage(const fs::path& home, const fs::path& root, bool private_connection) {
     const auto canonical = fs::canonical(root);
+    auto projects = storage_projects(home, private_connection ? canonical : fs::path{});
     require(!storage_overlap(home,canonical),"unsafe-project-storage","Shin storage cannot be inside a project.");
-    for (const auto& project : projects)
+    for (const auto& project : projects) {
         require(!storage_overlap(canonical,project.output),"unsafe-project-storage","The selected project contains existing Shin storage.");
-    projects.push_back({{},canonical,{},Json::object()});
+        require(canonical == project.root || !storage_contains(canonical, project.root),
+            "registry-root-conflict", "An existing project owns part of the selected directory.");
+    }
+    projects.push_back({{},canonical,{},Json::object(),{}});
     external_storage(home,projects);
 }
 
 void guard_external_storage(const fs::path& home, const fs::path& root, const fs::path& output) {
-    auto projects=storage_projects(home); projects.push_back({{},fs::canonical(root),{},Json::object()});
+    auto projects=storage_projects(home); projects.push_back({{},fs::canonical(root),{},Json::object(),{}});
     external_storage(output,projects);
 }
 

@@ -123,7 +123,7 @@ int main(int argc, char** argv) {
                 }
             }
             [storageApp.storageWindow close];
-            if (live_text(static_cast<NSTextField*>(nil), @"stringValue", "Finding agents and profiles…") != nil)
+            if (live_text(static_cast<NSTextField*>(nil), @"stringValue", "Finding agent settings…") != nil)
                 throw std::runtime_error("a not-yet-created setup label became an object");
             ShinApp* setupApp = [[ShinApp alloc] init];
             [setupApp showSetup:nil];

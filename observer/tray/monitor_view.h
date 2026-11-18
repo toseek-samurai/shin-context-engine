@@ -1476,7 +1476,7 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
                         text(std::string(shin::ui::tr("Expected document: ")) + shin::observer::validation_expected_path(path), ink, 126);
                 }
             }
-            text(shin::ui::tr("A search miss does not mean the file is absent. Review the document and profile; preserve useful queries and checks."), muted, 127);
+            text(shin::ui::tr("Check the expected file directly. Report a reproducible miss with the original query."), muted, 127);
         }
         render_project_analytics(view, project, telemetry);
         if (!compact) {

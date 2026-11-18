@@ -169,6 +169,11 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
         target_compile_options(shin-local-idle-refresh-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
         add_test(NAME shin-local-idle-refresh COMMAND shin-local-idle-refresh-tests "${SHIN_OBSERVER_ROOT}/../profiles")
         set_tests_properties(shin-local-idle-refresh PROPERTIES TIMEOUT 60)
+        if(APPLE)
+            # This fixture times real FSEvents delivery while hashing an image
+            # under directory churn. Keep its three-second assertion under CI load.
+            set_tests_properties(shin-local-idle-refresh PROPERTIES PROCESSORS 4)
+        endif()
         add_executable(shin-local-startup-tests "${SHIN_OBSERVER_ROOT}/tests/local_startup_test.cpp")
         target_link_libraries(shin-local-startup-tests PRIVATE shin-observer-native)
         target_compile_options(shin-local-startup-tests PRIVATE ${SHIN_NATIVE_WARNINGS})

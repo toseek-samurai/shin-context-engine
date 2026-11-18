@@ -1,8 +1,8 @@
 # Retrieval Failure Playbook
 
 Use for a reproducible Shin miss, failing quality gate, or bounded investigation.
-For ordinary product work, follow the main skill; do not run a release audit for
-every query. Resolve Core contracts using its source or installed layout.
+This is a standalone Core developer diagnostic. For an ordinary managed
+project, follow the main skill and report a bounded reproduction. Resolve Core contracts using its source or installed layout.
 
 ## Capture One Reproducible Observation
 
@@ -23,9 +23,8 @@ warning can leave `canonical_ready=false`; report it and retain strict eval/Pack
 failures. Authority, freshness, integrity, safety and mandatory resource/output
 refusals remain blocking. Pending reader preparation is handled by one useful
 query with its bounded wait, not status polling or a project repair.
-Kit-owned bootstrap profiles need no consumer maintenance. Review custom profiles
-only after actual owner/root/contract changes; engine misses and resource warnings
-are Shin's responsibility.
+The managed service discovers text automatically. Engine misses and resource
+warnings belong to Shin maintainers.
 
 | Observation | Next check | Potential owner of a correction |
 | --- | --- | --- |

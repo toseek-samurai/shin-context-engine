@@ -80,10 +80,10 @@ path stays under the stable Homebrew opt prefix.
 
 Homebrew owns package files. Monitor explains the Homebrew command instead of
 invoking the native Updater, and `shin-ce update-*`, native installation and
-native login-service registration are refused. Project freshness, publication
-authority and strict profile checks remain unchanged. A new generator or a
-changed profile may still require project-owned review; package installation is
-not permission to weaken those checks.
+native login-service registration are refused. The development source rebuilds
+managed indexes from enrolled folders using project `.gitignore` files and optional root `.shinignore` overrides.
+Each agent keeps its existing grants. Source freshness and publication authority
+are checked before serving new evidence.
 
 ## Remove
 

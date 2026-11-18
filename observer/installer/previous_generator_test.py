@@ -33,7 +33,7 @@ def main():
         previous_kit, candidate_kit = old_kits[0].parent, new_kits[0].parent
         identity = json.loads(subprocess.check_output([str(previous_kit / 'bin/shin-context'), '--version'], text=True))
         assert identity['version'] == previous['core_version'] and identity['generator_version'] == previous['generator']
-        for scenario in ('forward', 'rollback-resume', 'profile-policy-rejected', 'marker-edit-rejected'):
+        for scenario in ('forward', 'rollback-resume', 'missing-profile', 'edited-marker'):
             command = [sys.executable, '-B', str(Path(__file__).with_name('format_transition_test.py')),
                        '--previous-kit', str(previous_kit), '--candidate-kit', str(candidate_kit),
                        '--scenario', scenario, '--with-marker', '--report', str(args.proof / f'previous-generator-{scenario}.json')]

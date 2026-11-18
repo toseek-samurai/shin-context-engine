@@ -265,6 +265,9 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
     }
     if (code == "storage-full") return {shin::ui::tr("Insufficient space"), shin::ui::tr("Shin cannot save a new context version."), shin::ui::tr("Free some space. Shin will retry.")};
     if (code == "root-unavailable") return {shin::ui::tr("Folder unavailable"), shin::ui::tr("Shin cannot read project files."), shin::ui::tr("Connect the disk or restore the project folder.")};
+    if (code == "invalid-project-exclusions" || code == "unsafe-project-exclusions") return {
+        shin::ui::tr("Review project exclusions"), shin::ui::tr("Shin could not apply the project ignore rules."),
+        shin::ui::tr("Review the reported .gitignore or root .shinignore and its rules.")};
     if (code == "refresh-validation-failed" || code == "project-check-failed") return {
         shin::ui::tr("Check failed"), shin::ui::tr("Context unavailable. The previous version was preserved.") +
             (reason.empty() ? std::string{} : shin::ui::tr(" Reason: ") + reason + "."),
@@ -299,6 +302,8 @@ inline RecoveryOptions recovery_options(const Json& project, bool connected) {
         return {false, RecoveryAction::folder, tr("Coverage details"), overview.next};
     if (code == "route-revision-conflict") return {false, RecoveryAction::profile,
         tr("Review required"), tr("Review project changes before accepting them. Shin keeps the existing approvals until you decide.")};
+    if (code == "invalid-project-exclusions" || code == "unsafe-project-exclusions")
+        return {false, RecoveryAction::folder, tr("Action needed"), overview.next};
     if (code == "storage-quota-exceeded" || code == "storage-free-space-low" || code == "storage-full" || code == "storage-read-only")
         return {false, RecoveryAction::storage, tr("Action needed"), explain(code).next};
     if (code == "access-denied" || code == "root-unavailable" || code == "source-io-error" ||
@@ -306,7 +311,7 @@ inline RecoveryOptions recovery_options(const Json& project, bool connected) {
         limited || quarantined || secret_finding)
         return {false, RecoveryAction::folder, tr("Action needed"),
             code == "incomplete-source-observation" || code == "refresh-incomplete-source" || code == "refresh-source-budget" ?
-            tr("Review project coverage and the reported limits with the project agent. Keep safety and quality checks enabled; Shin will retry after correction.") :
+            tr("Review the reported source counts and limits. A root .shinignore can exclude files outside the intended search scope.") :
             code.empty() || secret_finding ? overview.next : explain(code).next};
     if (quality_warning(project) || code == "refresh-validation-failed" || code == "project-check-failed")
         return {false, RecoveryAction::search, tr("Review required"), overview.next};

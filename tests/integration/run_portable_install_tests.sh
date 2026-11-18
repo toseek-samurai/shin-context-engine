@@ -300,7 +300,8 @@ printf '%s\n' \
 "$tool" --root "$project_root" discover >"$work_root/discover.json"
 "$jq_bin" -e '
   .ok == true and
-  .bootstrap.primary_profile == "generic-node" and
+  .project_files.selection == "automatic-project-text" and
+  .bootstrap.primary_profile == "generic-source" and
   .bootstrap.project_mutation_required == false
 ' "$work_root/discover.json" >/dev/null
 

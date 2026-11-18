@@ -12,8 +12,12 @@ import os
 from pathlib import Path
 import select
 import subprocess
+import sys
 import tempfile
 import time
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1] / 'tests'))
+from integration_test import Fixture
 
 parser = argparse.ArgumentParser(description=__doc__)
 parser.add_argument('--previous-kit', type=Path, required=True)
@@ -35,8 +39,23 @@ report = {'previous_version': previous['version'], 'candidate_version': target['
 with tempfile.TemporaryDirectory(prefix='shin-mcp-up-', dir='/tmp') as directory:
     work = Path(directory).resolve()
     user = work/'user'; user.mkdir(mode=0o700)
-    prefix, home, commands, root = (user/name for name in ('kit','data','bin','project'))
-    root.mkdir(); (root/'quota.cpp').write_text('int updateQuota() { return 41; }\n')
+    prefix, home, commands = (user/name for name in ('kit','data','bin'))
+    fixture = Fixture(work, 'external')
+    root = fixture.root
+    (root/'quota.cpp').write_text('int updateQuota() { return 41; }\n')
+    (root/'release.rules').write_text('releaseQuotaPolicy permits 83 units.\n')
+    fixture.write_source('# Limits\n\nProject quota belongs to updateQuota.\n')
+    profile = json.loads(fixture.profile_path.read_text())
+    profile.update(bootstrapOnly=False, sourceFactRoots=['.'], sourceFactExtensions=['.cpp'],
+        evalCases=[{'id':'quota','query':'updateQuota','mustPaths':['quota.cpp']}],
+        packEvalCases=[{'id':'quota-pack','mustPaths':['quota.cpp'],'expectedComplete':True,'request':{
+            'schema_version':'shin.task-request.v1','request_id':'quota-pack',
+            'task':{'objective':'Locate quota.','must':[{'id':'owner','query':'updateQuota'}]},
+            'budget':{'max_evidence_bytes':12000,'max_records':8,'per_query_records':8,'per_document_records':2}}}])
+    fixture.profile_path.write_text(json.dumps(profile))
+    selected_settings = user/'selected-agent.json'
+    other_settings = user/'other-agent.json'
+    other_settings.write_text('{"mcpServers":{}}\n')
     env = {**os.environ, 'HOME':str(user), 'PATH':'', 'LC_ALL':'C'}
     children = []
 
@@ -66,7 +85,8 @@ with tempfile.TemporaryDirectory(prefix='shin-mcp-up-', dir='/tmp') as directory
         raise AssertionError('MCP response deadline')
 
     def adapter():
-        child = subprocess.Popen([str(prefix/'bin/shin-mcp'),'--root',str(root),'--home',str(home)],
+        server = json.loads(selected_settings.read_text())['mcpServers']['shin']
+        child = subprocess.Popen([server['command'], *server['args']],
                                  stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
         children.append(child); child.sequence=0; child.pending=b''
         initialized=rpc(child,'initialize',{'protocolVersion':'2025-11-25','capabilities':{},
@@ -81,15 +101,22 @@ with tempfile.TemporaryDirectory(prefix='shin-mcp-up-', dir='/tmp') as directory
 
     try:
         call(old/'bin/shin-ce','install','--prefix',prefix,'--bin-dir',commands,'--home',home)
-        call(prefix/'bin/shin-ce','init','--root',root,'--home',home)
+        call(prefix/'bin/shin-context','--root',root,'--profile','observer-fixture','--profile-dir',fixture.profiles,
+             '--out-dir',fixture.out,'build')
+        call(prefix/'bin/shin-observer','sample','--config',fixture.config)
+        call(prefix/'bin/shin-ce','init','--root',root,'--home',home,'--observer-config',fixture.config,'--manage-index')
+        setup = call(prefix/'bin/shin-ce','mcp-config','--client','generic','--root',root,'--home',home)
+        selected_settings.write_text(setup['configuration'])
+        protected = {path:path.read_bytes() for path in (selected_settings,other_settings,home/'registry/state.json',
+            home/'identity/state.json',fixture.out/'docs/kb/generated/manifest.json')}
         child=adapter(); original_pid=child.pid
         first=tool(child,'shin_query',{'query':'updateQuota','diagnostic':True})
         assert first.get('ok'),first
-        registry=(home/'registry/state.json').read_bytes()
+        fixture.profile_path.unlink()
         updated=call(candidate/'bin/shin-ce','update','--prefix',prefix)
         assert updated['version']==target['version'],updated
         assert child.poll() is None and child.pid==original_pid
-        result=tool(child,'shin_query',{'query':'updateQuota','diagnostic':True})
+        result=tool(child,'shin_query',{'query':'releaseQuotaPolicy','diagnostic':True})
         if mode=='automatic':
             assert result.get('ok') and result['version']==target['version'],result
             report['same_initialized_process']=True
@@ -100,12 +127,14 @@ with tempfile.TemporaryDirectory(prefix='shin-mcp-up-', dir='/tmp') as directory
             report['explicit_refusal']=result['error']['code']
             child.terminate();child.communicate(timeout=10)
             child=adapter()
-            result=tool(child,'shin_query',{'query':'updateQuota','diagnostic':True})
+            result=tool(child,'shin_query',{'query':'releaseQuotaPolicy','diagnostic':True})
             assert result.get('ok') and result['version']==target['version'],result
-        read=tool(child,'shin_read',{'path':'quota.cpp','snapshot':result['snapshot_id'],'diagnostic':True,
+        assert 'permits 83 units' in result['source_context']
+        read=tool(child,'shin_read',{'path':'release.rules','snapshot':result['snapshot_id'],'diagnostic':True,
             'parent_request_id':result['request_trace']['request_id']})
         assert read.get('ok'),read
-        assert (home/'registry/state.json').read_bytes()==registry
+        assert all(path.read_bytes()==original for path,original in protected.items())
+        assert not fixture.profile_path.exists()
         installed=call(prefix/'bin/shin-ce','installation','--prefix',prefix)
         assert installed['integrity_verified'] and not installed['recovery_pending'],installed
         report.update(ok=True,query=True,snapshot_bound_read=True,registry_preserved=True,

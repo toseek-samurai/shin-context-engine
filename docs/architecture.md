@@ -7,7 +7,11 @@ current source have [separate identities](README.md#current-preview).
 
 ## Components
 
-**Core** owns profiles, indexing, retrieval, evidence formatting, and the command-line interface. A profile selects the paths and file families that belong in a project context. Use `--out-dir` to keep generated output apart from source; the low-level CLI defaults to the project root when this option is omitted. Core reads do not grant authority to publish or execute anything.
+**Core** owns file discovery, indexing, retrieval, evidence formatting and its
+standalone CLI. Managed projects discover eligible text under their selected
+folder. Standalone profiles can select explicit inputs and strict developer
+checks. Supply an external `--out-dir` on standalone builds. Core reads grant
+no publication or execution authority.
 
 **Observer** owns local project observation, bounded local state, and persisted observation formats. Optional native tools include the `shin-ce` project CLI and terminal monitor, the stdio `shin-mcp` adapter, usage collection, and the desktop Monitor. Observer can use Core source discovery for local source queries. The optional macOS local kit is described in its packaged `local-kit.md` and `native-client-setup.md`.
 
@@ -15,7 +19,11 @@ current source have [separate identities](README.md#current-preview).
 
 ## Authority and state boundaries
 
-Project profiles determine the source scope. Generated indexes and caches are outputs and must be placed separately from source. Observer connections are explicit and project-bound; a read command does not enroll a project or grant publication rights. Existing indexes require an explicit owner decision before management or replacement.
+Managed discovery uses the project root, the kit's safety and resource limits,
+and project ignore rules from `.gitignore` files and the optional root `.shinignore`. Generated indexes and caches live
+outside source. Observer connections are explicit and project-bound. The user
+registers projects and chooses the agents with access. Existing output owned
+by another publisher requires an explicit ownership decision.
 
 Extracting a kit does not configure client credentials, edit client settings, or register an operating-system service. The macOS installation and service commands are explicit per-user operations. The Windows MSI design uses an elevated machine host to supervise separate unelevated user runtimes; its installation and lifecycle qualification are separate from source testing. Project authority remains with the user runtime, not with the UI or installer.
 
@@ -47,10 +55,9 @@ Agent integration uses native MCP or an explicit CLI adapter. The agent still ow
 task execution and conversation memory; a retrieved instruction cannot grant it
 publication or filesystem authority.
 
-Consumer profiles describe source selection and product scenarios. Shin owns
-algorithm/resource regressions; consumers should
-not split or rewrite sound documentation to optimize internal counters. Optional
-`mustEvidence`/`mustNotEvidence` checks inspect the selected display fragments in
+The kit follows changes to files in a registered folder automatically. Shin
+owns algorithm and resource regressions. Standalone Core fixtures can use
+`mustEvidence`/`mustNotEvidence` checks to inspect selected display fragments in
 both Eval and Pack-eval. Paths and lexical coverage alone do not prove an answer.
 
 A request-owned retrieval plan accounts for repeated and rejected attempts and
@@ -108,7 +115,8 @@ bootstrap profiles. The existing native source index searches CSS/SCSS,
 HTML/HTM and Razor/CSHTML as bounded text with exact source locators. Source
 scope is returned independently of readiness; excluded formats are not implied
 to have been searched. No CSS cascade, template rendering or framework symbol
-resolution is claimed. Consumer-owned profiles and limits remain authoritative.
+resolution is claimed. In current development source, unfamiliar formats also
+supply bounded lexical evidence and managed selection is independent of extension.
 
 ## Quality gates and performance limitations
 

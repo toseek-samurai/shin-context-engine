@@ -704,7 +704,7 @@ private:
             for (const auto& [root, reader] : residents) {
                 const auto rss = reader->process.rss_bytes();
                 auto preparation = reader->preparation;
-                if (command != "service-status") preparation.erase("reader_preparation");
+                if (command == "service-stop" && preparation.is_object()) preparation.erase("reader_preparation");
                 value["result"]["resident_projects"].push_back({{"root", root}, {"ready", reader->ready},
                     {"busy", !reader->request_id.empty()}, {"preparation", std::move(preparation)},
                     {"pid", reader->process.process_id()}, {"rss_bytes", rss ? Json(*rss) : Json(nullptr)}});

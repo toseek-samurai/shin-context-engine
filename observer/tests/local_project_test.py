@@ -71,7 +71,8 @@ class LocalProjectTests(unittest.TestCase):
         first = self.run_ce("init")
         self.assertTrue(first["local_ready"])
         self.assertFalse(first["canonical_ready"])
-        self.assertEqual(first["project_quality"], "not-configured")
+        self.assertEqual(first["project_quality"], "automatic")
+        self.assertEqual(first["readiness_scope"], "automatic-project-files")
         self.assertTrue(first["rebuilt"])
         self.assertEqual(first["mode"], "offline")
         self.assertFalse(first["delivery_performed"])
@@ -90,6 +91,28 @@ class LocalProjectTests(unittest.TestCase):
         self.assertEqual((self.home.stat().st_mode & 0o777), 0o700)
         self.assertEqual(((self.workspace() / "state.json").stat().st_mode & 0o777), 0o600)
         self.assertTrue((self.workspace() / "observer/source-cache").is_dir())
+
+    def test_wiki_without_readme_serves_root_pages(self):
+        (self.root / "README.md").unlink()
+        (self.root / "limits.js").unlink()
+        (self.root / "Home.md").write_text("# Operator handbook\n\n[Guide](Rotation#schedule)\n\n[Missing](AbsentPage)\n", encoding="utf-8")
+        (self.root / "Rotation.md").write_text("# On-call rotation\n\nCoverage changes at noon.\n", encoding="utf-8")
+        (self.root / "_Sidebar.md").write_text("[Start](Home.md)\n", encoding="utf-8")
+        before = self.file_map(self.root)
+        init = self.init(profile_dir=REGISTRY)
+        self.assertTrue(init["local_ready"])
+        self.assertFalse(init["consumer_mutated"])
+        manifest = json.loads((Path(init["index"]) / "docs/kb/generated/manifest.json").read_text())
+        self.assertEqual({row["path"] for row in manifest["sources"]}, set(before))
+        link_rows = (Path(init["index"]) / "docs/kb/generated/links.jsonl").read_text().splitlines()
+        links = {link["target"]: link for link in map(json.loads, link_rows)}
+        self.assertEqual(links["Rotation#schedule"]["resolved_path"], "Rotation.md")
+        self.assertEqual(links["Rotation#schedule"]["status"], "ok")
+        self.assertEqual(links["AbsentPage"]["status"], "broken")
+        self.assertEqual(init["readiness"]["documentation_warnings"], 1)
+        result = self.run_ce("query", "on-call rotation")
+        self.assertIn("Rotation.md", [row["path"] for row in result["document_context"]["evidence"]])
+        self.assertEqual(self.file_map(self.root), before)
 
     def test_web_styles_and_templates_use_bundled_scope_without_project_configuration(self):
         from source_query_test import decode_source_view
@@ -122,6 +145,7 @@ class LocalProjectTests(unittest.TestCase):
             ('olderMarkupMarker', 'web/Older.htm', 'olderMarkupMarker'),
             ('inventoryEditorTemplate', 'web/Panel.razor', 'EditForm'),
             ('serverViewMarker', 'web/View.cshtml', 'asp-action'),
+            ('unselectedExtensionMarker', 'web/omitted.txt', 'unselectedExtensionMarker'),
         ):
             with self.subTest(query=query):
                 result = self.run_ce('query', query)
@@ -135,13 +159,13 @@ class LocalProjectTests(unittest.TestCase):
                     self.assertEqual(bodies[i], (self.root / path).read_bytes()[row['byte_start']:row['byte_end']])
                 self.assertFalse(result['source_scope']['whole_project_coverage'])
                 self.assertFalse(result['source_scope']['compiler_semantics'])
-                self.assertTrue({'.css', '.scss', '.html', '.htm', '.razor', '.cshtml'} <= set(result['source_scope']['extensions']))
+                self.assertEqual(result['source_scope']['selection'], 'automatic-project-text')
+                self.assertEqual(result['source_scope']['extensions'], [])
                 self.assertEqual(result['work_performed']['full_generations'], 0)
                 self.assertNotIn('source_coverage', result)
-        for omitted in ('unselectedExtensionMarker', 'unselectedDependencyMarker'):
-            _, locators, bodies, _ = decode_source_view(self.run_ce('query', omitted)['source_context'].encode())
-            self.assertEqual(locators, {})
-            self.assertEqual(bodies, {})
+        _, locators, bodies, _ = decode_source_view(self.run_ce('query', 'unselectedDependencyMarker')['source_context'].encode())
+        self.assertEqual(locators, {})
+        self.assertEqual(bodies, {})
         self.assertEqual(before, self.file_map(self.root))
 
     def test_web_only_project_needs_no_documents_or_declarations(self):
@@ -273,42 +297,42 @@ class LocalProjectTests(unittest.TestCase):
         self.assertFalse(self.init(expected=1)["local_ready"])
         self.assertFalse(self.run_ce("query", "anything", expected=2)["ok"])
 
-    def test_existing_adoption_is_not_bypassed(self):
-        for relative in ["docs/machine/shin-project-adoption-v1.json",
+    def test_checkout_with_stray_adoption_files_connects_without_changing_them(self):
+        subprocess.run(['git', 'init', '-q', str(self.root)], check=True)
+        for relative in ("docs/machine/shin-project-adoption-v1.json",
                          "docs/machine/shin-context-engine-adoption-v1.json",
                          "docs/shin-context-engine-adoption.json",
-                         "docs/architecture/shin-context-engine-adoption.json"]:
-            with self.subTest(marker=relative):
-                marker = self.root / relative
-                marker.parent.mkdir(parents=True, exist_ok=True)
-                marker.write_text("malformed marker must still block bootstrap")
-                result = self.init(expected=2)
-                self.assertEqual(result["error"]["code"], "existing-project-adoption")
-                self.assertFalse(self.home.exists())
-                marker.unlink()
+                         "docs/architecture/shin-context-engine-adoption.json",
+                         "docs/machine/shin-profiles/obsolete.json"):
+            path = self.root / relative
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text("retired settings, invalid JSON")
+        before = self.file_map(self.root)
+        first = self.init(profile_dir=REGISTRY)
+        self.assertTrue(first["local_ready"])
+        self.assertEqual(Path(first["index"]), self.workspace() / "index")
+        self.assertIn("return 7;", self.run_ce("query", "readLimit")["source_context"])
+        self.assertEqual(before, self.file_map(self.root))
 
-    def test_later_adoption_blocks_reads_and_reinitialization(self):
-        self.init()
-        before = self.file_map(self.home)
+    def test_later_adoption_file_does_not_change_private_authority(self):
+        first = self.init()
         marker = self.root / "docs/machine/shin-project-adoption-v1.json"
         marker.parent.mkdir(parents=True)
         marker.write_text("{}")
-        for cmd, extra in [("status", []), ("query", ["readLimit"]), ("init", [])]:
-            self.assertEqual(self.run_ce(cmd, *extra, expected=2)["error"]["code"], "existing-project-adoption")
-        self.assertEqual(before, self.file_map(self.home))
+        self.assertEqual(self.init()["identity"], first["identity"])
+        self.assertIn("return 7", self.run_ce("query", "readLimit")["source_context"])
+        self.assertEqual(marker.read_text(), "{}")
 
-    def test_nested_directory_does_not_bypass_parent_route(self):
+    def test_nested_directory_respects_registered_parent(self):
         child = self.root / "component"
         child.mkdir()
         (child / "README.md").write_text("# Component\n")
         marker = self.root / "docs/machine/shin-project-adoption-v1.json"
         marker.parent.mkdir(parents=True)
         marker.write_text("{}")
-        self.assertEqual(self.init(root=child, expected=2)["error"]["code"], "existing-project-adoption")
-        self.assertFalse(self.home.exists())
-        marker.unlink()
         self.init()
         self.assertEqual(self.init(root=child, expected=2)["error"]["code"], "ancestor-project-binding")
+        self.assertEqual(marker.read_text(), "{}")
 
     def test_pending_ancestor_is_not_a_fresh_project(self):
         self.init()
@@ -318,17 +342,18 @@ class LocalProjectTests(unittest.TestCase):
         (child / "README.md").write_text("# Component\n")
         self.assertEqual(self.init(root=child, expected=2)["error"]["code"], "ancestor-project-binding")
 
-    def test_in_place_publication_prevents_parallel_bootstrap_without_marker(self):
+    def test_in_place_publication_is_preserved_beside_private_index(self):
         manifest = self.root / "docs/kb/generated/manifest.json"
         manifest.parent.mkdir(parents=True)
-        manifest.write_text("broken publication is still owned state")
-        self.assertEqual(self.init(expected=2)["error"]["code"], "existing-project-publication")
-        self.assertFalse(self.home.exists())
-        manifest.unlink()
+        manifest.write_text("external publication sentinel")
         lock = self.root / "docs/kb/.shin-context.lock"
         lock.touch()
-        self.assertEqual(self.init(expected=2)["error"]["code"], "existing-project-publication")
-        self.assertFalse(self.home.exists())
+        before = self.file_map(self.root)
+        init = self.init()
+        self.assertTrue(init["local_ready"])
+        self.assertEqual(Path(init["index"]), self.workspace() / "index")
+        self.assertIn("return 7", self.run_ce("query", "readLimit")["source_context"])
+        self.assertEqual(before, self.file_map(self.root))
 
     def test_pinned_registry_works_without_bundled_profiles(self):
         self.init(profile_dir=REGISTRY)
@@ -390,6 +415,52 @@ class LocalProjectTests(unittest.TestCase):
         self.assertEqual(self.init(profile_dir=registry, expected=2)["error"]["code"],
                          "profile-policy-revision-conflict")
         self.assertEqual(self.init(profile_dir=REGISTRY, expected=2)["error"]["code"], "binding-profile-conflict")
+
+    def test_package_cutover_keeps_originating_automatic_enrollment_for_rollback(self):
+        kit = self.base / "switchable-kit"
+        (kit / "bin").mkdir(parents=True)
+        executable = kit / "bin/shin-ce"
+        shutil.copy2(TOOL, executable)
+        for library in TOOL.parent.glob("*.dylib"):
+            shutil.copy2(library, executable.parent / library.name)
+        shutil.copytree(REGISTRY, kit / "share/shin-context/profiles")
+        original = self.init(tool=executable)
+        workspace = self.workspace()
+        path = workspace / "state.json"
+        original_binding = json.loads(path.read_text())
+        original_index = self.file_map(workspace / "index")
+        # Present a preceding automatic kit's immutable enrollment. Working
+        # copy identity does not depend on the package version.
+        prior = dict(original_binding, source_kit="fixture-prior-kit")
+        self.write_private(path, prior)
+        (self.root / 'limits.js').write_text('export function readLimit() { return 92; }\n')
+        upgraded = self.init(tool=executable)
+        self.assertEqual(upgraded['identity'], original['identity'])
+        self.assertEqual(Path(upgraded['index']), workspace / 'automatic/index')
+        self.assertEqual(json.loads(path.read_text()), prior)
+        self.assertEqual(self.file_map(workspace / 'index'), original_index)
+        self.assertIn('return 92;', self.run_ce('query', 'readLimit', tool=executable)['source_context'])
+        # A subsequent package rebuild of that slot also works over a retired
+        # format. The two original index and enrollment records still belong
+        # to the first kit.
+        current_slot = workspace / 'automatic/state.json'
+        effective = json.loads(current_slot.read_text())
+        effective['source_kit'] = 'fixture-retired-slot-kit'
+        self.write_private(current_slot, effective)
+        generated = workspace / 'automatic/index/docs/kb/generated/manifest.json'
+        generated.write_text('historical output cannot be decoded')
+        (self.root / 'limits.js').write_text('export function readLimit() { return 93; }\n')
+        self.run_ce('watch', '--samples', '1', tool=executable)
+        self.assertIn('return 93;', self.run_ce('query', 'readLimit', tool=executable)['source_context'])
+        self.assertEqual(self.file_map(workspace / 'index'), original_index)
+        self.assertEqual(json.loads(path.read_text()), prior)
+        # Restore the test's original kit identity and original project bytes.
+        # Its preserved primary index, even with a newer slot present, is ready.
+        self.write_private(path, original_binding)
+        (self.root / 'limits.js').write_text('export function readLimit() { return 7; }\n')
+        restored = self.run_ce('query', 'readLimit', tool=executable)
+        self.assertEqual(Path(restored['index']), workspace / 'index')
+        self.assertIn('return 7;', restored['source_context'])
 
     def test_new_kit_reapplies_owned_bootstrap_limits_without_changing_route_identity(self):
         self.init()

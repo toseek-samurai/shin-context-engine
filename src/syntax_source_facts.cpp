@@ -89,8 +89,9 @@ void apply_syntax_source_facts(const Profile& profile, const std::string& path,
             add_source_fact_row(rows, profile, path, declaration.line, language, declaration.kind,
                                 declaration.name, header);
             set_syntax_range(rows.back(), declaration);
-            if (cpp_family) {
+            if (cpp_family || profile.automatic_project_files)
                 rows.back().id += "-b" + std::to_string(declaration.byte_offset);
+            if (cpp_family) {
                 const auto& qualified = declaration.qualified_name;
                 if (!qualified.empty() && qualified.size() <= 128 &&
                     std::all_of(qualified.begin(), qualified.end(), [objc = language != "cpp"](unsigned char c) {

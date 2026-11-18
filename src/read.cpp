@@ -308,6 +308,7 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
         if (profile_path_contains_symlink(options_.root, path) || source_metadata(options_.root / path) != before)
             throw_file_changed_during_verification(options_.root / path);
     }
+    verify_project_exclusions();
     return result;
 }
 

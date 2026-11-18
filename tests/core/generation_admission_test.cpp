@@ -30,7 +30,7 @@ void test(const fs::path& base, const fs::path& registry) {
     options.profile_dir = base / "profiles";
     auto profile = parse_json_text(read_file(registry / "generic-source.json"), "fixture");
     profile["sourceExtensions"] = {".md"};
-    profile["sourceFactRoots"] = {"src", "apps"};
+    profile["sourceFactRoots"] = {"."};
     profile["sourceFactExtensions"] = {".js", ".rsx"};
     write(options.profile_dir / "generic-source.json", profile.dump());
     options.profile = make_profile("generic-source", options.profile_dir);
@@ -222,9 +222,13 @@ void test(const fs::path& base, const fs::path& registry) {
     write(options.root / "apps/CRM/metadata.json", "{}");
     expect(!GenerationAdmission::reuse(options, certificate), "unindexed Retool owner ignored");
     fs::remove(options.root / "apps/CRM/metadata.json");
-    fs::create_directory(options.root / "apps/CRM/screen/.positions");
-    expect(!GenerationAdmission::reuse(options, certificate), "Retool layout directory ignored");
-    fs::remove(options.root / "apps/CRM/screen/.positions");
+    const auto layout = options.root / "apps/CRM/screen/.positions";
+    fs::create_directory(layout);
+    expect(bool(GenerationAdmission::reuse(options, certificate)), "empty layout has no selected evidence");
+    write(layout / "panel.json", "{}");
+    expect(!GenerationAdmission::reuse(options, certificate), "Retool layout input ignored");
+    fs::remove(layout / "panel.json");
+    fs::remove(layout);
 
     const auto extra = options.out_root / kGeneratedDir / "extra.json";
     write(extra, "{}");

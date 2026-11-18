@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "project_files.h"
 
 namespace shin::context {
 namespace {
@@ -274,20 +275,29 @@ int run_diagnose(const RuntimeOptions& options, const std::vector<std::string>& 
 
         const IndexedPathEvidence evidence =
             inspect_indexed_path(session.options(), request.query, request.expected_path);
-        const bool source_exists =
-            regular_source_path_exists(session.options().root / request.expected_path);
-        const bool policy_allowed =
-            document_path_allowed(session.options().profile, request.expected_path);
-        const PublishedSourceState published = published_source_state(
+        PublishedSourceState published = published_source_state(
             session.manifest(), session.options().profile, request.expected_path);
+        bool source_exists;
+        bool policy_allowed;
+        if (options.profile.automatic_project_files) {
+            const auto files = ProjectFiles::scan(options.profile, options.root);
+            source_exists = files.contains(request.expected_path);
+            published.source_fact_configured = source_exists;
+            policy_allowed = source_exists && ProjectFiles::is_document(request.expected_path);
+        } else {
+            source_exists = regular_source_path_exists(session.options().root / request.expected_path);
+            policy_allowed = document_path_allowed(session.options().profile, request.expected_path);
+        }
         const BriefResult& retrieval = execution.retrieval;
         const std::string_view retrieval_mode = execution.decision.mode;
         const bool route_changed = expanded && expanded->decision.mode != retrieval_mode;
         const bool planner_selected =
             selected_by_planner(execution.coverage, request.expected_path);
-        const std::vector<std::string> reasons = diagnose_reason_codes(
+        auto reasons = diagnose_reason_codes(
             met, probe_rank, route_changed, source_exists, policy_allowed, published, evidence,
             retrieval.required_group_matches, retrieval.query_planner_used, planner_selected);
+        if (options.profile.automatic_project_files && !source_exists)
+            std::replace(reasons.begin(), reasons.end(), std::string("source-missing"), std::string("outside-automatic-selection"));
         std::vector<std::string> ranked_paths;
         Json path_ranks = Json::array();
         for (const RankedBriefPath& path : execution.ranked_paths) {
@@ -311,7 +321,7 @@ int run_diagnose(const RuntimeOptions& options, const std::vector<std::string>& 
         output["returned_path_rank"] = returned_rank > 0 ? Json(returned_rank) : Json(nullptr);
         output["ranking_policy"] = "global-evidence-order-unique-path-v1";
         output["source"] = {
-            {"exists", source_exists},
+            {"exists", options.profile.automatic_project_files && !source_exists ? Json(nullptr) : Json(source_exists)},
             {"document_policy_allowed", policy_allowed},
             {"published_document", published.document},
             {"source_fact_configured", published.source_fact_configured},
@@ -387,6 +397,7 @@ int run_diagnose(const RuntimeOptions& options, const std::vector<std::string>& 
             output["retrieval"]["identifier_scope_key"] = retrieval.identifier_scope_key;
             output["retrieval"]["identifier_probe_rows"] = retrieval.identifier_probe_rows;
         }
+        session.verify_project_exclusions();
     }
     emit_json_document(std::cout, output);
     return request.strict && !met ? 1 : 0;

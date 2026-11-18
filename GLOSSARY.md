@@ -6,15 +6,16 @@ project state, retrieval quality, agent access and software releases distinct.
 ## Language
 
 **Project**:
-A selected source folder with an identity and context rules. Registration makes
-it known to Shin; agent access determines which connections can use it.
+A selected source folder with an identity. Registration lets Shin discover
+eligible text under that folder. Agent access determines which connections can use it.
 
 **Profile**:
-The project's selection of context inputs and, optionally, required retrieval
-scenarios. It describes project scope and expectations rather than search-algorithm tuning.
+A standalone Core configuration that selects inputs and defines retrieval
+scenarios. A named agent profile is a separate client settings destination.
 
 **Source scope**:
-The roots, file families and limits selected for a project's context.
+The files eligible for search within a root, subject to exclusions, safety
+checks and resource limits.
 
 **Source coverage**:
 The safely observed portion of the selected source scope. Withheld or unsupported
@@ -41,8 +42,9 @@ Whether safe, current project context can be served. Declared search quality and
 temporary reader preparation are separate aspects of the project state.
 
 **Search quality**:
-How retrieval performs on the project's declared scenarios at a snapshot. A
-passing scenario is evidence for that case, not a guarantee for every answer.
+How retrieval performs on a measured task at a snapshot. Core developers use
+strict scenarios to qualify the engine. Managed project registration has no
+scenario-authoring step.
 
 **Agent access**:
 The projects an agent connection is allowed to query and read. Project

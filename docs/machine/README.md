@@ -11,15 +11,15 @@ the [current documentation](../README.md).
 - [observer/VERSION](../../observer/VERSION) identifies Observer, CLI, MCP and Monitor source.
 - [shin-development-v1.json](shin-development-v1.json) records their independent development identities.
 - [lexical-retrieval-v1.json](lexical-retrieval-v1.json) declares the current index reader/writer policy.
-- [mcp-service-v1.json](mcp-service-v1.json) defines update-aware MCP transport, exact runtime identity and reconnect boundaries.
+- [mcp-service-v1.json](mcp-service-v1.json) defines managed project discovery, source scope, MCP transport, runtime identity and reconnect boundaries.
 - [shin-context-engine.manifest.json](shin-context-engine.manifest.json) describes the product and command inventory.
 
 The current generator is `shin-generator-v24-objective-cpp`. Retrieval requires
 the running binary's generator; there is no reader for old index formats.
-Managed publications are rebuilt from approved sources by their normal publisher;
-standalone Core uses an explicit `build`. A read request never grants authority
-to rebuild, change a profile or replace a binding. Native-kit updates have a
-bounded journaled generator-pin transition; see [index rebuilds](../local-kit.md#core-transitions-and-index-rebuilds).
+Managed publications are rebuilt from the selected folders and their current
+exclusions. Standalone Core uses an explicit `build` and can use profiles, strict
+quality suites and adoption markers. A read request grants no authority to rebuild
+or replace a binding. See [index rebuilds](../local-kit.md#core-transitions-and-index-rebuilds).
 
 ## Historical metadata and plans
 

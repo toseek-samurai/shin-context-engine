@@ -18,8 +18,8 @@ preparation stages in its management page.
 1. On a fresh installation, open **Set up Shin…**. Otherwise use
    **Settings → Connect projects and agents…**. Choose a project folder. Shin connects it
    and starts the local service, including on a fresh installation.
-2. Select the agents and profiles that should have access, then click
-   **Connect selected agents**. No JSON copying is needed.
+2. Select the agents that should have access, then click **Connect selected agents**.
+   For a client with named settings, select the settings you actually use.
 3. The live catalog introduced in dev.109 lets connected agents refresh their
    allowed project list on the next `shin_projects` call. Ask for `shin_status`
    with that project's returned selector.
@@ -111,11 +111,11 @@ shin-ce mcp-config --client rider --root /path/to/project --text
 
 ## Codex instruction updates
 
-Project setup selects a kit-owned mixed-language bootstrap profile; it does not
-rewrite `AGENTS.md` or create a permanent project-owned profile. MCP access and
-client instructions have separate review states. A custom project profile needs
-review when its selected owners or contracts change; ordinary product edits and
-search-resource warnings do not create a profile maintenance task.
+In the development source, project setup discovers text under the selected folder
+automatically. Project `.gitignore` files supply the default rules. A root `.shinignore` can override them.
+The service picks up eligible new and moved files during refresh. Registering or
+refactoring a project requires no project profile, marker or eval suite. MCP access
+and the installation of agent instructions each have their own review.
 
 The published packages ship a selected, byte-checked `shin-context` skill bundle.
 Monitor's Codex row shows instruction status separately from MCP access. Use
@@ -321,7 +321,7 @@ A document excerpt is not automatically such a locator. `source-read-document-on
 means the path is indexed as document evidence: use its excerpt or an authorized
 ordinary local reader. `source-read-unknown-file` means no scanned source binding
 exists in the selected snapshot; it does not prove that a file is absent on disk.
-Do not reindex or widen a profile for these refusals. On a snapshot mismatch,
+Use an authorized direct reader for uncovered files. On a snapshot mismatch,
 query the same project once and use its new snapshot for the next source read.
 
 ## Getting useful context
@@ -355,21 +355,20 @@ support Unicode. This preserves words; it does not translate a Russian question
 into an English document. Native source hints and document matching remain
 separate retrieval paths.
 
-Preview dev.120 expands the bundled mixed-language, Node, .NET and Retool
-profiles to include applicable CSS/SCSS, HTML/HTM and Razor/CSHTML files. Native
-source search indexes their bounded text, including comments, selectors,
-pseudo-classes, properties and template markup. Returned fragments retain exact
-line/byte positions and `bounded-text-fallback` provenance. This does not compute
-CSS cascade, render templates or resolve framework components.
-Core Brief also indexes real lexical text records, so a styles-only project can
-pass the ordinary index checks without adding documentation or declarations.
+In the development source, managed projects discover eligible text recursively,
+including extensionless files and unfamiliar suffixes. Known formats can return
+language-specific evidence. Other text uses bounded excerpts with source
+locations. A lexical match in a stylesheet or template does not establish its
+rendered behavior.
 
-Query responses include `source_scope`: the selected roots, extension allowlist,
-file limits and explicit truncation counts. This is informational scope, not a
-readiness warning or whole-repository coverage claim. A file outside that scope
-requires an ordinary authorized reader. Permanent project profiles retain their
-owner-approved scope; new kits rebuild their owned indexes without rewriting a
-project profile or its documentation.
+Query responses describe their search scope in `source_scope`. Check the
+selection mode, limits and omissions when interpreting an empty result. Binary
+files, excluded paths and quarantined content are outside the available evidence.
+The managed reader's `project_files` reports counts for excluded entries,
+oversized files and binary content. Directory exclusions count the directory
+once. A skipped binary extension may also fall under the built-in exclusions.
+See [project text and exclusions](local-kit.md#project-text-and-exclusions) for
+project `.gitignore` files and the optional root `.shinignore`.
 
 The current Core source uses one index format, `shin-generator-v24-objective-cpp`.
 The service rebuilds older managed indexes from approved project sources before
@@ -407,7 +406,7 @@ and no outstanding review. Saved next steps do not authorize their execution.
 Replacing notes requires the exact reviewed `expected_revision`.
 
 When tools or the binding are unavailable, use a useful current-code query.
-Missing notes do not require re-enrollment, another chat ID, profile changes or
+Missing notes do not require re-enrollment, another chat ID, settings changes or
 manual index repair. There are no per-turn saves, artificial call quotas or
 automatic compaction hooks. Model labels from client history stay separate from
 models reported in individual calls. See the [session contract](https://github.com/toseek-samurai/shin-context-engine/blob/main/docs/machine/local-session-recovery-v1.json).

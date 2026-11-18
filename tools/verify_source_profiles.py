@@ -40,7 +40,7 @@ def main():
             value = json.loads(result.stdout)
             if result.returncode or value.get("ok") is not True:
                 failure = {"profile": profile, "command": command[0], "exit": result.returncode}
-                gates = [gate for gate in value.get("gates", []) if gate.get("ok") is not True]
+                gates = [gate for gate in value.get("gates", []) if gate.get("status") == "failed"]
                 if gates:
                     failure["failed_gates"] = [gate["id"] for gate in gates][:16]
                     failure["failed_cases"] = [

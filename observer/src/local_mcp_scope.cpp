@@ -24,17 +24,11 @@ Json route_review() {
     return {{"kind", "operator-review"}, {"responsible_party", "project-owner"},
         {"approval_required", true}, {"next_action", "review-project-changes"},
         {"same_project_required", true}, {"fresh_snapshot_required", true},
-        {"message", "Project profile, marker or route configuration differs from its approved revision. "
-            "This is not a transient refresh: repeated queries or reconnecting MCP do not approve changes. "
-            "Continue useful work with direct sources and report this blocker. For a profile change, "
-            "review it in Shin Monitor (View changes), or use the read-only shin-ce profile-review with "
-            "this project's verified root and configured home. If the review is unavailable, report that "
-            "limitation for operator review; do not guess an approval command. An owner must accept the "
-            "exact reviewed change; an agent may do that only with explicit authorization covering it. "
-            "Editing a profile is not approval. After acceptance, wait for background qualification, then "
-            "make a fresh shin_query for the same project and use its new snapshot. Approval alone does "
-            "not establish readiness. Do not re-enroll, release ownership, weaken checks or rebuild the "
-            "managed index manually."}};
+        {"message", "This route differs from its approved configuration. Report the blocker and continue authorized "
+            "work with direct sources. The owner must review the actual route change. On an explicitly attached "
+            "profile-based route, View changes in Shin Monitor or read-only shin-ce profile-review shows the exact "
+            "profile change. Approval requires separate authority. After the service qualifies the change, query the "
+            "same project and use its new snapshot. Reconnecting or re-enrolling cannot approve a change."}};
 }
 }
 
@@ -101,12 +95,18 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
             {"next_action", "continue-current-task"},
             {"message", "The request was cancelled. No repair is indicated; make another request only if it "
                 "is still useful for the current task."}};
+    if (code == "invalid-project-exclusions" || code == "unsafe-project-exclusions")
+        return {{"kind", "operator-review"}, {"responsible_party", "project-owner"},
+            {"next_action", "review-project-exclusions"}, {"retry_same_request", false},
+            {"message", "Review the reported .gitignore or root .shinignore in the registered folder. "
+                "See the local kit guide for pattern syntax and size limits. "
+                "The service verifies the corrected scope before returning evidence."}};
     if (code == "refresh-source-budget" || code == "refresh-output-budget")
         return {{"kind", "operator-review"}, {"responsible_party", "project-owner"},
             {"next_action", "review-project-coverage-and-budget"}, {"approval_required", true},
-            {"message", "The project exceeds its configured refresh bounds. Ask its owner to review intended "
-                "coverage and resource requirements. Do not raise limits, delete project files or narrow the "
-                "profile automatically. Continue authorized source work while the policy is reviewed."}};
+            {"message", "The project exceeds its refresh bounds. Inspect the reported counts and limits. "
+                "If a directory is outside the intended managed search scope, its owner may exclude it in the root "
+                ".shinignore. Keep limits and source files intact and continue authorized direct-source work."}};
     if (code == "invalid-arguments")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "correct-request-arguments"},
@@ -120,12 +120,12 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
     if (code == "source-read-document-only")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "read-authorized-document-directly"}, {"retry_same_request", false},
-            {"message", "This published path is document evidence, not a SOURCE file. Use the returned document excerpts or read the file with your ordinary local reader within the task's existing access. Do not retry shin_read for this document, reindex or change the profile."}};
+            {"message", "This published path is document evidence, not a SOURCE file. Use the returned document excerpts or read the file with your ordinary local reader within the task's existing access. Do not retry shin_read for this document."}};
     if (code == "source-read-unknown-file")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "check-source-locators-or-read-authorized-file-directly"},
             {"file_existence_assessed", false}, {"retry_same_request", false},
-            {"message", "The path has no scanned source binding in this snapshot; this does not prove it is missing on disk. Check the project-relative path and SOURCE locators from the query. For a known authorized file outside source coverage, use your ordinary local reader. Do not re-enroll, reindex or widen the profile to read it."}};
+            {"message", "The path has no scanned source binding in this snapshot; this does not prove it is missing on disk. Check the project-relative path and SOURCE locators from the query. For a known authorized file outside source coverage, use your ordinary local reader."}};
     if (code == "mcp-project-denied")
         return {{"kind", "request-correction"}, {"responsible_party", "requester"},
             {"next_action", "discover-allowed-project-catalog"},
@@ -146,9 +146,8 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
             {"message", "Project validation did not qualify the current candidate. Inspect authorized source "
                 "and documentation evidence together with the bounded diagnostic; a reported missing-path "
                 "reason alone does not establish that a file was deleted. Repair an actual source or "
-                "documentation issue only within this task's authority. Intentional policy or profile changes "
-                "need owner review. If the evidence exists but was missed or remains unclear, report it to Shin "
-                "maintainers. Do not relax profiles or repair indexes."}};
+                "documentation issue only within this task's authority. If the evidence exists but was missed "
+                "or remains unclear, report it to Shin maintainers. Preserve source safety and integrity checks."}};
         return with_diagnostic(std::move(result), diagnostic);
     }
     if (code == "source-discovery-token-limit")
@@ -192,7 +191,7 @@ Json local_mcp_recovery(const std::string& code, const Json& diagnostic, std::st
         {"report_privacy", "Review before sharing; omit credentials, source bodies and absolute paths. Nothing is uploaded automatically."},
         {"message", "The reason is not enough to blame a source or assert an engine defect. Continue direct "
             "authorized source work and report the code with bounded diagnostic evidence. Do not retry on a "
-            "timer, repair indexes or change profiles."}}, diagnostic);
+            "timer or repair indexes."}}, diagnostic);
 }
 
 Json local_mcp_help(const std::string& code) {

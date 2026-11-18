@@ -2,6 +2,7 @@
 #include "shin/observer/local_publication.h"
 #include "shin/observer/local_registry.h"
 #include "shin/observer/local_service.h"
+#include "local_route_guard.h"
 #include "context_internal.h"
 #include "generated_io.h"
 #include "snapshot_verification.h"
@@ -45,10 +46,12 @@ Json relocate_local_profile(const LocalProjectRequest& request) {
     const auto root = fs::canonical(request.root);
     const auto home = fs::absolute(request.home).lexically_normal();
     require(fs::canonical(home) == home, "Private home changed.");
+    const auto workspace = home / "projects" / digest(root.string());
+    if (packaged_managed_routes() || present(workspace / "automatic"))
+        throw Error("binding-mode-conflict", "This managed enrollment uses automatic project files.");
     const auto destination = fs::absolute(*request.profile_dir).lexically_normal();
     require(fs::canonical(destination) == destination, "Destination must be an existing canonical profile directory.");
     const auto destination_identity = directory_identity(destination);
-    const auto workspace = home / "projects" / digest(root.string());
     const auto root_identity = directory_identity(root), workspace_identity = directory_identity(workspace, true);
     auto control = lock_local_service_control(home);
     std::unique_ptr<StateStore> service;

@@ -52,11 +52,11 @@
     "cleanup": "Read-only probes never delete the envelope. The applying updater removes its temporary envelope after confirmed success, verified acknowledgement or a refusal before it owns a saved outcome."
   },
   "recoveryEntry": "The independently downloaded versioned install.sh fetches the new complete kit and launches its own shin-updater install-local. It needs no functioning installed launcher; the fresh kit owns installation and journal recovery.",
-  "markerGeneratorTransition": {
-    "authorization": "Applying a qualified kit update authorizes only engine.generatorIdentity migration from a known retired generator on an already approved managed route. It grants no enrollment, profile, source-scope, limit or quality-policy changes.",
-    "transaction": "Journal the original and target marker bytes before replacement; preserve formatting and all other bytes; approve the exact target hash through native marker-accept before normal rebuild and qualification.",
-    "rollback": "Restore original bytes and exact approval through the verified previous CLI before restarting the old service. Interrupted writes and approvals resume from the same private journal.",
-    "refusals": "Preserve pending owner edits, changed grant tokens or route identities, symlinks, unsafe files, ambiguous generator fields and unknown generators for review. Never infer approval from current marker bytes alone."
+  "managedProjectCutover": {
+    "selection": "Reuse the registered project roots, workspace identities, agent settings and grants. Discover current project text under the new kit rules, with project .gitignore files and optional root .shinignore overrides. Legacy profile selection, evals and generator-pinned markers are not inputs to the managed decision.",
+    "transaction": "Prepare fresh private derived indexes and reader state for the exact new kit. Preserve original project files, marker bytes, prior bindings, external indexes and history. A missing or edited old profile does not veto managed preparation.",
+    "rollback": "Restore the verified previous kit and its saved binding without rewriting project files. The previous policy determines readiness under that kit. Resume an interrupted rollback from the installation journal.",
+    "refusals": "Changed project or workspace identity, lost grants, unsafe exclusions, integrity failures and resource limits keep their typed refusals. Installation cannot approve new project access."
   },
   "publication": "The guarded publisher requires the exact qualified kit, separate updater, both checksums and installer. Updater bytes must match the updater inventory embedded in that exact kit.",
   "previewTrust": "GitHub HTTPS plus GitHub asset digest and SHA-256 checksum. No independent publisher signature or Developer ID/notarization is claimed.",

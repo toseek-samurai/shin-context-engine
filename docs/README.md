@@ -96,7 +96,7 @@ Finish action, saved results and unattended installation behavior.
 ## Development and evidence
 
 - [Architecture](architecture.md), [domain glossary](../GLOSSARY.md), [contributing](../CONTRIBUTING.md) and [test ownership](../tests/README.md).
-- [Agent maintenance](agent-maintenance.md): profiles, authority and verification after refactors.
+- [Agent maintenance](agent-maintenance.md) covers managed discovery, authority and Core qualification.
 - [Machine-readable contracts](machine/README.md): source identities and protocol boundaries.
 - [Third-party notices](../THIRD_PARTY.md) and [security reporting](../SECURITY.md).
 

@@ -83,6 +83,11 @@ int main() {
         require(local_status_text({{"command", "service-status"}, {"service_running", true}}).find("Projects: 0") != std::string::npos);
         require(local_status_text({{"command", "status"}, {"local_ready", false}}).find("Search: not ready") != std::string::npos);
         require(local_status_text({{"command", "status"}, {"local_ready", true}}).find("Search: ready") != std::string::npos);
+        const auto automatic = local_status_text({{"command", "status"}, {"local_ready", true}, {"canonical_ready", false},
+            {"project_quality", "automatic"}, {"project_files", {{"selection", "automatic-project-text"},
+                {"excluded_entries", 7}, {"oversized_files", 2}, {"binary_files", 1}}}});
+        require(automatic.find("Search: ready") != std::string::npos && automatic.find("Search warning:") == std::string::npos);
+        require(automatic.find("Excluded entries: 7 | Oversized files: 2 | Binary files: 1") != std::string::npos);
         const auto warned = local_status_text({{"command", "status"}, {"local_ready", true},
             {"project_quality", "degraded"}, {"quality_warning", {{"state", "degraded"}}}});
         require(warned.find("Search: ready") != std::string::npos && warned.find("Search warning:") != std::string::npos);

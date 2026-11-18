@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "project_files.h"
 #include "evidence_expectations.h"
 
 namespace shin::context {
@@ -263,6 +264,9 @@ static Profile load_profile_file(const fs::path& path) {
     profile.root_files = json_string_array_any(root, {"rootFiles", "root_files"});
     profile.optional_root_files =
         json_string_array_any(root, {"optionalRootFiles", "optional_root_files"});
+    profile.automatic_project_files = json_bool_any(root, {"automaticProjectFiles"}, false);
+    profile.include_root_wiki_pages =
+        json_bool_any(root, {"includeRootWikiPages", "include_root_wiki_pages"}, false);
     std::vector<std::string> source_extensions =
         json_string_array_any(root, {"sourceExtensions", "source_extensions"});
     if (!source_extensions.empty()) {
@@ -500,6 +504,17 @@ bool shin_internal_control_path(const std::string& path) {
     return starts_with(to_lower(normalized), "docs/kb/.shin-context");
 }
 
+bool has_root_wiki_home(const fs::path& root) {
+    return regular_file_without_symlink(root, kRootWikiHome);
+}
+
+bool profile_selects_root_wiki_page(const Profile& profile, const std::string& path) {
+    return profile.include_root_wiki_pages && !path.empty() && path.front() != '.' &&
+           path.find('/') == std::string::npos && profile_relative_path_valid(path) &&
+           extension_of(path) == ".md" && extension_allowed(profile.source_extensions, path) &&
+           document_path_allowed(profile, path);
+}
+
 static bool is_source_doc_path(const Profile& profile, const std::string& path) {
     if (shin_internal_control_path(path) || !document_path_allowed(profile, path)) {
         return false;
@@ -519,6 +534,7 @@ static bool is_source_doc_path(const Profile& profile, const std::string& path) 
 }
 
 std::vector<std::string> enumerate_source_paths(const Profile& profile, const fs::path& root) {
+    if (profile.automatic_project_files) return ProjectFiles::scan(profile, root).documents;
     std::vector<std::string> paths;
     // Explicit entries may alias the same file (hard links or case-insensitive
     // spellings). Compare observed file identities once per entry, rather than
@@ -542,6 +558,23 @@ std::vector<std::string> enumerate_source_paths(const Profile& profile, const fs
             regular_file_without_symlink(root, root_file)) {
             append_unique_file(root_file);
         }
+    }
+    if (profile.include_root_wiki_pages && has_root_wiki_home(root)) {
+        std::vector<std::string> pages;
+        std::error_code ec;
+        fs::directory_iterator it(root, ec), end;
+        if (ec) throw_source_observation_error("enumerate-source-root", ec);
+        while (it != end) {
+            const std::string name = it->path().filename().generic_string();
+            if (profile_selects_root_wiki_page(profile, name) && regular_file_without_symlink(root, name))
+                pages.push_back(name);
+            it.increment(ec);
+            if (ec) throw_source_observation_error("enumerate-source-entry", ec);
+        }
+        // Explicit entries keep precedence. Sort discovered names before deduplicating
+        // physical aliases so a filesystem's enumeration order cannot change a snapshot.
+        std::sort(pages.begin(), pages.end());
+        for (const auto& page : pages) append_unique_file(page);
     }
     const fs::path docs_root = root.lexically_normal() / "docs";
     std::error_code docs_ec;
@@ -599,7 +632,7 @@ static SourceDoc read_source_doc(const Profile& profile, const fs::path& root, c
     SourceDoc doc{};
     doc.path = path;
     const std::string ext = extension_of(path);
-    if (ext == ".md" || ext == ".mdc") {
+    if (ext == ".md" || ext == ".mdc" || (profile.automatic_project_files && ext == ".markdown")) {
         doc.kind = "markdown";
     } else if (ext == ".json") {
         doc.kind = "json";
@@ -610,12 +643,14 @@ static SourceDoc read_source_doc(const Profile& profile, const fs::path& root, c
     } else {
         doc.kind = "text";
     }
-    doc.content = read_file(root / path);
+    doc.content = profile.automatic_project_files
+        ? read_project_text(root, path, static_cast<std::size_t>(profile.source_fact_max_file_bytes))
+        : read_file(root / path);
     doc.lines = split_lines(doc.content);
     doc.line_count = static_cast<int>(doc.lines.size());
     doc.byte_count = static_cast<int>(doc.content.size());
     doc.content_hash = fnv1a64(doc.content);
-    doc.id = slugify(path);
+    doc.id = profile.automatic_project_files ? "doc-" + fnv1a64(path).substr(8) : slugify(path);
     Json json_doc;
     const Json* json_doc_ptr = nullptr;
     if (doc.kind == "json" && try_parse_json_text(doc.content, json_doc)) {
@@ -652,7 +687,11 @@ static SourceDoc read_source_doc(const Profile& profile, const fs::path& root, c
 }
 
 std::vector<SourceDoc> read_sources(const Profile& profile, const fs::path& root) {
-    std::vector<std::string> paths = enumerate_source_paths(profile, root);
+    return read_selected_documents(profile, root, enumerate_source_paths(profile, root));
+}
+
+std::vector<SourceDoc> read_selected_documents(const Profile& profile, const fs::path& root,
+                                               const std::vector<std::string>& paths) {
     std::vector<SourceDoc> docs(paths.size());
     parallel_for_indices(paths.size(), [&](std::size_t index) {
         docs[index] = read_source_doc(profile, root, paths[index]);

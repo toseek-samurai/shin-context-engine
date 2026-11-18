@@ -1,5 +1,7 @@
 #include "validation_generation.h"
 #include "context_internal.h"
+#include "project_files.h"
+#include "source_routing.h"
 #include "compact_terms.h"
 #include "generated_snapshot.h"
 #include "generation_admission.h"
@@ -35,6 +37,7 @@ static Json read_lexical_manifest(const RuntimeOptions& options, const fs::path&
         !parsed.contains("row_counts") || !parsed.at("row_counts").is_object()) return parsed;
     Json metadata{{"generator_version", kGeneratorVersion}, {"term_index_format", "shin.lexical.v1"},
                   {"row_counts", Json::object()}};
+    if (parsed.contains("source_routing")) metadata["source_routing"] = parsed.at("source_routing");
     for (const auto* key : {"sections", "facts", "decisions", "contracts", "runbooks", "terms"}) {
         const auto field = parsed.at("row_counts").find(key);
         if (field == parsed.at("row_counts").end() || !field->is_number_integer()) return parsed;
@@ -61,8 +64,24 @@ bool compact_lexical_index(const RuntimeOptions& options) {
 }
 
 std::vector<std::string> expected_generated_relative_files(const RuntimeOptions& options) {
-    (void)compact_lexical_index(options);
-    return expected_generated_relative_files();
+    auto paths = expected_generated_relative_files();
+    const auto include_optional = [&](const Json& manifest) {
+        (void)compact_lexical_manifest(manifest);
+        if (manifest.contains("source_routing")) {
+            if (manifest.at("source_routing") != "file-vocabulary-v1")
+                throw_index_error("source-routing-unsupported", "Unrecognized source routing format.");
+            paths.emplace_back(kSourceRoutingFile);
+        }
+    };
+    if (options.generated_snapshot) include_optional(options.generated_snapshot->manifest());
+    else {
+        const auto path = options.out_root / kGeneratedDir / "manifest.json";
+        if (fs::exists(path)) {
+            verify_snapshot_manifest_file(options.out_root);
+            include_optional(read_lexical_manifest(options, path));
+        }
+    }
+    return paths;
 }
 
 std::vector<std::string> expected_generated_relative_files() {
@@ -661,8 +680,14 @@ static IndexFreshness assess_index_freshness_fast(const RuntimeOptions& options,
     const std::string manifest_hash = fnv1a64(manifest_content);
     freshness.snapshot_id = manifest_hash;
     const std::string current_profile_config_hash = profile_config_hash(options.profile);
+    const Json manifest = parse_json_text(manifest_content, manifest_path.string());
+    if (options.profile.automatic_project_files &&
+        !published_project_exclusions(options.profile, manifest).current(options.root)) {
+        ++freshness.stale_files;
+        freshness.notes.push_back("Project exclusions changed; a fresh index is required.");
+    }
     const std::vector<std::string> source_paths = enumerate_source_paths(options.profile, options.root);
-    if (use_metadata_cache && freshness_cache_matches(options, manifest_hash, current_profile_config_hash, source_paths)) {
+    if (!freshness.stale_files && use_metadata_cache && freshness_cache_matches(options, manifest_hash, current_profile_config_hash, source_paths)) {
         freshness.status = "current";
         freshness.mode = "verified-metadata-cache";
         freshness.current = true;
@@ -672,7 +697,6 @@ static IndexFreshness assess_index_freshness_fast(const RuntimeOptions& options,
         return freshness;
     }
 
-    const Json manifest = parse_json_text(manifest_content, manifest_path.string());
     if (json_string_value(manifest, "generator_version") != kGeneratorVersion) {
         ++freshness.stale_files;
         freshness.notes.push_back("Manifest generator_version does not match the current generator.");

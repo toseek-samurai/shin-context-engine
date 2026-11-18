@@ -117,7 +117,8 @@ inline Json profile_review_summary(const std::optional<std::string>& before, con
         if (b.is_null() && a.is_array()) b = Json::array();
         std::string category = "other";
         if (key == "rootFiles" || key == "optionalRootFiles" || key == "root_files" || key == "optional_root_files") category = "documents";
-        else if (key == "documentIncludePrefixes" || key == "document_include_prefixes") category = "document-selection";
+        else if (key == "documentIncludePrefixes" || key == "document_include_prefixes" ||
+                 key == "includeRootWikiPages" || key == "include_root_wiki_pages") category = "document-selection";
         else if (key == "sourceFactRoots" || key == "source_fact_roots") category = "sources";
         else if (key == "documentExcludePrefixes" || key == "document_exclude_prefixes") category = "exclusions";
         else if (key == "sourceExtensions" || key == "sourceFactExtensions" || key == "source_extensions" || key == "source_fact_extensions") category = "extensions";

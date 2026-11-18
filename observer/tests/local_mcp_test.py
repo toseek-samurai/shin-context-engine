@@ -380,6 +380,7 @@ class McpTests(unittest.TestCase):
     def runtime_kit(self, prefix, version=None, marker='original', version_newline='\n'):
         """A disposable code cohort, never an installed consumer kit."""
         (prefix/'bin').mkdir(parents=True)
+        shutil.copytree(service.fixtures.REGISTRY, prefix/'share/shin-context/profiles')
         shutil.copy2(MCP, prefix/'bin/shin-mcp')
         shutil.copy2(service.fixtures.TOOL, prefix/'bin/shin-ce')
         for name in ('shin-mcp', 'shin-ce'):
@@ -393,7 +394,7 @@ class McpTests(unittest.TestCase):
         for component, value in [('shin-context',self.identity['core_version']),
                                  ('shin-observer',version or self.identity['version'])]:
             folder=prefix/'share'/component
-            folder.mkdir(parents=True)
+            folder.mkdir(parents=True, exist_ok=True)
             (folder/'VERSION').write_bytes((value + version_newline).encode('ascii'))
             (folder/'VERSION').chmod(0o600)
         return self.runtime_manifest(prefix,version)
@@ -552,31 +553,40 @@ class McpTests(unittest.TestCase):
         return native
 
     def test_document_reads_explain_scope_and_keep_source_reads_available(self):
-        (self.root / "not-indexed.csproj").write_text("<Project />\n")
+        (self.root / "settings.csproj").write_text("<Project>ManagedScopeSetting</Project>\n")
+        (self.root / "local-notes").write_text("Local notes excluded from project evidence.\n")
+        (self.root / ".shinignore").write_text("/local-notes\n")
+        declared = self.permanent_route()
         self.start()
         child = self.adapter()
         self.tool(child, 'shin_status', {})
         query = self.tool(child, 'shin_query', {'query': 'readLimit'})
+        self.assertEqual(query['project_files']['selection'], 'automatic-project-text')
+        self.assertGreaterEqual(query['project_files']['excluded_entries'], 1)
+        self.assertEqual(query['project_files']['oversized_files'], 0)
+        self.assertEqual(query['project_files']['binary_files'], 0)
         activity = self.raw('service-status')['result']['telemetry']['activity']
         self.assertGreaterEqual(activity['calls']['status'], 1)
         self.assertEqual(activity['calls']['query'], 1)
         self.assertFalse(activity['catalog_calls_recorded'])
-        def denied(path, snapshot):
-            response = self.rpc(child, 'tools/call', {'name': 'shin_read',
+        def denied(adapter, path, snapshot):
+            response = self.rpc(adapter, 'tools/call', {'name': 'shin_read',
                 'arguments': {'path': path, 'snapshot': snapshot}})['result']
             self.assertTrue(response['isError'])
             return json.loads(response['content'][0]['text'])
-        document = denied('README.md', query['snapshot_id'])
-        self.assertEqual(document['error']['code'], 'source-read-document-only')
-        self.assertEqual(document['recovery']['next_action'], 'read-authorized-document-directly')
-        unknown = denied('not-indexed.csproj', query['snapshot_id'])
+        for path in ('README.md', 'settings.csproj', 'limits.js'):
+            self.assertTrue(self.tool(child, 'shin_read', {'path': path, 'snapshot': query['snapshot_id']})['ok'])
+        unknown = denied(child, 'local-notes', query['snapshot_id'])
         self.assertEqual(unknown['error']['code'], 'source-read-unknown-file')
         self.assertEqual(unknown['recovery']['kind'], 'request-correction')
         self.assertFalse(unknown['recovery']['file_existence_assessed'])
-        stale = denied('README.md', 'fnv1a64:0000000000000000')
+        stale = denied(child, 'README.md', 'fnv1a64:0000000000000000')
         self.assertEqual(stale['recovery']['next_action'], 'query-same-project-for-fresh-snapshot')
-        good = self.tool(child, 'shin_read', {'path': 'limits.js', 'snapshot': query['snapshot_id']})
-        self.assertTrue(good['ok'])
+        declared_client = self.adapter(declared.root)
+        scoped = self.tool(declared_client, 'shin_query', {'query': 'retry ceiling'})
+        document = denied(declared_client, 'README.md', scoped['snapshot_id'])
+        self.assertEqual(document['error']['code'], 'source-read-document-only')
+        self.assertEqual(document['recovery']['next_action'], 'read-authorized-document-directly')
 
     def test_quarantined_file_keeps_mcp_available_with_visible_coverage(self):
         secret = 'sk-' + 'Q7x9' * 16
@@ -599,6 +609,96 @@ class McpTests(unittest.TestCase):
         service_status = self.raw('service-status')['result']
         project = next(p for p in service_status['telemetry']['project_states'] if p['root'] == str(self.root))
         self.assertEqual(project['source_coverage']['quarantined_files'], 1)
+
+    def test_managed_gitignore_and_shinignore_control_live_search_and_snapshot_reads(self):
+        root = self.base / 'git-project'
+        root.mkdir()
+        git = ['git', '-C', str(root)]
+        subprocess.run([*git, 'init', '-q'], check=True)
+        (root / '.gitignore').write_text('/scripts/\n/hidden.js\n')
+        (root / 'README.md').write_text('# Project guide\n')
+        (root / 'limits.js').write_text('export function readLimit() { return 7; }\n')
+        (root / 'hidden.js').write_text('export function hiddenQuota() { return 955; }\n')
+        subprocess.run([*git, 'check-ignore', '-q', '--', 'hidden.js'], check=True)
+        # The project's path rules also apply to files someone force-added to Git.
+        subprocess.run([*git, 'add', '-f', '--', 'hidden.js'], check=True)
+        self.init(root=root)
+        self.roots = [root]
+        self.start()
+        client = self.adapter(root)
+        before = self.tool(client, 'shin_query', {'query': 'readLimit'})
+        self.assertTrue(before['ok'], before)
+        self.assertIn('limits.js', before['source_context'])
+        previous = before['snapshot_id']
+
+        def assert_withheld(path, snapshot, marker):
+            response = self.tool(client, 'shin_read', {'path': path, 'snapshot': snapshot})
+            self.assertFalse(response['ok'], response)
+            self.assertNotIn(marker, json.dumps(response))
+
+        assert_withheld('hidden.js', previous, 'return 955')
+        (root / '.shinignore').write_text('/limits.js\n!/scripts/rollover\n')
+        assert_withheld('limits.js', previous, 'return 7')
+        scripts = root / 'scripts'
+        scripts.mkdir()
+        (scripts / 'rollover').write_text('#!/bin/sh\n# violet transit handover tokenization\n')
+        (scripts / 'private').write_text('# jade outside search\n')
+        subprocess.run([*git, 'check-ignore', '-q', '--', 'scripts/rollover'], check=True)
+
+        def wait_for(query, path):
+            deadline = time.monotonic() + 35
+            while time.monotonic() < deadline:
+                data = self.tool(client, 'shin_query', {'query': query}, timeout=25)
+                if data.get('ok') and path in data['source_context']:
+                    return data['snapshot_id']
+                time.sleep(.1)
+            self.fail(f'{path} was not published')
+
+        current = wait_for('violet transit handover', 'scripts/rollover')
+        self.assertNotEqual(previous, current)
+        for path, marker in [('hidden.js', 'return 955'), ('limits.js', 'return 7'), ('scripts/private', 'jade outside')]:
+            assert_withheld(path, current, marker)
+        excluded = self.tool(client, 'shin_query', {'query': 'readLimit hiddenQuota'})
+        self.assertTrue(excluded['ok'], excluded)
+        for path in ('limits.js', 'hidden.js'):
+            self.assertNotIn(path, excluded['source_context'])
+            self.assertNotIn(path, json.dumps(excluded['document_context']))
+        self.finish_adapter(client)
+
+    def test_managed_new_nested_gitignore_revokes_old_snapshot_and_removal_restores_search(self):
+        root = self.base / 'nested-project'
+        (root / 'lib').mkdir(parents=True)
+        (root / 'README.md').write_text('# Project guide\n')
+        (root / 'public.js').write_text('export function stableLedger() { return 36; }\n')
+        (root / 'lib' / 'guide.md').write_text('# Indigo ledger settlement\nUnique witness cedar.\n')
+        self.init(root=root)
+        self.roots = [root]
+        self.start()
+        client = self.adapter(root)
+
+        def wait_for(query, needle, previous=None):
+            deadline = time.monotonic() + 35
+            while time.monotonic() < deadline:
+                reply = self.tool(client, 'shin_query', {'query': query}, timeout=25)
+                if (reply.get('ok') and previous != reply['snapshot_id'] and
+                        needle in json.dumps([reply['source_context'], reply['document_context']])):
+                    return reply
+                time.sleep(.1)
+            self.fail(f'No current search result for {needle}')
+
+        before = wait_for('indigo ledger settlement', 'lib/guide.md')
+        rules = root / 'lib' / '.gitignore'
+        rules.write_text('/guide.md\n')
+        refused = self.tool(client, 'shin_read', {'path': 'lib/guide.md', 'snapshot': before['snapshot_id']})
+        self.assertFalse(refused['ok'], refused)
+        self.assertNotIn('Unique witness cedar', json.dumps(refused))
+        current = wait_for('stableLedger', 'public.js', before['snapshot_id'])
+        query = self.tool(client, 'shin_query', {'query': 'indigo ledger settlement'})
+        self.assertTrue(query['ok'], query)
+        self.assertNotIn('lib/guide.md', json.dumps([query['source_context'], query['document_context']]))
+        rules.unlink()
+        wait_for('indigo ledger settlement', 'lib/guide.md', current['snapshot_id'])
+        self.finish_adapter(client)
 
     def test_explicit_chat_identity_and_query_follow_up_are_private(self):
         self.start()
@@ -914,7 +1014,8 @@ class McpTests(unittest.TestCase):
             self.assertLessEqual(names,set(catalog))
             self.assertTrue({'shin_checkpoint','shin_resume'} <= names)
             for text in (instructions, catalog['shin_query']['description']):
-                for field in ('retrieval_ready', 'local_ready=true', 'canonical_ready', 'bootstrap', 'custom profile', 'owner authorization'):
+                for field in ('retrieval_ready', 'local_ready=true', 'selected folder', '.shinignore',
+                              'source_scope', 'quarantine', 'MCP cannot approve changes to access'):
                     self.assertIn(field, text)
             for name in ('shin_checkpoint','shin_resume'):
                 required=set(catalog[name]['inputSchema']['required'])
@@ -979,8 +1080,9 @@ class McpTests(unittest.TestCase):
         query = self.tool(child, 'shin_query', {'query': 'readLimit'})
         self.assertIn('return 7;', query['source_context'])
         self.assertEqual(query['transport'], 'local-socket-v1')
-        self.assertIn('.css', query['source_scope']['extensions'])
-        self.assertIn('.razor', query['source_scope']['extensions'])
+        self.assertEqual(query['source_scope']['selection'], 'automatic-project-text')
+        self.assertEqual(query['source_scope']['roots'], ['.'])
+        self.assertEqual(query['source_scope']['extensions'], [])
         self.assertFalse(query['source_scope']['whole_project_coverage'])
         self.assertFalse(query['source_scope']['compiler_semantics'])
         args = {'path': 'limits.js', 'snapshot': query['snapshot_id']}
@@ -1512,9 +1614,8 @@ class McpTests(unittest.TestCase):
             self.fail('permission restoration did not recover: ' + str(result))
         self.assertIsNone(client.poll())
 
-    def test_cold_reader_permission_diagnostic_reaches_waiting_and_later_calls(self):
-        # Qualify more projects than the resident cache holds, so a query must
-        # prepare a reader. Keep background refresh out of this failure path.
+    def qualified_cold_project(self):
+        # Qualify more projects than the resident cache holds, so a query must prepare a reader.
         for index in range(5):
             root = self.base / f'cold-{index}'
             root.mkdir()
@@ -1525,7 +1626,25 @@ class McpTests(unittest.TestCase):
         state = self.wait_service_state(lambda s: len(s['qualified_projects']) == len(self.roots)
                                         and all(r['ready'] for r in s['resident_projects']), timeout=15)
         warm = {r['root'] for r in state['resident_projects']}
-        root = next(root for root in self.roots if str(root) not in warm)
+        return server, next(root for root in self.roots if str(root) not in warm)
+
+    def test_cold_reader_stop_acknowledges_before_preparation(self):
+        server, root = self.qualified_cold_project()
+        client = self.adapter(root)
+        workspace = self.home / 'projects' / hashlib.sha256(str(root).encode()).hexdigest()
+        with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
+            fcntl.flock(lock, fcntl.LOCK_EX)
+            self.send(client, 'tools/call', {'name': 'shin_query', 'arguments': {'query': 'readLimit'}})
+            self.wait_service_state(lambda s: any(r['root'] == str(root) and not r['ready']
+                                                  and r['preparation'] is None for r in s['resident_projects']))
+            stopped = self.raw('service-stop')
+            self.assertTrue(stopped['ok'], stopped)
+            self.assertTrue(stopped['result']['stop_requested'])
+        server.wait(timeout=8)
+        self.assertEqual(server.returncode, 0)
+
+    def test_cold_reader_permission_diagnostic_reaches_waiting_and_later_calls(self):
+        server, root = self.qualified_cold_project()
         processes = subprocess.check_output(['/bin/ps', '-axo', 'pid=,ppid=,args='], text=True)
         refreshers = [int(parts[0]) for row in processes.splitlines()
                       if len(parts := row.split(None, 2)) == 3

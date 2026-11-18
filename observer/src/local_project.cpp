@@ -57,7 +57,7 @@ Json bootstrap_readiness(const core::RuntimeOptions& input_options) {
     options.validation_generation = std::make_shared<core::ValidationGeneration>(options);
     const auto initial_generations = core::generation_execution_count();
     Json result = {{"ok", false}, {"scope", "local-integrity-and-currentness"},
-                   {"project_quality", "not-configured"}, {"local_link_policy", "diagnostic"}, {"gates", Json::array()}};
+                   {"project_quality", options.profile.automatic_project_files ? "automatic" : "not-configured"}, {"local_link_policy", "diagnostic"}, {"gates", Json::array()}};
     try {
         const auto lock = core::lock_index_for_read(options.out_root);
         auto add = [&](const char* name, auto&& invoke) {
@@ -96,7 +96,7 @@ struct PublishedQualification {
 };
 
 PublishedQualification publish_refreshed(const core::RuntimeOptions& options, const Config& config, const fs::path& workspace,
-                       const std::string& expected_worktree,
+                       const fs::path& home, const std::string& expected_worktree,
                        const std::function<void()>& verify_authority, LocalPublication* grant = nullptr,
                        const std::optional<SnapshotRepairBase>& repair = {},
                        const std::function<void()>& accept_revision = {},
@@ -128,7 +128,7 @@ PublishedQualification publish_refreshed(const core::RuntimeOptions& options, co
             base = repair->snapshot;
         } else base = core::load_verified_snapshot(options.out_root, config.max_snapshot_bytes, config.max_file_bytes).snapshot_id;
     }
-    LocalStorageReservation storage(workspace.parent_path().parent_path(), options.out_root, 2 * config.max_snapshot_bytes + 512ULL * 1024 * 1024);
+    LocalStorageReservation storage(home, options.out_root, 2 * config.max_snapshot_bytes + 512ULL * 1024 * 1024);
     RefreshCandidate candidate(workspace);
     auto prepared_options = options;
     prepared_options.out_root = candidate.path;
@@ -288,9 +288,22 @@ bool source_generation_current(const fs::path& workspace, const fs::path& index,
 }
 
 void verify_binding(const Json& binding, const fs::path& root, const std::string& identity,
-                    const fs::path& workspace) {
-    const std::set<std::string> fields = {"schema_version", "root", "root_identity", "workspace_identity",
+                    const fs::path& workspace, const std::string& origin = {}, bool check_registry = true) {
+    std::set<std::string> fields = {"schema_version", "root", "root_identity", "workspace_identity",
         "profile_dir", "profile_config_hash", "core_version", "generator_version", "prepared_snapshot"};
+    if (binding.contains("source_selection")) {
+        fields.insert("source_selection");
+        fields.insert("source_kit");
+        if (binding.at("source_selection") != "automatic-project-files")
+            throw Error("binding-invalid", "Unknown managed source selection.");
+    }
+    if (!origin.empty()) {
+        fields.insert("enrollment_key");
+        fields.insert("data_identity");
+        if (binding.value("enrollment_key", "") != origin ||
+            binding.value("data_identity", "") != directory_identity(workspace / "automatic", true))
+            throw Error("binding-identity-changed", "Private preparation belongs to another enrollment or directory.");
+    }
     if (!binding.is_object() || binding.size() != fields.size())
         throw Error("binding-invalid", "Local binding schema is invalid; preserve it for review.");
     for (const auto& key : fields)
@@ -303,7 +316,7 @@ void verify_binding(const Json& binding, const fs::path& root, const std::string
         binding.at("workspace_identity") != directory_identity(workspace, true))
         throw Error("binding-identity-changed", "Project directory or private binding identity changed.");
     const fs::path registry = binding.at("profile_dir").get<std::string>();
-    if (!registry.is_absolute() || registry.lexically_normal() != registry || package_profile_registry(registry) != registry)
+    if (!registry.is_absolute() || registry.lexically_normal() != registry || (check_registry && package_profile_registry(registry) != registry))
         throw Error("binding-invalid", "Bound profile registry is not an existing canonical directory.");
 }
 
@@ -1044,7 +1057,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             const auto rejected = partial_allowed ? revision.rejection(options.profile.config_hash, request.maintenance_worktree) : Json();
             if (!rejected.is_null()) return partial_response(rejected);
             try {
-            published_qualification = publish_refreshed(options, config, workspace, request.maintenance_worktree, authority, &grant, repair, [&] {
+            published_qualification = publish_refreshed(options, config, workspace, home, request.maintenance_worktree, authority, &grant, repair, [&] {
                 if (!automatic_revision) return;
                 managed_authority();
                 revision.remember(grant.approved_profile_hash(), profile_text);
@@ -1360,6 +1373,28 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         guard_unbound_workspace(workspace, detected);
         attached = attached_binding(detected);
     }
+    const bool packaged = packaged_managed_routes();
+    const auto data_slot = workspace / "automatic";
+    const auto bundled = bundled_profile_registry(current_executable_path());
+    // Keep the original binding as the identity/rollback record. One private
+    // slot carries the new package's selection, index, reader and qualification.
+    // Its existence also fences later direct reads if enrollment is interrupted.
+    if (!packaged && initialize && !attach && attached && request.profile_dir_explicit &&
+        (!request.profile_dir || !fs::is_regular_file(*request.profile_dir / "generic-source.json")))
+        throw Error("invalid-arguments", "A source build connects automatic projects using the kit registry with generic-source.json.");
+    const bool primary_policy = detected && detected->value("source_selection", "") == "automatic-project-files";
+    const bool primary_current = detected && current_automatic_primary(*detected, bundled);
+    const bool private_slot = detected && !primary_current && (present(data_slot) || (packaged && primary_policy) ||
+        (enrolled_source_root(root, home, workspace) &&
+            (primary_policy || packaged || (present(workspace / "index-generation") && !current_index_generation(workspace)))) ||
+        (initialize && !attach && (packaged || request.profile_dir_explicit)));
+    const auto enrollment_key = private_slot ? local_binding_key(*detected, root, workspace) : std::string();
+    if (private_slot) {
+        check_local_identity(home, root);
+        if (attach || approve_marker || approve_profile || approve_config || request.command == "profile-review")
+            throw Error("binding-mode-conflict", "This enrollment uses automatic project files.");
+        attached = false;
+    }
     if (initialize && attached) attach = true;
     if (release && !attached)
         throw Error("refresh-grant-required", "Only an attached canonical route has a releasable grant.");
@@ -1382,7 +1417,8 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         request.observer_config = detected->at("observer_config").get<std::string>();
     }
     if (initialize || attach) {
-        if (detected && !attached) verify_binding(*detected,root,root_identity,workspace);
+        if (detected && !attached && !private_slot) verify_binding(*detected,root,root_identity,workspace);
+        if (private_slot) ensure_private_directory(data_slot);
         guard_project_storage(home,root);
     }
     fs::path storage_target = home;
@@ -1395,7 +1431,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         guard_external_storage(home,root,config.state_dir);
         storage_target = config.out_dir;
         storage_reservation = 2 * config.max_snapshot_bytes + 512ULL * 1024 * 1024;
-    } else if (!attached) guard_existing_routes(root, home);
+    }
     if ((!writer || refresh) && !present(workspace)) {
         auto result = envelope(request.command, false);
         result.update({{"local_ready", false}, {"state", "not-initialized"}, {"next_action", "shin-ce init --offline"}});
@@ -1408,10 +1444,10 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         else (void)directory_identity(path, true);
     }
     if (!binding_store) binding_store = std::make_unique<StateStore>(workspace, writer);
-    auto& store = *binding_store;
-    if (!writer && !attached && !request.query_session && store.writer_present())
+    auto& enrollment = *binding_store;
+    if (!writer && !attached && !request.query_session && enrollment.writer_present())
         throw Error("project-busy", "Project initialization is in progress.");
-    auto loaded = store.load();
+    auto loaded = enrollment.load();
     if (loaded != detected) throw Error("binding-changed", "Local route changed during detection; retry without replacing it.");
     guard_unbound_workspace(workspace, loaded);
     guard_ancestor_bindings(root, home);
@@ -1432,7 +1468,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             set_local_project_lifecycle(workspace, *loaded, "detached");
         } else {
             if (lifecycle.phase != "detached") set_local_project_lifecycle(workspace, *loaded, "detaching");
-            if (attached_binding(loaded)) (void)revoke_local_publication(workspace, *loaded);
+            if (attached_binding(loaded) && !private_slot) (void)revoke_local_publication(workspace, *loaded);
             unenroll_local_project(home, *loaded);
         }
         auto result = envelope("detach", true);
@@ -1454,10 +1490,10 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         return result;
     }
     if (!loaded && (!writer || refresh)) throw Error("binding-unavailable", "Local project binding is missing.");
-    if (attach || attached_binding(loaded)) {
-        auto result = attached_project(request, root, home, workspace, store, loaded, lifecycle);
+    if (attach || (attached_binding(loaded) && !private_slot)) {
+        auto result = attached_project(request, root, home, workspace, enrollment, loaded, lifecycle);
         if (initialize && result.at("ok") == true && lifecycle.phase == "detached") {
-            const auto rebound = store.load();
+            const auto rebound = enrollment.load();
             if (!rebound) throw Error("binding-unavailable", "The reconnected project binding is missing.");
             set_local_project_lifecycle(workspace, *rebound, "active");
         }
@@ -1465,21 +1501,64 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     }
     if (request.manage_index)
         throw Error("invalid-arguments", "New private projects already refresh automatically; --manage-index is only for an existing canonical route.");
-    if (loaded) verify_binding(*loaded, root, root_identity, workspace);
+    const auto data = private_slot ? data_slot : workspace;
+    const auto guard_enrollment = [root, home, workspace, enrollment_key] {
+        guard_ancestor_bindings(root, home);
+        if (enrollment_key.empty()) return;
+        const auto original = StateStore(workspace, false).load();
+        if (!original || local_binding_key(*original, root, workspace) != enrollment_key)
+            throw Error("binding-identity-changed", "Source enrollment changed during private preparation.");
+    };
+    const auto preparing = [&] {
+        auto result = envelope(request.command, false);
+        result.update({{"root", root.string()}, {"state", "preparing"}, {"local_ready", false},
+            {"canonical_ready", false}, {"project_quality", "automatic"}, {"readiness_scope", "automatic-project-files"},
+            {"next_action", "wait-for-local-refresh"}});
+        return result;
+    };
+    std::unique_ptr<StateStore> derived_store;
+    if (packaged && !bundled) throw Error("profiles-unavailable", "The package's automatic source policy is missing.");
+    if (private_slot) {
+        if (!initialize && !refresh && !present(data)) return preparing();
+        if (writer) ensure_private_directory(data);
+        derived_store = std::make_unique<StateStore>(data, writer);
+        loaded = derived_store->load();
+        if (!loaded && !writer) return preparing();
+        if (!loaded && writer) {
+            // A pending first save can be replayed. Unowned files may not be
+            // mistaken for private output from this enrollment.
+            derived_store->recover_pending();
+            guard_unbound_workspace(data, std::nullopt);
+        }
+    }
+    auto& store = derived_store ? *derived_store : enrollment;
+    const bool new_locator = private_slot && packaged && loaded &&
+        loaded->value("profile_dir", "") != bundled->string();
+    if (loaded) verify_binding(*loaded, root, root_identity, workspace, enrollment_key, !new_locator);
+    if (new_locator && !writer) return preparing();
     if (initialize) check_local_identity(home,root);
-    if (!loaded && !request.profile_dir) throw Error("profiles-unavailable", "Initial attachment requires bundled profiles.");
-    const auto registry = loaded ? fs::path(loaded->at("profile_dir").get<std::string>()) :
-                                  package_profile_registry(request.profile_dir.value());
+    const auto policy_registry = packaged ? bundled : request.profile_dir ? request.profile_dir : bundled;
+    if (!loaded && !policy_registry) throw Error("profiles-unavailable", "The package's automatic source policy is missing.");
+    const auto registry = loaded && !new_locator ? fs::path(loaded->at("profile_dir").get<std::string>()) :
+                                  package_profile_registry(*policy_registry);
     if (overlaps(home, registry)) throw Error("unsafe-home", "Private state must be separate from the profile registry.");
-    if (loaded && request.profile_dir_explicit && request.profile_dir && package_profile_registry(*request.profile_dir) != registry)
+    if (packaged && registry != *bundled)
+        throw Error("binding-profile-conflict", "Private preparation requires this package's automatic source policy.");
+    if (!packaged && loaded && request.profile_dir_explicit && request.profile_dir && package_profile_registry(*request.profile_dir) != registry)
         throw Error("binding-profile-conflict", "An existing project cannot silently switch profile registries.");
-    const bool fresh_kit = !loaded || !source_generation_current(workspace, workspace / "index",
-        loaded->at("prepared_snapshot").get<std::string>());
-    const auto bundled = bundled_profile_registry(current_executable_path());
-    const bool kit_policy = fresh_kit && (initialize || refresh) && bundled && *bundled == registry;
-    // Custom registries keep their pinned policy. A new kit owns its bundled
-    // bootstrap template; an unfinished first import can also use today's one.
-    const bool unfinished_import = initialize && loaded && loaded->at("prepared_snapshot") == "";
+    const bool fresh_kit = !loaded || new_locator ||
+        (loaded->contains("source_kit") && loaded->at("source_kit") != automatic_source_kit()) ||
+        !source_generation_current(data, data / "index", loaded->at("prepared_snapshot").get<std::string>());
+    // A kit cutoff (also on rollback) never decodes a previous kit's
+    // publication to establish a base. Start its private generator from source.
+    const bool first_refresh = refresh && (private_slot || packaged) &&
+        (fresh_kit || loaded->at("prepared_snapshot") == "");
+    const bool prepare = initialize || first_refresh;
+    if (first_refresh)
+        storage_admission = std::make_unique<LocalStorageReservation>(home, home, storage_reservation, root);
+    if ((private_slot || packaged) && !writer && fresh_kit) return preparing();
+    const bool kit_policy = fresh_kit && (prepare || refresh) && bundled && *bundled == registry;
+    const bool unfinished_import = prepare && loaded && loaded->at("prepared_snapshot") == "";
     auto policy = core::inspect_profile_policy(root, registry, "generic-source",
         loaded && !unfinished_import && !kit_policy ? std::optional<std::string>(loaded->at("profile_config_hash").get<std::string>()) : std::nullopt);
     if (policy.at("ok") != true) {
@@ -1495,39 +1574,63 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         {"workspace_identity", directory_identity(workspace, true)}, {"profile_dir", registry.string()},
         {"profile_config_hash", policy.at("revision").at("profile_config_hash")},
         {"core_version", SHIN_VERSION}, {"generator_version", core::kGeneratorVersion}, {"prepared_snapshot", ""}};
+    const bool automatic = policy.at("fields").at("automaticProjectFiles").at("value") == true;
+    if ((packaged || private_slot) && !automatic)
+        throw Error("unsupported-local-profile", "This package requires automatic project file discovery.");
+    if (new_locator) binding["profile_dir"] = registry.string();
+    if (!loaded) {
+        if (automatic) {
+            binding["source_selection"] = "automatic-project-files";
+            binding["source_kit"] = automatic_source_kit();
+        }
+        if (private_slot) {
+            binding["enrollment_key"] = enrollment_key;
+            binding["data_identity"] = directory_identity(data, true);
+        }
+    }
+    if (private_slot && automatic && prepare) binding["source_kit"] = automatic_source_kit();
     const bool bootstrap_policy_changed = (unfinished_import || kit_policy) &&
         binding.at("profile_config_hash") != policy.at("revision").at("profile_config_hash");
     if (bootstrap_policy_changed) binding["profile_config_hash"] = policy.at("revision").at("profile_config_hash");
-    if (initialize) {
+    if (prepare) {
         store.recover_pending();
         if (!loaded) store.save(binding);
-        for (const auto* name : {"index", "observer", "config"}) ensure_private_directory(workspace / name);
-        StateStore config_store(workspace / "config", true);
-        const auto previous = config_store.load();
-        const auto expected = observer_configuration(workspace, root, registry);
+        for (const auto* name : {"index", "observer", "config"}) ensure_private_directory(data / name);
+        StateStore config_store(data / "config", true);
+        auto previous = config_store.load();
+        const auto expected = observer_configuration(data, root, registry);
+        if (previous && new_locator && previous->value("profile_dir", "") == loaded->at("profile_dir").get<std::string>()) {
+            auto updated = *previous;
+            updated["profile_dir"] = registry.string();
+            if (!matches_bootstrap_configuration(updated, expected, fresh_kit))
+                throw Error("binding-config-conflict", "Private configuration changed during package preparation.");
+            config_store.recover_pending();
+            config_store.save(expected);
+            previous = expected;
+        }
         if (previous && !matches_bootstrap_configuration(*previous, expected, fresh_kit))
             throw Error("binding-config-conflict", "Existing Observer configuration differs; no automatic overwrite.");
         config_store.recover_pending();
         if (!previous) config_store.save(expected);
     }
-    StateStore config_reader(workspace / "config", false);
+    StateStore config_reader(data / "config", false);
     auto config_document = config_reader.load();
-    const auto bootstrap_policy = observer_configuration(workspace, root, registry);
+    const auto bootstrap_policy = observer_configuration(data, root, registry);
     if (!config_document || !matches_bootstrap_configuration(*config_document, bootstrap_policy, fresh_kit))
         throw Error("binding-config-conflict", "Bound Observer configuration differs from local offline policy.");
-    if (fresh_kit && (initialize || refresh) && *config_document != bootstrap_policy) {
-        (void)config_from_json(*config_document, workspace / "config/state.json");
-        StateStore configuration(workspace / "config", true);
+    if (fresh_kit && (prepare || refresh) && *config_document != bootstrap_policy) {
+        (void)config_from_json(*config_document, data / "config/state.json");
+        StateStore configuration(data / "config", true);
         if (configuration.load() != config_document)
             throw Error("binding-config-conflict", "Bootstrap configuration changed before policy preparation.");
         configuration.recover_pending();
         configuration.save(bootstrap_policy);
         config_document = bootstrap_policy;
     }
-    const auto config = config_from_json(bootstrap_policy, workspace / "config/state.json");
+    const auto config = config_from_json(bootstrap_policy, data / "config/state.json");
     core::RuntimeOptions options;
     options.root = root;
-    options.out_root = workspace / "index";
+    options.out_root = data / "index";
     options.profile_dir = registry;
     options.profile = core::make_profile("generic-source", registry);
     if (!options.profile.bootstrap_only || !options.profile.eval_cases.empty() || !options.profile.pack_eval_cases.empty())
@@ -1542,20 +1645,19 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     std::optional<PublishedQualification> published_qualification;
     const auto readiness_for_generation = [&] {
         refresh_stage(request, "qualification");
-        return qualified_readiness(options, {}, config, workspace, binding, quality_key,
+        return qualified_readiness(options, {}, config, data, binding, quality_key,
             published_qualification, nullptr, request.query_session ? &reader_snapshot : nullptr, fresh_kit,
             request.maintenance_progress);
     };
     const auto qualify = [&](const Json& readiness) {
         if (readiness.at("ok") == true && readiness.at("quality_reuse").at("reused") == false)
-            save_qualification(workspace, binding, config, binding.at("prepared_snapshot"), readiness, quality_key, options);
+            save_qualification(data, binding, config, binding.at("prepared_snapshot"), readiness, quality_key, options);
     };
-    if (refresh) {
+    if (refresh && !first_refresh) {
         const auto authority = [&] {
             if (request.maintenance_stop && request.maintenance_stop())
                 throw Error("refresh-stopped", "Local refresh was stopped before publication.");
-            guard_existing_routes(root, home);
-            guard_ancestor_bindings(root, home);
+            guard_enrollment();
             if (require_local_project_active(workspace) != lifecycle)
                 throw Error("project-detached", "Project lifecycle changed during refresh.");
             if (directory_identity(root) != root_identity || store.load() != loaded ||
@@ -1569,7 +1671,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         authority();
         if (engine_changed && !rebuildable_index)
             throw Error("refresh-engine-changed", "Review the installed kit and run init once after an engine upgrade.");
-        recover_refresh_candidate(workspace);
+        recover_refresh_candidate(data);
         if (shin::generated_io::publication_in_progress(options.out_root)) {
             shin::generated_io::IndexLock recovery_writer(options.out_root, shin::generated_io::LockMode::exclusive,
                                                  shin::generated_io::LockTarget::writer);
@@ -1627,7 +1729,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         store.recover_pending();
         authority();
         if (fresh_kit || observation.at("snapshot_current") != true) {
-            published_qualification = publish_refreshed(options, config, workspace, request.maintenance_worktree, authority, nullptr, repair, {}, request.maintenance_progress);
+            published_qualification = publish_refreshed(options, config, data, home, request.maintenance_worktree, authority, nullptr, repair, {}, request.maintenance_progress);
             result["rebuilt"] = true;
             result["refresh_work"] = published_qualification->work;
         }
@@ -1650,7 +1752,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         binding["generator_version"] = core::kGeneratorVersion;
         store.save(binding);
         qualify(readiness);
-        remember_index_generation(workspace, snapshot);
+        remember_index_generation(data, snapshot);
         result["phase"] = "current";
         result["recovered"] = repair ? "primary-index" : "";
         result["recovery_pending"] = false;
@@ -1662,12 +1764,17 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     // Initial bootstrap may not have an index/lock yet; established readers
     // retain the same publication fence as attached projects.
     // Init can replace an owned outdated index; normal reads still refuse it.
-    const bool usable_index = initialize && (engine_changed || fresh_kit) ? false : core::generated_index_available(options);
+    const bool usable_index = prepare && (engine_changed || fresh_kit) ? false : core::generated_index_available(options);
     auto publication = usable_index ? core::lock_index_for_read(options.out_root) : nullptr;
-    auto readiness = initialize && (engine_changed || fresh_kit) ? Json() : readiness_for_generation();
+    auto readiness = prepare && (engine_changed || fresh_kit) ? Json() : readiness_for_generation();
     bool rebuilt = false;
-    if (initialize) {
+    if (prepare) {
         if (engine_changed || fresh_kit || readiness.at("ok") != true) {
+            guard_enrollment();
+            if (request.maintenance_stop && request.maintenance_stop())
+                throw Error("refresh-stopped", "Private preparation stopped before publication.");
+            if (local_project_lifecycle(workspace) != lifecycle)
+                throw Error("project-detached", "Enrollment changed before private preparation.");
             publication.reset();
             refresh_progress(request.maintenance_progress, "candidate-build");
             const auto build = core_result([&] { return core::run_build(options); });
@@ -1675,7 +1782,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             rebuilt = true;
         }
         if (!publication) publication = core::lock_index_for_read(options.out_root);
-        guard_existing_routes(root, home);
+        guard_enrollment();
         if (directory_identity(root) != root_identity)
             throw Error("binding-identity-changed", "Project identity or adoption changed during init.");
         refresh_progress(request.maintenance_progress, "candidate-validation");
@@ -1690,7 +1797,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             binding["generator_version"] = core::kGeneratorVersion;
             binding["prepared_snapshot"] = snapshot;
             if (store.load() != std::optional<Json>(binding)) store.save(binding);
-            if (rebuilt) remember_index_generation(workspace, snapshot);
+            if (rebuilt) remember_index_generation(data, snapshot);
         }
     }
     const auto observer = observer_status(config);
@@ -1700,13 +1807,13 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     const bool prepared = readiness.contains("freshness") &&
         binding.at("prepared_snapshot") == readiness.at("freshness").at("snapshot_id");
     const bool ready = readiness.at("ok") == true && sampled && prepared &&
-        (!engine_changed || initialize) && (!fresh_kit || initialize);
+        (!engine_changed || prepare) && (!fresh_kit || prepare);
     auto result = envelope(request.command, ready);
     LocalContextDelivery delivery(result, config);
     result["source_scope"] = core::source_discovery_scope(options.profile);
     result.update({{"local_ready", ready}, {"state", ready ? "local-ready" : "needs-init"},
-        {"canonical_ready", false}, {"project_quality", "not-configured"},
-        {"readiness_scope", "local-bootstrap-not-project-quality-qualification"},
+        {"canonical_ready", false}, {"project_quality", automatic ? "automatic" : "not-configured"},
+        {"readiness_scope", automatic ? "automatic-project-files" : "local-bootstrap-not-project-quality-qualification"},
         {"project_id", config.binding.at("project_id")}, {"workspace_id", config.binding.at("workspace_id")},
         {"root", root.string()}, {"index", options.out_root.string()},
         {"profile_config_hash", binding.at("profile_config_hash")}, {"rebuilt", rebuilt},
@@ -1726,13 +1833,13 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         // authority before/after. An unchanged maintenance writer is not a
         // source change; its lock alone must not evict this generation.
         const auto authority = [config = Config(config), workspace = workspace, binding = Json(binding), root = root,
-                                home = home, config_document = config_document,
+                                data, guard_enrollment, config_document = config_document,
                                 output_identity = directory_identity(config.out_dir), lifecycle = lifecycle] {
             if (require_local_project_active(workspace) != lifecycle)
                 throw Error("project-detached", "Project lifecycle changed; prepare a new resident reader.");
-            StateStore current(workspace, false);
-            StateStore settings(workspace / "config", false);
-            guard_existing_routes(root, home);
+            StateStore current(data, false);
+            StateStore settings(data / "config", false);
+            guard_enrollment();
             if (current.load() != std::optional<Json>(binding) || settings.load() != config_document ||
                 core::make_profile(config.profile, config.profile_dir).config_hash != binding.at("profile_config_hash").get<std::string>() ||
                 directory_identity(root) != binding.at("root_identity").get<std::string>() ||
@@ -1749,16 +1856,23 @@ static Json local_project_impl(const LocalProjectRequest& input) {
     // Native-only observation also lets reader races be tested at this boundary.
     refresh_progress(request.maintenance_progress, "final-verification");
     if (options.generation_admission) options.generation_admission->verify_content(options);
-    guard_existing_routes(root, home);
+    guard_enrollment();
     if (local_project_lifecycle(workspace) != lifecycle || directory_identity(root) != root_identity ||
         store.load() != std::optional<Json>(binding) || config_reader.load() != config_document)
         throw Error("binding-changed", "Project binding changed before returning the result.");
-    if (!initialize && !request.query_session && store.writer_present())
+    if (!prepare && !request.query_session && store.writer_present())
         throw Error("project-busy", "Project maintenance is in progress; retry the request.");
     if (result.dump(2).size() + 1 > 65536) throw Error("output-limit", "Response exceeds the bounded local view; narrow the query.");
-    if (initialize && ready) qualify(readiness);
+    if (prepare && ready) qualify(readiness);
     if (initialize && ready && lifecycle.phase == "detached")
         set_local_project_lifecycle(workspace, binding, "active");
+    if (first_refresh) {
+        if (!ready) throw Error("refresh-validation-failed", "Automatic source preparation did not qualify.", validation_diagnostic(readiness));
+        return {{"ok", true}, {"command", "watch-tick"}, {"phase", "current"}, {"rebuilt", rebuilt},
+            {"index", options.out_root.string()}, {"observation", observer.at("state").at("observation")},
+            {"refresh_authority", "private-bootstrap"}, {"workspace_identity", binding.at("workspace_identity")},
+            {"snapshot_id", binding.at("prepared_snapshot")}};
+    }
     return result;
 }
 
@@ -2244,139 +2358,4 @@ Json watch_local_project(const LocalProjectRequest& input, std::uint64_t samples
     return watch_local_projects(input, {input.root}, samples, stopped);
 }
 
-Json prepare_marker_generator_transition(const LocalProjectRequest& request) {
-    const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
-    const auto workspace = home / "projects" / digest(root.string());
-    StateStore store(workspace, false);
-    const auto binding = store.load();
-    if (!binding || binding->value("schema_version", "") != "shin.local-route-binding.v1" ||
-        binding->value("marker", "").empty()) return nullptr;
-    const auto marker = binding->at("marker").get<std::string>();
-    if (core::normalize_repository_file_argument(root, marker, "--marker") != marker ||
-        directory_identity(root) != binding->at("root_identity").get<std::string>() ||
-        directory_identity(workspace, true) != binding->at("workspace_identity").get<std::string>())
-        throw Error("installation-marker-transition-conflict", "Canonical marker or project identity changed.");
-    const auto text = read_text(root / marker, 16384, false);
-    const auto document = parse_json(text);
-    const auto previous = document.at("engine").at("generatorIdentity").get<std::string>();
-    if (previous == core::kGeneratorVersion) return nullptr;
-    if (!superseded_source_generator(previous))
-        throw Error("installation-marker-transition-unsupported", "The marker generator identity is malformed; review its source configuration.");
-    const auto file = fs::path(binding->at("observer_config").get<std::string>());
-    const auto config_text = read_text(file, 65536, true);
-    const auto config = config_from_json(parse_json(config_text), file);
-    LocalPublication grant(workspace, *binding, config);
-    if (!grant.active() || !configuration_approved(workspace, *binding, digest(config_text)) ||
-        grant.approved_profile_hash() != core::make_profile(config.profile, config.profile_dir).config_hash ||
-        grant.approved_marker_hash() != digest(text))
-        throw Error("installation-marker-transition-conflict", "Marker transition requires the current approved canonical publisher.");
-    grant.verify();
-    verify_marker_identity(workspace, *binding, text, false);
-    // Preserve formatting and every other byte. Ambiguous/escaped spellings
-    // require review instead of rewriting the whole project-owned document.
-    const std::regex pin("\"generatorIdentity\"\\s*:\\s*\"" + previous + "\"");
-    const std::sregex_iterator first(text.begin(), text.end(), pin), end;
-    if (first == end || std::distance(first, end) != 1)
-        throw Error("installation-marker-transition-unsupported", "The generator pin cannot be replaced unambiguously.");
-    auto revised = text;
-    revised.replace(static_cast<std::size_t>(first->position()) + first->str().find(previous), previous.size(), core::kGeneratorVersion);
-    auto expected = document; expected["engine"]["generatorIdentity"] = core::kGeneratorVersion;
-    if (parse_json(revised) != expected)
-        throw Error("installation-marker-transition-conflict", "Marker transition changed fields beyond the generator pin.");
-    if (store.load() != binding || read_text(file, 65536, true) != config_text ||
-        read_text(root / marker, 16384, false) != text)
-        throw Error("installation-marker-transition-conflict", "Project changed while preparing its generator transition.");
-    return {{"root", root.string()}, {"binding", *binding}, {"grant_token", grant.token()},
-        {"parent_identity", directory_identity((root / marker).parent_path())}, {"before", text}, {"after", revised}};
-}
-
-std::string stage_marker_generator_transition(const LocalProjectRequest& request, const Json& transition, bool restore) {
-    const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
-    const auto workspace = home / "projects" / digest(root.string());
-    StateStore store(workspace, true); store.recover_pending();
-    const auto binding = store.load();
-    auto expected = transition.at("binding");
-    auto current = binding.value_or(Json::object());
-    expected.erase("prepared_snapshot"); current.erase("prepared_snapshot");
-    if (transition.at("root") != root.string() || current != expected ||
-        directory_identity(root) != expected.at("root_identity").get<std::string>() ||
-        directory_identity(workspace, true) != expected.at("workspace_identity").get<std::string>())
-        throw Error("installation-marker-transition-conflict", "Journaled marker route changed; project bytes were preserved.");
-    const auto marker = expected.at("marker").get<std::string>();
-    if (core::normalize_repository_file_argument(root, marker, "--marker") != marker)
-        throw Error("installation-marker-transition-conflict", "Canonical marker path changed.");
-    const auto before = transition.at("before").get<std::string>(), after = transition.at("after").get<std::string>();
-    auto previous_document = parse_json(before), next_document = parse_json(after);
-    const auto previous = previous_document.at("engine").at("generatorIdentity").get<std::string>();
-    previous_document["engine"]["generatorIdentity"] = core::kGeneratorVersion;
-    if (!superseded_source_generator(previous) || next_document.at("engine").at("generatorIdentity") != core::kGeneratorVersion ||
-        previous_document != next_document)
-        throw Error("installation-marker-transition-conflict", "Journal exceeds the generator-only transition contract.");
-    const auto file = fs::path(expected.at("observer_config").get<std::string>());
-    const auto config_text = read_text(file, 65536, true);
-    const auto config = config_from_json(parse_json(config_text), file);
-    LocalPublication grant(workspace, *binding, config);
-    if (!grant.active() || grant.token() != transition.at("grant_token").get<std::string>() ||
-        !configuration_approved(workspace, *binding, digest(config_text)) ||
-        grant.approved_profile_hash() != core::make_profile(config.profile, config.profile_dir).config_hash ||
-        (grant.approved_marker_hash() != digest(before) && grant.approved_marker_hash() != digest(after)))
-        throw Error("installation-marker-transition-conflict", "Canonical approval changed during the generator transition.");
-    grant.verify();
-    verify_marker_identity(workspace, *binding, before, false);
-    const auto text = read_text(root / marker, 16384, false);
-    if (text != before && text != after)
-        throw Error("installation-marker-transition-conflict", "Marker was edited during update; preserve it for review.");
-    const auto& target = restore ? before : after;
-    if (text != target) replace_user_config(root / marker, text, target, transition.at("parent_identity"));
-    else if (directory_identity((root / marker).parent_path()) != transition.at("parent_identity").get<std::string>())
-        throw Error("installation-marker-transition-conflict", "Marker parent changed during update.");
-    return digest(target);
-}
-
-bool retire_bootstrap_update_index(const LocalProjectRequest& request, const Json& expected,
-                                 const std::string& restored_generator, const std::string& published_profile_hash) {
-    const auto root = fs::canonical(request.root), home = fs::canonical(request.home);
-    const auto workspace = home / "projects" / digest(root.string());
-    if (expected.value("schema_version", "") != "shin.local-project-binding.v1" ||
-        expected.value("root", "") != root.string() || directory_identity(root) != expected.at("root_identity").get<std::string>() ||
-        directory_identity(workspace, true) != expected.at("workspace_identity").get<std::string>())
-        throw Error("binding-identity-changed", "Rollback requires the recorded bootstrap project and workspace.");
-    guard_existing_routes(root, home);
-    require_local_project_active(workspace);
-    StateStore binding(workspace, true);
-    if (binding.load() != std::optional<Json>(expected))
-        throw Error("binding-identity-changed", "Bootstrap state changed before rollback rebuild.");
-    const fs::path profiles = expected.at("profile_dir").get<std::string>();
-    StateStore configuration(workspace / "config", false);
-    const auto document = configuration.load();
-    const auto bootstrap_policy = observer_configuration(workspace, root, profiles);
-    // Rollback reads the saved kit-owned operational values, rather than
-    // requiring this candidate's defaults. Paths, identity and offline
-    // authority must still match; config_from_json validates the saved limits.
-    if (!document || !matches_bootstrap_configuration(*document, bootstrap_policy, true) ||
-        core::make_profile("generic-source", profiles).config_hash != expected.at("profile_config_hash").get<std::string>())
-        throw Error("binding-config-conflict", "Rollback cannot change project policy or configuration.");
-    const auto config = config_from_json(*document, workspace / "config/state.json");
-    recover_refresh_candidate(workspace);
-    shin::generated_io::IndexLock writer(config.out_dir, shin::generated_io::LockMode::exclusive,
-                                         shin::generated_io::LockTarget::writer);
-    shin::generated_io::recover_snapshot(config.out_dir, core::kGeneratedDir);
-    shin::generated_io::IndexLock index(config.out_dir, shin::generated_io::LockMode::exclusive);
-    const auto generated = config.out_dir / core::kGeneratedDir;
-    if (!present(generated)) return true; // Resume a journaled withdrawal followed by an interrupted old init.
-    const auto snapshot = core::load_verified_snapshot(config.out_dir, config.max_snapshot_bytes, config.max_file_bytes);
-    if (snapshot.generator_version == restored_generator) return false;
-    if (snapshot.generator_version != core::kGeneratorVersion || snapshot.profile != "generic-source" ||
-        snapshot.profile_config_hash != (published_profile_hash.empty() ? expected.at("profile_config_hash").get<std::string>() : published_profile_hash))
-        throw Error("refresh-base-changed", "Rollback cannot retire an unrelated publication.");
-    // Installation already records pending rollback. The existing candidate
-    // ownership receipt makes cleanup resumable if interrupted after this rename.
-    // Only generated output moves; the index directory/control locks stay put.
-    RefreshCandidate retired(workspace);
-    const auto destination = retired.path / core::kGeneratedDir;
-    ensure_private_directory(retired.path / "docs");
-    ensure_private_directory(retired.path / "docs/kb");
-    fs::rename(generated, destination);
-    return true;
-}
 } // namespace shin::observer

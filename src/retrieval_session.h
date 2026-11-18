@@ -32,7 +32,8 @@ public:
 
     const RuntimeOptions& options() const noexcept { return options_; }
     const IndexFreshness& freshness() const noexcept { return freshness_; }
-    const Json& manifest() const noexcept;
+    const Json& manifest() const;
+    void verify_project_exclusions() const;
 
     Json inspect(const std::string& path) const;
     Json read(std::string_view request) const;
@@ -45,11 +46,13 @@ public:
                BriefProjection projection = BriefProjection::full) const;
 
 private:
+    void bind_project_exclusions(const Json& manifest);
     Json read_impl(std::string_view request, bool selected_only) const;
     RuntimeOptions options_;
     std::unique_ptr<shin::generated_io::IndexLock> lock_;
     IndexFreshness freshness_;
     Json manifest_;
+    ProjectIgnoreBinding exclusions_;
 };
 
 }  // namespace shin::context

@@ -2,6 +2,7 @@
 #include "generated_io.h"
 #include "snapshot_verification.h"
 #include "generated_snapshot.h"
+#include "project_files.h"
 #include <system_error>
 
 namespace shin::context {
@@ -68,6 +69,7 @@ RetrievalSession::RetrievalSession(RuntimeOptions options,
             "Generated snapshot integrity is verified; source freshness is not assessed.");
         manifest_ = std::move(snapshot.manifest);
         if (!require_current) {
+            bind_project_exclusions(manifest_);
             return;
         }
     }
@@ -91,11 +93,22 @@ RetrievalSession::RetrievalSession(RuntimeOptions options,
                           "Generated manifest has an unsupported schema or tool.", false);
     }
     require_supported_generator(json_string_value(manifest_, "generator_version"));
+    bind_project_exclusions(manifest_);
 }
 
 RetrievalSession::~RetrievalSession() = default;
 
-const Json& RetrievalSession::manifest() const noexcept {
+void RetrievalSession::bind_project_exclusions(const Json& manifest) {
+    exclusions_ = published_project_exclusions(options_.profile, manifest);
+    verify_project_exclusions();
+}
+
+void RetrievalSession::verify_project_exclusions() const {
+    require_project_exclusions(options_.root, exclusions_);
+}
+
+const Json& RetrievalSession::manifest() const {
+    verify_project_exclusions();
     return options_.generated_snapshot ? options_.generated_snapshot->manifest() : manifest_;
 }
 
@@ -114,6 +127,7 @@ RetrievalSession::RetrievalSession(std::shared_ptr<const GeneratedSnapshot> snap
     freshness_.status = "not-assessed";
     freshness_.mode = "verified-generated-snapshot";
     freshness_.snapshot_id = options_.generated_snapshot->id();
+    bind_project_exclusions(options_.generated_snapshot->manifest());
     freshness_.source_count = static_cast<int>(manifest().at("sources").size());
     freshness_.notes.push_back("Generated snapshot integrity is verified; source freshness is not assessed.");
     if (mode == RetrievalSessionOpenMode::require_current || mode == RetrievalSessionOpenMode::verified_current) {

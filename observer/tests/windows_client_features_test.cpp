@@ -368,6 +368,11 @@ int main(int argc,char** argv) {
         const auto profiles=root/"profiles";ensure_private_directory(profiles);
         const auto profile_text=read_text(fs::canonical(fs::path(argv[2]))/"generic-source.json",kMaximumStateBytes,false);
         write_user_archive(profiles/"generic-source.json",profile_text);
+        // Post-MSI preparation locates the automatic policy beside the running
+        // command. This fixture installs that same private test payload.
+        const auto bundled_profiles = commands / "share/shin-context/profiles";
+        fs::create_directories(bundled_profiles);
+        write_user_archive(bundled_profiles / "generic-source.json", profile_text);
         const auto added=windows_command(service.cli,{"project-add","--home",runtime_home.string(),"--root",project.string(),"--profile-dir",profiles.string()});
         require(added.value("ok",false),"Windows project onboarding failed");
         bool collected=false;const auto until=std::chrono::steady_clock::now()+std::chrono::seconds(12);
@@ -389,15 +394,17 @@ int main(int argc,char** argv) {
         const auto workspace=runtime_home/"projects"/digest(project.string());
         Json original_binding;
         {StateStore state(workspace,true);state.recover_pending();original_binding=state.load().value();
-         auto previous=original_binding;previous["core_version"]="2.0.5-dev.12";state.save(previous);}
+         original_binding.erase("source_selection");original_binding.erase("source_kit");
+         original_binding["core_version"]="2.0.5-dev.12";state.save(original_binding);}
         phase="post-MSI Core preparation";
         const auto prepared=windows_command(service.cli,{"prepare-projects","--home",runtime_home.string()});
         if(!prepared.value("ok",false)) std::cerr<<"Core preparation result: "<<prepared.dump()<<'\n';
         require(prepared.value("ok",false)&&prepared.at("projects").size()==1,"post-MSI Core preparation failed");
-        {StateStore state(workspace,false);const auto binding=state.load().value();
-         require(binding.at("core_version")==SHIN_VERSION,"Core version was not transferred");
-         for(const auto* key:{"root","root_identity","workspace_identity","profile_config_hash","profile_dir","generator_version"})
-             require(binding.at(key)==original_binding.at(key),"post-MSI preparation changed project authority or policy");}
+        {StateStore state(workspace,false);StateStore generation(workspace/"automatic",false);
+         require(state.load().value()==original_binding,"post-MSI preparation rewrote the original enrollment");
+         const auto binding=generation.load().value();
+         require(binding.at("core_version")==SHIN_VERSION && binding.at("source_selection")=="automatic-project-files" &&
+             binding.at("workspace_identity")==original_binding.at("workspace_identity"),"post-MSI private preparation missing");}
         require(windows_command(service.cli,{"prepare-projects","--home",runtime_home.string(),"--check"}).value("ok",false),"read-only completion check failed");
         LocalProjectRequest stale;stale.command="init";stale.root=project;stale.home=runtime_home;
         stale.maintenance_lifecycle_revision=local_project_lifecycle(workspace).revision+1;
@@ -408,17 +415,18 @@ int main(int argc,char** argv) {
         write_user_archive(blocked_root/"sample.cpp","int blockedSample() { return 3; }\n");
         const auto blocked_profile=blocked_profiles/"generic-source.json";write_user_archive(blocked_profile,profile_text);
         require(windows_command(service.cli,{"project-add","--home",runtime_home.string(),"--root",blocked_root.string(),"--profile-dir",blocked_profiles.string()}).value("ok",false),"second fixture enrollment failed");
-        replace_user_archive(blocked_profile,profile_text,profile_text+"\n",directory_identity(blocked_profiles));
+        const auto exclusions=blocked_root/".shinignore";
+        write_user_archive(exclusions,std::string(1,static_cast<char>(0xff)));
         const auto denied=windows_command(service.cli,{"prepare-projects","--home",runtime_home.string()});
-        require(!denied.value("ok",true),"changed policy was silently approved");
+        require(!denied.value("ok",true),"invalid project exclusions were silently accepted");
         bool healthy=false,refusal=false;
         for(const auto& row:denied.at("projects")) {
             if(row.at("root")==project.string()) healthy=row.value("ok",false);
-            if(row.at("root")==blocked_root.string()) refusal=!row.value("ok",true)&&row.value("error_code","")=="profile-policy-revision-conflict";
+            if(row.at("root")==blocked_root.string()) refusal=!row.value("ok",true)&&!row.value("error_code","").empty();
         }
-        require(healthy&&refusal,"partial preparation lost the good project or policy refusal");
-        require(read_text(blocked_profile,kMaximumStateBytes,false)==profile_text+"\n","preparation rewrote a pending profile");
-        replace_user_archive(blocked_profile,profile_text+"\n",profile_text,directory_identity(blocked_profiles));
+        require(healthy&&refusal,"partial preparation lost the good project or exclusion refusal");
+        require(read_text(exclusions,64,false)==std::string(1,static_cast<char>(0xff)),"preparation rewrote exclusions");
+        remove_user_archive(exclusions,std::string(1,static_cast<char>(0xff)),64);
         require(windows_command(service.cli,{"detach","--home",runtime_home.string(),"--root",blocked_root.string()}).value("ok",false),"fixture detach failed");
         const auto recovered=windows_command(service.cli,{"prepare-projects","--home",runtime_home.string()});
         require(recovered.value("ok",false)&&recovered.at("projects").size()==1,"preparation re-enrolled a detached project");

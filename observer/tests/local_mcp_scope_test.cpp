@@ -149,6 +149,12 @@ int main() {
             "a stale follow-up needs a new same-project snapshot");
         check(local_mcp_recovery("refresh-source-budget").at("approval_required") == true,
             "resource limits must not grant automatic policy changes");
+        for (const auto* code : {"invalid-project-exclusions", "unsafe-project-exclusions"}) {
+            const auto hint = local_mcp_recovery(code);
+            check(hint.at("kind") == "operator-review" && hint.at("next_action") == "review-project-exclusions" &&
+                !hint.at("retry_same_request").get<bool>() && !hint.contains("next_tool"),
+                "invalid exclusions require owner correction before another query");
+        }
         for (const auto* code : {"project-updating", "route-revision-conflict", "refresh-validation-failed", "unknown"})
             check(local_mcp_recovery(code, malformed).dump().size() < 8192, "guidance exceeds its bounded surface");
         check(local_mcp_recovery("source-read-document-only").at("next_action") == "read-authorized-document-directly",

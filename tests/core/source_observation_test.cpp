@@ -1,5 +1,6 @@
 #include "context_internal.h"
 #include "worktree_state.h"
+#include "project_files.h"
 
 #include <chrono>
 #ifndef _WIN32
@@ -88,6 +89,162 @@ void explicit_document_aliases_preserve_selection(const fs::path& parent) {
     std::ofstream(fixture.root / "notes/first.md") << "# Replacement\n";
     expect(enumerate_source_paths(profile, fixture.root).size() == 3,
            "replacement file identity must not reuse an earlier alias observation");
+}
+
+void root_wiki_membership(const fs::path& parent) {
+    Fixture fixture(parent);
+    const auto& root = fixture.root;
+    Profile profile;
+    profile.source_extensions = {".md"};
+    std::ofstream(root / "Guide.md") << "# Guide\n";
+    std::ofstream(root / "src/nested/Nested.md") << "# Nested\n";
+    std::ofstream(root / ".private.md") << "# Private\n";
+    std::ofstream(root / "Other.json") << "{}\n";
+    std::ofstream(root / "_Sidebar.md") << "# Navigation\n";
+    std::error_code ec;
+    fs::create_symlink(root / "Guide.md", root / "Alias.md", ec);
+    profile.include_root_wiki_pages = true;
+    expect(enumerate_source_paths(profile, root).empty(), "loose Markdown does not activate wiki scope");
+    if (!ec) {
+        fs::create_symlink(root / "Guide.md", root / "Home.md");
+        expect(enumerate_source_paths(profile, root).empty(), "a symlink cannot activate wiki scope");
+        fs::remove(root / "Home.md");
+    }
+    std::ofstream(root / "Home.md") << "# Start\n";
+    profile.include_root_wiki_pages = false;
+    expect(enumerate_source_paths(profile, root).empty(), "an explicit profile must opt into wiki scope");
+    profile.include_root_wiki_pages = true;
+    profile.optional_root_files = {"Guide.md"};
+    expect(enumerate_source_paths(profile, root) ==
+               std::vector<std::string>{"Guide.md", "Home.md", "_Sidebar.md"},
+           "only visible regular top-level Markdown pages are discovered once");
+    profile.document_exclude_prefixes = {"Guide.md"};
+    expect(enumerate_source_paths(profile, root) == std::vector<std::string>{"Home.md", "_Sidebar.md"},
+           "document exclusions apply to discovered wiki pages");
+    profile.document_include_prefixes = {"_Sidebar.md"};
+    expect(enumerate_source_paths(profile, root) == std::vector<std::string>{"_Sidebar.md"},
+           "wiki scope respects document include rules");
+    profile.source_extensions = {".json"};
+    expect(enumerate_source_paths(profile, root).empty(), "wiki scope respects the document extension allowlist");
+}
+
+void automatic_membership_and_exclusion_fences(const fs::path& parent) {
+    Fixture fixture(parent);
+    const auto& root = fixture.root;
+    Profile profile;
+    profile.automatic_project_files = true;
+    profile.source_fact_roots = {"."};
+    profile.source_fact_max_file_bytes = 128;
+    fs::create_directories(root / "bin");
+    fs::create_directories(root / "guides");
+    fs::create_directories(root / "hidden");
+    fs::create_directories(root / ".github" / "workflows");
+    std::ofstream(root / "bin" / "launch") << "#!/bin/sh\necho launch\n";
+    std::ofstream(root / ".github/workflows/check.yml") << "name: checks\n";
+    std::ofstream(root / "guides/Walkthrough.md") << "# Walkthrough\n";
+    std::ofstream(root / "hidden/private.cpp") << "int restricted;";
+    std::ofstream(root / "src/nested/raw.unknown", std::ios::binary).write("a\0b", 3);
+    std::ofstream(root / "src/bad.js", std::ios::binary).put(static_cast<char>(0xff));
+    std::ofstream(root / "big.unknown") << std::string(129, 'a');
+    std::ofstream(root / ".env") << "ordinary text in a credential file";
+#ifndef _WIN32
+    fs::create_directory(root / "line\nbreak");
+    std::ofstream(root / "line\nbreak/ignored.txt") << "excluded";
+    std::ofstream(root / "line\nbreak/other.js") << "not a valid source locator";
+    std::ofstream(root / (std::string("locale-") + static_cast<char>(0xff))) << "unrepresentable path";
+#endif
+    std::ofstream(root / ".shinignore") << "\xEF\xBB\xBF  /hidden/\r\n# exclusions\n**/*.pending\nignored.tx?\n";
+    auto conflicting = profile;
+    conflicting.document_exclude_prefixes = {"private"};
+    bool refused = false;
+    try { (void)ProjectFiles::scan(conflicting, root); }
+    catch (const CliError& error) { refused = error.code() == "conflicting-project-selection"; }
+    expect(refused, "an automatic scan cannot silently discard another selection policy");
+    const auto selected = ProjectFiles::scan(profile, root);
+    expect(selected.sources.paths == std::vector<std::string>{".github/workflows/check.yml", "bin/launch",
+               "guides/Walkthrough.md", "src/nested/picked.cpp"}, "automatic membership and selective globs");
+    expect(selected.documents == std::vector<std::string>{"guides/Walkthrough.md"} &&
+               selected.omissions.oversized_files == 1 && selected.omissions.binary_files == 2,
+           "detect actual bounded text including misleading suffixes");
+    expect(selected.link_status("hidden/nonexistent.md") == "outside-scope" &&
+               selected.link_status("hidden/private.cpp") == "outside-scope" &&
+               selected.link_status("../outside") == "outside-scope" &&
+               selected.link_status("guides/Missing.md") == "broken", "excluded paths reveal no existence");
+    expect(automatic_project_event_relevant(root, ".shinignore", false) &&
+               automatic_project_event_relevant(root, "bin/new-util", false) &&
+               !automatic_project_event_relevant(root, "hidden/new.cpp", false),
+           "watch admitted changes and changes to scope");
+    std::ofstream(root / ".shinignore") << "!../hidden/private.cpp\n";
+    bool invalid = false;
+    try { (void)ProjectFiles::scan(profile, root); }
+    catch (const CliError& error) { invalid = error.code() == "invalid-project-exclusions"; }
+    expect(invalid, "malformed exclusions fail closed");
+    std::error_code ec;
+    fs::remove(root / ".shinignore");
+    fs::create_symlink(root / ".env", root / ".shinignore", ec);
+    if (!ec) {
+        bool unsafe = false;
+        try { (void)ProjectFiles::scan(profile, root); }
+        catch (const CliError& error) { unsafe = error.code() == "unsafe-project-exclusions"; }
+        expect(unsafe, "symlinked policy fails closed");
+    }
+}
+
+void layered_project_ignore_rules(const fs::path& parent) {
+    Fixture fixture(parent);
+    const auto& root = fixture.root;
+    const auto write = [&](const std::string& path, const std::string& bytes) {
+        fs::create_directories((root / path).parent_path());
+        std::ofstream(root / path, std::ios::binary) << bytes;
+    };
+    write(".gitignore", "local/\n*.tmp\n/**/*.trace\n/**/*.log\n!root.log\nmixed/*\n!mixed/kept\n"
+          "range[0-9].txt\nnumber[[:digit:]].txt\nliteral\\*.txt\n\\#private\n\\!private\n"
+          "block/**/secret\nleaf/\n!local/ignored-by-parent.md\n");
+    write("sub/.gitignore", "!keep.tmp\nonly-here.md\n/anchored\n");
+    write(".shinignore", "/private/\n!/local/allowed.md\n!/local/.env\n!/node_modules/readme.md\n"
+          "!sub/only-here.md\n/sub/keep.tmp\n!/mixed/file\n/mixed/file\n");
+    const std::vector<std::pair<std::string, bool>> files = {
+        {"local/allowed.md", true}, {"local/other.md", false}, {"local/ignored-by-parent.md", false},
+        {"local/.env", false}, {"node_modules/readme.md", false}, {"private/note", false},
+        {"sub/only-here.md", true}, {"sub/keep.tmp", false}, {"sub/other.tmp", false},
+        {"sub/anchored", false}, {"sub/deeper/anchored", true}, {"only-here.md", true},
+        {"mixed/kept", true}, {"mixed/file", false}, {"nested/range3.txt", false}, {"rangeQ.txt", true},
+        {"number4.txt", false}, {"numberA.txt", true}, {"#private", false}, {"!private", false},
+        {"leaf", true}, {"elsewhere/leaf/note", false}, {"root.log", true},
+        {"sub/other.log", false}, {"block/secret", false}, {"block/a/b/secret", false},
+        {"block/a/b/public", true}
+    };
+    for (const auto& [path, allowed] : files) write(path, "bounded text\n");
+    Profile profile;
+    profile.automatic_project_files = true;
+    profile.source_fact_roots = {"."};
+    auto scanned = ProjectFiles::scan(profile, root);
+    for (const auto& [path, allowed] : files) {
+        expect(scanned.contains(path) == allowed, "layered selection for " + path);
+        expect(automatic_project_event_relevant(root, path, false) == allowed, "watch selection for " + path);
+        expect(scanned.link_status(path) == (allowed ? "ok" : "outside-scope"), "link scope for " + path);
+    }
+    expect(!automatic_project_event_relevant(root, "elsewhere/leaf", true), "prune an unrelated ignored tree");
+    expect(automatic_project_event_relevant(root, "local", true), "watch parents of explicit inclusions");
+    expect(!automatic_project_event_relevant(root, "local/.gitignore", false) &&
+           automatic_project_event_relevant(root, "sub/.gitignore", false) &&
+           automatic_project_event_relevant(root, "sub/.gitignore", true), "watch effective Git rule files and replacements");
+    expect(scanned.link_status("node_modules") == "outside-scope", "kit-excluded directories stay outside link scope");
+    expect(scanned.exclusions.current(root), "published exclusions match before a change");
+    fs::create_directory(root / "new-empty-directory");
+    expect(ProjectFiles::scan(profile, root).exclusions.revision == scanned.exclusions.revision,
+           "a directory without ignore rules does not change the policy revision");
+    write("block/a/.gitignore", "public\n");
+    expect(!scanned.exclusions.current(root), "new nested rules revoke the previous publication immediately");
+    fs::remove(root / "block/a/.gitignore");
+    expect(scanned.exclusions.current(root), "identical policy after deletion");
+    write(".gitignore", "sub/\n");
+    expect(!scanned.exclusions.current(root), "root Git rule edit invalidates the previous scope");
+
+    std::error_code ec;
+    fs::remove(root / ".gitignore");
+    fs::create_symlink(root / "private/note", root / ".gitignore", ec);
+    if (!ec) expect(ProjectFiles::scan(profile, root).contains("local/other.md"), "ignore Git rule symlinks");
 }
 
 void explicit_document_inventory_at_scale(const fs::path& parent) {
@@ -249,6 +406,9 @@ int main(int argc, char** argv) {
         if (argc != 2) throw std::runtime_error("expected fixture parent");
         shin::context::enumeration_is_lexical_and_keeps_coverage(argv[1]);
         shin::context::explicit_document_aliases_preserve_selection(argv[1]);
+        shin::context::root_wiki_membership(argv[1]);
+        shin::context::automatic_membership_and_exclusion_fences(argv[1]);
+        shin::context::layered_project_ignore_rules(argv[1]);
         shin::context::explicit_document_inventory_at_scale(argv[1]);
         shin::context::errors_are_typed_and_safe();
         shin::context::exhausted_resource_is_identified();

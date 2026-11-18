@@ -276,7 +276,7 @@ void append_declaration(SyntaxFacts &facts,
                            std::string_view(ts_node_type(parent)) == "program";
     facts.declarations.push_back({node_text(name, content), std::string(kind), top_level,
                                   source_line(ts_node_start_point(name)), source_line(start),
-                                  source_end_line(end)});
+                                  source_end_line(end), ts_node_start_byte(name)});
 }
 
 TSNode java_qualified_child(TSNode node) noexcept {

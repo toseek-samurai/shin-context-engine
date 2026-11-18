@@ -1,4 +1,5 @@
 #include "shin/observer/local_query.h"
+#include "project_files.h"
 #include "local_sessions.h"
 #include "shin/observer/local_changes.h"
 #include "context_internal.h"
@@ -65,6 +66,8 @@ struct LocalQuerySession::Impl {
     // Rows belong to the immutable snapshot, which outlives this lookup table.
     SourceBindings sources;
     std::map<std::string, bool> links;
+    core::ProjectIgnoreBinding exclusions;
+    std::map<std::string, std::string> ignore_file_digests;
     std::uint64_t epoch = 0;
     double prepared_ms = 0;
     std::uint64_t requests = 0;
@@ -92,6 +95,13 @@ struct LocalQuerySession::Impl {
         stage("reader-snapshot");
         snapshot = core::GeneratedSnapshot::load(options, {config.max_snapshot_bytes, config.max_file_bytes}, qualification.snapshot);
         options.generated_snapshot = snapshot;
+        if (options.profile.automatic_project_files) {
+            exclusions = core::published_project_exclusions(options.profile, snapshot->manifest());
+            ignore_file_digests = verified_ignore_files();
+            const auto& files = snapshot->manifest().at("project_files");
+            for (const auto& [key, value] : files.items())
+                if (key != "git_ignore_directories") status["project_files"][key] = value;
+        }
         status["source_scope"] = core::source_discovery_scope(options.profile);
         const auto coverage = source_coverage_summary(snapshot->manifest());
         if (!coverage.is_null() && !partial) status["source_coverage"] = coverage;
@@ -135,8 +145,18 @@ struct LocalQuerySession::Impl {
         prepared_at_ms = now_ms();
     }
 
+    std::map<std::string, std::string> verified_ignore_files() const {
+        std::map<std::string, std::string> files;
+        if (!exclusions.current(config.root, [&](const std::string& path, const std::string& bytes) {
+            files.emplace(path, digest(bytes));
+        })) throw Error("project-updating", "Project exclusions changed; preparing a fresh generation.");
+        return files;
+    }
+
     void guard() {
         verify_authority();
+        if (!exclusions.revision.empty() && verified_ignore_files() != ignore_file_digests)
+            throw Error("project-updating", "Project exclusions changed; preparing a fresh generation.");
         changes->flush();
         if (!changes->healthy() || (!partial && changes->sequence() != epoch))
             throw Error("project-updating", "Source observation changed; background preparation is in progress.");
@@ -149,7 +169,7 @@ struct LocalQuerySession::Impl {
             if (core::file_metadata(path) != metadata)
                 throw Error("project-updating", "Derived search cache changed; background preparation is in progress.");
         for (const auto& [path, exists] : links)
-            if (!partial && fs::exists(config.root / path) != exists)
+            if (!partial && core::observed_link_exists(options.profile.automatic_project_files, config.root, path) != exists)
                 throw Error("project-updating", "A generation dependency changed; background preparation is in progress.");
     }
 

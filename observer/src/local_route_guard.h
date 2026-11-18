@@ -1,6 +1,8 @@
 #pragma once
 #include "shin/observer/observer.h"
-#include "context_internal.h"
+#include "shin/observer/local_package.h"
+#include "context_types.h"
+#include "shin/observer/local_registry.h"
 
 namespace shin::observer {
 inline bool present(const fs::path& path) {
@@ -30,15 +32,35 @@ inline void guard_ancestor_bindings(const fs::path& root, const fs::path& home) 
     }
 }
 
-inline void guard_existing_routes(const fs::path& root, const fs::path& home) {
-    guard_ancestor_bindings(root, home);
-    unsigned depth = 0;
-    for (auto current = root; current != current.root_path(); current = current.parent_path()) {
-        if (++depth > 128) throw Error("root-too-deep", "Project ancestry exceeds the local admission limit.");
-        if (shin::context::find_existing_adoption_marker(current))
-            throw Error("existing-project-adoption", "Existing Shin settings found. Connect them once with shin-ce init --observer-config FILE; the existing index will not be replaced.");
-        if (present(current / "docs/kb/generated/manifest.json") || present(current / "docs/kb/.shin-context.lock"))
-            throw Error("existing-project-publication", "Existing Shin index found. Connect it with shin-ce init --observer-config FILE; automatic replacement is disabled: " + current.string());
+inline std::string automatic_source_kit() {
+    return std::string(SHIN_OBSERVER_VERSION) + "/" + SHIN_VERSION + "/" + shin::context::kGeneratorVersion;
+}
+
+// Compatibility diagnostics may still open an explicitly selected external route.
+// Enrolled source roots use only the package's private publication.
+inline bool packaged_managed_routes() {
+    static const bool packaged = [] {
+        const auto bin = current_executable_path().parent_path();
+        return homebrew_managed() || bin.filename() == "bin" || present(bin.parent_path() / "shin-kit.json");
+    }();
+    return packaged;
+}
+
+inline bool current_automatic_primary(const Json& binding, const std::optional<fs::path>& bundled) {
+    return binding.value("source_selection", "") == "automatic-project-files" &&
+        binding.value("source_kit", "") == automatic_source_kit() &&
+        (!packaged_managed_routes() || !bundled || binding.value("profile_dir", "") == bundled->string());
+}
+
+inline bool enrolled_source_root(const fs::path& root, const fs::path& home, const fs::path& workspace) {
+    if (!present(home / "registry")) return false;
+    for (const auto& entry : registered_local_projects(home)) {
+        if (entry.root != root) continue;
+        if (directory_identity(root) != entry.maintenance_root_identity ||
+            directory_identity(workspace, true) != entry.maintenance_workspace_identity)
+            throw Error("registry-binding-changed", "Enrolled source or workspace identity changed.");
+        return true;
     }
+    return false;
 }
 } // namespace shin::observer

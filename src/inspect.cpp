@@ -66,6 +66,7 @@ void validate_inspect_path(const std::string& path) {
 
 Json RetrievalSession::inspect(const std::string& path) const {
     validate_inspect_path(path);
+    verify_project_exclusions();
     const auto probe = probe_generated_path(options_, path, kInspectRecords);
     std::vector<Json> records;
     records.reserve(probe.sections.size() + probe.facts.size());
@@ -127,6 +128,7 @@ Json RetrievalSession::inspect(const std::string& path) const {
     if (result.dump(2).size() + 1 > kInspectBytes)
         throw CliError("inspect-output-budget", "resource", "Inspection envelope exceeds its byte budget.", 1,
                        false, "Use a shorter explicit repository and publication route.");
+    verify_project_exclusions();
     return result;
 }
 

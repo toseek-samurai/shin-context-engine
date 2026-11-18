@@ -98,7 +98,9 @@ Json installation(const fs::path& home, bool create) {
         value->at("identity_directory") != directory_identity(directory,true)) invalid();
     return *value;
 }
-std::string binding_key(const Json& binding, const fs::path& root, const fs::path& workspace) {
+} // namespace
+
+std::string local_binding_key(const Json& binding, const fs::path& root, const fs::path& workspace) {
     if (!binding.is_object() || binding.value("root",Json(nullptr)) != root.string() ||
         binding.value("root_identity",Json(nullptr)) != directory_identity(root) ||
         binding.value("workspace_identity",Json(nullptr)) != directory_identity(workspace,true)) invalid();
@@ -115,6 +117,7 @@ std::string binding_key(const Json& binding, const fs::path& root, const fs::pat
     // Quality/profile revisions and snapshots may evolve without becoming a new checkout.
     return digest(stable.dump());
 }
+namespace {
 Json working_copy(const Json& host, const std::string& key, const fs::path& workspace, bool create, bool allow_unpinned = false) {
     const auto directory = workspace / "identity";
     const bool existed = present(directory);
@@ -155,7 +158,7 @@ void check_local_identity(const fs::path& home, const fs::path& root, bool insta
         const auto saved = binding.load();
         if (!saved) invalid();
         // A valid stamp before the catalog commit is resumable only by init.
-        (void)working_copy(host,binding_key(*saved,root,workspace),workspace,false,true);
+        (void)working_copy(host,local_binding_key(*saved,root,workspace),workspace,false,true);
     }
 }
 
@@ -172,7 +175,7 @@ Json local_identity(const LocalProjectRequest& request, bool enroll) {
     if (!saved || saved->value("prepared_snapshot",Json("")) == "")
         throw Error("local-identity-unavailable", "A prepared local project binding is required.");
     require_local_project_active(workspace);
-    const auto key = binding_key(*saved,root,workspace);
+    const auto key = local_binding_key(*saved,root,workspace);
     // A lost installation cannot replace a known working copy's installation ID.
     if (present(workspace / "identity") && !present(home / "identity"))
         throw Error("local-identity-unavailable", "The installation identity required by this working copy is missing.");
@@ -195,7 +198,7 @@ Json local_identity(const LocalProjectRequest& request, bool enroll) {
         if (current.at(field) != host.at(field)) invalid();
     if (!current.at("workspaces").contains(slot) || current.at("workspaces").at(slot) != digest(copy.dump())) invalid();
     if (binding.load() != saved ||
-        working_copy(host,binding_key(*saved,root,workspace),workspace,false) != copy) invalid();
+        working_copy(host,local_binding_key(*saved,root,workspace),workspace,false) != copy) invalid();
     return {{"schema_version","shin.local-identity.v1"}, {"installation_id",host.at("installation_id")},
         {"local_workspace_id",copy.at("local_workspace_id")}, {"binding_key",key},
         {"server_binding",nullptr}, {"authentication",false}, {"content_currentness_assessed",false}};

@@ -5,6 +5,7 @@ namespace shin::context { struct Profile; struct VerifiedSnapshot; class Generat
 
 namespace shin::observer {
 Json source_coverage_summary(const Json& manifest);
+Json source_coverage_from_doctor(const Json& doctor);
 struct LocalReaderQualification {
     const shin::context::VerifiedSnapshot* snapshot = nullptr;
     const shin::context::GenerationAdmission* admission = nullptr;

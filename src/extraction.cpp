@@ -366,17 +366,26 @@ static LinkRow classify_link(const fs::path& root,
             return row;
         }
     }
-    if (starts_with(target_path, "/")) {
+    const bool explicit_root = starts_with(target_path, "/");
+    if (explicit_root) {
         target_path.erase(target_path.begin());
     }
-    fs::path resolved_rel;
-    if (starts_with(target_path, "docs/") || starts_with(target_path, "README.md") ||
-        starts_with(target_path, "tests/") || starts_with(target_path, "include/") ||
-        starts_with(target_path, "src/") || starts_with(target_path, "deploy/")) {
-        resolved_rel = fs::path(target_path).lexically_normal();
-    } else {
-        resolved_rel = (fs::path(path).parent_path() / target_path).lexically_normal();
+    const auto document_relative = (fs::path(path).parent_path() / target_path).lexically_normal();
+    if (project && !explicit_root && kind == "path-reference" && target_path == "README.md" &&
+        document_relative != target_path) {
+        // Catalogs often use a bare README entry for a sibling document.
+        row.resolved_path = document_relative.generic_string();
+        row.status = project->link_status(row.resolved_path);
+        if (row.status != "broken") return row;
     }
+    // Managed Markdown uses document-relative paths. Standalone profiles and
+    // extracted JSON references keep their repository-root path conventions.
+    const bool implicit_root = (!project || kind == "path-reference") &&
+        (starts_with(target_path, "docs/") || starts_with(target_path, "README.md") ||
+         starts_with(target_path, "tests/") || starts_with(target_path, "include/") ||
+         starts_with(target_path, "src/") || starts_with(target_path, "deploy/"));
+    const auto resolved_rel = (project && explicit_root) || implicit_root
+        ? fs::path(target_path).lexically_normal() : document_relative;
     row.resolved_path = resolved_rel.generic_string();
     row.status = project ? project->link_status(row.resolved_path) : (fs::exists(root / resolved_rel) ? "ok" : "broken");
     return row;

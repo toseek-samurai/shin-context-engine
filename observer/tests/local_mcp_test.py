@@ -254,6 +254,9 @@ class McpTests(unittest.TestCase):
 
     def test_qualified_project_status_distinguishes_reader_warmup(self):
         # Evict a qualified reader through the real bounded resident cache.
+        secret = 'sk-' + 'Q7x9' * 16
+        excluded = self.root / 'unsafe.js'
+        excluded.write_text('export const token = "' + secret + '";\n')
         others = []
         for i in range(5):
             root = self.base / f'other-warmup-{i}'
@@ -262,12 +265,24 @@ class McpTests(unittest.TestCase):
             self.init(root=root); self.roots.append(root); others.append(root)
         self.start(ready=False)
         self.wait_service_state(lambda s: len(s['qualified_projects']) == len(self.roots), timeout=10)
-        self.assertTrue(self.raw('query', query='readLimit')['ok'])
+        initial = self.raw('query', query='readLimit')['result']
+        self.assertEqual(initial['source_coverage']['quarantined_files'], 1)
         for root in others:
             self.assertTrue(self.raw('query', query='readLimit', root=root)['ok'])
         state = self.raw('service-status')['result']
         self.assertIn(str(self.root), [p['root'] for p in state['qualified_projects']])
         self.assertNotIn(str(self.root), [p['root'] for p in state['resident_projects']])
+        def project_row(state):
+            return next((p for p in state['telemetry']['project_states'] if p['root'] == str(self.root)), {})
+
+        # A new generation must still report quarantine without a resident reader.
+        excluded.write_text(excluded.read_text() + '// New generation\n')
+        state = self.wait_service_state(lambda s: any(
+            p['root'] == str(self.root) and p['snapshot_id'] != initial['snapshot_id']
+            for p in s['qualified_projects']) and project_row(s).get('query_phase') == 'standby', timeout=12)
+        coverage = project_row(state).get('source_coverage')
+        self.assertEqual(coverage, initial['source_coverage'])
+        self.assertNotIn(secret, json.dumps(state))
         workspace = self.home / 'projects' / hashlib.sha256(str(self.root).encode()).hexdigest()
         child = self.adapter()
         with (workspace / 'index/docs/kb/.shin-context.lock').open('rb') as lock:
@@ -290,6 +305,13 @@ class McpTests(unittest.TestCase):
         self.assertTrue(result['ok'], result)
         self.assertTrue(result['local_ready'])
         self.assertIn('return 7;', json.dumps(result))
+        self.assertEqual(result['source_coverage'], coverage)
+
+        excluded.write_text('export const exampleCount = 3;\n')
+        state = self.wait_service_state(lambda s: any(
+            p['root'] == str(self.root) and p['snapshot_id'] != result['snapshot_id']
+            for p in s['qualified_projects']), timeout=12)
+        self.assertNotIn('source_coverage', project_row(state))
 
     def test_query_waits_in_one_call_with_progress_and_fresh_context(self):
         import fcntl

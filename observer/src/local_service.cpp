@@ -541,9 +541,6 @@ private:
                         reader.ready = true;
                         reader.preparation = frame.at("preparation");
                         reader.snapshot = reader.preparation.at("snapshot_id");
-                        const auto selected = qualified.find(root);
-                        if (selected != qualified.end() && selected->second.snapshot == reader.snapshot)
-                            selected->second.source_coverage = reader.preparation.value("source_coverage", Json());
                         resident_errors.erase(root);
                         wake_admissions();
                     } else if (kind == "response" && reader.ready && !reader.request_id.empty()) {
@@ -668,19 +665,17 @@ private:
             if (command == "service-status") {
                 value["result"]["telemetry"] = telemetry.snapshot();
                 for (auto& project : value["result"]["telemetry"]["project_states"]) {
-                    const auto found = residents.find(project.at("root").get<std::string>());
+                    const auto& root = project.at("root").get_ref<const std::string&>();
+                    const auto found = residents.find(root);
                     project["query_ready"] = found != residents.end() && found->second->ready;
                     if (project["query_ready"] == true && found->second->preparation.contains("reader_preparation"))
                         project["reader_preparation"] = found->second->preparation.at("reader_preparation");
-                    if (project["query_ready"] == true && found->second->preparation.contains("source_coverage"))
-                        project["source_coverage"] = found->second->preparation.at("source_coverage");
-                    const auto root = project.at("root").get<std::string>();
                     const auto selected = qualified.find(root);
                     if (selected != qualified.end() && !selected->second.source_coverage.is_null())
                         project["source_coverage"] = selected->second.source_coverage;
                     project["query_phase"] = project.at("query_ready") == true ? "ready" :
                         (found == residents.end() && qualified.contains(root) ? "standby" : "preparing");
-                    const auto error = resident_errors.find(project.at("root").get<std::string>());
+                    const auto error = resident_errors.find(root);
                     project["query_error_code"] = error == resident_errors.end() ? "" : error->second.code;
                     if (project.at("query_ready") == false && error != resident_errors.end() &&
                         error->second.code != "project-updating" && error->second.code != "resident-disconnected") {

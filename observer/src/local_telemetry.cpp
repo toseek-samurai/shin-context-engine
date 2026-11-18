@@ -94,6 +94,27 @@ void bound_local_service_status(Json& status) {
             bytes = status.dump().size();
         }
     }
+    // The same quarantine can appear in both a qualified project and a
+    // resident preparation. Keep the badge and count even if paths do not fit.
+    const auto prune_quarantine_paths = [&](Json& row) {
+        if (bytes <= kLocalStatusByteLimit) return;
+        const auto coverage = row.find("source_coverage");
+        if (coverage == row.end() || !coverage->contains("quarantined_files")) return;
+        const auto files = coverage->find("files");
+        if (files == coverage->end() || files->empty()) return;
+        (*coverage)["omitted_files"] = coverage->value("omitted_files", std::size_t{0}) + files->size();
+        *files = Json::array();
+        projection["truncated"] = true;
+        bytes = status.dump().size();
+    };
+    if (bytes > kLocalStatusByteLimit) {
+        if (auto residents = status.find("resident_projects"); residents != status.end())
+            for (auto& resident : *residents)
+                if (auto preparation = resident.find("preparation"); preparation != resident.end())
+                    prune_quarantine_paths(*preparation);
+        if (auto projects = telemetry.find("project_states"); projects != telemetry.end())
+            for (auto& project : *projects) prune_quarantine_paths(project);
+    }
     if (bytes > kLocalStatusByteLimit)
         throw Error("service-status-too-large", "Essential local service status exceeds its byte budget.");
 }
@@ -163,7 +184,8 @@ void LocalTelemetry::record(const fs::path& root, const Json& state) {
         const auto warnings = result.value("documentation_warnings", Json());
         if (warnings.is_number_integer() && warnings >= 0)
             value["documentation_warnings"] = std::min<std::uint64_t>(warnings.get<std::uint64_t>(), 1000000);
-        if (result.contains("source_coverage") && result.at("source_coverage").is_object())
+        if (const auto coverage = result.find("source_coverage"); coverage != result.end() &&
+            coverage->is_object() && coverage->value("reason", "") == "profile-revision-pending")
             value["source_coverage"] = {{"state", "partial"}, {"reason", "profile-revision-pending"}};
         if (result.contains("candidate_diagnostic")) {
             const auto diagnostic = bounded_failure_diagnostic(result.at("candidate_diagnostic"));

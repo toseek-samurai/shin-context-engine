@@ -247,6 +247,57 @@ void layered_project_ignore_rules(const fs::path& parent) {
     if (!ec) expect(ProjectFiles::scan(profile, root).contains("local/other.md"), "ignore Git rule symlinks");
 }
 
+void automatic_document_links_resolve_from_the_document(const fs::path& parent) {
+    Fixture fixture(parent);
+    const auto write = [&](const std::string& path, const std::string& text) {
+        const auto file = fixture.root / path;
+        fs::create_directories(file.parent_path());
+        std::ofstream(file) << text;
+    };
+    write("README.md", "# Project\n");
+    write("docs/runbook.md", "# Project runbook\n");
+    write("docs/project-only.md", "# Project only\n");
+    write("assets/logo.svg", "<svg/>\n");
+    write("packages/widget/README.md", "# Widget\n"
+        "[Package runbook](docs/runbook.md)\n"
+        "[Explicit logo](/assets/logo.svg)\n"
+        "[Missing local file](docs/project-only.md)\n"
+        "[Ignored file](docs/private.md)\n"
+        "[Outside project](../../../external.md)\n");
+    write("packages/widget/docs/runbook.md", "# Widget runbook\n");
+    write("packages/widget/docs/private.md", "# Ignored\n");
+    write(".shinignore", "packages/widget/docs/private.md\n");
+    write("docs/catalog/index.json", "{\"entry\": \"README.md\"}\n");
+    write("docs/catalog/README.md", "# Catalog\n");
+    write("docs/changelog/index.json", "{\"entry\": \"README.md\"}\n");
+
+    Profile profile;
+    profile.automatic_project_files = true;
+    profile.source_fact_roots = {"."};
+    const auto generated = generate_outputs(profile, fixture.root);
+    expect(generated.broken_local_link_count == 1, "only the unavailable relative link is broken");
+    const auto& data = generated.files.at((kGeneratedDir / "links.jsonl").generic_string());
+    std::istringstream lines(data);
+    std::vector<LinkRow> links;
+    for (std::string line; std::getline(lines, line);) links.push_back(parse_link_row(line));
+    const auto has_link = [&](std::string_view source, std::string_view destination, std::string_view status) {
+        return std::any_of(links.begin(), links.end(), [&](const LinkRow& link) {
+            return link.path == source && link.resolved_path == destination && link.status == status;
+        });
+    };
+    expect(has_link("packages/widget/README.md", "packages/widget/docs/runbook.md", "ok"),
+           "nested Markdown links keep their own directory even when the root has a matching file");
+    expect(has_link("packages/widget/README.md", "assets/logo.svg", "ok"), "explicit project-relative link");
+    expect(has_link("packages/widget/README.md", "packages/widget/docs/project-only.md", "broken"),
+           "a root file cannot satisfy a missing Markdown-relative target");
+    expect(has_link("packages/widget/README.md", "packages/widget/docs/private.md", "outside-scope") &&
+           has_link("packages/widget/README.md", "../external.md", "outside-scope"),
+           "managed exclusions and root boundaries still apply to links");
+    expect(has_link("docs/catalog/index.json", "docs/catalog/README.md", "ok") &&
+           has_link("docs/changelog/index.json", "README.md", "ok"),
+           "bare README references in JSON catalogs prefer siblings and can refer to the project README");
+}
+
 void explicit_document_inventory_at_scale(const fs::path& parent) {
     Fixture fixture(parent);
     fs::create_directory(fixture.root / "notes");
@@ -409,6 +460,7 @@ int main(int argc, char** argv) {
         shin::context::root_wiki_membership(argv[1]);
         shin::context::automatic_membership_and_exclusion_fences(argv[1]);
         shin::context::layered_project_ignore_rules(argv[1]);
+        shin::context::automatic_document_links_resolve_from_the_document(argv[1]);
         shin::context::explicit_document_inventory_at_scale(argv[1]);
         shin::context::errors_are_typed_and_safe();
         shin::context::exhausted_resource_is_identified();

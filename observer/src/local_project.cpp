@@ -51,6 +51,19 @@ template<class Invoke> Json core_result(Invoke&& invoke) {
     return result;
 }
 
+void add_doctor_notices(Json& result, const Json& doctor, bool report_coverage) {
+    result["documentation_warnings"] = doctor.at("counts").at("broken_links");
+    if (report_coverage) {
+        auto coverage = source_coverage_from_doctor(doctor);
+        if (!coverage.is_null()) result["source_coverage"] = std::move(coverage);
+    }
+}
+
+void copy_bootstrap_notices(Json& result, const Json& readiness) {
+    result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
+    if (readiness.contains("source_coverage")) result["source_coverage"] = readiness.at("source_coverage");
+}
+
 Json bootstrap_readiness(const core::RuntimeOptions& input_options) {
     auto options = input_options;
     options.generation_admission.reset();
@@ -64,7 +77,7 @@ Json bootstrap_readiness(const core::RuntimeOptions& input_options) {
             auto detail = core_result(invoke);
             const bool ok = local_gate_ready(true, name, detail);
             if (std::string_view(name) == "doctor")
-                result["documentation_warnings"] = detail.at("counts").at("broken_links");
+                add_doctor_notices(result, detail, ok);
             // Use the same gate envelope as canonical validation so bounded
             // diagnostics retain real bootstrap failures rather than empty gates.
             result["gates"].push_back({{"id", name}, {"status", ok ? "passed" : "failed"},
@@ -572,11 +585,12 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
             m.values["qualification_reused_output_bytes"] = options.generation_admission->reused_output_bytes();
             m.values["qualification_reused_output_files"] = options.generation_admission->reused_output_files();
             auto checks = Json::array({{{"id", "verified-generation"}, {"ok", true}}});
-            Json documentation_warnings = 0;
+            Json notices{{"documentation_warnings", 0}};
             const auto check = [&](const char* id, const char* metric, auto&& invoke) {
                 auto value = m.measure(metric, [&] { return core_result(invoke); });
-                if (std::string_view(id) == "doctor") documentation_warnings = value.at("counts").at("broken_links");
                 const bool ready = local_gate_ready(options.profile.bootstrap_only, id, value);
+                if (std::string_view(id) == "doctor")
+                    add_doctor_notices(notices, value, ready && options.profile.bootstrap_only);
                 checks.push_back({{"id", id}, {"ok", ready}});
                 return ready;
             };
@@ -598,9 +612,9 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
                 {"quality_reuse", {{"reused", !candidate.has_value()}, {"cache_status", candidate ? "published-candidate" : "hit"}, {"scope", "exact-qualified-generation"},
                     {"qualified_at_ms", saved->at("qualified_at_ms")}}},
                 {"qualified_resources", saved->at("resource")},
-                {"documentation_warnings", documentation_warnings},
                 {"summary", {{"attempted", checks.size()}, {"passed", checks.size()}, {"failed", 0},
                     {"validation_passed", saved->at("quality_warning").is_null()}, {"worktree_current", true}}}};
+                result.update(notices);
                 if (reader_snapshot) *reader_snapshot = std::move(observed);
                 return result;
             }
@@ -1281,6 +1295,7 @@ Json attached_project(const LocalProjectRequest& request, const fs::path& root, 
             {"prepared_new_snapshot", local_ready && loaded->at("prepared_snapshot") != binding.at("prepared_snapshot")},
             {"next_action", result.at("next_action")}});
         tick["quality_warning"] = result.at("quality_warning");
+        if (local_ready && !coverage.is_null()) tick["source_coverage"] = coverage;
         tick["refresh_work"] = qualification_metrics.values;
         if (published_qualification && published_qualification->work.is_object())
             tick["refresh_work"].update(published_qualification->work);
@@ -1718,7 +1733,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
             options.generation_admission->verify_content(options);
             authority();
             qualify(readiness);
-            result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
+            copy_bootstrap_notices(result, readiness);
             if (idle_session) idle_session->remember(options, result);
             return result;
         }
@@ -1758,7 +1773,7 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         result["recovery_pending"] = false;
         result["snapshot_id"] = snapshot;
         result["observation"] = observed.at("observation");
-        result["documentation_warnings"] = readiness.value("documentation_warnings", Json(0));
+        copy_bootstrap_notices(result, readiness);
         return result;
     }
     // Initial bootstrap may not have an index/lock yet; established readers
@@ -1868,10 +1883,12 @@ static Json local_project_impl(const LocalProjectRequest& input) {
         set_local_project_lifecycle(workspace, binding, "active");
     if (first_refresh) {
         if (!ready) throw Error("refresh-validation-failed", "Automatic source preparation did not qualify.", validation_diagnostic(readiness));
-        return {{"ok", true}, {"command", "watch-tick"}, {"phase", "current"}, {"rebuilt", rebuilt},
+        Json tick{{"ok", true}, {"command", "watch-tick"}, {"phase", "current"}, {"rebuilt", rebuilt},
             {"index", options.out_root.string()}, {"observation", observer.at("state").at("observation")},
             {"refresh_authority", "private-bootstrap"}, {"workspace_identity", binding.at("workspace_identity")},
             {"snapshot_id", binding.at("prepared_snapshot")}};
+        copy_bootstrap_notices(tick, readiness);
+        return tick;
     }
     return result;
 }

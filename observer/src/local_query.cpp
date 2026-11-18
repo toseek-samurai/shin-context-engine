@@ -12,25 +12,42 @@
 #include "local_context_delivery.h"
 
 namespace shin::observer {
-Json source_coverage_summary(const Json& manifest) {
-    Json files = Json::array();
-    std::set<std::string> paths;
-    for (const auto* scope : {"source_fact_sources", "sources"}) {
-        for (const auto& source : manifest.value(scope, Json::array())) {
-            if (source.value("quarantine_reason", std::string{}).empty() ||
-                !paths.insert(source.at("path").get<std::string>()).second) continue;
-            if (files.size() < 8) {
-                files.push_back({{"path", source.at("path")}, {"reason", "secret-like-source-content"}});
-                if (files.dump().size() > 4096) files.erase(files.size() - 1);
-            }
-        }
-    }
+namespace {
+Json quarantine_coverage(const std::set<std::string>& paths) {
     if (paths.empty()) return nullptr;
+    Json files = Json::array();
+    for (const auto& path : paths) {
+        if (files.size() == 8) break;
+        files.push_back({{"path", path}, {"reason", "secret-like-source-content"}});
+        if (files.dump().size() > 4096) files.erase(files.size() - 1);
+    }
     const auto omitted = paths.size() - files.size();
     return {{"state", "partial"}, {"quarantined_files", paths.size()}, {"files", std::move(files)},
         {"omitted_files", omitted},
         {"notice", "Some files are quarantined after secret detection. Safe project context remains available. Report partial coverage to the user."}};
 }
+} // namespace
+
+Json source_coverage_summary(const Json& manifest) {
+    std::set<std::string> paths;
+    for (const auto* scope : {"source_fact_sources", "sources"}) {
+        const auto* sources = shin::context::find_json_field(manifest, scope);
+        if (!sources) continue;
+        for (const auto& source : *sources)
+            if (!source.value("quarantine_reason", std::string{}).empty())
+                paths.insert(source.at("path").get<std::string>());
+    }
+    return quarantine_coverage(paths);
+}
+
+Json source_coverage_from_doctor(const Json& doctor) {
+    if (doctor.at("counts").at("quarantined_files") == 0) return nullptr;
+    std::set<std::string> paths;
+    for (const auto& issue : doctor.at("issues"))
+        if (issue.at("id") == "source-quarantined") paths.insert(issue.at("path").get<std::string>());
+    return quarantine_coverage(paths);
+}
+
 namespace {
 namespace core = shin::context;
 constexpr std::uintmax_t selected_bytes_limit = 16U * 1024U * 1024U;

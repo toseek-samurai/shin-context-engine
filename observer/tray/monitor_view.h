@@ -1456,8 +1456,8 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
                 ImGui::Spacing();
                 text(shin::ui::tr("Files with hidden lines"), muted, 128);
                 for (std::size_t i = 0; i < std::min<std::size_t>(8, files.size()); ++i) {
-                    const auto rule = shin::context::source_redaction_rule(text_field(files[i], "reason", 64));
-                    text(text_field(files[i], "path", 512) + " · " + std::string(rule), ink, 129 + static_cast<int>(i));
+                    const auto scanner_rule = shin::context::source_redaction_rule(text_field(files[i], "reason", 64));
+                    text(text_field(files[i], "path", 512) + " · " + std::string(scanner_rule), ink, 129 + static_cast<int>(i));
                 }
                 if (count(coverage, "omitted_files"))
                     text(std::string(shin::ui::tr("Other files with hidden lines: ")) + std::to_string(count(coverage, "omitted_files")), muted, 138);

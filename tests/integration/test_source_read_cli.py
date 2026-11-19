@@ -239,6 +239,77 @@ class SourceReadCliTests(unittest.TestCase):
         self.assertNotIn(provider_value, encoded)
         self.assertNotIn(bearer_value, encoded)
 
+    def test_multiline_http_call_keeps_only_the_public_route_visible(self):
+        profile_path = self.profiles / "read-fixture.json"
+        profile = json.loads(profile_path.read_text())
+        profile["sourceFactExtensions"].append(".ts")
+        profile_path.write_text(json.dumps(profile))
+        route = "/api/inventory/configurations"
+        opaque = "R5q8M4k6Pd3y" "B7a3Hx9Np2Ft"
+        lines = [
+            "const secret = await transport.api.post('" + route + "', {\n",
+            "  data: {\n",
+            "    password: '" + opaque + "',\n",
+            "  },\n",
+            "});\n",
+            "// Endpoint: " + route + "\n",
+            "const token = await transport.api.post('/api/warehouse/unfinished', {\n",
+        ]
+        target = "src/request.ts"
+        (self.root / target).write_bytes("".join(lines).encode())
+        self.call("build")
+        outline = self.call("inspect", target, "--require-current")
+        result = self.read({"schema_version": "shin.source-read-request.v2",
+                            "snapshot_id": outline["snapshot_id"], "file_paths": [target]})
+        body = result["evidence"]["bodies"][0]
+        self.assertEqual(body["redacted_line_ranges"], [
+            hidden_lines(3, 3, ["credential-assignment"]),
+            hidden_lines(7, 7, ["credential-assignment"]),
+        ])
+        for index in (2, 6):
+            lines[index] = " " * (len(lines[index]) - 1) + "\n"
+        self.assertEqual(body["text"], "".join(lines))
+        self.assertNotIn(opaque, json.dumps(result))
+
+    def test_padded_jwt_fixture_is_visible_in_test_configuration(self):
+        profile_path = self.profiles / "read-fixture.json"
+        profile = json.loads(profile_path.read_text())
+        profile["sourceFactExtensions"].append(".yml")
+        profile_path.write_text(json.dumps(profile))
+        test_config = "src/integrationTest/resources/application-test.yml"
+        config = self.root / test_config
+        config.parent.mkdir(parents=True)
+        label = "test-jwt-secret"
+        fixture = f"{label}-{label}-0123"
+        opaque = "Q7x9" * 16
+        protected = ("test-" + opaque, f"{label}-{label}-0213", "sk-" + opaque)
+        lines = [
+            "auth:\n",
+            "  jwt:\n",
+            "    secret: " + fixture + "\n",
+            "other:\n",
+            "  client-secret: " + protected[0] + "\n",
+            "  signing-secret: " + protected[1] + "\n",
+            "  api_key: " + protected[2] + "\n",
+        ]
+        config.write_bytes("".join(lines).encode())
+
+        self.call("build")
+        doctor = self.call("doctor", "--strict")
+        self.assertEqual(doctor["counts"]["redacted_files"], 1)
+        outline = self.call("inspect", test_config, "--require-current")
+        result = self.read({"schema_version": "shin.source-read-request.v2",
+                            "snapshot_id": outline["snapshot_id"], "file_paths": [test_config]})
+        body = result["evidence"]["bodies"][0]
+        self.assertEqual(body["redacted_line_ranges"], [
+            hidden_lines(5, 6, ["credential-assignment"]),
+            hidden_lines(7, 7, ["openai-api-key", "credential-assignment"]),
+        ])
+        self.assertIn(lines[2], body["text"])
+        encoded = json.dumps(result)
+        for value in protected:
+            self.assertNotIn(value, encoded)
+
     def test_forged_redaction_does_not_hide_published_source_rows(self):
         secret = "sk-" + "Q7x9" * 16
         self.source.write_text('int example() { return 3; }\nconst char* token = "' + secret + '";\n')

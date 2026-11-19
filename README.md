@@ -1,6 +1,6 @@
 # <img src="docs/images/shin-logo.png" align="absmiddle" width="48" height="48" alt="Shin logo"> Shin Context Engine
 
-[![Qualified dev.124 downloads](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.124)](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.124)
+[![Qualified dev.134 downloads](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.134)](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.134)
 
 **Local code and documentation context for coding agents.**
 
@@ -13,9 +13,9 @@ Local retrieval needs no account, model download, embedding service or cloud
 inference API. Your coding agent keeps its own model and workflow.
 
 [Documentation](docs/README.md) · [Connect your agent](docs/native-client-setup.md) ·
-[Download preview dev.124](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.124)
+[Download preview dev.134](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.134)
 
-**Development preview.** The documented download baseline is dev.124, with
+**Development preview.** The documented download baseline is dev.134, with
 qualified macOS, Windows and Linux packages. There is no stable release yet.
 [Source, package identities and platform support](docs/README.md#current-preview).
 
@@ -24,7 +24,7 @@ qualified macOS, Windows and Linux packages. There is no stable release yet.
 On **macOS 15+ with Apple Silicon**, install the versioned native kit:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.124/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.134/install.sh | sh
 open "$HOME/.local/opt/shin-local/Shin Monitor.app"
 ```
 
@@ -81,8 +81,8 @@ agents with the [reviewed CLI setup](docs/native-client-setup.md#automatic-setup
 registration and agent access are separate steps. The `PATH` change above lasts
 for this terminal session; installation leaves shell startup files unchanged.
 
-In the current development source, choose a project folder and the agents that
-may use it. Shin discovers eligible text throughout the folder, including files
+Choose a project folder and the agents that may use it.
+Shin discovers eligible text throughout the folder, including files
 with unfamiliar names or extensions. It follows the folder’s `.gitignore` rules
 and watches additions, edits, moves and removals. An optional root `.shinignore`
 can hide more paths or include a specific Git-ignored file. Setup requires no

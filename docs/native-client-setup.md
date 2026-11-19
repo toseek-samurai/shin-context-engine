@@ -111,7 +111,7 @@ shin-ce mcp-config --client rider --root /path/to/project --text
 
 ## Codex instruction updates
 
-In the development source, project setup discovers text under the selected folder
+Project setup discovers text under the selected folder
 automatically. Project `.gitignore` files supply the default rules. A root `.shinignore` can override them.
 The service picks up eligible new and moved files during refresh. Registering or
 refactoring a project requires no project profile, marker or eval suite. MCP access
@@ -297,11 +297,11 @@ The native `shin-ce` CLI can query the same enrolled project without changing cl
   --snapshot SNAPSHOT_ID --root /path/to/project --home /path/to/private-data
 ```
 
-Current development source also permits omitting `snapshot` after a successful
+The current preview permits omitting `snapshot` after a successful
 query with the same real `session_id` and project on the same MCP connection. The
 adapter pins it privately for 15 minutes; concurrent queries, reconnects or an
-unknown identity require an explicit snapshot or a fresh query. Existing published
-kits keep their advertised schema. Explicit snapshots are always checked.
+unknown identity require an explicit snapshot or a fresh query. Explicit snapshots
+are always checked.
 
 Use the snapshot returned by the query for `inspect` and `read`. Paths are project-relative. Check project and service status before relying on results. Missing or stale evidence is not permission to enroll, rebuild, or replace a project index; ask its owner before changing an existing binding or publication authority.
 
@@ -361,7 +361,7 @@ support Unicode. This preserves words; it does not translate a Russian question
 into an English document. Native source hints and document matching remain
 separate retrieval paths.
 
-In the development source, managed projects discover eligible text recursively,
+Managed projects discover eligible text recursively,
 including extensionless files and unfamiliar suffixes. Known formats can return
 language-specific evidence. Other text uses bounded excerpts with source
 locations. A lexical match in a stylesheet or template does not establish its
@@ -370,6 +370,8 @@ rendered behavior.
 Query responses describe their search scope in `source_scope`. Check the
 selection mode, limits and omissions when interpreting an empty result. Binary
 files, excluded paths and hidden lines are outside the available evidence.
+Source fragments use `REDACTED` markers to give the original line range and
+scanner rules. The rest of the verified fragment stays readable.
 The managed reader's `project_files` reports counts for excluded entries,
 oversized files and binary content. Directory exclusions count the directory
 once. A skipped binary extension may also fall under the built-in exclusions.

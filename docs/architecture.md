@@ -107,15 +107,15 @@ The MCP adapter can pin a follow-up snapshot for one real session and project af
 a successful query. An explicit snapshot remains strict; overlapping queries,
 unknown identities and a new connection require a snapshot or fresh query.
 `context_result` distinguishes delivered evidence from availability, with measured
-latency and process-scoped memory. These features are included in the documented
-dev.124 packages; a result summary still does not establish answer correctness.
+latency and process-scoped memory. These features are included in the
+[current preview](README.md#current-preview). Answer correctness is assessed separately.
 
 Dev.120 includes styles and web templates in the applicable bundled
 bootstrap profiles. The existing native source index searches CSS/SCSS,
 HTML/HTM and Razor/CSHTML as bounded text with exact source locators. Source
 scope is returned independently of readiness; excluded formats are not implied
 to have been searched. No CSS cascade, template rendering or framework symbol
-resolution is claimed. In current development source, unfamiliar formats also
+resolution is claimed. In the current preview, unfamiliar formats also
 supply bounded lexical evidence and managed selection is independent of extension.
 
 ## Quality gates and performance limitations

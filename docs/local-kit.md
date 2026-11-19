@@ -15,7 +15,7 @@ Windows ZIP/MSI packaging route are described in the [Windows guide](https://git
 
 ## Download a preview release
 
-Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.124).
+Use the assets attached to the [versioned preview release](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.134).
 The release contains the kit and independent Updater ZIPs, their SHA-256 files,
 and `install.sh`.
 Public release downloads do not require a GitHub account.
@@ -23,7 +23,7 @@ Public release downloads do not require a GitHub account.
 For one-command installation or update:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.124/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.134/install.sh | sh
 ```
 
 You can download `install.sh`, inspect it, then run it with `sh install.sh` instead.
@@ -182,7 +182,7 @@ fresh locations; do not delete existing state to force installation.
 
 ### Project text and exclusions
 
-The development source registers the project folder and discovers eligible
+Shin registers the project folder and discovers eligible
 text recursively, including extensionless files and unfamiliar suffixes. Known
 formats can supply structured evidence. Other text supplies bounded lexical
 excerpts with source locations. Adding a README, defining a source layout or

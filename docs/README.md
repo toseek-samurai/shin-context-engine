@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The documented download baseline is [dev.124](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.124).
-It contains Core **2.0.5-dev.29** and Observer/CLI/MCP/Monitor **2.0.5-dev.124**.
+The documented download baseline is [dev.134](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.134).
+It contains Core **2.0.5-dev.37** and Observer/CLI/MCP/Monitor **2.0.5-dev.134**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -12,9 +12,10 @@ Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
 
-The native packages include RE2-based secret scanning. The Homebrew tap has an
-independent qualified version, which can lag these binary downloads; check it
-with `brew info toseek-samurai/tap/shin-context-engine`. See
+The native packages use RE2-based secret scanning. Shin reports the triggering
+rules at each hidden line range and keeps surrounding text available.
+The Homebrew tap has an independent qualified version, which can lag these
+binary downloads. Check it with `brew info toseek-samurai/tap/shin-context-engine`. See
 [Homebrew installation](homebrew.md) for its build and update steps.
 
 Source identities are maintained in [VERSION](../VERSION),

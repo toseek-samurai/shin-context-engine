@@ -324,6 +324,12 @@ exists in the selected snapshot; it does not prove that a file is absent on disk
 Use an authorized direct reader for uncovered files. On a snapshot mismatch,
 query the same project once and use its new snapshot for the next source read.
 
+In source fragments from `shin_query` and `shin_read`, `REDACTED L58` marks a
+hidden original line and `REDACTED L58-L61` marks an inclusive range. Each
+marker lists the scanner rules that triggered on the range in `rules`.
+`copied_rules` identifies exact copies of values flagged elsewhere in the file.
+Treat marked lines as unavailable when interpreting the code.
+
 ## Getting useful context
 
 The default engine uses lexical retrieval. For unfamiliar code, ask one focused
@@ -370,7 +376,7 @@ once. A skipped binary extension may also fall under the built-in exclusions.
 See [project text and exclusions](local-kit.md#project-text-and-exclusions) for
 project `.gitignore` files and the optional root `.shinignore`.
 
-The current Core source uses one index format, `shin-generator-v25-source-redaction`.
+The current Core source uses one index format, `shin-generator-v26-source-redaction`.
 The service rebuilds older managed indexes from approved project sources before
 serving them. Project settings, permissions, histories and recovery notes remain
 intact. Standalone Core users run `build` explicitly; old indexes are not queried

@@ -1,7 +1,7 @@
 {
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v25-source-redaction",
+    "generator": "shin-generator-v26-source-redaction",
     "format": "shin.lexical.v1",
     "contract": "docs/machine/lexical-retrieval-v1.json",
     "evidenceRowsChanged": false,

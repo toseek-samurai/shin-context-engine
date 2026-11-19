@@ -222,11 +222,10 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
                 throw_index_error("source-read-span-mismatch", "Selected span does not match its source bytes.", false);
             if (ranges.contains(key)) continue;
             const auto begin = offsets.at(static_cast<std::size_t>(row.start - 1));
-            const bool redacted = redaction.intersects(begin, begin + text.size());
             Json body = {{"path", path}, {"start_line", row.start}, {"end_line", row.end},
                 {"span_hash", row.span_hash}, {"source_content_hash", hash}, {"source_range_bytes", text.size()},
-                {"state", redacted ? "redacted" : "complete"},
-                {"reason", redacted ? Json(redaction.reason) : Json(nullptr)}, {"text", text}};
+                {"reason", nullptr}, {"text", text}};
+            redaction.annotate_body(body, offsets, begin, begin + text.size());
             ranges.emplace(key, std::move(body));
         }
     }

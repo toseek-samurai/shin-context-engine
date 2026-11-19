@@ -54,15 +54,14 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
     const auto omit = [&](const std::string& path, const char* reason, const char* role) {
         context["omissions"].push_back({{"path", path}, {"reason", reason}, {"role", role}});
     };
-    const auto append_body = [&](Json body, const std::string& text, const char* role) {
+    const auto append_body = [&](Json body, const std::string& text,
+                                 const std::vector<std::size_t>& offsets, const char* role) {
         const auto& redaction = contents.at(body.at("path").get_ref<const std::string&>()).redaction;
-        const bool protected_lines = redaction.intersects(body.at("byte_start"), body.at("byte_end"));
         body["text"] = text;
         body["role"] = role;
         body["evidence_kind"] = "source-code";
         body["verification_level"] = "source-observed";
-        body["state"] = protected_lines ? "redacted" : "complete";
-        if (protected_lines) body["reason"] = redaction.reason;
+        redaction.annotate_body(body, offsets, body.at("byte_start"), body.at("byte_end"));
         context["bodies"].push_back(std::move(body));
         // Reserve space for bounded metadata; never clip an evidence body.
         if (context["bodies"].dump().size() > 16 * 1024) {
@@ -91,7 +90,7 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
                 candidate.at("start_line").get<std::size_t>() &&
             static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) ==
                 candidate.at("end_line").get<std::size_t>());
-        append_body(candidate, text, "selected");
+        append_body(candidate, text, offsets, "selected");
         if (std::find(seeds.begin(), seeds.end(), path) == seeds.end()) seeds.push_back(path);
     }
     // Reuse the resolved publication graph, but select range-owned edges before
@@ -175,7 +174,7 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
         append_body({{"path", path}, {"source_content_hash", sources.at(path)}, {"span_hash", fnv1a64(text)},
             {"byte_start", begin}, {"byte_end", end}, {"start_line", declaration ? link->target_start_line : 1}, {"end_line", end_line},
             {"source_path", link->path}, {"source_line", link->line}, {"target_symbol", link->target},
-            {"range_origin", declaration ? link->target_range_origin : "whole-related-file"}}, text, "related");
+            {"range_origin", declaration ? link->target_range_origin : "whole-related-file"}}, text, offsets, "related");
     }
     context["relations_omitted"] = context.at("eligible_relations").get<std::size_t>() - context["relations"].size();
     context["materialization_source_bytes"] = source_bytes;

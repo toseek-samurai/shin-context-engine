@@ -37,8 +37,4 @@ std::string source_physical_range(const std::string& content,
     return content.substr(begin, finish - begin);
 }
 
-SecretScanHit source_range_secret(const std::string& text, std::string_view path) {
-    return detect_secret_like_text(text, false, path);
-}
-
 }  // namespace shin::context

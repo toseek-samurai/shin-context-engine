@@ -642,7 +642,10 @@ class McpTests(unittest.TestCase):
         self.assertEqual(query['source_coverage']['files'][0]['reason'], 'openai-api-key')
         redacted = self.tool(child, 'shin_read', {'path': 'unsafe.js', 'snapshot': query['snapshot_id']})
         self.assertTrue(redacted['ok'])
-        self.assertIn('redacted', redacted['source_context'])
+        for reply in (same_file, redacted):
+            marker = next(line for line in reply['source_context'].splitlines() if line.startswith('REDACTED L2 '))
+            self.assertEqual(json.loads(marker.split(' ', 2)[2]),
+                             {'rules': ['openai-api-key', 'credential-assignment'], 'copied_rules': []})
         self.assertIn('return 31;', redacted['source_context'])
         self.assertIn('return 27;', redacted['source_context'])
         self.assertNotIn(secret, json.dumps(redacted))

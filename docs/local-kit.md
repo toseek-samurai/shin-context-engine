@@ -565,7 +565,7 @@ there is no historical index reader, format conversion or version-pair allowlist
 Downgrades are not normal updates. Transactional rollback uses the verified
 previous payload retained by the installation journal.
 
-The current generator is `shin-generator-v25-source-redaction`. A fresh kit
+The current generator is `shin-generator-v26-source-redaction`. A fresh kit
 keeps the enrolled project folders, agent settings, grants and history. It
 rebuilds managed evidence from current files with its own discovery rules and
 each project's `.gitignore` files and optional root `.shinignore`. Existing client selections continue

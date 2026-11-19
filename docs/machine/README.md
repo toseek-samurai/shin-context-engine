@@ -14,7 +14,7 @@ the [current documentation](../README.md).
 - [mcp-service-v1.json](mcp-service-v1.json) defines managed project discovery, source scope, MCP transport, runtime identity and reconnect boundaries.
 - [shin-context-engine.manifest.json](shin-context-engine.manifest.json) describes the product and command inventory.
 
-The current generator is `shin-generator-v25-source-redaction`. Retrieval requires
+The current generator is `shin-generator-v26-source-redaction`. Retrieval requires
 the running binary's generator; there is no reader for old index formats.
 Managed publications are rebuilt from the selected folders and their current
 exclusions. Standalone Core uses an explicit `build` and can use profiles, strict

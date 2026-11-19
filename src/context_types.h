@@ -51,7 +51,7 @@ namespace fs = std::filesystem;
 using Json = nlohmann::json;
 
 inline const fs::path kGeneratedDir = fs::path("docs") / "kb" / "generated";
-inline const std::string kGeneratorVersion = "shin-generator-v25-source-redaction";
+inline const std::string kGeneratorVersion = "shin-generator-v26-source-redaction";
 inline constexpr std::size_t kMaxSectionIndexedTextBytes = 16384;
 inline constexpr std::size_t kMaxDocumentIndexedTextBytes = 131072;
 inline const std::string kMatchingMode = "field-aware-v1";

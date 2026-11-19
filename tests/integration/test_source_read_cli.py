@@ -11,6 +11,10 @@ import unittest
 TOOL = str(Path(sys.argv.pop(1)).resolve())
 
 
+def hidden_lines(first, last, rules=(), copied_rules=()):
+    return {"start_line": first, "end_line": last, "rules": list(rules), "copied_rules": list(copied_rules)}
+
+
 def state(root):
     result = {}
     for path in sorted(root.rglob("*")):
@@ -107,8 +111,10 @@ class SourceReadCliTests(unittest.TestCase):
         body = output["evidence"]["bodies"][0]
         self.assertEqual(body["state"], "redacted")
         self.assertEqual(body["reason"], "openai-api-key")
+        self.assertEqual(body["redacted_line_ranges"], [hidden_lines(3, 3, ["openai-api-key"])])
         self.assertIn("return 1;", body["text"])
         self.assertEqual(spans["evidence"]["bodies"][0]["text"], body["text"])
+        self.assertEqual(spans["evidence"]["bodies"][0]["redacted_line_ranges"], body["redacted_line_ranges"])
         self.assertEqual(body["text"].count("\n"), self.source.read_text().count("\n"))
 
     def test_query_to_whole_file_without_inspect(self):
@@ -169,6 +175,69 @@ class SourceReadCliTests(unittest.TestCase):
         found = self.call("brief", "recovered", "--projection", "compact", "--require-current")
         result = self.read({**request, "snapshot_id": found["snapshot_id"], "file_paths": ["src/unsafe.cpp"]})
         self.assertIn("return 9", result["evidence"]["bodies"][0]["text"])
+
+    def test_isolated_line_finding_preserves_project_and_neighboring_lines(self):
+        profile_path = self.profiles / "read-fixture.json"
+        profile = json.loads(profile_path.read_text())
+        profile.update(automaticProjectFiles=True, sourceFactRoots=["."],
+                       sourceFactExtensions=[], bootstrapOnly=True)
+        profile_path.write_text(json.dumps(profile))
+        route = "/local/warehouse/v2/manifest"
+        lines = [
+            "int orchardWitness() { return 27; }\n",
+            'auto secret = client.fetch("' + route + '",\n',
+            "                           3);\n",
+            'const char* address = "' + route + '";\n',
+            "int cedarWitness() { return 31; }\n",
+        ]
+        self.source.write_text("".join(lines))
+        self.call("build")
+        doctor = self.call("doctor", "--strict")
+        self.assertEqual(doctor["counts"]["errors"], 0)
+        self.assertEqual(doctor["counts"]["redacted_files"], 1)
+        self.assertTrue(any(issue["id"] == "source-redacted" and
+                            issue["reason"] == "credential-assignment" for issue in doctor["issues"]))
+        found = self.call("brief", "cedarWitness", "--projection", "compact", "--require-current")
+        self.assertIn("src/example.cpp", json.dumps(found["verification_paths"]))
+        result = self.read({"schema_version": "shin.source-read-request.v2",
+                            "snapshot_id": found["snapshot_id"], "file_paths": ["src/example.cpp"]})
+        body = result["evidence"]["bodies"][0]
+        self.assertEqual(body["state"], "redacted")
+        self.assertEqual(body["redacted_line_ranges"], [
+            hidden_lines(2, 2, ["credential-assignment"]),
+            hidden_lines(4, 4, copied_rules=["credential-assignment"]),
+        ])
+        self.assertFalse(result["complete"])
+        for index in (1, 3):
+            lines[index] = " " * (len(lines[index]) - 1) + "\n"
+        self.assertEqual(body["text"], "".join(lines))
+        for path in (self.out / "docs/kb/generated").iterdir():
+            if path.is_file():
+                self.assertNotIn(route.encode(), path.read_bytes(), path.name)
+
+    def test_adjacent_hidden_lines_report_their_own_rules(self):
+        provider_value = "sk-" + "Q7x9" * 16
+        bearer_value = "R5q8M4k6" "B7a3Hx9Np2Ft"
+        self.source.write_text(
+            "int before() { return 3; }\n"
+            'const char* token = "' + provider_value + '";\n'
+            '// Authorization: Bearer ' + bearer_value + '\n'
+            'const char* note = "' + bearer_value + '";\n'
+            "\nint after() { return 5; }\n")
+        self.call("build")
+        outline = self.call("inspect", "src/example.cpp", "--require-current")
+        output = self.read({"schema_version": "shin.source-read-request.v2",
+                            "snapshot_id": outline["snapshot_id"], "file_paths": ["src/example.cpp"]})
+        body = output["evidence"]["bodies"][0]
+        self.assertEqual(body["redacted_line_ranges"], [
+            hidden_lines(2, 2, ["openai-api-key", "credential-assignment"]),
+            hidden_lines(3, 3, ["bearer-token"]),
+            hidden_lines(4, 4, copied_rules=["bearer-token"]),
+        ])
+        self.assertIn("\n\nint after()", body["text"])
+        encoded = json.dumps(output)
+        self.assertNotIn(provider_value, encoded)
+        self.assertNotIn(bearer_value, encoded)
 
     def test_forged_redaction_does_not_hide_published_source_rows(self):
         secret = "sk-" + "Q7x9" * 16

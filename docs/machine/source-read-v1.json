@@ -5,7 +5,7 @@
   "title": "Selected Source Body Reading",
   "summary": "Native read-only materialization of selected published source-fact physical ranges with exact current-source admission and conservative secret suppression.",
   "introducedIn": "Core2.0.0-dev.20; development only, not Stable1.27.3",
-  "compatibility": "Source read requires a current publication. Generator v25 hashes projected spans and keeps original file hashes for freshness. Rebuild older publications.",
+  "compatibility": "Source read requires a current publication. Generator v26 hashes projected spans and keeps original file hashes for freshness. Rebuild older publications.",
   "interface": {
     "cli": "read --input FILE|-",
     "native": "RetrievalSession::read(std::string_view request)",
@@ -43,7 +43,7 @@
   },
   "safety": {
     "reader": "Reuse the descriptor-based no-follow reader: regular files only, no symlink components, byte caps and metadata stability. Match full selected file bytes and full physical span before any output.",
-    "redaction": "Scan the complete selected file with source suppression disabled. Mask every affected physical line and preserve byte offsets, line breaks and unaffected text. Apply the same projection before index publication. A body crossing masked lines carries state=redacted, a scanner rule and text with those lines hidden. It makes the read incomplete.",
+    "redaction": "Scan the complete selected file and its physical lines with source suppression disabled. Publication and audit use the same detection policy. Mask every affected physical line and preserve byte offsets, line breaks and unaffected text. Apply the same projection before index publication. A body crossing masked lines carries state=redacted, masked text and redacted_line_ranges. Each range gives inclusive start_line and end_line within the delivered body, direct scanner matches in rules and originating scanner rules for copied values in copied_rules. Split adjacent lines when their rule sets differ. The MCP source view shows these rules beside each REDACTED marker. The body-level reason summarizes the first hidden range. Redaction makes the read incomplete.",
     "atomicity": "Build output in memory, then reverify current source/publication and selected file metadata. Any refusal discards all pending body output. This is bounded observation, not a lock preventing arbitrary external source edits after verification.",
     "noSideEffects": [
       "source write",

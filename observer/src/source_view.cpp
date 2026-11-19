@@ -1,4 +1,5 @@
 #include "source_view.h"
+#include "source_read.h"
 
 #include <algorithm>
 
@@ -49,9 +50,37 @@ std::string inventory_view(const Json& result, std::size_t maximum_bytes) {
 }
 
 std::string lines(const Json& body) {
-    const auto text = body.at("text").get<std::string>();
+    const auto& text = body.at("text").get_ref<const std::string&>();
+    const auto hidden = body.value("redacted_line_ranges", Json::array());
+    require_view(hidden.is_array() && (body.at("state") == "redacted") == !hidden.empty());
+    struct Marker {
+        std::size_t first, last;
+        std::string rules;
+    };
+    std::vector<Marker> markers;
+    const auto valid_rules = [](const Json& rules) {
+        return rules.is_array() && std::all_of(rules.begin(), rules.end(), [](const Json& value) {
+            if (!value.is_string()) return false;
+            const auto& code = value.get_ref<const std::string&>();
+            return shin::context::source_redaction_rule(code) == code;
+        });
+    };
     std::string result;
     std::size_t begin = 0, line = body.at("start_line").get<std::size_t>();
+    std::size_t previous_end = 0;
+    for (const auto& item : hidden) {
+        const auto first = item.at("start_line").get<std::size_t>();
+        const auto last = item.at("end_line").get<std::size_t>();
+        const auto& rules = item.at("rules");
+        const auto& copied = item.at("copied_rules");
+        require_view(first >= line && first > previous_end && first <= last &&
+                     last <= body.at("end_line").get<std::size_t>() &&
+                     valid_rules(rules) && valid_rules(copied) && (!rules.empty() || !copied.empty()));
+        markers.push_back({first, last, Json{{"rules", rules}, {"copied_rules", copied}}.dump()});
+        previous_end = last;
+    }
+    auto range = markers.begin();
+    bool first_segment = true;
     while (begin < text.size()) {
         const auto newline = text.find('\n', begin);
         const auto line_end = newline == std::string::npos ? text.size() : newline + 1;
@@ -60,11 +89,24 @@ std::string lines(const Json& body) {
         // original line endings, tabs and byte offsets without terminal controls.
         while (end < line_end && (static_cast<unsigned char>(text[end]) & 0xc0U) == 0x80U) --end;
         require_view(end > begin);
+        if (range != markers.end() && line >= range->first) {
+            const auto& [first, last, rules] = *range;
+            require_view(line <= last &&
+                std::string_view(text).substr(begin, end - begin).find_first_not_of(" \r\n") == std::string_view::npos);
+            if (first_segment && line == first) {
+                result += "REDACTED L" + std::to_string(first);
+                if (last != first) result += "-L" + std::to_string(last);
+                result += " " + rules + "\n";
+            }
+            if (end == line_end && line == last) ++range;
+        }
         result += "L" + std::to_string(line) + "+" + std::to_string(begin) + " " +
                   Json(text.substr(begin, end - begin)).dump() + "\n";
         begin = end;
+        first_segment = begin == line_end;
         if (begin == line_end && newline != std::string::npos) ++line;
     }
+    require_view(range == markers.end());
     return result;
 }
 }
@@ -99,8 +141,11 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
     output += "Paths belong to this Observer binding. SOURCE gives locators; TEXT gives JSON-quoted source segments.\n";
     if (context) output += "Locator arrays follow locator_columns; null means an absent field.\n";
     output += "L<number>+<body-byte-offset> labels physical source lines. Join decoded JSON segments for exact bytes; fragments may start/end inside a line.\n";
-    if (std::any_of(bodies.begin(), bodies.end(), [](const Json& body) { return body.at("state") == "redacted"; }))
-        output += "In redacted bodies, spaces replace protected lines. Other source bytes are preserved.\n";
+    Json redacted = Json::array();
+    for (std::size_t i = 0; i < bodies.size(); ++i)
+        if (bodies[i].at("state") != "complete" || !bodies[i].at("text").is_string()) redacted.push_back(i + 1);
+    if (!redacted.empty())
+        output += "REDACTED gives exact hidden lines and scanner rules. copied_rules identifies exact copies of values flagged elsewhere in the file. Treat marked lines as unavailable when interpreting the fragment.\n";
     output += "Not execution/answer proof. For omitted target_symbol, query that symbol; otherwise inspect/read the returned path.\n";
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const auto& body = bodies[i];
@@ -117,11 +162,11 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
     Json all_numbers = Json::array();
     for (std::size_t i = 0; i < bodies.size(); ++i) all_numbers.push_back(i + 1);
     const Json largest_receipt = {{"sha256", std::string(64, '0')}, {"payload_bytes", maximum_bytes},
-        {"shown", all_numbers}, {"omitted_for_view_budget", Json::array()}, {"redacted", Json::array()},
+        {"shown", all_numbers}, {"omitted_for_view_budget", Json::array()}, {"redacted", redacted},
         {"all_native_bodies_shown", false}, {"answer_complete", false}};
     const auto receipt_reserve = largest_receipt.dump().size() + 5;
     require_view(output.size() + receipt_reserve <= maximum_bytes);
-    Json shown = Json::array(), omitted = Json::array(), redacted = Json::array();
+    Json shown = Json::array(), omitted = Json::array();
     std::vector<std::size_t> order;
     // Reserve an opportunity for one complete declared dependency before
     // similar ranked excerpts consume the view. Source-read keeps request order.
@@ -135,11 +180,7 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
         if (order.empty() || order.front() != i) order.push_back(i);
     for (const auto i : order) {
         const auto& body = bodies[i];
-        const bool has_text = body.at("text").is_string();
-        if (body.at("state") != "complete" || !has_text) {
-            redacted.push_back(i + 1);
-            if (body.at("state") != "redacted" || !has_text) continue;
-        }
+        if (!body.at("text").is_string() || (body.at("state") != "complete" && body.at("state") != "redacted")) continue;
         const auto block = "TEXT " + std::to_string(i + 1) + "\n" + lines(body);
         if (output.size() + block.size() + receipt_reserve > maximum_bytes) {
             omitted.push_back(i + 1);
@@ -150,7 +191,6 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
     }
     std::sort(shown.begin(), shown.end());
     std::sort(omitted.begin(), omitted.end());
-    std::sort(redacted.begin(), redacted.end());
     const Json receipt = {{"sha256", digest(output)}, {"payload_bytes", output.size()}, {"shown", shown},
         {"omitted_for_view_budget", omitted}, {"redacted", redacted},
         {"all_native_bodies_shown", omitted.empty() && redacted.empty() && upstream == 0},

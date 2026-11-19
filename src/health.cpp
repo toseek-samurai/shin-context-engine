@@ -1167,10 +1167,10 @@ static void scan_doctor_source_secrets(const RuntimeOptions& options, DoctorResu
                 "The current publication has no verified redaction for this finding. Value redacted.", hit.kind);
             continue;
         }
-        std::istringstream selected_text(std::move(content));
-        std::ifstream file;
-        if (!automatic) file.open(full_path, std::ios::binary);
-        std::istream& input = automatic ? static_cast<std::istream&>(selected_text) : file;
+        if (automatic || binding != redacted.end()) continue;
+        // Declared profiles can include files outside the published projection.
+        // Keep the bounded, streaming audit for those files.
+        std::ifstream input(full_path, std::ios::binary);
         if (!input) continue;
         std::string line;
         int line_number = 0;

@@ -8,7 +8,7 @@ description: Retrieve verified Shin code/docs before broad repository scans or a
 Use Shin first for unfamiliar code/context recovery; read known files directly.
 Read [reader selection](references/reader-selection.md) before discovery or read recovery.
 
-Use Shin v2.0.0 or newer with `shin-generator-v25-source-redaction`.
+Use Shin v2.0.0 or newer with `shin-generator-v26-source-redaction`.
 Older indexes require rebuilding. The offline service needs no account or backend.
 Retrieval grants no execution, publication or installation authority. Read the repository's applicable `AGENTS.md` before using retrieved evidence.
 

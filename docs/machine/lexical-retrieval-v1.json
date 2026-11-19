@@ -95,7 +95,7 @@
   },
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v25-source-redaction",
+    "generator": "shin-generator-v26-source-redaction",
     "format": "shin.lexical.v1",
     "evidenceRowsChanged": false,
     "installed": false,
@@ -133,7 +133,7 @@
   },
   "unicodePublication": {
     "status": "implemented",
-    "generator": "shin-generator-v25-source-redaction",
+    "generator": "shin-generator-v26-source-redaction",
     "format": "shin.lexical.v1",
     "compatibility": "One current reader/writer. Older generator retrieval is rejected; there is no legacy JSONL/TSV term reader or writer. Raw prior manifest integrity/ownership may be inspected only to authorize rebuilding from current approved sources.",
     "rebuild": "The normal granted or bootstrap publisher detects generator drift, qualifies a fresh candidate and atomically publishes it. No old lexical data conversion, manual index repair, grant takeover or history deletion. Failed preparation preserves the current publication and reports the failure. Standalone Core requires an explicit build.",

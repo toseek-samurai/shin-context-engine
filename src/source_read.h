@@ -5,10 +5,17 @@
 namespace shin::context {
 
 struct SourceRedaction {
+    struct Range {
+        std::size_t begin, end;
+        unsigned rules, copied_rules;
+    };
+
     std::string reason;
-    std::vector<std::pair<std::size_t, std::size_t>> ranges;
+    std::vector<Range> ranges;
 
     bool intersects(std::size_t begin, std::size_t end) const;
+    void annotate_body(Json& body, const std::vector<std::size_t>& offsets,
+                       std::size_t begin, std::size_t end) const;
 };
 
 // Mask complete sensitive lines in a private copy. Preserve byte offsets and

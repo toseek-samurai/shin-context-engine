@@ -452,43 +452,53 @@ bool ternary_branch(Piece input, Piece key, Piece remaining) {
     return condition && (std::isalnum(static_cast<unsigned char>(input[condition - 1])) ||
         std::string_view("_$)]\"'").find(input[condition - 1]) != std::string_view::npos);
 }
-SecretScanHit scan_secret_text(const std::string& text, std::string_view source_path, SourceRedaction* redaction) {
+enum class SecretRule { private_key, aws, openai, jwt, bearer, assignment };
+constexpr std::array kSecretRuleNames = {std::string_view("private-key-block"), std::string_view("aws-access-key-id"),
+    std::string_view("openai-api-key"), std::string_view("jwt-token"), std::string_view("bearer-token"),
+    std::string_view("credential-assignment")};
+
+constexpr std::size_t rule_index(SecretRule rule) {
+    return static_cast<std::size_t>(rule);
+}
+
+using CopyTokens = std::array<std::set<std::string>, kSecretRuleNames.size()>;
+
+struct SecretMatch {
+    std::size_t begin, end;
+    SecretRule rule;
+    bool copied;
+};
+
+template <typename Record>
+bool scan_secret_ranges(std::string_view text, std::string_view source_path,
+                        CopyTokens* copies, Record record) {
     static const SecretPatterns rules;
     const Piece input(text.data(), text.size());
-    SecretScanHit hit;
-    std::set<std::string> copies;
-    auto* track_copies = redaction ? &copies : nullptr;
-    const auto record = [&](const char* reason, Piece sensitive) {
-        if (!hit.found) hit = {true, reason};
-        if (!redaction) return true;
-        const auto start = static_cast<std::size_t>(sensitive.data() - input.data());
-        redaction->ranges.emplace_back(start, start + sensitive.size());
-        return false;
-    };
     const auto any = [](Piece) { return true; };
-    const auto token_rule = [&](const RE2& rule, auto accept, const char* reason) {
+    const auto token_rule = [&](const RE2& rule, auto accept, SecretRule reason) {
         return matched_token(input, rule, accept, [&](Piece token) {
-            if (track_copies && token.size() >= 16) copies.emplace(token.data(), token.size());
+            if (copies && token.size() >= 16) (*copies)[rule_index(reason)].emplace(token.data(), token.size());
             return record(reason, token);
         });
     };
     if (text.find("-----BEGIN ") != std::string::npos && private_key_material(input, rules,
         [&](Piece block) {
-            if (track_copies)
+            if (copies)
                 for (auto& token : secret_candidate_tokens(std::string(block)))
-                    if (token.size() >= 16) copies.insert(std::move(token));
-            return record("private-key-block", block);
-        })) return hit;
+                    if (token.size() >= 16) (*copies)[rule_index(SecretRule::private_key)].insert(std::move(token));
+            return record(SecretRule::private_key, block);
+        })) return true;
     if ((text.find("AKIA") != std::string::npos || text.find("ASIA") != std::string::npos) &&
-        token_rule(rules.aws, any, "aws-access-key-id")) return hit;
-    if (text.find("sk-") != std::string::npos && token_rule(rules.openai, any, "openai-api-key")) return hit;
+        token_rule(rules.aws, any, SecretRule::aws)) return true;
+    if (text.find("sk-") != std::string::npos && token_rule(rules.openai, any, SecretRule::openai)) return true;
     if (text.find("eyJ") != std::string::npos &&
-        token_rule(rules.jwt, [](Piece value) { return value.size() >= 40; }, "jwt-token")) return hit;
+        token_rule(rules.jwt, [](Piece value) { return value.size() >= 40; }, SecretRule::jwt)) return true;
     if (contains_ascii_case_insensitive(text, "bearer") &&
-        token_rule(rules.bearer, [](Piece value) { return alnum_count(std::string(value)) >= 16; }, "bearer-token")) return hit;
+        token_rule(rules.bearer, [](Piece value) { return alnum_count(std::string(value)) >= 16; }, SecretRule::bearer)) return true;
 
     Piece remaining = input, key;
     const bool dotenv = dotenv_source(source_path);
+    auto* assignment_copies = copies ? &(*copies)[rule_index(SecretRule::assignment)] : nullptr;
     while (RE2::FindAndConsume(&remaining, rules.assignment, &key)) {
         if (key.size() > 128 || !credential_key_side_is_sensitive(std::string(key)) || remaining.empty() ||
             remaining.front() == '=' || remaining.front() == '>') continue;
@@ -504,85 +514,190 @@ SecretScanHit scan_secret_text(const std::string& text, std::string_view source_
         bool unfinished = false;
         const auto local = assignment_value(value, unfinished);
         const auto candidate = assignment_candidate_text(std::string(local));
-        bool found = unfinished && secret_value(candidate, rules, track_copies);
+        bool found = unfinished && secret_value(candidate, rules, assignment_copies);
         Piece literals(candidate.data(), candidate.size()), quoted, single, templated, bare;
-        while ((!found || redaction) && RE2::FindAndConsume(&literals, rules.literals, &quoted, &single, &templated)) {
-            if (secret_value(quoted, rules, track_copies) || secret_value(single, rules, track_copies) ||
-                secret_value(templated, rules, track_copies)) found = true;
+        while ((!found || copies) && RE2::FindAndConsume(&literals, rules.literals, &quoted, &single, &templated)) {
+            if (secret_value(quoted, rules, assignment_copies) || secret_value(single, rules, assignment_copies) ||
+                secret_value(templated, rules, assignment_copies)) found = true;
         }
-        if ((!found || redaction) && RE2::PartialMatch(candidate, rules.bare, &bare) &&
-            secret_value(bare, rules, track_copies)) found = true;
-        if (found && record("credential-assignment",
-            Piece(key.data(), static_cast<std::size_t>(local.data() + local.size() - key.data())))) return hit;
+        if ((!found || copies) && RE2::PartialMatch(candidate, rules.bare, &bare) &&
+            secret_value(bare, rules, assignment_copies)) found = true;
+        if (found && record(SecretRule::assignment,
+            Piece(key.data(), static_cast<std::size_t>(local.data() + local.size() - key.data())))) return true;
     }
-    if (!copies.empty()) {
-        // For a prefix-free sorted list, only the lexicographic predecessor
-        // can match a suffix. A shorter token already protects its longer
-        // variants on the same line, so those variants need no separate lookup.
-        std::vector<std::string_view> tokens;
-        std::array<bool, 256> starts{};
-        for (const auto& token : copies) {
-            if (!tokens.empty() && std::string_view(token).starts_with(tokens.back())) continue;
-            tokens.emplace_back(token);
-            starts[static_cast<unsigned char>(token.front())] = true;
-        }
-        const std::string_view bytes(text);
-        for (std::size_t offset = 0; offset < bytes.size(); ++offset) {
-            if (!starts[static_cast<unsigned char>(bytes[offset])]) continue;
-            const auto suffix = bytes.substr(offset);
-            const auto after = std::upper_bound(tokens.begin(), tokens.end(), suffix);
-            if (after == tokens.begin()) continue;
-            const auto token = *std::prev(after);
-            if (!suffix.starts_with(token)) continue;
-            redaction->ranges.emplace_back(offset, offset + token.size());
-            offset = bytes.find('\n', offset);
-            if (offset == std::string_view::npos) break;
+    return false;
+}
+
+void find_copied_values(std::string_view text, const std::set<std::string>& values,
+                        SecretRule reason, std::vector<SecretMatch>& matches) {
+    // Within a rule, a shorter matching token protects its longer variants on
+    // the same line. The predecessor lookup then needs one comparison.
+    std::vector<std::string_view> tokens;
+    std::array<bool, 256> starts{};
+    for (const auto& token : values) {
+        if (!tokens.empty() && std::string_view(token).starts_with(tokens.back())) continue;
+        tokens.emplace_back(token);
+        starts[static_cast<unsigned char>(token.front())] = true;
+    }
+    for (std::size_t offset = 0; offset < text.size(); ++offset) {
+        if (!starts[static_cast<unsigned char>(text[offset])]) continue;
+        const auto suffix = text.substr(offset);
+        const auto after = std::upper_bound(tokens.begin(), tokens.end(), suffix);
+        if (after == tokens.begin()) continue;
+        const auto token = *std::prev(after);
+        if (!suffix.starts_with(token)) continue;
+        matches.push_back({offset, offset + token.size(), reason, true});
+        offset = text.find('\n', offset);
+        if (offset == std::string_view::npos) break;
+    }
+}
+
+SecretScanHit scan_secret_text(std::string_view text, std::string_view path,
+                              std::vector<SecretMatch>* matches, bool include_physical_lines) {
+    SecretScanHit hit;
+    CopyTokens copies;
+    const auto record = [&](SecretRule reason, Piece sensitive) {
+        if (!hit.found) hit = {true, std::string(kSecretRuleNames[rule_index(reason)])};
+        if (!matches) return true;
+        const auto start = static_cast<std::size_t>(sensitive.data() - text.data());
+        matches->push_back({start, start + sensitive.size(), reason, false});
+        return false;
+    };
+    const auto scan = [&](std::string_view part) {
+        return scan_secret_ranges(part, path, matches ? &copies : nullptr, record);
+    };
+    if (scan(text)) return hit;
+    // Audit and publication must agree even when an isolated line looks
+    // sensitive only without its enclosing expression.
+    if (include_physical_lines) {
+        auto lines = text;
+        auto boundary = lines.find('\n');
+        if (boundary != std::string_view::npos) {
+            while (!lines.empty()) {
+                auto line = lines.substr(0, boundary);
+                if (line.ends_with('\r')) line.remove_suffix(1);
+                if (!line.empty() && scan(line)) return hit;
+                if (boundary == std::string_view::npos) break;
+                lines.remove_prefix(boundary + 1);
+                boundary = lines.find('\n');
+            }
         }
     }
+    if (matches)
+        for (std::size_t i = 0; i < copies.size(); ++i)
+            if (!copies[i].empty()) find_copied_values(text, copies[i], static_cast<SecretRule>(i), *matches);
     return hit;
+}
+
+Json rule_names(unsigned rules) {
+    Json names = Json::array();
+    for (std::size_t i = 0; i < kSecretRuleNames.size(); ++i)
+        if (rules & (1u << i)) names.push_back(kSecretRuleNames[i]);
+    return names;
+}
+
+std::vector<SourceRedaction::Range> redaction_ranges(const std::string& content,
+                                                    const std::vector<SecretMatch>& matches) {
+    if (matches.empty()) return {};
+    constexpr std::size_t rule_count = kSecretRuleNames.size();
+    const auto offsets = source_line_offsets(content);
+    struct Boundary {
+        std::size_t offset, rule;
+        int delta;
+    };
+    std::vector<Boundary> boundaries;
+    boundaries.reserve(matches.size() * 2);
+    for (const auto& match : matches) {
+        auto end = match.end;
+        while (end > match.begin && is_ascii_space(content[end - 1])) --end;
+        if (end == match.begin) continue;
+        const auto first = std::prev(std::upper_bound(offsets.begin(), offsets.end(), match.begin));
+        const auto after = std::upper_bound(offsets.begin(), offsets.end(), end - 1);
+        const auto rule = rule_index(match.rule) + (match.copied ? rule_count : 0);
+        boundaries.push_back({*first, rule, 1});
+        boundaries.push_back({after == offsets.end() ? content.size() : *after, rule, -1});
+    }
+    std::sort(boundaries.begin(), boundaries.end(), [](const auto& a, const auto& b) {
+        return a.offset < b.offset;
+    });
+    // Split whenever the active rule sets change. Overlapping matches keep
+    // their attribution on each affected line.
+    std::array<int, rule_count * 2> active{};
+    std::vector<SourceRedaction::Range> ranges;
+    std::size_t begin = 0;
+    for (std::size_t i = 0; i < boundaries.size();) {
+        const auto end = boundaries[i].offset;
+        unsigned rules = 0, copied_rules = 0;
+        for (std::size_t index = 0; index < rule_count; ++index) {
+            if (active[index] > 0) rules |= 1u << index;
+            else if (active[rule_count + index] > 0) copied_rules |= 1u << index;
+        }
+        if (begin < end && (rules || copied_rules)) {
+            if (!ranges.empty() && ranges.back().end == begin &&
+                ranges.back().rules == rules && ranges.back().copied_rules == copied_rules)
+                ranges.back().end = end;
+            else ranges.push_back({begin, end, rules, copied_rules});
+        }
+        do {
+            const auto& boundary = boundaries[i++];
+            active[boundary.rule] += boundary.delta;
+        } while (i < boundaries.size() && boundaries[i].offset == end);
+        begin = end;
+    }
+    return ranges;
 }
 }  // namespace
 
 SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression, std::string_view source_path) {
     if (allow_source_suppression && contains_ascii_case_insensitive(text, "gitleaks:allow")) return {};
-    return scan_secret_text(text, source_path, nullptr);
+    return scan_secret_text(text, source_path, nullptr, false);
+}
+
+SecretScanHit source_range_secret(const std::string& text, std::string_view path) {
+    return scan_secret_text(text, path, nullptr, true);
 }
 
 std::string_view source_redaction_rule(std::string_view reason) {
-    constexpr std::string_view rules[] = {"private-key-block", "aws-access-key-id", "openai-api-key",
-        "jwt-token", "bearer-token", "credential-assignment"};
-    for (const auto rule : rules) if (rule == reason) return rule;
+    for (const auto rule : kSecretRuleNames) if (rule == reason) return rule;
     return "secret-like-source-content";
 }
 
 bool SourceRedaction::intersects(std::size_t begin, std::size_t end) const {
     const auto first = std::lower_bound(ranges.begin(), ranges.end(), begin,
-        [](const auto& range, std::size_t offset) { return range.second <= offset; });
-    return begin < end && first != ranges.end() && first->first < end;
+        [](const auto& range, std::size_t offset) { return range.end <= offset; });
+    return begin < end && first != ranges.end() && first->begin < end;
+}
+
+void SourceRedaction::annotate_body(Json& body, const std::vector<std::size_t>& offsets,
+                                    std::size_t begin, std::size_t end) const {
+    body["state"] = "complete";
+    if (begin >= end) return;
+    const auto first = std::lower_bound(ranges.begin(), ranges.end(), begin,
+        [](const auto& range, std::size_t offset) { return range.end <= offset; });
+    const auto line_of = [&](std::size_t offset) {
+        return static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), offset) - offsets.begin());
+    };
+    Json hidden = Json::array();
+    for (auto range = first; range != ranges.end() && range->begin < end; ++range) {
+        hidden.push_back({{"start_line", line_of(std::max(begin, range->begin))},
+            {"end_line", line_of(std::min(end, range->end) - 1)},
+            {"rules", rule_names(range->rules)}, {"copied_rules", rule_names(range->copied_rules)}});
+    }
+    if (hidden.empty()) return;
+    const auto& first_range = hidden.front();
+    const auto& rules = first_range.at("rules");
+    body["state"] = "redacted";
+    body["reason"] = rules.empty() ? first_range.at("copied_rules").front() : rules.front();
+    body["redacted_line_ranges"] = std::move(hidden);
 }
 
 SourceRedaction redact_source(std::string& content, std::string_view path) {
     SourceRedaction result;
-    result.reason = scan_secret_text(content, path, &result).kind;
-    if (result.ranges.empty()) return result;
-    std::sort(result.ranges.begin(), result.ranges.end());
-    std::size_t merged = 0;
-    for (auto [begin, end] : result.ranges) {
-        while (end > begin && is_ascii_space(content[end - 1])) --end;
-        if (merged && end <= result.ranges[merged - 1].second) continue;
-        const bool overlap = merged && begin < result.ranges[merged - 1].second;
-        const auto previous = overlap ? std::string::npos :
-            (begin == 0 ? std::string::npos : content.rfind('\n', begin - 1));
-        begin = overlap ? result.ranges[merged - 1].first : previous == std::string::npos ? 0 : previous + 1;
-        const auto next = content.find('\n', end - 1);
-        end = next == std::string::npos ? content.size() : next + 1;
-        if (merged && begin <= result.ranges[merged - 1].second)
-            result.ranges[merged - 1].second = end;
-        else result.ranges[merged++] = {begin, end};
-    }
-    result.ranges.resize(merged);
-    for (const auto& [begin, end] : result.ranges)
-        for (auto pos = begin; pos < end; ++pos)
+    std::vector<SecretMatch> matches;
+    result.reason = scan_secret_text(content, path, &matches, true).kind;
+    result.ranges = redaction_ranges(content, matches);
+    for (const auto& range : result.ranges)
+        for (auto pos = range.begin; pos < range.end; ++pos)
             if (content[pos] != '\n' && content[pos] != '\r') content[pos] = ' ';
     return result;
 }

@@ -142,14 +142,34 @@ int main() {
         const auto hidden = source_view(redacted);
         check(verify(hidden).empty() && hidden.find("OMISSION ") != std::string::npos);
         check(hidden.find("must-not-leak") == std::string::npos);
-        const std::string visible = "safe before\r\n     \r\nsafe after\r\n";
-        redacted["source_context"]["context"]["bodies"][0]["text"] = visible;
+        const std::string visible = "safe before\r\n\r\n     \r\n   \r\n    \r\nsafe after\r\n";
+        auto& redacted_body = redacted["source_context"]["context"]["bodies"][0];
+        redacted_body["text"] = visible;
+        redacted_body["end_line"] = 12;
+        const auto markers = Json::array({
+            {{"start_line", 9}, {"end_line", 10}, {"rules", Json::array({"private-key-block"})},
+             {"copied_rules", Json::array()}},
+            {{"start_line", 11}, {"end_line", 11}, {"rules", Json::array()},
+             {"copied_rules", Json::array({"bearer-token"})}},
+        });
+        redacted_body["redacted_line_ranges"] = markers;
         redacted["source_context"]["context"]["collection_complete"] = false;
         const auto partial = shin::observer::project_source_view(redacted);
         check(verify(partial.text).at(1) == visible);
+        check(partial.text.find("\nREDACTED L9-L10 {\"copied_rules\":[],\"rules\":[\"private-key-block\"]}\nL9+") != std::string::npos &&
+              partial.text.find("\nREDACTED L11 {\"copied_rules\":[\"bearer-token\"],\"rules\":[]}\nL11+") != std::string::npos &&
+              partial.text.find("\nREDACTED L8") == std::string::npos);
         check(partial.receipt.at("shown") == Json::array({1}) &&
             partial.receipt.at("redacted") == Json::array({1}) &&
             partial.receipt.at("all_native_bodies_shown") == false);
+        redacted_body["redacted_line_ranges"][0]["start_line"] = 7;
+        rejects([&] { source_view(redacted); });
+        redacted_body["redacted_line_ranges"] = markers;
+        redacted_body["text"] = std::string(5000, 'x') + "\r\n\r\n     \r\n   \r\n    \r\nsafe after\r\n";
+        const auto omitted_partial = shin::observer::project_source_view(redacted, 2048);
+        check(verify(omitted_partial.text).empty() &&
+              omitted_partial.text.find("\nREDACTED L9-L10 ") == std::string::npos &&
+              omitted_partial.receipt.at("omitted_for_view_budget") == Json::array({1}));
 
         const auto capped = source_view(envelope(Json::array({body(std::string(5000, 'x'))})), 2048);
         check(verify(capped).empty() && capped.find("SOURCE 1") != std::string::npos);

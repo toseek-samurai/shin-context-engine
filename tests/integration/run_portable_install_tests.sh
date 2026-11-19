@@ -154,7 +154,7 @@ if [[ "$expected_version" == *-dev.* || "$expected_version" == *-rc.* ]]; then
 fi
 "$tool" --version >"$work_root/version.json"
 "$jq_bin" -e --arg version "$expected_version" \
-  '.ok == true and .version == $version and .generator_version == "shin-generator-v25-source-redaction"' \
+  '.ok == true and .version == $version and .generator_version == "shin-generator-v26-source-redaction"' \
   "$work_root/version.json" >/dev/null
 
 project_root="$work_root/project"
@@ -240,7 +240,7 @@ context_epoch="portable-shin-v1.19-2026-08-18"
     status: "active",
     summary: "Portable fixture adopts Shin after the staged prefix is relocated.",
     project: {id: "portable-node", contextEpoch: $epoch, rootPolicy: "cli-root"},
-    engine: {minimumVersion: $version, generatorIdentity: "shin-generator-v25-source-redaction"},
+    engine: {minimumVersion: $version, generatorIdentity: "shin-generator-v26-source-redaction"},
     profile: {
       id: "portable-node",
       registry: "explicit-profile-dir",

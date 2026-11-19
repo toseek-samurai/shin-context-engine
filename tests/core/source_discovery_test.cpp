@@ -347,6 +347,9 @@ void large_automatic_source_checks(const fs::path& parent) {
                broad.at("file_coverage").at("verified_files") == 16, "bounded broad query reports its file window");
         const auto projected = reader->context_at_snapshot(binding, "RoutedWitness").at("context");
         expect(projected.at("bodies")[0].at("path") == "private.custom" &&
+               projected.at("bodies")[0].at("redacted_line_ranges") == Json::array({
+                   {{"start_line", 2}, {"end_line", 2}, {"rules", Json::array({"openai-api-key"})},
+                    {"copied_rules", Json::array()}}}) &&
                projected.dump().find("RoutedConclusion") != std::string::npos &&
                projected.dump().find(secret) == std::string::npos,
                "file-first search refines unmasked lines from a protected file");

@@ -21,7 +21,7 @@ tui::Snapshot fixture() {
             {{"name", "shin-context-engine"}, {"root", "/workspace/shin-context-engine"}, {"id", "shin"},
              {"phase", "current"}, {"query_ready", true}, {"source_coverage", {{"state", "complete"}}}},
             {{"name", "atlas-workspace"}, {"root", "/workspace/atlas-workspace"}, {"id", "atlas"},
-             {"phase", "current"}, {"query_ready", true}, {"source_coverage", {{"state", "partial"}, {"quarantined_files", 1},
+             {"phase", "current"}, {"query_ready", true}, {"source_coverage", {{"state", "partial"}, {"redacted_files", 1},
                 {"files", Json::array({{{"path", "tests/example-config.txt"}, {"reason", "credential-assignment"}}})}}}},
             {{"name", "kestrel-api"}, {"root", "/workspace/kestrel-api"}, {"id", "api"},
              {"phase", "checking"}, {"query_ready", false}},
@@ -54,8 +54,8 @@ tui::Snapshot fixture() {
         project["publications"] = 17 + i;
         project["last_success_age_ms"] = 4000;
         project["failures"] = i == 3 ? 2 : 0;
-        if (project.contains("source_coverage") && !project["source_coverage"].contains("quarantined_files"))
-            project["source_coverage"]["quarantined_files"] = 0;
+        if (project.contains("source_coverage") && !project["source_coverage"].contains("redacted_files"))
+            project["source_coverage"]["redacted_files"] = 0;
         history["projects"].push_back({{"id", project["id"]}, {"requests", requests[i]}, {"errors", i == 3 ? 2 : 0}});
         s.storage["projects"].push_back({{"root", project["root"]}, {"used_bytes", sizes[i] * 1048576ULL},
             {"cache_bytes", (sizes[i] - 12) * 1048576ULL}, {"reason", "external-caches-only"}});
@@ -217,7 +217,7 @@ int main(int argc, char** argv) {
         require(render(historical, historical_state).plain.find("Ready: 1 · Blocked: 0 · Notices: 0") != std::string::npos,
             "historical failures reported as a current readiness warning");
         auto partial = historical;
-        partial.service["telemetry"]["project_states"][0]["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2}};
+        partial.service["telemetry"]["project_states"][0]["source_coverage"] = {{"state", "partial"}, {"redacted_files", 2}};
         require(render(partial, historical_state).plain.find("Ready: 1 · Blocked: 0 · Notices: 1") != std::string::npos,
             "quarantined files made a searchable project look blocked");
         tui::State state;

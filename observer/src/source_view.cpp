@@ -99,6 +99,8 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
     output += "Paths belong to this Observer binding. SOURCE gives locators; TEXT gives JSON-quoted source segments.\n";
     if (context) output += "Locator arrays follow locator_columns; null means an absent field.\n";
     output += "L<number>+<body-byte-offset> labels physical source lines. Join decoded JSON segments for exact bytes; fragments may start/end inside a line.\n";
+    if (std::any_of(bodies.begin(), bodies.end(), [](const Json& body) { return body.at("state") == "redacted"; }))
+        output += "In redacted bodies, spaces replace protected lines. Other source bytes are preserved.\n";
     output += "Not execution/answer proof. For omitted target_symbol, query that symbol; otherwise inspect/read the returned path.\n";
     for (std::size_t i = 0; i < bodies.size(); ++i) {
         const auto& body = bodies[i];
@@ -133,9 +135,10 @@ SourceViewProjection project_source_view(const Json& result, std::size_t maximum
         if (order.empty() || order.front() != i) order.push_back(i);
     for (const auto i : order) {
         const auto& body = bodies[i];
-        if (body.at("state") != "complete" || !body.at("text").is_string()) {
+        const bool has_text = body.at("text").is_string();
+        if (body.at("state") != "complete" || !has_text) {
             redacted.push_back(i + 1);
-            continue;
+            if (body.at("state") != "redacted" || !has_text) continue;
         }
         const auto block = "TEXT " + std::to_string(i + 1) + "\n" + lines(body);
         if (output.size() + block.size() + receipt_reserve > maximum_bytes) {

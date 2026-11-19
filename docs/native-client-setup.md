@@ -363,14 +363,14 @@ rendered behavior.
 
 Query responses describe their search scope in `source_scope`. Check the
 selection mode, limits and omissions when interpreting an empty result. Binary
-files, excluded paths and quarantined content are outside the available evidence.
+files, excluded paths and hidden lines are outside the available evidence.
 The managed reader's `project_files` reports counts for excluded entries,
 oversized files and binary content. Directory exclusions count the directory
 once. A skipped binary extension may also fall under the built-in exclusions.
 See [project text and exclusions](local-kit.md#project-text-and-exclusions) for
 project `.gitignore` files and the optional root `.shinignore`.
 
-The current Core source uses one index format, `shin-generator-v24-objective-cpp`.
+The current Core source uses one index format, `shin-generator-v25-source-redaction`.
 The service rebuilds older managed indexes from approved project sources before
 serving them. Project settings, permissions, histories and recovery notes remain
 intact. Standalone Core users run `build` explicitly; old indexes are not queried

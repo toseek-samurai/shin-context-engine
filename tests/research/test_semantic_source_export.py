@@ -117,7 +117,8 @@ class SourceExportTests(unittest.TestCase):
         rows = [json.loads(line) for line in result.stdout.splitlines()]
         chunks = [row for row in rows if row["type"] == "chunk"]
         self.assertTrue(chunks)
-        self.assertTrue(all(row["redacted"] and row["text"] == "[REDACTED:source-file]" for row in chunks))
+        self.assertTrue(any(row["redacted"] for row in chunks))
+        self.assertTrue(any("return 42" in row["text"] for row in chunks))
 
     def test_structural_refuses_stale_and_symlink_source(self):
         self.source.write_text(self.source.read_text().replace("brand", "other"))
@@ -180,7 +181,7 @@ class SourceExportTests(unittest.TestCase):
         self.assertEqual(parent["chunking"]["clipped_chunks"], 1)
         self.assertLessEqual(len(parent["chunking"]["chunks"][0]["text"].encode()), 1024)
 
-    def test_chunking_inherits_sensitive_parent_range(self):
+    def test_chunking_keeps_safe_lines_inside_and_beside_redaction(self):
         secret = "sk-" + "Q7x9" * 16
         self.source.write_text("export function outer() {\n" + "  let value = 0;\n" * 30 +
                                "  function inner() { return 42; }\n" +
@@ -188,7 +189,9 @@ class SourceExportTests(unittest.TestCase):
         self.build()
         result = self.export(chunks=True)
         self.assertNotIn(secret, result.stdout + result.stderr)
-        self.assertEqual(self.rows(chunks=True), [], "quarantine also withholds clean nested declarations")
+        rows = self.rows(chunks=True)
+        self.assertTrue(any(row["redacted"] and "let value" in row["text"] for row in rows))
+        self.assertTrue(any(not row["redacted"] and "return 42" in row["text"] for row in rows))
 
     def test_partial_overlap_is_not_promoted_to_owned_chunks(self):
         self.long_source(100)
@@ -248,7 +251,7 @@ class SourceExportTests(unittest.TestCase):
         result = self.export()
         self.assertNotIn(secret[:8], result.stdout + result.stderr)
         rows = [json.loads(line) for line in result.stdout.splitlines() if '"type":"range"' in line]
-        self.assertEqual(rows, [], "quarantine withholds every declaration before export/clipping")
+        self.assertEqual(rows, [], "the only declaration was on the protected line")
 
     def test_utf8_clipping_is_explicit_and_keeps_valid_json(self):
         self.source.write_text('export function cacheScope() { return "' + "\u0436" * 1800 + '"; }\n')
@@ -269,7 +272,7 @@ class SourceExportTests(unittest.TestCase):
         self.build()
         result = self.export()
         self.assertNotIn(secret[:8], result.stdout + result.stderr)
-        self.assertTrue(all(row["redacted"] for row in self.rows()))
+        self.assertFalse(self.rows(), "a declaration on a protected line is not published")
 
     def test_sensitive_assignment_after_other_statements_is_redacted(self):
         # Assemble the synthetic value so this test file remains safe to index.

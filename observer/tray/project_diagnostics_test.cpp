@@ -51,10 +51,10 @@ void search_warning_overview() {
 void coverage_availability() {
     using namespace shin::ui;
     const Json available{{"phase", "current"}, {"query_ready", true}, {"active_issue", false},
-        {"source_coverage", {{"state", "partial"}, {"quarantined_files", 2}}}};
+        {"source_coverage", {{"state", "partial"}, {"redacted_files", 2}}}};
     const auto overview = diagnostic_overview(available, true);
-    assert(overview.title == tr("Search available · files excluded"));
-    assert(overview.summary.find(std::string(tr("Files excluded from search: ")) + "2") != std::string::npos);
+    assert(overview.title == tr("Partial source coverage"));
+    assert(overview.summary.find(std::string(tr("Files with hidden lines: ")) + "2") != std::string::npos);
     assert(project_state(available, true) == ProjectState::current);
     assert(recovery_options(available, true).title == tr("Coverage details"));
     auto blocked = available;
@@ -185,8 +185,8 @@ int check_language() try {
     project["query_ready"] = true;
     assert(project_state(project, true) == ProjectState::current);
     assert(diagnostic_overview(project, true).title == shin::ui::tr("Context is current"));
-    project["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 1}};
-    assert(diagnostic_overview(project, true).title == shin::ui::tr("Search available · files excluded"));
+    project["source_coverage"] = {{"state", "partial"}, {"redacted_files", 1}};
+    assert(diagnostic_overview(project, true).title == shin::ui::tr("Partial source coverage"));
     assert(diagnostic_overview(project, false).title == shin::ui::tr("Service offline"));
     project.erase("source_coverage");
     project["query_ready"] = false;

@@ -154,6 +154,30 @@ int main(int argc, char** argv) {
             return 1;
         }
     }
+    {
+        using shin::context::redact_source;
+        const std::string left = "safe preamble\r\n";
+        const std::string right = "safe conclusion\r\n";
+        const std::string bearer = "F9H2m7K5z1w3" "V4u0r6Q8T9x2";
+        const std::string pem_payload(64, 'A');
+        const std::string middle = "password =\r\n  \"" + opaque + "\";\r\n" +
+            "consume(\"" + opaque + "\");\r\n" +
+            "Authorization: Bearer " + bearer + "\r\n" +
+            "consume(\"" + bearer + "\");\r\n" +
+            "-----BEGIN PRIVATE KEY-----\r\n" + pem_payload + "\r\n-----END PRIVATE KEY-----\r\n";
+        const auto original = left + middle + right;
+        auto projected = original;
+        const auto redaction = redact_source(projected, "credentials.ts");
+        if (redaction.ranges.empty() || projected.size() != original.size() ||
+            shin::context::source_line_offsets(projected) != shin::context::source_line_offsets(original) ||
+            !projected.starts_with(left) || !projected.ends_with(right) ||
+            redaction.intersects(0, left.size()) || !redaction.intersects(left.size(), left.size() + middle.size()) ||
+            projected.find(opaque) != std::string::npos || projected.find(bearer) != std::string::npos ||
+            projected.find(pem_payload) != std::string::npos) {
+            std::cerr << "Whole-source projection changed safe bytes or retained secret material\n";
+            return 1;
+        }
+    }
     // Neither long safe prefixes nor non-UTF-8 source bytes waive later findings.
     const auto large = std::string(1024 * 1024, 'x') + "\n";
     if (shin::context::detect_secret_like_text(large, false).found ||
@@ -164,7 +188,7 @@ int main(int argc, char** argv) {
     // these fixture sources themselves look like stored project credentials.
     for (int i = 1; i < argc; ++i) {
         if (shin::context::detect_secret_like_text(shin::context::read_file(argv[i]), false).found) {
-            std::cerr << "Secret scanner fixture source was quarantined at argument " << i << '\n';
+            std::cerr << "Secret scanner matched fixture source at argument " << i << '\n';
             return 1;
         }
     }

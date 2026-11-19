@@ -262,7 +262,7 @@ class QueryParityTests(unittest.TestCase):
         (self.root / "docs" / "sensitive.md").write_text("# Sensitive fixture\n" + body + "\n")
         self.invoke("build")
         rows = self.published_sections("docs/sensitive.md")
-        self.assertEqual(rows, [], "quarantine excludes the complete document before clipping")
+        self.assertTrue(all("OmittedSecretTail" not in row["indexed_text"] for row in rows))
         self.assertEqual(self.assert_query_parity("OmittedSecretTail")["sections"], [])
         for path in (self.out / "docs/kb/generated").iterdir():
             if path.is_file():
@@ -306,9 +306,9 @@ class QueryParityTests(unittest.TestCase):
             "\npassword = " + secret + "\nSafeFollowingNeedle\n")
         self.invoke("build")
         rows = self.published_sections("docs/assigned.md")
-        self.assertEqual(rows, [], "quarantine includes the late credential assignment")
+        self.assertTrue(any("SafeFollowingNeedle" in row["indexed_text"] for row in rows))
         result = self.assert_query_parity("SafeFollowingNeedle")
-        self.assertEqual(result["sections"], [], "safe-looking fragments of a quarantined document are withheld")
+        self.assertTrue(any(row["path"] == "docs/assigned.md" for row in result["sections"]))
         for path in (self.out / "docs/kb/generated").iterdir():
             if path.is_file():
                 self.assertNotIn(secret.encode(), path.read_bytes(), path.name)
@@ -326,7 +326,7 @@ class QueryParityTests(unittest.TestCase):
                 profile_path.write_text(json.dumps(profile))
                 self.invoke("build")
                 rows = self.published_sections("docs/preview-key.md")
-                self.assertEqual(rows, [], "no sections or chunks from a quarantined document")
+                self.assertTrue(all("p" * 40 not in row["indexed_text"] for row in rows))
                 for path in (self.out / "docs/kb/generated").iterdir():
                     if path.is_file():
                         self.assertFalse(secret[:8].encode() in path.read_bytes(), path.name)
@@ -339,8 +339,9 @@ class QueryParityTests(unittest.TestCase):
             "\nSafeFollowingNeedle\n")
         self.invoke("build")
         rows = self.published_sections("docs/preview-assignment.md")
-        self.assertEqual(rows, [])
-        self.assertEqual(self.assert_query_parity("SafeFollowingNeedle")["sections"], [])
+        self.assertTrue(any("SafeFollowingNeedle" in row["indexed_text"] for row in rows))
+        sections = self.assert_query_parity("SafeFollowingNeedle")["sections"]
+        self.assertTrue(any(row["path"] == "docs/preview-assignment.md" for row in sections))
         for path in (self.out / "docs/kb/generated").iterdir():
             if path.is_file():
                 self.assertFalse(secret.encode() in path.read_bytes(), path.name)
@@ -355,6 +356,7 @@ class QueryParityTests(unittest.TestCase):
         (self.root / "docs" / "summary-key.json").write_text(json.dumps({
             "summary": "p" * 263 + " " + secret}))
         (self.root / "docs" / "summary-key.jsonl").write_text("\n".join(map(json.dumps, [
+            {"id": "visible", "type": "fact", "summary": "Calendar reminders use local time."},
             {"id": "direct", "type": "fact", "summary": "p" * 403 + " " + secret},
             {"id": "fallback", "type": "fact", "snippet": "p" * 395 + " " + secret},
         ])) + "\n")
@@ -362,11 +364,11 @@ class QueryParityTests(unittest.TestCase):
         facts = [json.loads(line) for line in
                  (self.out / "docs/kb/generated/facts.jsonl").read_text().splitlines()]
         selected = [row for row in facts if row["path"] == "docs/summary-key.jsonl"]
-        self.assertEqual(selected, [], "structured facts from quarantined documents are omitted")
+        self.assertEqual([row["summary"] for row in selected], ["Calendar reminders use local time."])
         documents = [json.loads(line) for line in
                      (self.out / "docs/kb/generated/documents.jsonl").read_text().splitlines()]
         summary = next(row["summary"] for row in documents if row["path"] == "docs/summary-key.json")
-        self.assertEqual(summary, "Source content withheld after secret detection.")
+        self.assertEqual(summary, "Sensitive source lines are hidden.")
         for path in (self.out / "docs/kb/generated").iterdir():
             if path.is_file():
                 self.assertFalse(secret[:8].encode() in path.read_bytes(), path.name)
@@ -380,7 +382,7 @@ class QueryParityTests(unittest.TestCase):
         facts = [json.loads(line) for line in
                  (self.out / "docs/kb/generated/facts.jsonl").read_text().splitlines()]
         selected = [row for row in facts if row["path"] == "src/PreviewKey.ts"]
-        self.assertEqual(selected, [], "quarantined source has no searchable declarations")
+        self.assertEqual(selected, [], "declaration on a protected line is hidden")
         for path in (self.out / "docs/kb/generated").iterdir():
             if path.is_file():
                 self.assertFalse(secret[:8].encode() in path.read_bytes(), path.name)

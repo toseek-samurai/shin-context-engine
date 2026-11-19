@@ -5,7 +5,7 @@
   "title": "Selected Source Body Reading",
   "summary": "Native read-only materialization of selected published source-fact physical ranges with exact current-source admission and conservative secret suppression.",
   "introducedIn": "Core2.0.0-dev.20; development only, not Stable1.27.3",
-  "compatibility": "Generator-v21 is unchanged: no persisted row, extraction, ranking or snapshot format changes. Old generator-v20 snapshots remain unsupported. This capability is independent of agent-workflow or semantic-quality acceptance.",
+  "compatibility": "Source read requires a current publication. Generator v25 hashes projected spans and keeps original file hashes for freshness. Rebuild older publications.",
   "interface": {
     "cli": "read --input FILE|-",
     "native": "RetrievalSession::read(std::string_view request)",
@@ -36,14 +36,14 @@
   },
   "evidence": {
     "records": "Distinct requested published records retain request_indices, ID, type, path, physical lines, original source, span hash, range origin, status, authority, evidence kind and verification level. body_index refers to a separately bounded body.",
-    "bodies": "One body per identical path/start_line/end_line, even for distinct same-line declarations. Source content and span hashes must match. Complete text preserves exact physical bytes, newline style and EOF; whole-line ranges can include neighboring declarations.",
+    "bodies": "One body per identical path/start_line/end_line, even for distinct same-line declarations. The whole-file hash binds original bytes. The span hash binds delivered text. Complete text preserves exact physical bytes, newline style and EOF; whole-line ranges can include neighboring declarations.",
     "omissions": "One descriptor per omitted distinct record, preserving its request indices and an explicit reason. Later records can still fit after a prior whole-record omission.",
     "completeness": "complete=true means every selected range was delivered unredacted, not that the selection answers the task or covers a compiler declaration, all callers or an entire implementation.",
     "trust": "No authentication, validation, execution or deployment claim. Published provenance is transported, not upgraded. Source hashes are existing noncryptographic content identities."
   },
   "safety": {
     "reader": "Reuse the descriptor-based no-follow reader: regular files only, no symlink components, byte caps and metadata stability. Match full selected file bytes and full physical span before any output.",
-    "redaction": "Reuse the exporter scanner on the whole selected range, physical lines and compacted text with source suppression disabled. Even a selected range that cannot fit the output is scanned first. A sensitive selected range also suppresses every directly overlapping selected range in the same file. Redacted bodies carry state=redacted and text=null; they are not complete code.",
+    "redaction": "Scan the complete selected file with source suppression disabled. Mask every affected physical line and preserve byte offsets, line breaks and unaffected text. Apply the same projection before index publication. A body crossing masked lines carries state=redacted, a scanner rule and text with those lines hidden. It makes the read incomplete.",
     "atomicity": "Build output in memory, then reverify current source/publication and selected file metadata. Any refusal discards all pending body output. This is bounded observation, not a lock preventing arbitrary external source edits after verification.",
     "noSideEffects": [
       "source write",

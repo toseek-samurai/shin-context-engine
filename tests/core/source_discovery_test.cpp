@@ -157,11 +157,11 @@ void web_source_checks(const fs::path& parent) {
     f.write("src/Index.cshtml", "@model EditorModel\n<form asp-action=\"Save\">ServerViewMarker</form>\n");
     f.write("src/ignored.txt", "OutsideProfileMarker\n");
     const auto secret = "sk-" + std::string(64, 'Q');
-    f.write("src/private.css", "/* cssPrivateMarker */\n.private { content: \"" + secret + "\"; }\n");
+    f.write("src/private.css", "/* cssSafeMarker */\n.cssHiddenMarker { content: \"" + secret + "\"; }\n");
     f.publish();
     const auto result = discover_source_candidates(f.options, {"lookup-field focus-within border-color",
         "Where is the search field focus outline?", "Где рамка фокуса поля поиска?", "scss-marker", "inventory-filter",
-        "LegacyMarkupMarker", "Inventory editor template", "ServerViewMarker", "OutsideProfileMarker", "cssPrivateMarker"});
+        "LegacyMarkupMarker", "Inventory editor template", "ServerViewMarker", "OutsideProfileMarker", "cssSafeMarker", "cssHiddenMarker"});
     const std::vector<std::string> owners = {"src/theme.css", "src/theme.css", "src/theme.css", "src/theme.scss",
         "src/page.html", "src/old.htm", "src/Panel.razor", "src/Index.cshtml"};
     for (std::size_t i = 0; i < owners.size(); ++i) {
@@ -178,8 +178,9 @@ void web_source_checks(const fs::path& parent) {
                           "web focus property missing from selected fragment");
     }
     expect(result.at("results")[8].at("candidates").empty(), "profile exclusion bypassed for web text");
-    expect(result.at("results")[9].at("candidates").empty() && result.at("redacted_files") == 1 &&
-        result.dump().find(secret) == std::string::npos, "web text bypasses secret quarantine");
+    expect(result.at("results")[9].at("candidates")[0].at("path") == "src/private.css" &&
+        result.at("results")[10].at("candidates").empty() && result.at("redacted_files") == 1 &&
+        result.dump().find(secret) == std::string::npos, "web source search retains safe lines and excludes masked lines");
     const auto& scope = result.at("source_scope");
     expect(scope.at("whole_project_coverage") == false && scope.at("compiler_semantics") == false &&
         scope.at("extensions").size() == 6 && scope.at("omitted_extensions") == 0, "source scope unavailable");
@@ -215,14 +216,14 @@ void automatic_source_checks(const fs::path& parent) {
     f.write("apps/desk/nested/main.rsx", "<SqlQuery id=\"Report\" query={include(\"./lib/private.sql\")} />\n");
     f.write("apps/desk/nested/lib/private.sql", "SELECT Ignoredpayload FROM archive;\n");
     const auto secret = "sk-" + std::string(64, 'Q');
-    f.write("config/isolated.custom", "Shellquarantine " + secret + "\n");
+    f.write("config/isolated.custom", "EagerWitness\nShellquarantine " + secret + "\nEagerConclusion\n");
     f.write("ignored/second.custom", "Unselectedquarantine " + secret + "\n");
     f.write("binary.custom", std::string("Binarywitness\0xyz", 17));
     f.publish();
 
     const auto doctor = inspect_generated_kb_health(f.options, true);
     expect(doctor.counts.errors == 0 && doctor.counts.warnings == 0 && doctor.counts.documents == 0 &&
-           doctor.counts.quarantined_files == 1 && doctor.counts.facts > 3, "automatic source-only doctor and quarantine");
+           doctor.counts.redacted_files == 1 && doctor.counts.facts > 3, "automatic source-only doctor and redaction");
     const auto facts = read_file(f.options.out_root / kGeneratedDir / "facts.jsonl");
     const auto links = read_file(f.options.out_root / kGeneratedDir / "links.jsonl");
     expect(facts.find("app=apps/desk/nested") != std::string::npos &&
@@ -240,7 +241,11 @@ void automatic_source_checks(const fs::path& parent) {
            hits[1].at("candidates")[0].at("path") == "infra/deploy.tf" &&
            hits[2].at("candidates")[0].at("path") == "data/lookup.sql", "automatic structural and extensionless inputs");
     for (std::size_t i = 3; i < hits.size(); ++i)
-        expect(hits[i].at("candidates").empty(), "excluded and quarantined files must be absent");
+        expect(hits[i].at("candidates").empty(), "excluded files and masked lines must be absent");
+    const auto projected = reader.context_at_snapshot(binding, "EagerWitness").at("context");
+    expect(projected.at("bodies")[0].at("path") == "config/isolated.custom" &&
+           projected.dump().find("EagerConclusion") != std::string::npos &&
+           projected.dump().find(secret) == std::string::npos, "eager search retains unmasked lines");
     const auto& scope = found.at("source_scope");
     expect(scope.at("selection") == "automatic-project-text" && scope.at("roots") == Json::array({"."}) &&
            scope.at("extensions").empty() && scope.at("whole_project_coverage") == false, "effective automatic scope");
@@ -302,13 +307,13 @@ void large_automatic_source_checks(const fs::path& parent) {
     f.write("zz/final", last);
     f.write("src/owners.ts", "export class Grove {\n  harvest() {}\n  plant() {}\n}\n");
     const auto secret = "sk-" + std::string(64, 'Q');
-    f.write("private.custom", "Routedquarantine " + secret + "\n");
+    f.write("private.custom", "RoutedWitness\nRoutedquarantine " + secret + "\nRoutedConclusion\n");
     f.publish();
     const auto routing = f.options.out_root / kSourceRoutingFile;
     expect(fs::exists(routing), "large automatic publication has a file vocabulary");
     const auto terms = read_file(routing);
     expect(terms.find("Routedquarantine") == std::string::npos && terms.find(secret) == std::string::npos,
-           "quarantined terms never enter the file vocabulary");
+           "masked terms never enter the file vocabulary");
     {
         auto binding = f.options;
         binding.generated_snapshot = GeneratedSnapshot::load(f.options);
@@ -340,8 +345,15 @@ void large_automatic_source_checks(const fs::path& parent) {
         const auto broad = reader->context_at_snapshot(binding, "Orchardcommon").at("context");
         expect(broad.at("collection_complete") == false && broad.at("file_coverage").at("more_matching_files") == true &&
                broad.at("file_coverage").at("verified_files") == 16, "bounded broad query reports its file window");
+        const auto projected = reader->context_at_snapshot(binding, "RoutedWitness").at("context");
+        expect(projected.at("bodies")[0].at("path") == "private.custom" &&
+               projected.dump().find("RoutedConclusion") != std::string::npos &&
+               projected.dump().find(secret) == std::string::npos,
+               "file-first search refines unmasked lines from a protected file");
         reader.reset();
         SourceDiscoveryIndex restored(binding, cache);
+        expect(restored.context_at_snapshot(binding, "RoutedWitness").at("context") == projected,
+               "restored file vocabulary keeps safe evidence from protected files");
         const auto again = restored.query_at_snapshot(binding, {"Quillmarimba", "Routedquarantine", "QUILLMARIMBA",
                                                                 "ЛИМОННИК", "creme"});
         expect(again.at("cache").at("status") == "restored" && again.at("results")[1].at("candidates").empty() &&

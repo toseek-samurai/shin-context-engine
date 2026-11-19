@@ -31,7 +31,7 @@ Pass real host session IDs only, with the query's request ID for follow-ups.
 Missing correlation is unknown. Never infer model identity, success or token savings
 from call counts; client token usage and Shin requests measure different things.
 
-Use the installed local Shin service (`shin-generator-v24-objective-cpp`),
+Use the installed local Shin service (`shin-generator-v25-source-redaction`),
 not an archived source checkout or an older project helper that builds indexes.
 
 1. If `shin_projects` is available, choose the exact host-allowed workspace
@@ -75,7 +75,7 @@ A standby project remains observed and warms its reader on demand. Repeated
 init or manual reindexing is not required when its reader is out of memory.
 For `source_coverage.state=partial`, report omissions and use verified context
 when `retrieval_ready=true`, even if `canonical_ready=false`. Do not claim full
-coverage. Changed/deleted/quarantined files stay withheld until qualified refresh.
+coverage. Use the visible lines of protected files. Changed/deleted files remain withheld until qualified refresh.
 
 When the advertised schema permits it, omit a follow-up snapshot only after a
 successful query with the same real session_id and project on this connection.

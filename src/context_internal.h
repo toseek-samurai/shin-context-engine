@@ -475,6 +475,7 @@ int run_adoption_plan(const fs::path& root,
                       const fs::path& profile_dir,
                       const std::optional<std::string>& candidate_profile_id,
                       const std::vector<std::string>& args);
+bool published_projection_matches(const RuntimeOptions& options);
 int run_doctor(const RuntimeOptions& options, const std::vector<std::string>& args);
 DoctorResult inspect_generated_kb_health(const RuntimeOptions& options, bool strict);
 int run_context(const RuntimeOptions& options, const std::vector<std::string>& args);

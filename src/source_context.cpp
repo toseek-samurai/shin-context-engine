@@ -30,9 +30,13 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
                     {"max_related_bodies", kRelatedBodies},
                     {"max_related_file_bytes", kRelatedFileBytes}, {"max_relations", kLinks},
                     {"max_materialization_source_bytes", kSourceBytes}}}};
-    std::map<std::string, std::string> contents;
+    struct MaterializedSource {
+        std::string text;
+        SourceRedaction redaction;
+    };
+    std::map<std::string, MaterializedSource> contents;
     std::size_t source_bytes = 0;
-    const auto read = [&](const std::string& path) -> const std::string& {
+    const auto read = [&](const std::string& path) -> const MaterializedSource& {
         require_context(sources.contains(path));
         auto found = contents.find(path);
         if (found == contents.end()) {
@@ -42,7 +46,8 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
             auto content = read_bound_source(options.root, path, sources.at(path), file_budget);
             require_context(content.size() <= kSourceBytes - source_bytes);
             source_bytes += content.size();
-            found = contents.emplace(path, std::move(content)).first;
+            auto redaction = redact_source(content, path);
+            found = contents.emplace(path, MaterializedSource{std::move(content), std::move(redaction)}).first;
         }
         return found->second;
     };
@@ -50,11 +55,14 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
         context["omissions"].push_back({{"path", path}, {"reason", reason}, {"role", role}});
     };
     const auto append_body = [&](Json body, const std::string& text, const char* role) {
+        const auto& redaction = contents.at(body.at("path").get_ref<const std::string&>()).redaction;
+        const bool protected_lines = redaction.intersects(body.at("byte_start"), body.at("byte_end"));
         body["text"] = text;
         body["role"] = role;
         body["evidence_kind"] = "source-code";
         body["verification_level"] = "source-observed";
-        body["state"] = "complete";
+        body["state"] = protected_lines ? "redacted" : "complete";
+        if (protected_lines) body["reason"] = redaction.reason;
         context["bodies"].push_back(std::move(body));
         // Reserve space for bounded metadata; never clip an evidence body.
         if (context["bodies"].dump().size() > 16 * 1024) {
@@ -71,7 +79,7 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
     std::vector<std::string> seeds;
     for (const auto& candidate : candidates) {
         const auto path = candidate.at("path").get<std::string>();
-        const auto& content = read(path);
+        const auto& content = read(path).text;
         const auto begin = candidate.at("byte_start").get<std::size_t>();
         const auto end = candidate.at("byte_end").get<std::size_t>();
         require_context(begin < end && end <= content.size() && end - begin <= 1024 &&
@@ -83,7 +91,6 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
                 candidate.at("start_line").get<std::size_t>() &&
             static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) ==
                 candidate.at("end_line").get<std::size_t>());
-        if (source_range_secret(content, path).found) { omit(path, "redacted", "selected"); continue; }
         append_body(candidate, text, "selected");
         if (std::find(seeds.begin(), seeds.end(), path) == seeds.end()) seeds.push_back(path);
     }
@@ -148,11 +155,8 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
         };
         if (!sources.contains(path)) { omit_related("not-scanned-source"); continue; }
         if (attempted_related == kRelatedBodies && !contents.contains(path)) { omit_related("related-body-budget"); continue; }
-        const auto& content = read(path);
-        if (source_range_secret(content, path).found) {
-            if (attempted_related < kRelatedBodies) ++attempted_related;
-            omit_related("redacted"); continue;
-        }
+        const auto& materialized = read(path);
+        const auto& content = materialized.text;
         const auto offsets = source_line_offsets(content);
         const auto text = declaration ? source_physical_range(content, offsets, link->target_start_line, link->target_end_line) : content;
         const auto begin = declaration ? offsets.at(static_cast<std::size_t>(link->target_start_line - 1)) : 0;
@@ -164,6 +168,7 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
         if (covered) continue;
         if (attempted_related == kRelatedBodies) { omit_related("related-body-budget"); continue; }
         ++attempted_related;
+        if (materialized.redaction.intersects(begin, end) && trim(text).empty()) { omit_related("redacted"); continue; }
         if (text.size() > kRelatedFileBytes) { omit_related(declaration ? "related-range-too-large" : "related-file-too-large"); continue; }
         const auto end_line = declaration ? static_cast<std::size_t>(link->target_end_line) : content.empty() ? std::size_t{1} :
             static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), content.size() - 1) - offsets.begin());
@@ -175,6 +180,8 @@ Json collect_source_context(const RuntimeOptions& options, const std::string& sn
     context["relations_omitted"] = context.at("eligible_relations").get<std::size_t>() - context["relations"].size();
     context["materialization_source_bytes"] = source_bytes;
     context["collection_complete"] = !candidates.empty() && context["omissions"].empty() &&
+        std::all_of(context["bodies"].begin(), context["bodies"].end(),
+            [](const Json& body) { return body.at("state") == "complete"; }) &&
         context["relations_omitted"] == 0 && std::all_of(context["relation_inventories"].begin(),
         context["relation_inventories"].end(), [](const Json& row) { return row.at("complete") == true; });
     require_context(context.dump().size() <= kContextBytes);

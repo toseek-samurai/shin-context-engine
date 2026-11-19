@@ -204,7 +204,7 @@ struct SourceDiscoveryIndex::Impl {
     ProjectIgnoreBinding exclusions;
     bool file_routing = false;
     std::map<std::string, std::size_t> routed_sizes;
-    std::set<std::string> quarantined;
+    std::size_t manifest_redacted_files = 0;
     std::uintmax_t selected_source_bytes = 0;
     std::string snapshot_id;
     mutable std::mutex mutex;
@@ -327,8 +327,7 @@ bool SourceDiscoveryIndex::Impl::restore(const std::string& bytes, const Json& b
                     static_cast<sqlite3_int64>(restored) + 1, "source-cache-records");
             auto row = Json::parse(column_text(records.get(), 1));
             if (file_routing) {
-                require(row.is_string() && sources.contains(row.get_ref<const std::string&>()) &&
-                        !quarantined.contains(row.get_ref<const std::string&>()), "source-cache-records");
+                require(row.is_string() && sources.contains(row.get_ref<const std::string&>()), "source-cache-records");
                 ++restored;
                 continue;
             }
@@ -373,12 +372,11 @@ void SourceDiscoveryIndex::Impl::build_source_chunks(sqlite3* raw) {
     for (const auto& [path, hash] : sources) {
         check_time();
         const auto read_started = SteadyClock::now();
-        const auto content = read_bound_source(options.root, path, hash, maximum_file_bytes);
+        auto content = read_bound_source(options.root, path, hash, maximum_file_bytes);
         total_bytes += content.size();
         require(total_bytes <= kSourceBytes, "source-discovery-byte-limit");
-        const bool redacted = source_range_secret(content, path).found;
+        if (!redact_source(content, path).reason.empty()) ++redacted_files;
         read_scan_ms += elapsed_ms_since(read_started);
-        if (redacted) { ++redacted_files; continue; }
         const auto chunk_started = SteadyClock::now();
         const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
         require(plan.coverage_complete, "source-discovery-incomplete-source");
@@ -422,7 +420,6 @@ void SourceDiscoveryIndex::Impl::build_file_routes(sqlite3* raw) {
         require(source != sources.end() && row.is_array() && row.size() == 3 && row[0] == source->first &&
                 row[1] == source->second && row[2].is_string(), "source-discovery-incomplete-source");
         const auto& words = row[2].get_ref<const std::string&>();
-        require(!quarantined.contains(source->first) || words.empty(), "source-discovery-incomplete-source");
         for (std::size_t start = 0; start < words.size();) {
             constexpr std::size_t block_bytes = 8192;
             auto end = std::min(start + block_bytes, words.size());
@@ -442,7 +439,7 @@ void SourceDiscoveryIndex::Impl::build_file_routes(sqlite3* raw) {
         ++source;
     }
     require(input.eof() && !input.bad() && source == sources.end(), "source-discovery-incomplete-source");
-    redacted_files = quarantined.size();
+    redacted_files = manifest_redacted_files;
 }
 
 Json SourceDiscoveryIndex::Impl::refine_file_routes(sqlite3* raw, const std::string& expression,
@@ -477,12 +474,13 @@ Json SourceDiscoveryIndex::Impl::refine_file_routes(sqlite3* raw, const std::str
         const auto bytes = routed_sizes.at(path);
         if (bytes > kSourceBytes - work.bytes) { work_limited = true; break; }
         const auto before = source_file_metadata(options.root / path, "read-source-metadata");
-        const auto content = read_bound_source(options.root, path, sources.at(path), source_file_budget(options));
+        auto content = read_bound_source(options.root, path, sources.at(path), source_file_budget(options));
         const auto [observation, inserted] = work.observed.emplace(path, before);
         if ((!inserted && observation->second != before) ||
             source_file_metadata(options.root / path, "verify-source-metadata") != before)
             throw_source_changed_during_verification("verify-source-metadata");
-        require(content.size() == bytes && !source_range_secret(content, path).found, "source-cache-source-mismatch");
+        require(content.size() == bytes, "source-cache-source-mismatch");
+        (void)redact_source(content, path);
         work.bytes += bytes;
         const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
         require(plan.coverage_complete, "source-discovery-incomplete-source");
@@ -575,7 +573,7 @@ SourceDiscoveryIndex::Impl::Impl(RuntimeOptions value, const fs::path& cache_dir
             const auto bytes = source.at("bytes").get<std::size_t>();
             selected_source_bytes += bytes;
             routed_sizes.emplace(path, bytes);
-            if (!json_string_value(source, "quarantine_reason").empty()) quarantined.insert(path);
+            if (!json_string_value(source, "redaction_reason").empty()) ++manifest_redacted_files;
         }
     }
     (void)validate_current(preparation_admission);
@@ -783,15 +781,15 @@ Json SourceDiscoveryIndex::Impl::query(const RuntimeOptions& binding, const std:
         const auto append_candidate = [&](Json candidate) {
             if (!file_routing && (at_snapshot || cache_status == "restored")) {
                 const auto& path = candidate.at("path").get_ref<const std::string&>();
-                const auto content = read_bound_source(options.root, path,
+                auto content = read_bound_source(options.root, path,
                                                        candidate.at("source_content_hash"), source_file_budget(options));
+                (void)redact_source(content, path);
                 const auto begin = candidate.at("byte_start").get<std::size_t>();
                 const auto end = candidate.at("byte_end").get<std::size_t>();
                 const auto offsets = source_line_offsets(content);
                 require(end <= content.size() && fnv1a64(content.substr(begin, end - begin)) == candidate.at("span_hash").get<std::string>() &&
                         static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), begin) - offsets.begin()) == candidate.at("start_line").get<std::size_t>() &&
-                        static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) == candidate.at("end_line").get<std::size_t>() &&
-                        !source_range_secret(content, path).found, "source-cache-source-mismatch");
+                        static_cast<std::size_t>(std::upper_bound(offsets.begin(), offsets.end(), end - 1) - offsets.begin()) == candidate.at("end_line").get<std::size_t>(), "source-cache-source-mismatch");
             }
             candidate["rank"] = candidates.size() + 1;
             candidates.push_back(std::move(candidate));

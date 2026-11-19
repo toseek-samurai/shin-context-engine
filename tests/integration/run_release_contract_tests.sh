@@ -80,8 +80,8 @@ preflight_error="$("$jq_bin" -nr \
       "README must point to docs/machine/shin-context-engine.manifest.json"
     elif (($codex | minimum_ok("Use")) and ($hermes | minimum_ok("Require")) and
           ($codex | contains("## Normal Work") and contains("shin_status") and contains("shin_query") and
-                    contains("shin-generator-v24-objective-cpp")) and
-          ($hermes | contains("shin-generator-v24-objective-cpp"))) then ""
+                    contains("shin-generator-v25-source-redaction")) and
+          ($hermes | contains("shin-generator-v25-source-redaction"))) then ""
     else "integration skills must retain approved per-client minimums, managed 2.0 guidance, and the current generator"
     end
   ')"

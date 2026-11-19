@@ -117,11 +117,6 @@ Json record_metadata(const FactRow& row, const std::vector<std::size_t>& positio
         {"evidence_kind", row.evidence_kind}, {"verification_level", row.verification_level}};
 }
 
-struct MaterializedRange {
-    Json body;
-    bool sensitive = false;
-};
-
 struct SourceSelection {
     std::string path;
     int start = 1;
@@ -193,7 +188,7 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
     }
     if (files.size() > kReadFiles)
         throw_usage_error("source-read-file-budget", "Source read selects at most four files.");
-    std::map<Range, MaterializedRange> ranges;
+    std::map<Range, Json> ranges;
     std::map<std::string, FileMetadata> observed;
     std::size_t source_bytes = 0;
     for (const auto& path : files) {
@@ -204,46 +199,35 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
         }
         const auto before = source_metadata(options_.root / path);
         const auto hash = json_string_value(binding, "content_hash");
-        const auto content = read_bound_source(options_.root, path, hash, kReadFileBytes);
+        auto content = read_bound_source(options_.root, path, hash, kReadFileBytes);
         if (source_metadata(options_.root / path) != before) throw_file_changed_during_verification(options_.root / path);
         observed.emplace(path, before);
         if (content.size() > kReadSourceBytes - source_bytes)
             throw CliError("source-read-byte-budget", "resource", "Source materialization exceeds four MiB.",
                            1, false, "Select fewer source files.");
         source_bytes += content.size();
+        const auto redaction = redact_source(content, path);
         const auto offsets = source_line_offsets(content);
         for (auto& [id, row] : rows) {
             if (row.path != path || omissions.contains(id)) continue;
             if (request.whole_files) {
                 // A terminal newline is not an additional physical source line.
                 row.end = static_cast<int>(offsets.size() - (!content.empty() && content.back() == '\n' ? 1 : 0));
-                row.span_hash = hash;
+                row.span_hash = fnv1a64(content);
                 row.metadata.update({{"start_line", 1}, {"end_line", row.end}, {"source_content_hash", hash}});
             }
             const Range key{path, row.start, row.end};
-            const auto raw = source_physical_range(content, offsets, row.start, row.end);
-            if (fnv1a64(raw) != row.span_hash)
+            const auto text = source_physical_range(content, offsets, row.start, row.end);
+            if (fnv1a64(text) != row.span_hash)
                 throw_index_error("source-read-span-mismatch", "Selected span does not match its source bytes.", false);
             if (ranges.contains(key)) continue;
-            const auto hit = source_range_secret(raw, path);
+            const auto begin = offsets.at(static_cast<std::size_t>(row.start - 1));
+            const bool redacted = redaction.intersects(begin, begin + text.size());
             Json body = {{"path", path}, {"start_line", row.start}, {"end_line", row.end},
-                {"span_hash", row.span_hash}, {"source_content_hash", hash}, {"source_range_bytes", raw.size()},
-                {"state", hit.found ? "redacted" : "complete"},
-                {"reason", hit.found ? Json(hit.kind) : Json(nullptr)}, {"text", hit.found ? Json(nullptr) : Json(raw)}};
-            ranges.emplace(key, MaterializedRange{std::move(body), hit.found});
-        }
-    }
-    // Scan every selected range first, even if its body will not fit the output.
-    // A sensitive enclosing/overlapping range also suppresses selected neighbors.
-    for (auto& [key, materialized] : ranges) {
-        for (const auto& [other, source] : ranges) {
-            if (source.sensitive && std::get<0>(key) == std::get<0>(other) &&
-                std::get<1>(other) <= std::get<2>(key) && std::get<2>(other) >= std::get<1>(key)) {
-                materialized.body["state"] = "redacted";
-                materialized.body["reason"] = "sensitive-overlapping-source-range";
-                materialized.body["text"] = nullptr;
-                break;
-            }
+                {"span_hash", row.span_hash}, {"source_content_hash", hash}, {"source_range_bytes", text.size()},
+                {"state", redacted ? "redacted" : "complete"},
+                {"reason", redacted ? Json(redaction.reason) : Json(nullptr)}, {"text", text}};
+            ranges.emplace(key, std::move(body));
         }
     }
     const auto selection_key = request.whole_files ? "files" : "records";
@@ -267,7 +251,7 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
             const auto index = added_body ? candidate["bodies"].size() : body_indices.at(key);
             record["body_index"] = index;
             candidate[selection_key].push_back(std::move(record));
-            if (added_body) candidate["bodies"].push_back(ranges.at(key).body);
+            if (added_body) candidate["bodies"].push_back(ranges.at(key));
             // Reserve compact omission descriptors for every later requested ID.
             Json bounded = candidate;
             for (const auto& [pending, indices] : positions) {
@@ -277,7 +261,7 @@ Json RetrievalSession::read_impl(std::string_view input, bool selected_only) con
             if (bounded.dump().size() <= kReadEvidenceBytes) {
                 evidence = std::move(candidate);
                 if (added_body) body_indices.emplace(key, index);
-                complete = complete && ranges.at(key).body.at("state") == "complete";
+                complete = complete && ranges.at(key).at("state") == "complete";
                 continue;
             }
             reason = "serialized-evidence-budget";

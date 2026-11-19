@@ -142,6 +142,14 @@ int main() {
         const auto hidden = source_view(redacted);
         check(verify(hidden).empty() && hidden.find("OMISSION ") != std::string::npos);
         check(hidden.find("must-not-leak") == std::string::npos);
+        const std::string visible = "safe before\r\n     \r\nsafe after\r\n";
+        redacted["source_context"]["context"]["bodies"][0]["text"] = visible;
+        redacted["source_context"]["context"]["collection_complete"] = false;
+        const auto partial = shin::observer::project_source_view(redacted);
+        check(verify(partial.text).at(1) == visible);
+        check(partial.receipt.at("shown") == Json::array({1}) &&
+            partial.receipt.at("redacted") == Json::array({1}) &&
+            partial.receipt.at("all_native_bodies_shown") == false);
 
         const auto capped = source_view(envelope(Json::array({body(std::string(5000, 'x'))})), 2048);
         check(verify(capped).empty() && capped.find("SOURCE 1") != std::string::npos);

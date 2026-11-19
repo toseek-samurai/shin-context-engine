@@ -266,7 +266,7 @@ class McpTests(unittest.TestCase):
         self.start(ready=False)
         self.wait_service_state(lambda s: len(s['qualified_projects']) == len(self.roots), timeout=10)
         initial = self.raw('query', query='readLimit')['result']
-        self.assertEqual(initial['source_coverage']['quarantined_files'], 1)
+        self.assertEqual(initial['source_coverage']['redacted_files'], 1)
         for root in others:
             self.assertTrue(self.raw('query', query='readLimit', root=root)['ok'])
         state = self.raw('service-status')['result']
@@ -275,7 +275,7 @@ class McpTests(unittest.TestCase):
         def project_row(state):
             return next((p for p in state['telemetry']['project_states'] if p['root'] == str(self.root)), {})
 
-        # A new generation must still report quarantine without a resident reader.
+        # A new generation must still report redaction without a resident reader.
         excluded.write_text(excluded.read_text() + '// New generation\n')
         state = self.wait_service_state(lambda s: any(
             p['root'] == str(self.root) and p['snapshot_id'] != initial['snapshot_id']
@@ -621,27 +621,36 @@ class McpTests(unittest.TestCase):
         self.assertEqual(document['error']['code'], 'source-read-document-only')
         self.assertEqual(document['recovery']['next_action'], 'read-authorized-document-directly')
 
-    def test_quarantined_file_keeps_mcp_available_with_visible_coverage(self):
+    def test_file_with_hidden_lines_keeps_mcp_search_and_read_available(self):
         secret = 'sk-' + 'Q7x9' * 16
-        (self.root / 'unsafe.js').write_text('export const token = "' + secret + '"; // gitleaks:allow\n')
+        (self.root / 'unsafe.js').write_text('export function cedarWitness() { return 31; }\n'
+                                           'export const token = "' + secret + '"; // gitleaks:allow\n'
+                                           'export function orchidWitness() { return 27; }\n')
         self.run_ce('watch', '--samples', '3')
         self.start()
         child = self.adapter()
         query = self.tool(child, 'shin_query', {'query': 'readLimit'})
         self.assertTrue(query['ok'])
         self.assertEqual(query['source_coverage']['state'], 'partial')
-        self.assertEqual(query['source_coverage']['quarantined_files'], 1)
+        self.assertEqual(query['source_coverage']['redacted_files'], 1)
         self.assertIn('return 7;', query['source_context'])
         self.assertNotIn(secret, json.dumps(query))
+        same_file = self.tool(child, 'shin_query', {'query': 'cedarWitness'})
+        self.assertTrue(same_file['ok'])
+        self.assertIn('return 31;', same_file['source_context'])
+        self.assertNotIn(secret, json.dumps(same_file))
+        self.assertEqual(query['source_coverage']['files'][0]['reason'], 'openai-api-key')
         redacted = self.tool(child, 'shin_read', {'path': 'unsafe.js', 'snapshot': query['snapshot_id']})
         self.assertTrue(redacted['ok'])
         self.assertIn('redacted', redacted['source_context'])
+        self.assertIn('return 31;', redacted['source_context'])
+        self.assertIn('return 27;', redacted['source_context'])
         self.assertNotIn(secret, json.dumps(redacted))
         status = self.tool(child, 'shin_status', {})
-        self.assertEqual(status['source_coverage']['quarantined_files'], 1)
+        self.assertEqual(status['source_coverage']['redacted_files'], 1)
         service_status = self.raw('service-status')['result']
         project = next(p for p in service_status['telemetry']['project_states'] if p['root'] == str(self.root))
-        self.assertEqual(project['source_coverage']['quarantined_files'], 1)
+        self.assertEqual(project['source_coverage']['redacted_files'], 1)
 
     def test_managed_gitignore_and_shinignore_control_live_search_and_snapshot_reads(self):
         root = self.base / 'git-project'
@@ -1048,7 +1057,7 @@ class McpTests(unittest.TestCase):
             self.assertTrue({'shin_checkpoint','shin_resume'} <= names)
             for text in (instructions, catalog['shin_query']['description']):
                 for field in ('retrieval_ready', 'local_ready=true', 'selected folder', '.shinignore',
-                              'source_scope', 'quarantine', 'MCP cannot approve changes to access'):
+                              'source_scope', 'redaction', 'MCP cannot approve changes to access'):
                     self.assertIn(field, text)
             for name in ('shin_checkpoint','shin_resume'):
                 required=set(catalog[name]['inputSchema']['required'])

@@ -244,7 +244,7 @@ int run(int argc, char** argv, char** environment) {
         "Honor explicit retrieval_ready when present; otherwise a successful local_ready=true response permits retrieval. "
         "A managed project discovers eligible text throughout the selected folder regardless of its extension. "
         "Project .gitignore rules apply first. The optional root .shinignore can exclude or re-include eligible paths. Project setup requires only the folder and selected agents. "
-        "Check source_scope and report omissions, quarantine or quality warnings. Preserve authority, freshness, integrity, "
+        "Check source_scope and report omissions, redaction or quality warnings. Preserve authority, freshness, integrity, "
         "safety and resource/output refusals. MCP cannot approve changes to access. Report engine misses to Shin and continue "
         "authorized work with direct sources.";
     options.server_instructions = options.server_instructions.value() + " Follow recovery guidance on refusals. shin_help provides static help and escalation guidance "

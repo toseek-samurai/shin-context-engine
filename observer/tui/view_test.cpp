@@ -52,7 +52,7 @@ int main() {
         snapshot.service = {{"command", "service-status"}, {"service_running", true},
             {"telemetry", {{"project_states", Json::array({
                 {{"root", "/example/a"}, {"id", "a"}, {"name", "Project A"}, {"phase", "current"}, {"query_ready", true},
-                 {"source_coverage", {{"state", "partial"}, {"quarantined_files", 1}}}},
+                 {"source_coverage", {{"state", "partial"}, {"redacted_files", 1}}}},
                 {{"root", "/example/b"}, {"id", "b"}, {"name", "Project B"}, {"phase", "current"}, {"query_phase", "standby"},
                  {"quality_warning", {{"state", "degraded"}}}},
                 {{"root", "/example/c"}, {"id", "c"}, {"name", "Project C"}, {"phase", "checking"}, {"query_ready", true}, {"active_issue", true}}

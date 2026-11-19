@@ -699,7 +699,7 @@ int telemetry_scenario() {
         const auto crowded_status_projection = crowded_status;
         bound_local_service_status(crowded_status);
         if (crowded_status != crowded_status_projection) return 57;
-        Json coverage{{"state", "partial"}, {"quarantined_files", 10}, {"omitted_files", 2}, {"files", Json::array()}};
+        Json coverage{{"state", "partial"}, {"redacted_files", 10}, {"omitted_files", 2}, {"files", Json::array()}};
         for (int i = 0; i < 8; ++i)
             coverage["files"].push_back({{"path", "src/" + std::string(460, 's') + std::to_string(i)},
                                          {"reason", "secret-like-source-content"}});
@@ -713,7 +713,7 @@ int telemetry_scenario() {
         for (const auto& row : projects) {
             const auto& reported = row.at("source_coverage");
             if (row.at("query_phase") != "standby" || reported.at("state") != "partial" ||
-                reported.at("quarantined_files") != 10 ||
+                reported.at("redacted_files") != 10 ||
                 reported.at("omitted_files").get<std::size_t>() + reported.at("files").size() != 10) return 60;
         }
         status["essential"] = std::string(65536, 'x');

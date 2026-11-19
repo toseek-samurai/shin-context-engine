@@ -294,13 +294,13 @@ void redaction_and_limits(const fs::path& parent) {
     fixture.write("src/escaped.cpp", "int escaped() {\n/*" + std::string(20000, '\\') + "*/\nreturn 4;\n}\n");
     fixture.publish();
     RetrievalSession session(fixture.options, true);
-    const Json quarantined_request = {{"schema_version", "shin.source-read-request.v2"},
+    const Json redacted_request = {{"schema_version", "shin.source-read-request.v2"},
         {"snapshot_id", session.freshness().snapshot_id},
         {"file_paths", {"src/sensitive.cpp", "src/large.cpp", "src/ok.cpp", "src/escaped.cpp"}}};
-    const auto output = session.read(quarantined_request.dump());
+    const auto output = session.read(redacted_request.dump());
     RetrievalSession resident(GeneratedSnapshot::load(fixture.options), false);
-    expect(resident.read_selected(quarantined_request.dump()).at("evidence") ==
-        output.at("evidence"), "selected read preserves overlap redaction and output bounds");
+    expect(resident.read_selected(redacted_request.dump()).at("evidence") ==
+        output.at("evidence"), "both read paths preserve masked text and output bounds");
     expect(output.at("ok") == true && output.at("complete") == false, "valid incomplete response");
     expect(output.dump().find(secret) == std::string::npos, "secret beyond preview not disclosed");
     const auto& evidence = output.at("evidence");
@@ -311,10 +311,12 @@ void redaction_and_limits(const fs::path& parent) {
     for (const auto& span : evidence.at("bodies")) {
         if (span.at("state") == "redacted") {
             ++redacted;
-            expect(span.at("text").is_null(), "redaction is not a clipped body");
+            expect(span.at("text").get_ref<const std::string&>().find("return 1;") != std::string::npos &&
+                span.at("text").get_ref<const std::string&>().find("return 2;") != std::string::npos,
+                "both safe portions of a protected file remain visible");
         }
     }
-    expect(redacted == 1, "quarantined file has no body, including its clean declarations");
+    expect(redacted == 1, "protected file has one partial body");
     expect(evidence.dump().size() <= 32768 && output.dump().size() + 1 <= 131072, "serialized hard caps");
 
     Fixture files(parent);
@@ -441,9 +443,11 @@ void whole_file_redaction_and_limits(const fs::path& parent) {
     const auto output = session.read(file_request(session, {
         "src/secret.cpp", "src/escaped.cpp", "src/huge.cpp", "src/ok.cpp"}).dump());
     expect(output.at("complete") == false && output.dump().find(secret) == std::string::npos,
-           "secret outside declaration redacts whole file");
+           "secret outside declaration is never included");
     const auto& evidence = output.at("evidence");
-    expect(evidence.at("bodies")[0].at("text").is_null(), "whole secret body absent");
+    expect(evidence.at("bodies")[0].at("state") == "redacted" &&
+        evidence.at("bodies")[0].at("text").get_ref<const std::string&>().starts_with("int clean() { return 1; }\n"),
+        "whole-file read delivers clean lines and reports partial coverage");
     expect(evidence.at("bodies")[1].at("text") == "int ok() { return 4; }\n", "later fitting file retained");
     expect(evidence.at("omissions").size() == 2 &&
            evidence.at("omissions")[0].at("reason") == "serialized-evidence-budget" &&

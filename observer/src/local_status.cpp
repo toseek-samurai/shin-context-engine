@@ -93,10 +93,10 @@ bool quality_warning(const Json& project) {
 bool partial_coverage(const Json& project) {
     const auto& coverage = field(project, "source_coverage");
     const auto& reason = field(coverage, "reason");
-    const auto& quarantined = field(coverage, "quarantined_files");
-    const bool has_quarantine = quarantined.is_number_unsigned() ? quarantined.get<std::uint64_t>() > 0 :
-        quarantined.is_number_integer() && quarantined.get<std::int64_t>() > 0;
-    return field(coverage, "state") == "partial" || has_quarantine ||
+    const auto& redacted = field(coverage, "redacted_files");
+    const bool has_hidden_lines = redacted.is_number_unsigned() ? redacted.get<std::uint64_t>() > 0 :
+        redacted.is_number_integer() && redacted.get<std::int64_t>() > 0;
+    return field(coverage, "state") == "partial" || has_hidden_lines ||
         reason == "source-observation-limited" || reason == "profile-revision-pending";
 }
 
@@ -131,7 +131,7 @@ std::string local_status_text(const Json& status) {
             out << "Search warning: some checks missed expected evidence; verified current context remains available.\n";
         const auto& coverage = field(status, "source_coverage");
         if (field(coverage, "state") == "partial")
-            out << "Coverage: partial | Quarantined files: " << number(field(coverage, "quarantined_files")) << '\n';
+            out << "Coverage: partial | Files with hidden lines: " << number(field(coverage, "redacted_files")) << '\n';
         return out.str();
     }
     const auto& telemetry = field(status, "telemetry");

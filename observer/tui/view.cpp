@@ -297,14 +297,14 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 out.push_back({shin::ui::tr("Active issue: ") + std::string(ui::active_issue(row) ? shin::ui::tr("yes") : shin::ui::tr("no"))});
                 out.push_back({shin::ui::tr("Issue code: ") + ui::error_code(row, "error_code")});
                 const auto& coverage = field(row, "source_coverage");
-                out.push_back({std::string(shin::ui::tr("Coverage: ")) + shin::ui::tr(text(field(coverage, "state")).c_str()) + shin::ui::tr(" | Quarantined files: ") + number(field(coverage, "quarantined_files"))});
-                const auto& excluded = field(coverage, "files");
-                if (excluded.is_array()) for (std::size_t i = 0; i < std::min<std::size_t>(excluded.size(), 8); ++i) {
-                    const auto& file = excluded[i];
+                out.push_back({std::string(shin::ui::tr("Coverage: ")) + shin::ui::tr(text(field(coverage, "state")).c_str()) + shin::ui::tr(" | Files with hidden lines: ") + number(field(coverage, "redacted_files"))});
+                const auto& details = field(coverage, "files");
+                if (details.is_array()) for (std::size_t i = 0; i < std::min<std::size_t>(details.size(), 8); ++i) {
+                    const auto& file = details[i];
                     out.push_back({"! " + text(field(file, "path")), Tone::warning});
                     const auto reason = text(field(file, "reason"));
                     out.push_back({"  " + std::string(reason == "secret-like-source-content" ?
-                        shin::ui::tr("Possible secret; contents withheld.") : reason), Tone::muted});
+                        shin::ui::tr("Possible secret; matching lines hidden.") : reason), Tone::muted});
                 }
                 const auto& histories = field(field(telemetry, "history"), "projects");
                 if (histories.is_array()) for (const auto& item : histories) if (field(item, "id") == field(row, "id"))

@@ -101,7 +101,7 @@ symlinks are excluded.
 
 Broken local Markdown links appear as documentation warnings while verified
 context stays available. The warning clears after the corrected sources qualify.
-Secret quarantine, source freshness, index integrity, agent grants and resource
+Secret redaction, source freshness, index integrity, agent grants and resource
 limits still apply. Project details show omissions and the reason for a refusal.
 
 Open the menu bar application:
@@ -223,8 +223,8 @@ Use the reported coverage and omissions when interpreting an empty result.
 
 The managed reader's `project_files` identifies the exclusion revision and
 reports excluded entries, oversized files and binary content. An excluded
-directory counts once, regardless of how many children it contains. Secret
-quarantine is reported separately in `source_coverage`.
+directory counts once, regardless of how many children it contains. Sensitive lines stay hidden. Files with hidden lines are reported in
+`source_coverage`.
 
 For projects with more than 8,192 eligible files or too much text for the
 full fragment index, Shin first ranks
@@ -240,7 +240,7 @@ limits. Aggregate indexing, parser work and the response to each query have
 their own bounds. Text discovery accepts UTF-8 text and rejects binary control bytes. Files
 without a supported parser may still provide text evidence. Binary,
 unsafe or unreadable input cannot supply source excerpts. A reported refusal
-or quarantine includes the available diagnostic and preserves the limits.
+or redaction includes the available diagnostic and preserves the limits.
 
 ### Automatic model statistics (dev.12)
 
@@ -565,7 +565,7 @@ there is no historical index reader, format conversion or version-pair allowlist
 Downgrades are not normal updates. Transactional rollback uses the verified
 previous payload retained by the installation journal.
 
-The current generator is `shin-generator-v24-objective-cpp`. A fresh kit
+The current generator is `shin-generator-v25-source-redaction`. A fresh kit
 keeps the enrolled project folders, agent settings, grants and history. It
 rebuilds managed evidence from current files with its own discovery rules and
 each project's `.gitignore` files and optional root `.shinignore`. Existing client selections continue

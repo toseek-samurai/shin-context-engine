@@ -1753,13 +1753,7 @@ SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::p
                          SourceFactSource& source, SourceRelationInputs& relations) -> bool {
         std::string content;
         if (!load_source_fact_content(profile, root, path, source, content)) return false;
-        const auto secret = source_range_secret(content, path);
-        if (secret.found) {
-            // Preserve the byte binding for freshness and redacted follow-up reads,
-            // but publish no searchable facts or relations from this file.
-            source.quarantine_reason = secret.kind;
-            return true;
-        }
+        source.redaction_reason = redact_source(content, path).reason;
         if (result.file_routing) {
             std::size_t chunks = 0;
             source.routing_terms = source_routing_terms(path, content, chunks);
@@ -1816,9 +1810,6 @@ SourceFactBuildResult build_source_fact_rows(const Profile& profile, const fs::p
     }
     std::set<std::string> indexed_paths;
     for (const auto& source : result.sources) {
-        // Preserve inbound path bindings so readers can report a redacted
-        // dependency instead of silently losing its omission. Quarantined files
-        // contribute no outgoing relations or declaration records.
         if (source.status == "scanned") indexed_paths.insert(source.path);
     }
     result.relations = resolve_source_relations(relations_by_file, indexed_paths);

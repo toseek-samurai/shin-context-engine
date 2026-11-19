@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "source_read.h"
 #include "project_files.h"
 #include "evidence_expectations.h"
 
@@ -646,10 +647,11 @@ static SourceDoc read_source_doc(const Profile& profile, const fs::path& root, c
     doc.content = profile.automatic_project_files
         ? read_project_text(root, path, static_cast<std::size_t>(profile.source_fact_max_file_bytes))
         : read_file(root / path);
+    doc.content_hash = fnv1a64(doc.content);
+    doc.redaction_reason = redact_source(doc.content, path).reason;
     doc.lines = split_lines(doc.content);
     doc.line_count = static_cast<int>(doc.lines.size());
     doc.byte_count = static_cast<int>(doc.content.size());
-    doc.content_hash = fnv1a64(doc.content);
     doc.id = profile.automatic_project_files ? "doc-" + fnv1a64(path).substr(8) : slugify(path);
     Json json_doc;
     const Json* json_doc_ptr = nullptr;
@@ -658,6 +660,7 @@ static SourceDoc read_source_doc(const Profile& profile, const fs::path& root, c
     }
     doc.title = extract_title(profile, path, doc.kind, doc.lines, json_doc_ptr);
     doc.summary = extract_summary(profile, doc.kind, doc.lines, json_doc_ptr);
+    if (doc.summary.empty() && !doc.redaction_reason.empty()) doc.summary = "Sensitive source lines are hidden.";
     doc.doc_type = detect_doc_type(path, doc.kind, doc.title, doc.content);
     doc.area = detect_area(path);
     doc.status = detect_status(path, doc.content, json_doc_ptr);

@@ -51,7 +51,7 @@ namespace fs = std::filesystem;
 using Json = nlohmann::json;
 
 inline const fs::path kGeneratedDir = fs::path("docs") / "kb" / "generated";
-inline const std::string kGeneratorVersion = "shin-generator-v24-objective-cpp";
+inline const std::string kGeneratorVersion = "shin-generator-v25-source-redaction";
 inline constexpr std::size_t kMaxSectionIndexedTextBytes = 16384;
 inline constexpr std::size_t kMaxDocumentIndexedTextBytes = 131072;
 inline const std::string kMatchingMode = "field-aware-v1";
@@ -293,7 +293,7 @@ struct SourceDoc {
     int heading_count = 0;
     std::string evidence_kind{};
     std::string verification_level{};
-    std::string quarantine_reason{};
+    std::string redaction_reason{};
 };
 
 struct SectionRow {
@@ -396,7 +396,7 @@ struct SourceFactSource {
     std::string status;
     FileMetadata metadata;
     bool has_metadata = false;
-    std::string quarantine_reason{};
+    std::string redaction_reason{};
     std::string routing_terms{};
 };
 
@@ -755,6 +755,7 @@ struct DoctorIssue {
     std::string path;
     std::string summary;
     int line = 0;
+    std::string reason{};
 };
 
 struct DoctorCounts {
@@ -792,7 +793,7 @@ struct DoctorCounts {
     int json_key_capped_sections = 0;
     int secret_scan_excluded_files = 0;
     int secret_findings = 0;
-    int quarantined_files = 0;
+    int redacted_files = 0;
     int errors = 0;
     int warnings = 0;
     int infos = 0;

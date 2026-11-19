@@ -51,7 +51,7 @@ and search time are interval averages. Missing observations stay gaps. Memory
 across unverified service-run boundaries is shown as isolated measurements.
 Colors, symbols and text distinguish ready, on-demand, preparing and blocked
 search; partial source coverage has its own column. Enter opens the cause,
-next step and any reported excluded file paths.
+next step and any reported paths with hidden lines.
 
 Project details also explain nonblocking documentation warnings.
 The managed service keeps serving verified context when local links are
@@ -59,13 +59,11 @@ broken; `documentation_warnings` counts these warnings in readiness and service
 project rows. Strict Core audits still report the documentation defect.
 
 Monitor and TUI separate available projects, blocked projects and
-coverage and documentation notices. A secret-scanner match can
-exclude a file while search over the remaining verified files keeps working.
-Project details list the excluded paths without exposing matched values.
-Reconnecting the project is not a remedy for a scanner finding. Review a listed
-file when it matters to the task: remove real credentials, or report a minimal
-synthetic reproduction for a false positive. Test directories are still scanned;
-Shin does not automatically trust a value just because it is in a test.
+coverage and documentation notices. A secret-scanner match hides the affected
+lines. Other lines in the same file stay searchable and readable. Project
+details list the affected paths and rules without exposing matched values.
+A read spanning a hidden line returns the remaining text and reports partial
+coverage. Test directories follow the same rules.
 
 | Key | Action |
 | --- | --- |

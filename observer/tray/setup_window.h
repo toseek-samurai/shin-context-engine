@@ -439,7 +439,7 @@
             live_text(self.setupStatus, @"stringValue", "Search is not ready yet. Open Projects for preparation progress or diagnostics, then check again."); return;
         }
         const bool partial = result.contains("source_coverage") && result.at("source_coverage").value("state", "") == "partial";
-        self.setupStatus.stringValue = partial ? ui_text("Search is ready with partial source coverage. Review Projects for excluded files. The agent connection still needs checking in the agent.") :
+        self.setupStatus.stringValue = partial ? ui_text("Search is ready with partial source coverage. See coverage details in Projects. The agent connection still needs checking in the agent.") :
             ui_text("Project search is ready. Ask the selected agent to call shin_projects, then shin_status for this project.");
     }];
 }

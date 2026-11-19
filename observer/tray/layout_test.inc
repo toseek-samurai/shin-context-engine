@@ -220,7 +220,7 @@ int main(int argc, char** argv) {
             unsigned rendered = 0;
             for (const auto maximum_size : {ImVec2{520, 680}, ImVec2{620, 810}, ImVec2{400, 560}, ImVec2{448, 620}, ImVec2{432, 460}, ImVec2{360, 440}, ImVec2{280, 340}, ImVec2{280, 240}}) {
                 if (fit_test && maximum_size.x != 520) continue;
-                for (const auto* scenario : {"project-analytics", "project-analytics-empty", "project-analytics-offline", "first-run", "update", "cold", "current", "documentation-warning", "quarantined", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
+                for (const auto* scenario : {"project-analytics", "project-analytics-empty", "project-analytics-offline", "first-run", "update", "cold", "current", "documentation-warning", "redacted-lines", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
                      "overview", "overview-warning", "overview-warning-short", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
@@ -253,7 +253,7 @@ int main(int argc, char** argv) {
                     if (kind == "blocked") project.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
                     if (kind == "route-review") project.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "route-revision-conflict"}});
                     if (kind == "profile-partial") project["source_coverage"] = {{"state", "partial"}, {"reason", "profile-revision-pending"}};
-                    if (kind == "quarantined") project["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2},
+                    if (kind == "redacted-lines") project["source_coverage"] = {{"state", "partial"}, {"redacted_files", 2},
                         {"files", Json::array({{{"path", "tests/auth_test.cpp"}}, {{"path", "src/credentials.ts"}}})}};
                     if (kind == "secret-blocked") project.update({{"phase", "blocked"}, {"active_issue", true},
                         {"error_code", "refresh-validation-failed"}, {"validation_diagnostic", {
@@ -308,7 +308,7 @@ int main(int argc, char** argv) {
                         other["name"] = "Project " + std::to_string(i);
                         if (kind == "project-states") {
                             if (i == 1) other.update({{"query_ready", false}, {"query_phase", "preparing"}});
-                            if (i == 2) other["source_coverage"] = {{"state", "partial"}, {"quarantined_files", 2}};
+                            if (i == 2) other["source_coverage"] = {{"state", "partial"}, {"redacted_files", 2}};
                             if (i == 3) other.update({{"phase", "blocked"}, {"active_issue", true}, {"error_code", "refresh-validation-failed"}});
                             if (i == 4) other["query_phase"] = "standby";
                             if (i == 5) other.update({{"phase", "coalescing"}, {"query_ready", false}});
@@ -565,15 +565,15 @@ int main(int argc, char** argv) {
                         const auto status = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) { return item.chart == 74; });
                         if (status == ui_actions.end()) throw std::runtime_error("profile review status is not accessible: " + context);
                     }
-                    if (kind == "quarantined" || kind == "profile-partial") {
+                    if (kind == "redacted-lines" || kind == "profile-partial") {
                         const auto visible = std::find_if(ui_actions.begin(), ui_actions.end(), [&](const auto& action) {
-                            return action.chart == 54 && action.label == shin::ui::tr(kind == "quarantined" ?
-                                "Search available · files excluded" : "Context partially available");
+                            return action.chart == 54 && action.label == shin::ui::tr(kind == "redacted-lines" ?
+                                "Partial source coverage" : "Context partially available");
                         });
                         if (visible == ui_actions.end()) throw std::runtime_error("partial coverage not visible: " + context);
-                        if (kind == "quarantined" && size.y >= 680 && std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
-                            return action.chart == 129 && action.label == "tests/auth_test.cpp";
-                        })) throw std::runtime_error("excluded file is not visible: " + context);
+                        if (kind == "redacted-lines" && size.y >= 680 && std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                            return action.chart == 129 && action.label == "tests/auth_test.cpp · secret-like-source-content";
+                        })) throw std::runtime_error("file with hidden lines is not visible: " + context);
                     }
                     if (kind == "first-run") {
                         const auto setup = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {

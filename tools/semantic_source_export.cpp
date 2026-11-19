@@ -16,6 +16,12 @@ constexpr std::size_t kChunkBytes = 1024;
 constexpr std::size_t kChunksPerRange = 16;
 using Range = std::pair<int, int>;
 
+void limit_text(std::string& text, std::size_t limit) {
+    if (text.size() <= limit) return;
+    while (limit > 0 && (static_cast<unsigned char>(text[limit]) & 0xc0) == 0x80) --limit;
+    text.resize(limit);
+}
+
 void redact_model_input(const fs::path& root, const fs::path& input_path) {
     constexpr std::uintmax_t maximum_bytes = 300ULL * 1024 * 1024;
     if (!fs::is_regular_file(input_path) || fs::file_size(input_path) > maximum_bytes)
@@ -24,6 +30,7 @@ void redact_model_input(const fs::path& root, const fs::path& input_path) {
     if (!input) throw std::runtime_error("Missing model input");
     std::string line, previous_path, previous_hash, content;
     std::vector<std::size_t> offsets;
+    SourceRedaction redaction;
     std::size_t count = 0;
     std::uintmax_t input_bytes = 0, source_bytes = 0;
     while (std::getline(input, line)) {
@@ -40,19 +47,25 @@ void redact_model_input(const fs::path& root, const fs::path& input_path) {
             content = read_bound_source(root, path, hash, 16ULL * 1024 * 1024);
             source_bytes += content.size();
             if (source_bytes > maximum_bytes) throw std::runtime_error("Model source budget exceeded");
+            redaction = redact_source(content, path);
             offsets = source_line_offsets(content);
             previous_path = path;
             previous_hash = hash;
         }
-        // Inspect the full source span as well as published text, including
-        // values hidden by summary clipping or source suppression comments.
-        auto hit = source_range_secret(source_physical_range(content, offsets, row.at("start_line").get<int>(),
-                                                             row.at("end_line").get<int>()), path);
+        const int start = row.at("start_line").get<int>();
+        const auto source = source_physical_range(content, offsets, start, row.at("end_line").get<int>());
+        const auto begin = offsets.at(static_cast<std::size_t>(start - 1));
+        const bool protected_lines = redaction.intersects(begin, begin + source.size());
         std::string text = row.at("text").get<std::string>();
-        // Published text can be a summary with different syntax from the file.
-        if (!hit.found) hit = source_range_secret(text, {});
+        // For a protected file use the verified projection instead of caller
+        // text, which could contain a copied value outside its stated range.
+        if (!redaction.reason.empty()) {
+            text = compact_whitespace(source);
+            limit_text(text, kTextBytes);
+        }
+        const auto hit = source_range_secret(text, {});
         if (hit.found) text = "[REDACTED:" + hit.kind + "]";
-        std::cout << Json({{"index", count}, {"text", text}, {"redacted", hit.found}}).dump() << '\n';
+        std::cout << Json({{"index", count}, {"text", text}, {"redacted", protected_lines || hit.found}}).dump() << '\n';
         ++count;
     }
     if (!input.eof() || !std::cout) throw std::runtime_error("Incomplete model input projection");
@@ -60,39 +73,30 @@ void redact_model_input(const fs::path& root, const fs::path& input_path) {
 }
 
 Json project_range(const FactRow& row, const std::string& content,
-                   const std::vector<std::size_t>& offsets, std::size_t text_limit = kTextBytes) {
+                   const std::vector<std::size_t>& offsets, const SourceRedaction& redaction,
+                   std::size_t text_limit = kTextBytes) {
     const std::string raw = source_physical_range(content, offsets, row.start_line, row.end_line);
     if (row.span_hash.empty() || fnv1a64(raw) != row.span_hash) {
         throw std::runtime_error("Published span does not match its source bytes");
     }
-    // Inspect the complete range before compaction/clipping; source suppression
-    // comments cannot authorize exporting a credential into model input.
-    const SecretScanHit hit = source_range_secret(raw, row.path);
+    const auto begin = offsets.at(static_cast<std::size_t>(row.start_line - 1));
+    const bool protected_lines = redaction.intersects(begin, begin + raw.size());
     std::string text = compact_whitespace(raw);
-    if (hit.found) text = "[REDACTED:" + hit.kind + "]";
     const auto redacted_bytes = text.size();
-    if (text.size() > text_limit) {
-        std::size_t cut = text_limit;
-        while (cut > 0 && (static_cast<unsigned char>(text[cut]) & 0xc0) == 0x80) --cut;
-        text.resize(cut);
-    }
+    limit_text(text, text_limit);
     return {{"path", row.path}, {"start_line", row.start_line}, {"end_line", row.end_line},
             {"record_id", row.id}, {"span_hash", row.span_hash}, {"range_origin", row.range_origin},
             {"text", text}, {"truncated", redacted_bytes > text_limit},
-            {"redacted", hit.found || starts_with(text, "[REDACTED:")},
+            {"redacted", protected_lines},
             {"source_range_bytes", raw.size()}, {"redacted_text_bytes", redacted_bytes}};
 }
 
 Json chunk_range(const FactRow& row, const std::string& content,
                  const std::vector<std::size_t>& offsets, const std::set<Range>& scopes,
-                 const Json& projection) {
+                 const SourceRedaction& redaction, const Json& projection) {
     const Range parent{row.start_line, row.end_line};
     Json result = {{"chunks", Json::array()}, {"owned_lines", 0}, {"delegated_lines", 0},
                    {"emitted_lines", 0}, {"omitted_lines", 0}, {"clipped_chunks", 0}};
-    if (projection.at("redacted").get<bool>()) {
-        result["status"] = "redacted-range";
-        return result;
-    }
     if (!scopes.contains(parent)) {
         result["status"] = "not-syntax-owned";
         return result;
@@ -137,7 +141,7 @@ Json chunk_range(const FactRow& row, const std::string& content,
             child.start_line = start;
             child.end_line = end;
             child.span_hash = fnv1a64(source_physical_range(content, offsets, start, end));
-            Json projected = project_range(child, content, offsets, kChunkBytes);
+            Json projected = project_range(child, content, offsets, redaction, kChunkBytes);
             projected.erase("record_id");
             projected["range_origin"] = "semantic-line-window";
             projected["parent_start_line"] = row.start_line;
@@ -156,17 +160,16 @@ Json chunk_range(const FactRow& row, const std::string& content,
     return result;
 }
 
-void export_structural_file(const std::string& path, const std::string& hash, const std::string& content) {
+void export_structural_file(const std::string& path, const std::string& hash, const std::string& content,
+                            const SourceRedaction& redaction) {
     const auto plan = chunk_source_syntax(content, fs::path(path).extension().string());
     const auto offsets = source_line_offsets(content);
-    // Scan the entire file before partitioning: a secret can straddle pieces.
-    const auto secret = source_range_secret(content, path);
     const auto covered = plan.chunks.empty() ? 0 : plan.chunks.back().end;
     std::cout << Json({{"type", "file"}, {"path", path}, {"source_content_hash", hash},
         {"supported", plan.supported}, {"syntax_complete", plan.syntax_complete},
         {"coverage_complete", plan.coverage_complete}, {"source_bytes", content.size()},
         {"covered_bytes", covered}, {"omitted_bytes", content.size() - covered},
-        {"chunks", plan.chunks.size()}, {"visited_nodes", plan.visited_nodes}, {"redacted", secret.found}}).dump() << '\n';
+        {"chunks", plan.chunks.size()}, {"visited_nodes", plan.visited_nodes}, {"redacted", !redaction.reason.empty()}}).dump() << '\n';
     std::size_t index = 0;
     for (const auto& chunk : plan.chunks) {
         const auto raw = content.substr(chunk.begin, chunk.end - chunk.begin);
@@ -176,7 +179,7 @@ void export_structural_file(const std::string& path, const std::string& hash, co
             {"index", index++}, {"byte_start", chunk.begin}, {"byte_end", chunk.end},
             {"start_line", start}, {"end_line", end}, {"span_hash", fnv1a64(raw)},
             {"range_origin", chunk.fallback ? "bounded-text-fallback" : "syntax-partition"},
-            {"text", secret.found ? "[REDACTED:source-file]" : raw}, {"redacted", secret.found}}).dump() << '\n';
+            {"text", raw}, {"redacted", redaction.intersects(chunk.begin, chunk.end)}}).dump() << '\n';
     }
 }
 
@@ -228,11 +231,12 @@ void export_sources(const fs::path& root, const fs::path& out, bool chunks, bool
         if (found == source_hashes.end() || found->second.empty()) {
             throw std::runtime_error("Fact has no published source binding");
         }
-        const std::string content = read_bound_source(root, path, found->second, kFileBytes);
+        auto content = read_bound_source(root, path, found->second, kFileBytes);
+        const auto redaction = redact_source(content, path);
         if (structural) {
             source_bytes += content.size();
             if (source_bytes > 64ULL * 1024 * 1024) throw std::runtime_error("Structural export source budget exceeded");
-            export_structural_file(path, found->second, content);
+            export_structural_file(path, found->second, content, redaction);
             ++count;
             continue;
         }
@@ -243,28 +247,12 @@ void export_sources(const fs::path& root, const fs::path& out, bool chunks, bool
             const auto range = std::pair{row.start_line, row.end_line};
             auto found_range = ranges.find(range);
             if (found_range == ranges.end()) {
-                found_range = ranges.emplace(range, project_range(row, content, offsets)).first;
+                found_range = ranges.emplace(range, project_range(row, content, offsets, redaction)).first;
             }
             if (found_range->second.at("span_hash") != row.span_hash) {
                 throw std::runtime_error("Identical ranges have inconsistent span hashes");
             }
             if (row.range_origin == "syntax") scopes.insert(range);
-        }
-        if (chunks) {
-            std::vector<Range> sensitive;
-            for (const auto& [range, projection] : ranges) {
-                if (projection.at("redacted").get<bool>()) sensitive.push_back(range);
-            }
-            for (auto& [range, projection] : ranges) {
-                if (std::any_of(sensitive.begin(), sensitive.end(), [&](const Range& other) {
-                        return other.first <= range.second && other.second >= range.first;
-                    })) {
-                    projection["text"] = "[REDACTED:overlapping-source-range]";
-                    projection["redacted"] = true;
-                    projection["truncated"] = false;
-                    projection["redacted_text_bytes"] = projection.at("text").get<std::string>().size();
-                }
-            }
         }
         std::map<Range, Json> partitions;
         for (const FactRow& row : rows) {
@@ -273,7 +261,7 @@ void export_sources(const fs::path& root, const fs::path& out, bool chunks, bool
             if (chunks) {
                 auto partition = partitions.find(range);
                 if (partition == partitions.end()) {
-                    partition = partitions.emplace(range, chunk_range(row, content, offsets, scopes, record)).first;
+                    partition = partitions.emplace(range, chunk_range(row, content, offsets, scopes, redaction, record)).first;
                 }
                 record["chunking"] = partition->second;
                 record["symbol"] = redact_sensitive_text(row.symbol_name);

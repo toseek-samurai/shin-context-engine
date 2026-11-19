@@ -45,7 +45,7 @@ read/inspect following a query, also pass its `request_trace.request_id` as
 
 Honor explicit `retrieval_ready` when present. Otherwise use a successful
 `ok=true`, `local_ready=true` response. Managed projects qualify current
-evidence under the kit's automatic checks. Report partial coverage, quarantine
+evidence under the kit's automatic checks. Report partial coverage, redaction
 and real warnings. A source entry can still be withheld after a change.
 Respect authority, freshness, integrity, safety and resource refusals.
 

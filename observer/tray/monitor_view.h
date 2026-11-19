@@ -1,4 +1,6 @@
 #pragma once
+
+#include "source_read.h"
 #include "imgui.h"
 #include "shin/observer/local_service.h"
 #include "shin/observer/local_installation.h"
@@ -159,7 +161,7 @@ private:
                         success_age = shin::ui::age_ms(row, "last_success_age_ms", elapsed);
                         if (row.contains("source_coverage") && row.at("source_coverage").is_object()) {
                             partial = row.at("source_coverage").value("state", std::string{}) == "partial";
-                            partial_files = shin::ui::count(row.at("source_coverage"), "quarantined_files");
+                            partial_files = shin::ui::count(row.at("source_coverage"), "redacted_files");
                             const auto files = row.at("source_coverage").value("files", Json::array());
                             if (files.is_array()) for (const auto& file : files) {
                                 if (!file.is_object() || partial_details.size() >= 8) continue;
@@ -167,7 +169,7 @@ private:
                                 const auto reason = file.value("reason", std::string{});
                                 if (path.empty() || path.size() > 160 || fs::path(path).is_absolute() ||
                                     std::any_of(path.begin(), path.end(), [](unsigned char c) { return c < 32 || c == 127; })) continue;
-                                partial_details.push_back({{"path", path}, {"reason", reason == "secret-like-source-content" ? reason : "unknown"}});
+                                partial_details.push_back({{"path", path}, {"reason", shin::context::source_redaction_rule(reason)}});
                             }
                         }
                         break;
@@ -1191,15 +1193,13 @@ void render_profile_review(const ViewState& view, const std::string& current_roo
         if (state.status == "success") profile_review_message(shin::ui::tr("Changes accepted. Project context updated."), green);
         else {
             const auto message = state.partial_files
-                ? std::to_string(state.partial_files) + shin::ui::tr(" files unavailable. Context was updated from the remaining data.")
+                ? std::to_string(state.partial_files) + shin::ui::tr(" files contain hidden lines. Other lines remain available.")
                 : shin::ui::tr("Project context is partially available; see project status for the reason.");
             profile_review_message(message.c_str(), amber);
             for (const auto& file : state.partial_details) {
                 const auto path = file.value("path", std::string{});
                 const auto reason = file.value("reason", std::string{});
-                const auto detail = reason == "secret-like-source-content"
-                    ? shin::ui::tr("Excluded file ") + path + shin::ui::tr(": the check found a possible secret.")
-                    : shin::ui::tr("Unavailable file: ") + path + ".";
+                const auto detail = path + " · " + std::string(shin::context::source_redaction_rule(reason));
                 profile_review_message(detail.c_str(), muted);
             }
             profile_review_message(shin::ui::tr("Details are also available in project status."), muted);
@@ -1454,11 +1454,13 @@ void render_project_diagnostics(const ViewState& view, const Json& project, cons
             const auto files = coverage.value("files", Json::array());
             if (files.is_array() && !files.empty()) {
                 ImGui::Spacing();
-                text(shin::ui::tr("Excluded files"), muted, 128);
-                for (std::size_t i = 0; i < std::min<std::size_t>(8, files.size()); ++i)
-                    text(text_field(files[i], "path", 512), ink, 129 + static_cast<int>(i));
+                text(shin::ui::tr("Files with hidden lines"), muted, 128);
+                for (std::size_t i = 0; i < std::min<std::size_t>(8, files.size()); ++i) {
+                    const auto rule = shin::context::source_redaction_rule(text_field(files[i], "reason", 64));
+                    text(text_field(files[i], "path", 512) + " · " + std::string(rule), ink, 129 + static_cast<int>(i));
+                }
                 if (count(coverage, "omitted_files"))
-                    text(std::string(shin::ui::tr("More excluded files: ")) + std::to_string(count(coverage, "omitted_files")), muted, 138);
+                    text(std::string(shin::ui::tr("Other files with hidden lines: ")) + std::to_string(count(coverage, "omitted_files")), muted, 138);
             }
         }
         if (diagnostic_details_open) {

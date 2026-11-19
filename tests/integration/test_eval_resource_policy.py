@@ -179,7 +179,7 @@ class ResourcePolicyTests(unittest.TestCase):
         validation = next(step["result"] for step in result["steps"] if step["id"] == "validate")
         self.assertEqual(validation["summary"]["failure_classes"]["safety_findings"], 0)
         self.assertIn("pack-eval", [gate["id"] for gate in validation["failed_gates"]])
-        self.assertEqual(self.call("doctor", "--strict")["counts"]["quarantined_files"], 1)
+        self.assertEqual(self.call("doctor", "--strict")["counts"]["redacted_files"], 1)
 
     def test_warnings_are_bounded_with_explicit_omissions(self):
         self.exceed("advisory")

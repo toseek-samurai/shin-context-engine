@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "source_read.h"
 #include <re2/re2.h>
 
 namespace shin::context {
@@ -336,7 +337,7 @@ Piece assignment_value(Piece input, bool& unfinished) {
     return input.substr(start);
 }
 
-bool secret_value(Piece input, const SecretPatterns& rules) {
+bool secret_value(Piece input, const SecretPatterns& rules, std::set<std::string>* copies = nullptr) {
     std::string value(input);
     // A resource identifier is not a credential value. Only omit the name
     // scalar in a recognized manifest's flow metadata; all other fields and
@@ -349,9 +350,14 @@ bool secret_value(Piece input, const SecretPatterns& rules) {
             std::fill_n(value.begin() + offset, name.size(), ' ');
         }
     }
-    for (const auto& token : secret_candidate_tokens(value))
-        if (looks_like_assigned_secret_value(token)) return true;
-    return false;
+    bool found = false;
+    for (const auto& token : secret_candidate_tokens(value)) {
+        if (!looks_like_assigned_secret_value(token)) continue;
+        if (!copies) return true;
+        copies->insert(token);
+        found = true;
+    }
+    return found;
 }
 
 std::optional<Piece> query_fragment_tail(Piece input, Piece key, Piece remaining) {
@@ -374,15 +380,21 @@ std::optional<Piece> query_fragment_tail(Piece input, Piece key, Piece remaining
     return std::nullopt;
 }
 
-template <typename Predicate>
-bool matched_token(Piece input, const RE2& rule, Predicate accept) {
+template <typename Predicate, typename Observe>
+bool matched_token(Piece input, const RE2& rule, Predicate accept, Observe observe) {
     Piece token;
-    while (RE2::FindAndConsume(&input, rule, &token))
-        if (!is_placeholder_secret_text(std::string(token)) && accept(token)) return true;
-    return false;
+    for (;;) {
+        const Piece previous = input;
+        if (!RE2::FindAndConsume(&input, rule, &token)) return false;
+        // Some signatures consume a trailing delimiter. Reuse it as the
+        // possible leading delimiter of a second adjacent credential.
+        input = previous.substr(static_cast<std::size_t>(token.data() + token.size() - previous.data()));
+        if (!is_placeholder_secret_text(std::string(token)) && accept(token) && observe(token)) return true;
+    }
 }
 
-bool private_key_material(Piece input, const SecretPatterns& rules) {
+template <typename Observe>
+bool private_key_material(Piece input, const SecretPatterns& rules, Observe observe) {
     Piece kind;
     while (RE2::FindAndConsume(&input, rules.private_key, &kind)) {
         auto body = input;
@@ -416,8 +428,12 @@ bool private_key_material(Piece input, const SecretPatterns& rules) {
         }
         // A marker used to construct a key at runtime contains no key material.
         // Keep complete PEM bodies and substantial truncated/escaped bodies.
-        if (bytes >= 64 || (bytes > 0 && body.starts_with("-----END " + std::string(kind) + "-----")))
-            return true;
+        const auto terminator = "-----END " + std::string(kind) + "-----";
+        if (bytes >= 64 || (bytes > 0 && body.starts_with(terminator))) {
+            const auto* first = kind.data() - std::string_view("-----BEGIN ").size();
+            const auto* last = body.data() + (body.starts_with(terminator) ? terminator.size() : 0);
+            if (observe(Piece(first, static_cast<std::size_t>(last - first)))) return true;
+        }
     }
     return false;
 }
@@ -436,24 +452,40 @@ bool ternary_branch(Piece input, Piece key, Piece remaining) {
     return condition && (std::isalnum(static_cast<unsigned char>(input[condition - 1])) ||
         std::string_view("_$)]\"'").find(input[condition - 1]) != std::string_view::npos);
 }
-}  // namespace
-
-SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression, std::string_view source_path) {
-    if (allow_source_suppression && contains_ascii_case_insensitive(text, "gitleaks:allow")) return {};
+SecretScanHit scan_secret_text(const std::string& text, std::string_view source_path, SourceRedaction* redaction) {
     static const SecretPatterns rules;
     const Piece input(text.data(), text.size());
+    SecretScanHit hit;
+    std::set<std::string> copies;
+    auto* track_copies = redaction ? &copies : nullptr;
+    const auto record = [&](const char* reason, Piece sensitive) {
+        if (!hit.found) hit = {true, reason};
+        if (!redaction) return true;
+        const auto start = static_cast<std::size_t>(sensitive.data() - input.data());
+        redaction->ranges.emplace_back(start, start + sensitive.size());
+        return false;
+    };
     const auto any = [](Piece) { return true; };
-    if (text.find("-----BEGIN ") != std::string::npos && private_key_material(input, rules))
-        return {true, "private-key-block"};
-    if ((text.find("AKIA") != std::string::npos || text.find("ASIA") != std::string::npos) && matched_token(input, rules.aws, any))
-        return {true, "aws-access-key-id"};
-    if (text.find("sk-") != std::string::npos && matched_token(input, rules.openai, any))
-        return {true, "openai-api-key"};
-    if (text.find("eyJ") != std::string::npos && matched_token(input, rules.jwt, [](Piece value) { return value.size() >= 40; }))
-        return {true, "jwt-token"};
+    const auto token_rule = [&](const RE2& rule, auto accept, const char* reason) {
+        return matched_token(input, rule, accept, [&](Piece token) {
+            if (track_copies && token.size() >= 16) copies.emplace(token.data(), token.size());
+            return record(reason, token);
+        });
+    };
+    if (text.find("-----BEGIN ") != std::string::npos && private_key_material(input, rules,
+        [&](Piece block) {
+            if (track_copies)
+                for (auto& token : secret_candidate_tokens(std::string(block)))
+                    if (token.size() >= 16) copies.insert(std::move(token));
+            return record("private-key-block", block);
+        })) return hit;
+    if ((text.find("AKIA") != std::string::npos || text.find("ASIA") != std::string::npos) &&
+        token_rule(rules.aws, any, "aws-access-key-id")) return hit;
+    if (text.find("sk-") != std::string::npos && token_rule(rules.openai, any, "openai-api-key")) return hit;
+    if (text.find("eyJ") != std::string::npos &&
+        token_rule(rules.jwt, [](Piece value) { return value.size() >= 40; }, "jwt-token")) return hit;
     if (contains_ascii_case_insensitive(text, "bearer") &&
-        matched_token(input, rules.bearer, [](Piece value) { return alnum_count(std::string(value)) >= 16; }))
-        return {true, "bearer-token"};
+        token_rule(rules.bearer, [](Piece value) { return alnum_count(std::string(value)) >= 16; }, "bearer-token")) return hit;
 
     Piece remaining = input, key;
     const bool dotenv = dotenv_source(source_path);
@@ -472,15 +504,87 @@ SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source
         bool unfinished = false;
         const auto local = assignment_value(value, unfinished);
         const auto candidate = assignment_candidate_text(std::string(local));
-        if (unfinished && secret_value(candidate, rules)) return {true, "credential-assignment"};
+        bool found = unfinished && secret_value(candidate, rules, track_copies);
         Piece literals(candidate.data(), candidate.size()), quoted, single, templated, bare;
-        while (RE2::FindAndConsume(&literals, rules.literals, &quoted, &single, &templated))
-            if (secret_value(quoted, rules) || secret_value(single, rules) || secret_value(templated, rules))
-                return {true, "credential-assignment"};
-        if (RE2::PartialMatch(candidate, rules.bare, &bare) && secret_value(bare, rules))
-            return {true, "credential-assignment"};
+        while ((!found || redaction) && RE2::FindAndConsume(&literals, rules.literals, &quoted, &single, &templated)) {
+            if (secret_value(quoted, rules, track_copies) || secret_value(single, rules, track_copies) ||
+                secret_value(templated, rules, track_copies)) found = true;
+        }
+        if ((!found || redaction) && RE2::PartialMatch(candidate, rules.bare, &bare) &&
+            secret_value(bare, rules, track_copies)) found = true;
+        if (found && record("credential-assignment",
+            Piece(key.data(), static_cast<std::size_t>(local.data() + local.size() - key.data())))) return hit;
     }
-    return {};
+    if (!copies.empty()) {
+        // For a prefix-free sorted list, only the lexicographic predecessor
+        // can match a suffix. A shorter token already protects its longer
+        // variants on the same line, so those variants need no separate lookup.
+        std::vector<std::string_view> tokens;
+        std::array<bool, 256> starts{};
+        for (const auto& token : copies) {
+            if (!tokens.empty() && std::string_view(token).starts_with(tokens.back())) continue;
+            tokens.emplace_back(token);
+            starts[static_cast<unsigned char>(token.front())] = true;
+        }
+        const std::string_view bytes(text);
+        for (std::size_t offset = 0; offset < bytes.size(); ++offset) {
+            if (!starts[static_cast<unsigned char>(bytes[offset])]) continue;
+            const auto suffix = bytes.substr(offset);
+            const auto after = std::upper_bound(tokens.begin(), tokens.end(), suffix);
+            if (after == tokens.begin()) continue;
+            const auto token = *std::prev(after);
+            if (!suffix.starts_with(token)) continue;
+            redaction->ranges.emplace_back(offset, offset + token.size());
+            offset = bytes.find('\n', offset);
+            if (offset == std::string_view::npos) break;
+        }
+    }
+    return hit;
+}
+}  // namespace
+
+SecretScanHit detect_secret_like_text(const std::string& text, bool allow_source_suppression, std::string_view source_path) {
+    if (allow_source_suppression && contains_ascii_case_insensitive(text, "gitleaks:allow")) return {};
+    return scan_secret_text(text, source_path, nullptr);
+}
+
+std::string_view source_redaction_rule(std::string_view reason) {
+    constexpr std::string_view rules[] = {"private-key-block", "aws-access-key-id", "openai-api-key",
+        "jwt-token", "bearer-token", "credential-assignment"};
+    for (const auto rule : rules) if (rule == reason) return rule;
+    return "secret-like-source-content";
+}
+
+bool SourceRedaction::intersects(std::size_t begin, std::size_t end) const {
+    const auto first = std::lower_bound(ranges.begin(), ranges.end(), begin,
+        [](const auto& range, std::size_t offset) { return range.second <= offset; });
+    return begin < end && first != ranges.end() && first->first < end;
+}
+
+SourceRedaction redact_source(std::string& content, std::string_view path) {
+    SourceRedaction result;
+    result.reason = scan_secret_text(content, path, &result).kind;
+    if (result.ranges.empty()) return result;
+    std::sort(result.ranges.begin(), result.ranges.end());
+    std::size_t merged = 0;
+    for (auto [begin, end] : result.ranges) {
+        while (end > begin && is_ascii_space(content[end - 1])) --end;
+        if (merged && end <= result.ranges[merged - 1].second) continue;
+        const bool overlap = merged && begin < result.ranges[merged - 1].second;
+        const auto previous = overlap ? std::string::npos :
+            (begin == 0 ? std::string::npos : content.rfind('\n', begin - 1));
+        begin = overlap ? result.ranges[merged - 1].first : previous == std::string::npos ? 0 : previous + 1;
+        const auto next = content.find('\n', end - 1);
+        end = next == std::string::npos ? content.size() : next + 1;
+        if (merged && begin <= result.ranges[merged - 1].second)
+            result.ranges[merged - 1].second = end;
+        else result.ranges[merged++] = {begin, end};
+    }
+    result.ranges.resize(merged);
+    for (const auto& [begin, end] : result.ranges)
+        for (auto pos = begin; pos < end; ++pos)
+            if (content[pos] != '\n' && content[pos] != '\r') content[pos] = ' ';
+    return result;
 }
 
 std::string redact_sensitive_text(const std::string& text) {

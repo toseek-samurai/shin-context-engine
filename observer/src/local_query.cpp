@@ -13,39 +13,41 @@
 
 namespace shin::observer {
 namespace {
-Json quarantine_coverage(const std::set<std::string>& paths) {
+Json redaction_coverage(const std::map<std::string, std::string>& paths) {
     if (paths.empty()) return nullptr;
     Json files = Json::array();
-    for (const auto& path : paths) {
+    for (const auto& [path, reason] : paths) {
         if (files.size() == 8) break;
-        files.push_back({{"path", path}, {"reason", "secret-like-source-content"}});
+        files.push_back({{"path", path}, {"reason", shin::context::source_redaction_rule(reason)}});
         if (files.dump().size() > 4096) files.erase(files.size() - 1);
     }
     const auto omitted = paths.size() - files.size();
-    return {{"state", "partial"}, {"quarantined_files", paths.size()}, {"files", std::move(files)},
+    return {{"state", "partial"}, {"redacted_files", paths.size()}, {"files", std::move(files)},
         {"omitted_files", omitted},
-        {"notice", "Some files are quarantined after secret detection. Safe project context remains available. Report partial coverage to the user."}};
+        {"notice", "Sensitive lines are hidden in the listed files. Other lines remain available to search and read."}};
 }
 } // namespace
 
 Json source_coverage_summary(const Json& manifest) {
-    std::set<std::string> paths;
+    std::map<std::string, std::string> paths;
     for (const auto* scope : {"source_fact_sources", "sources"}) {
         const auto* sources = shin::context::find_json_field(manifest, scope);
         if (!sources) continue;
-        for (const auto& source : *sources)
-            if (!source.value("quarantine_reason", std::string{}).empty())
-                paths.insert(source.at("path").get<std::string>());
+        for (const auto& source : *sources) {
+            auto reason = source.value("redaction_reason", std::string{});
+            if (!reason.empty()) paths.insert_or_assign(source.at("path").get<std::string>(), std::move(reason));
+        }
     }
-    return quarantine_coverage(paths);
+    return redaction_coverage(paths);
 }
 
 Json source_coverage_from_doctor(const Json& doctor) {
-    if (doctor.at("counts").at("quarantined_files") == 0) return nullptr;
-    std::set<std::string> paths;
+    if (doctor.at("counts").at("redacted_files") == 0) return nullptr;
+    std::map<std::string, std::string> paths;
     for (const auto& issue : doctor.at("issues"))
-        if (issue.at("id") == "source-quarantined") paths.insert(issue.at("path").get<std::string>());
-    return quarantine_coverage(paths);
+        if (issue.at("id") == "source-redacted")
+            paths.emplace(issue.at("path").get<std::string>(), issue.value("reason", std::string{}));
+    return redaction_coverage(paths);
 }
 
 namespace {
@@ -258,9 +260,8 @@ Json LocalQuerySession::execute(const LocalProjectRequest& request) {
         const auto found = state.sources.find(path);
         if (found == state.sources.end()) { omitted.insert(path); return false; }
         try {
-            const auto content = core::read_bound_source(state.config.root, path,
+            (void)core::read_bound_source(state.config.root, path,
                 found->second->at("content_hash"), selected_bytes_limit);
-            if (core::source_range_secret(content, path).found) { omitted.insert(path); return false; }
             return true;
         } catch (const core::CliError&) { omitted.insert(path); return false; }
     };

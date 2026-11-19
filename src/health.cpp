@@ -15,8 +15,8 @@ static void add_doctor_issue(std::vector<DoctorIssue>& issues,
                       const std::string& id,
                       const std::string& path,
                       int line,
-                      const std::string& summary) {
-    issues.push_back({severity, id, path, summary, line});
+                      const std::string& summary, std::string reason = {}) {
+    issues.push_back({severity, id, path, summary, line, std::move(reason)});
     if (severity == "error") {
         ++counts.errors;
     } else if (severity == "warning") {
@@ -62,7 +62,7 @@ static void emit_doctor_counts_json(std::ostream& out, const DoctorCounts& count
         << ",\"jsonl_capped_rows\":" << counts.jsonl_capped_rows
         << ",\"secret_scan_excluded_files\":" << counts.secret_scan_excluded_files
         << ",\"secret_findings\":" << counts.secret_findings
-        << ",\"quarantined_files\":" << counts.quarantined_files
+        << ",\"redacted_files\":" << counts.redacted_files
         << ",\"errors\":" << counts.errors
         << ",\"warnings\":" << counts.warnings
         << ",\"infos\":" << counts.infos
@@ -75,8 +75,9 @@ static void emit_doctor_issue_json(std::ostream& out, const DoctorIssue& issue) 
         << ",\"id\":" << json_string(issue.id)
         << ",\"path\":" << json_string(issue.path)
         << ",\"line\":" << issue.line
-        << ",\"summary\":" << json_string(issue.summary)
-        << "}";
+        << ",\"summary\":" << json_string(issue.summary);
+    if (!issue.reason.empty()) out << ",\"reason\":" << json_string(issue.reason);
+    out << "}";
 }
 
 static void emit_doctor_issues_json(std::ostream& out, const std::vector<DoctorIssue>& issues, const std::string& indent) {
@@ -1119,65 +1120,51 @@ static std::vector<std::string> doctor_secret_scan_paths(const Profile& profile,
 
 static void scan_doctor_source_secrets(const RuntimeOptions& options, DoctorResult& result) {
     constexpr int kMaxSecretFindingsPerFile = 20;
-    std::map<std::string, std::string> quarantined;
+    using Binding = std::pair<std::string, std::string>;
+    std::map<std::string, Binding> redacted;
     const auto manifest_path = options.out_root / kGeneratedDir / "manifest.json";
     if (fs::exists(manifest_path)) {
         const auto manifest = parse_json_text(read_file(manifest_path), manifest_path.string());
-        const auto* sources = find_json_field(manifest, "source_fact_sources");
-        if (sources && sources->is_array()) {
+        for (const auto* key : {"source_fact_sources", "sources"}) {
+            const auto* sources = find_json_field(manifest, key);
+            if (!sources || !sources->is_array()) continue;
             for (const auto& source : *sources) {
-                if (!json_string_value(source, "quarantine_reason").empty())
-                    quarantined[json_string_value(source, "path")] = json_string_value(source, "content_hash");
+                const auto path = json_string_value(source, "path");
+                const auto reason = json_string_value(source, "redaction_reason");
+                if (reason.empty()) redacted.erase(path);
+                else redacted[path] = {json_string_value(source, "content_hash"), reason};
             }
-        }
-        const auto* documents = find_json_field(manifest, "sources");
-        if (documents && documents->is_array()) {
-            for (const auto& doc : *documents) {
-                const auto path = json_string_value(doc, "path");
-                if (json_string_value(doc, "quarantine_reason").empty()) quarantined.erase(path);
-                else quarantined[path] = json_string_value(doc, "content_hash");
-            }
-        }
-        if (!quarantined.empty()) {
-            // A manifest annotation is not permission to suppress findings.
-            // Authenticate generated files and require no searchable rows from
-            // the quarantined path, independently of its claimed status.
-            (void)load_verified_snapshot(options.out_root);
-            for (const auto* name : {"sections", "facts", "decisions", "contracts", "runbooks", "links"}) {
-                for_each_jsonl_line_if_exists(options.out_root / kGeneratedDir / (std::string(name) + ".jsonl"),
-                    [&](const std::string& line) {
-                        const auto row = parse_json_text(line, name);
-                        quarantined.erase(json_string_value(row, "path"));
-                    });
-            }
-            for_each_jsonl_line_if_exists(options.out_root / kGeneratedDir / "documents.jsonl",
-                [&](const std::string& line) {
-                    const auto row = parse_json_text(line, "documents");
-                    if (json_string_value(row, "title") != "Quarantined source" ||
-                        json_string_value(row, "summary") != "Source content withheld after secret detection." ||
-                        json_string_value(row, "doc_type") != "quarantined" ||
-                        json_string_value(row, "status") != "quarantined")
-                        quarantined.erase(json_string_value(row, "path"));
-                });
         }
     }
+    std::optional<bool> projection_matches;
     for (const std::string& path :
          doctor_secret_scan_paths(options.profile, options.root, result.counts.secret_scan_excluded_files)) {
         const fs::path full_path = options.root / path;
-        const auto isolated = quarantined.find(path);
+        const auto binding = redacted.find(path);
         const bool automatic = options.profile.automatic_project_files;
         std::string content;
         if (automatic) {
             content = read_project_text(options.root, path, static_cast<std::size_t>(options.profile.source_fact_max_file_bytes));
         } else {
             if (!fs::is_regular_file(full_path)) continue;
-            if (isolated != quarantined.end()) content = read_file(full_path);
+            if (binding != redacted.end()) content = read_file(full_path);
         }
-        if (isolated != quarantined.end() && isolated->second == fnv1a64(content) && source_range_secret(content, path).found) {
+        const auto hit = source_range_secret(content, path);
+        if (hit.found) {
             ++result.counts.secret_findings;
-            ++result.counts.quarantined_files;
-            add_doctor_issue(result.issues, result.counts, "info", "source-quarantined", path, 0,
-                             "Source file withheld from retrieval after secret detection. Coverage is partial; values omitted.");
+            if (binding != redacted.end() && binding->second == Binding{fnv1a64(content), hit.kind}) {
+                // A manifest label alone cannot establish that the searchable
+                // artifacts contain only the safe projection.
+                if (!projection_matches) projection_matches = published_projection_matches(options);
+                if (*projection_matches) {
+                    ++result.counts.redacted_files;
+                    add_doctor_issue(result.issues, result.counts, "info", "source-redacted", path, 0,
+                        "Sensitive source lines are hidden. Other lines remain available to retrieval.", hit.kind);
+                    continue;
+                }
+            }
+            add_doctor_issue(result.issues, result.counts, "error", "secret-like-source-content", path, 0,
+                "The current publication has no verified redaction for this finding. Value redacted.", hit.kind);
             continue;
         }
         std::istringstream selected_text(std::move(content));

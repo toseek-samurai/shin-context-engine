@@ -67,7 +67,7 @@ bool reachable(const std::map<std::string, std::set<std::string>>& graph,
 Json prepare_document_lifecycle(GeneratedRows& rows) {
     std::map<std::string, const SourceDoc*> docs;
     for (const auto& doc : rows.docs)
-        if (doc.kind == "markdown" && doc.quarantine_reason.empty()) docs.emplace(doc.path, &doc);
+        if (doc.kind == "markdown") docs.emplace(doc.path, &doc);
     Json relations = Json::array();
     std::set<std::string> seen;
     std::size_t omitted = 0;

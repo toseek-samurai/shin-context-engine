@@ -43,12 +43,12 @@ int coverage_projection() try {
     expect(source_coverage_summary(Json::object()).is_null());
     Json manifest{{"sources", Json::array()}, {"source_fact_sources", Json::array()}};
     for (int i = 0; i < 12; ++i) {
-        const Json source{{"path", "src/" + std::to_string(i) + ".cpp"}, {"quarantine_reason", "SENSITIVE_VALUE"}};
+        const Json source{{"path", "src/" + std::to_string(i) + ".cpp"}, {"redaction_reason", "SENSITIVE_VALUE"}};
         manifest["sources"].push_back(source);
         manifest["source_fact_sources"].push_back(source);
     }
     auto result = source_coverage_summary(manifest);
-    expect(result.at("quarantined_files") == 12 && result.at("files").size() == 8 && result.at("omitted_files") == 4);
+    expect(result.at("redacted_files") == 12 && result.at("files").size() == 8 && result.at("omitted_files") == 4);
     expect(result.dump().find("SENSITIVE_VALUE") == std::string::npos);
     for (auto& source : manifest["sources"]) source["path"] = std::string(4000, '\n') + source.at("path").get<std::string>();
     manifest["source_fact_sources"] = Json::array();

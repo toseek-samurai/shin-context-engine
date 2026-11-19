@@ -248,7 +248,7 @@ class ReleaseContractGateTests(unittest.TestCase):
         for relative in (codex, hermes):
             text = (self.root / relative).read_text(encoding="utf-8")
             (self.root / relative).write_text(
-                text.replace("shin-generator-v24-objective-cpp", "shin-generator-v22-compact-lexical"),
+                text.replace("shin-generator-v25-source-redaction", "shin-generator-v22-compact-lexical"),
                 encoding="utf-8",
             )
             self.run_gate(setup_error="integration skills must retain approved per-client minimums")
@@ -276,7 +276,7 @@ class ReleaseContractGateTests(unittest.TestCase):
         text = path.read_text()
         for changed, error in (
             (text + "\nCurrent stable release\n", "README must not duplicate"),
-            (text + "\nshin-generator-v24-objective-cpp\n", "README must not declare a literal generator"),
+            (text + "\nshin-generator-v25-source-redaction\n", "README must not declare a literal generator"),
             (text.replace("`VERSION`", "VERSION"), "README must point to `VERSION`"),
             (text.replace("docs/machine/shin-context-engine.manifest.json", "removed.json"),
              "README must point to docs/machine/shin-context-engine.manifest.json"),

@@ -174,17 +174,11 @@ Json path_evidence(const RuntimeOptions& options, const std::string& path, const
         if (!current->has_metadata || file_metadata(full_path) != current->metadata) {
             throw_file_changed_during_verification(full_path);
         }
-        const auto content = read_bound_source(options.root, path, current->content_hash,
+        auto content = read_bound_source(options.root, path, current->content_hash,
                                                static_cast<std::size_t>(current->byte_count));
         read_bytes += content.size();
-        if (source_range_secret(content, path).found) {
-            record["current_reread_omitted"] = true;
-            record["omission_reason"] = "redacted";
-            record["current_scope_candidates"] = nullptr;
-            record["scopes_omitted"] = nullptr;
-            record["unlocalized_source_change"] = state != "unchanged";
-            return record;
-        }
+        const auto redaction = redact_source(content, path);
+        if (!redaction.reason.empty()) record["redaction_reason"] = redaction.reason;
         SourceRelationInputs unused_relations;
         inspect_source_fact_content(options.profile, options.root, path, content, rows, unused_relations, selected_paths, file_routing);
         std::vector<FactRow> changed;

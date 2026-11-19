@@ -95,7 +95,7 @@
   },
   "compactLexicalCandidate": {
     "version": "2.0.5-dev.1",
-    "generator": "shin-generator-v24-objective-cpp",
+    "generator": "shin-generator-v25-source-redaction",
     "format": "shin.lexical.v1",
     "evidenceRowsChanged": false,
     "installed": false,
@@ -133,7 +133,7 @@
   },
   "unicodePublication": {
     "status": "implemented",
-    "generator": "shin-generator-v24-objective-cpp",
+    "generator": "shin-generator-v25-source-redaction",
     "format": "shin.lexical.v1",
     "compatibility": "One current reader/writer. Older generator retrieval is rejected; there is no legacy JSONL/TSV term reader or writer. Raw prior manifest integrity/ownership may be inspected only to authorize rebuilding from current approved sources.",
     "rebuild": "The normal granted or bootstrap publisher detects generator drift, qualifies a fresh candidate and atomically publishes it. No old lexical data conversion, manual index repair, grant takeover or history deletion. Failed preparation preserves the current publication and reports the failure. Standalone Core requires an explicit build.",
@@ -162,7 +162,7 @@
     "compactExcerpts": "Development source can focus a section excerpt on a verified body match missing from its preview. It uses the ordinary lexical matcher at original whitespace offsets and keeps an improved window within 900 UTF-8 bytes. Published redacted indexed_text is the only input; verification paths remain the original section ranges. A matching token that fits is kept whole; longer tokens use overlapping UTF-8 windows. Eval display predicates consume the same Compact Brief records shown to agents. Normalized or case-folded byte offsets are never applied to the original text."
   },
   "documentLifecycle": {
-    "metadata": "Within the 64-line preamble before the first section or code fence, recognize ordinary Supersedes, Superseded by, Amends and Amended by declarations, with optional colons, wrapped link lists, and explicit partial-subject reverse prose. Status preambles may include an amendment sentence; accepted/active/approved/implemented status may carry a date or explanatory suffix. Only enrolled, nonquarantined Markdown endpoints qualify. Drafts cannot retire accepted evidence.",
+    "metadata": "Within the 64-line preamble before the first section or code fence, recognize ordinary Supersedes, Superseded by, Amends and Amended by declarations, with optional colons, wrapped link lists, and explicit partial-subject reverse prose. Status preambles may include an amendment sentence; accepted/active/approved/implemented status may carry a date or explanatory suffix. Only enrolled Markdown endpoints qualify. Drafts cannot retire accepted evidence.",
     "scope": "Only a bare document-level Supersedes/Superseded by declaration can mark older declared sections and typed records superseded/history. An old-target anchor limits retirement to that section range. Named-concern prose records a partial relation and retains the other operative rules; Amends always retains both. Implementation-source facts, source bytes and declared document metadata are unchanged. Section dispositions also cover their generated chunks. Effective historical status carries the declaration/current-owner verification dependencies even if its explanatory notice is outside the view budget.",
     "uncertainty": "Cycles remain ambiguous. At most 1024 relations are retained; omissions disable automatic retirement and are reported. Unconfirmed relations remain explicit notices. Ordinary prose or examples do not authorize retirement.",
     "delivery": "At most four related newer owners are considered under shared optional work and output caps. Partial amendments retain ordinary evidence families and ranks, filling spare space only; saturated results carry notices without speculative retrieval. Whole replacements can prioritize current evidence while an explicit owner request retains its named owner. Original groups are rescored without borrowing the owner lookup term; score_components documents relation priority. Notices retain at most eight whole records and 4096 bytes, with separate relation/inventory omission counts. A notice does not prove a companion body was delivered. Declarations and endpoints participate in selected-source verification; retained partial delivery withholds affected evidence if declarations cannot be verified.",

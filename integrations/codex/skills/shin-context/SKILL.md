@@ -8,7 +8,7 @@ description: Retrieve verified Shin code/docs before broad repository scans or a
 Use Shin first for unfamiliar code/context recovery; read known files directly.
 Read [reader selection](references/reader-selection.md) before discovery or read recovery.
 
-Use Shin v2.0.0 or newer with `shin-generator-v24-objective-cpp`.
+Use Shin v2.0.0 or newer with `shin-generator-v25-source-redaction`.
 Older indexes require rebuilding. The offline service needs no account or backend.
 Retrieval grants no execution, publication or installation authority. Read the repository's applicable `AGENTS.md` before using retrieved evidence.
 
@@ -43,7 +43,7 @@ Do not run `init` again just because its reader is not currently in memory.
 
 For `source_coverage.state=partial`, report omissions and use verified context
 when `retrieval_ready=true`, even if `canonical_ready=false`. Do not claim full
-coverage. Changed/deleted/quarantined files stay withheld until qualified refresh.
+coverage. Use the visible lines of protected files. Changed/deleted files remain withheld until qualified refresh.
 
 Report blockers by project/reason; use direct sources and retain them in handoff.
 An explicit grant, identity or route conflict requires operator review. An

@@ -1,4 +1,5 @@
 #include "validation_generation.h"
+#include "generation_admission.h"
 #include "context_internal.h"
 #include "project_files.h"
 #include "source_routing.h"
@@ -207,7 +208,7 @@ static std::string documents_jsonl(const std::vector<SourceDoc>& docs) {
             << ",\"title\":" << json_string(redact_sensitive_text(doc.title))
             << ",\"summary\":" << json_string(redact_sensitive_text(doc.summary))
             << ",\"content_hash\":" << json_string(doc.content_hash)
-            << (doc.quarantine_reason.empty() ? "" : ",\"quarantine_reason\":" + json_string(doc.quarantine_reason))
+            << (doc.redaction_reason.empty() ? "" : ",\"redaction_reason\":" + json_string(doc.redaction_reason))
             << ",\"bytes\":" << doc.byte_count
             << ",\"line_count\":" << doc.line_count
             << ",\"heading_count\":" << doc.heading_count
@@ -576,8 +577,8 @@ static std::string manifest_json(const Profile& profile,
                           const std::map<std::string, std::string>& generated_files,
                           int broken_local_link_count,
                           const Json& document_lifecycle, const Json& project_files) {
-    const auto quarantined_count = std::count_if(source_facts.sources.begin(), source_facts.sources.end(),
-        [](const auto& source) { return !source.quarantine_reason.empty(); });
+    const auto redacted_count = std::count_if(source_facts.sources.begin(), source_facts.sources.end(),
+        [](const auto& source) { return !source.redaction_reason.empty(); });
     std::ostringstream out;
     out << "{\n"
         << "  \"schema_version\": \"shin.context.kb-enterprise.v1\",\n"
@@ -623,7 +624,7 @@ static std::string manifest_json(const Profile& profile,
         << "  \"source_fact_counts\": {\"candidate_files\":" << source_facts.candidate_file_count
         << ",\"scanned_files\":" << source_facts.scanned_file_count
         << ",\"skipped_large_files\":" << source_facts.skipped_large_file_count
-        << (quarantined_count ? ",\"quarantined_files\":" + std::to_string(quarantined_count) : "")
+        << (redacted_count ? ",\"redacted_files\":" + std::to_string(redacted_count) : "")
         << ",\"capped_files\":" << source_facts.capped_file_count << "},\n"
         << "  \"source_fact_sources\": [\n";
     for (std::size_t i = 0; i < source_facts.sources.size(); ++i) {
@@ -631,7 +632,7 @@ static std::string manifest_json(const Profile& profile,
         out << "    {\"path\":" << json_string(source.path)
             << ",\"status\":" << json_string(source.status)
             << ",\"content_hash\":" << json_string(source.content_hash)
-            << (source.quarantine_reason.empty() ? "" : ",\"quarantine_reason\":" + json_string(source.quarantine_reason))
+            << (source.redaction_reason.empty() ? "" : ",\"redaction_reason\":" + json_string(source.redaction_reason))
             << ",\"bytes\":" << source.byte_count << "}";
         if (i + 1 < source_facts.sources.size()) {
             out << ",";
@@ -696,7 +697,7 @@ static std::string manifest_json(const Profile& profile,
             << ",\"area\":" << json_string(doc.area)
             << ",\"status\":" << json_string(doc.status)
             << ",\"content_hash\":" << json_string(doc.content_hash)
-            << (doc.quarantine_reason.empty() ? "" : ",\"quarantine_reason\":" + json_string(doc.quarantine_reason))
+            << (doc.redaction_reason.empty() ? "" : ",\"redaction_reason\":" + json_string(doc.redaction_reason))
             << ",\"bytes\":" << doc.byte_count
             << ",\"line_count\":" << doc.line_count
             << "}";
@@ -1001,18 +1002,6 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
     } else {
         rows.docs = read_sources(profile, root);
     }
-    for (auto& doc : rows.docs) {
-        const auto secret = source_range_secret(doc.content, doc.path);
-        if (!secret.found) continue;
-        doc.quarantine_reason = secret.kind;
-        doc.title = "Quarantined source";
-        doc.summary = "Source content withheld after secret detection.";
-        doc.doc_type = "quarantined";
-        doc.status = "quarantined";
-        doc.topics = {profile.default_topic.empty() ? "quarantine" : profile.default_topic};
-        doc.content.clear();
-        doc.lines.clear();
-    }
     if (timings != nullptr) {
         timings->read_sources_ms += elapsed_ms_since(phase_start);
         timings->peak_rss_bytes["read_sources"] = process_peak_rss_bytes();
@@ -1021,15 +1010,14 @@ static GeneratedRows build_generated_rows(const Profile& profile, const fs::path
     phase_start = SteadyClock::now();
     std::set<std::string> wiki_pages;
     const bool wiki_home = std::any_of(rows.docs.begin(), rows.docs.end(), [](const SourceDoc& doc) {
-        return doc.path == kRootWikiHome && doc.quarantine_reason.empty();
+        return doc.path == kRootWikiHome;
     });
     if (profile.include_root_wiki_pages && wiki_home) {
         for (const auto& doc : rows.docs)
-            if (doc.quarantine_reason.empty() && profile_selects_root_wiki_page(profile, doc.path))
+            if (profile_selects_root_wiki_page(profile, doc.path))
                 wiki_pages.insert(doc.path);
     }
     for (const SourceDoc& doc : rows.docs) {
-        if (!doc.quarantine_reason.empty()) continue;
         append_generated_doc_rows(profile, root, rows, doc, wiki_pages, project ? &*project : nullptr);
     }
     if (timings != nullptr) {
@@ -1294,6 +1282,15 @@ static GeneratedDrift inspect_generated_output_drift(const RuntimeOptions& optio
         }
     }
     return drift;
+}
+
+bool published_projection_matches(const RuntimeOptions& options) {
+    if (options.generation_admission) {
+        options.generation_admission->verify_content(options);
+        return true;
+    }
+    const auto expected = validation_generated_output(options);
+    return inspect_generated_output_drift(options, *expected).current(true);
 }
 
 static void emit_build_result(const RuntimeOptions& options, const GeneratedOutput& generated, bool published) {

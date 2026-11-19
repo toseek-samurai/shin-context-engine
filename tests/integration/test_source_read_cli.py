@@ -96,13 +96,20 @@ class SourceReadCliTests(unittest.TestCase):
                                'const char* value = "' + secret + '"; // gitleaks:allow\nreturn 1;\n}\n')
         self.call("build")
         outline = self.call("inspect", "src/example.cpp", "--require-current")
-        self.assertEqual(outline["records"], [], "quarantined files publish no searchable records")
+        selected = [row["id"] for row in outline["records"] if row.get("symbol_name") == "example"]
+        self.assertEqual(len(selected), 1)
+        spans = self.read({**self.request, "snapshot_id": outline["snapshot_id"], "record_ids": selected})
         request = {"schema_version": "shin.source-read-request.v2", "snapshot_id": outline["snapshot_id"],
                    "file_paths": ["src/example.cpp"]}
         output = self.read(request)
         self.assertFalse(output["complete"])
         self.assertNotIn(secret, json.dumps(output))
-        self.assertIsNone(output["evidence"]["bodies"][0]["text"])
+        body = output["evidence"]["bodies"][0]
+        self.assertEqual(body["state"], "redacted")
+        self.assertEqual(body["reason"], "openai-api-key")
+        self.assertIn("return 1;", body["text"])
+        self.assertEqual(spans["evidence"]["bodies"][0]["text"], body["text"])
+        self.assertEqual(body["text"].count("\n"), self.source.read_text().count("\n"))
 
     def test_query_to_whole_file_without_inspect(self):
         before = state(self.root), state(self.out)
@@ -119,45 +126,60 @@ class SourceReadCliTests(unittest.TestCase):
         self.read({**request, "file_paths": ["src/example.cpp", "README.md"]}, code=2)
         self.read({**request, "record_ids": self.request["record_ids"]}, code=2)
 
-    def test_quarantine_keeps_safe_source_available_and_recovers(self):
+    def test_redaction_keeps_safe_source_available_and_recovers(self):
         secret = "sk-" + "Q7x9" * 16
         bad = self.root / "src/unsafe.cpp"
-        bad.write_text('const char* token = "' + secret + '"; // gitleaks:allow\n')
+        bad.write_text('int orchidWitness() { return 27; }\n'
+                       'const char* token = "' + secret + '"; // gitleaks:allow\n'
+                       'int cedarWitness() { return 31; }\n')
         document = self.root / "docs/unsafe.md"
         document.parent.mkdir()
-        document.write_text('# Sensitive configuration\n\napi_key = "' + secret + '"\n')
+        document.write_text('# Sensitive configuration\n\napi_key = "' + secret + '"\n'
+                            '\n## Rotation guide\n\nReview the calendar every month.\n')
         self.call("build")
         doctor = self.call("doctor", "--strict")
-        self.assertEqual(doctor["counts"]["quarantined_files"], 2)
+        self.assertEqual(doctor["counts"]["redacted_files"], 2)
         self.assertEqual(doctor["counts"]["errors"], 0)
         for path in (self.out / "docs/kb/generated").iterdir():
             if path.is_file():
                 self.assertNotIn(secret.encode(), path.read_bytes(), path.name)
-        found = self.call("brief", "example", "--projection", "compact", "--require-current")
+        docs = self.call("brief", "Rotation guide calendar", "--projection", "compact", "--require-current")
+        self.assertIn("docs/unsafe.md", json.dumps(docs["evidence"]))
+        found = self.call("brief", "cedarWitness", "--projection", "compact", "--require-current")
+        self.assertIn("src/unsafe.cpp", json.dumps(found["verification_paths"]))
         request = {"schema_version": "shin.source-read-request.v2", "snapshot_id": found["snapshot_id"],
                    "file_paths": ["src/example.cpp", "src/unsafe.cpp"]}
         result = self.read(request)
         self.assertEqual(result["evidence"]["bodies"][0]["text"].encode(), self.body)
-        self.assertIsNone(result["evidence"]["bodies"][1]["text"])
+        protected = result["evidence"]["bodies"][1]
+        self.assertEqual(protected["state"], "redacted")
+        self.assertIn("orchidWitness", protected["text"])
+        self.assertIn("cedarWitness", protected["text"])
+        selected = self.call("inspect", "src/unsafe.cpp", "--require-current")
+        ids = [row["id"] for row in selected["records"] if row.get("symbol_name") == "cedarWitness"]
+        self.assertEqual(len(ids), 1)
+        exact = self.read({**self.request, "snapshot_id": found["snapshot_id"], "record_ids": ids})
+        self.assertTrue(exact["complete"])
+        self.assertEqual(exact["evidence"]["bodies"][0]["text"], 'int cedarWitness() { return 31; }\n')
         bad.write_text('int recovered() { return 9; }\n')
         document.write_text('# Safe configuration\n\nNo credentials stored here.\n')
         self.call("build")
         doctor = self.call("doctor", "--strict")
-        self.assertEqual(doctor["counts"]["quarantined_files"], 0)
+        self.assertEqual(doctor["counts"]["redacted_files"], 0)
         found = self.call("brief", "recovered", "--projection", "compact", "--require-current")
         result = self.read({**request, "snapshot_id": found["snapshot_id"], "file_paths": ["src/unsafe.cpp"]})
         self.assertIn("return 9", result["evidence"]["bodies"][0]["text"])
 
-    def test_forged_quarantine_does_not_hide_published_source_rows(self):
+    def test_forged_redaction_does_not_hide_published_source_rows(self):
         secret = "sk-" + "Q7x9" * 16
         self.source.write_text('int example() { return 3; }\nconst char* token = "' + secret + '";\n')
-        value = 14695981039346656037
+        value = 1469598103934665603
         for byte in self.source.read_bytes():
             value = ((value ^ byte) * 1099511628211) & ((1 << 64) - 1)
         manifest_path = self.out / "docs/kb/generated/manifest.json"
         manifest = json.loads(manifest_path.read_text())
         entry = next(row for row in manifest["source_fact_sources"] if row["path"] == "src/example.cpp")
-        entry.update(quarantine_reason="openai-api-key", content_hash=f"fnv1a64:{value:016x}",
+        entry.update(redaction_reason="openai-api-key", content_hash=f"fnv1a64:{value:016x}",
                      bytes=self.source.stat().st_size)
         manifest_path.write_text(json.dumps(manifest))
         result = subprocess.run([*self.prefix, "doctor", "--strict"], capture_output=True, timeout=20)

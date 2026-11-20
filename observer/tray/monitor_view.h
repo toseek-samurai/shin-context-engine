@@ -671,12 +671,12 @@ void view_tab(const char* label, int code, bool active, float width, std::option
     const float notice_width = update_notice ? 9.0f : 0.0f;
     const auto shown = clipped(label, width - 8 - icon_width - notice_width);
     const auto text_size = ImGui::CalcTextSize(shown.c_str());
-    const float left = origin.x + (width - text_size.x - icon_width - notice_width) / 2;
+    const float label_x = origin.x + (width - text_size.x - icon_width - notice_width) / 2;
     const auto text_color = active ? sand : hovered || (route && !navigation) ? ink : muted;
-    if (icon) draw_icon(*icon, {left, origin.y + (height - 13) / 2}, 13, text_color);
-    draw->AddText({left + icon_width, origin.y + (height - text_size.y) / 2}, ImGui::GetColorU32(text_color), shown.c_str());
+    if (icon) draw_icon(*icon, {label_x, origin.y + (height - 13) / 2}, 13, text_color);
+    draw->AddText({label_x + icon_width, origin.y + (height - text_size.y) / 2}, ImGui::GetColorU32(text_color), shown.c_str());
     if (update_notice)
-        draw->AddCircleFilled({left + icon_width + text_size.x + 6, origin.y + height / 2}, 2.5f, ImGui::GetColorU32(amber));
+        draw->AddCircleFilled({label_x + icon_width + text_size.x + 6, origin.y + height / 2}, 2.5f, ImGui::GetColorU32(amber));
     const auto accessibility_label = update_notice ? std::string(label) + " · " + shin::ui::tr("Update available") : label;
     if (hovered && (shown != label || update_notice)) ImGui::SetTooltip("%s", accessibility_label.c_str());
     if (navigation && active) {

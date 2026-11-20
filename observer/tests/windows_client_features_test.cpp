@@ -10,6 +10,7 @@
 #include <aclapi.h>
 #include <sddl.h>
 #include <sqlite3.h>
+#include <algorithm>
 #include <array>
 #include <cstring>
 #include <iostream>
@@ -366,6 +367,12 @@ int main(int argc,char** argv) {
         require(SetEnvironmentVariableW(L"CODEX_HOME",root.c_str())!=FALSE,"usage environment fixture");
         require(SetEnvironmentVariableW(L"XDG_DATA_HOME",(root/"absent-data").c_str())!=FALSE,"usage environment fixture");
         require(SetEnvironmentVariableW(L"HERMES_HOME",(root/"absent-hermes").c_str())!=FALSE,"usage environment fixture");
+        const auto desktop_targets = local_client_targets(root / "default-profile", nullptr);
+        const auto& desktop_rows = desktop_targets.at("targets");
+        require(std::any_of(desktop_rows.begin(), desktop_rows.end(), [&](const Json& target) {
+            return target.value("client", "") == "codex" && target.value("detected", false) &&
+                target.value("config", "") == (root / "config.toml").string();
+        }), "desktop client discovery lost the CODEX_HOME override");
         const auto profiles=root/"profiles";ensure_private_directory(profiles);
         const auto profile_text=read_text(fs::canonical(fs::path(argv[2]))/"generic-source.json",kMaximumStateBytes,false);
         write_user_archive(profiles/"generic-source.json",profile_text);

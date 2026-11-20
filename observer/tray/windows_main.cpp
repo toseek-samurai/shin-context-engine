@@ -22,7 +22,6 @@
 #include <utility>
 #include <future>
 #include <cmath>
-#include <cstdlib>
 #include <limits>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
@@ -928,10 +927,8 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             model_project=settings.value("model_project","");
             if(!test_mode) {
                 management.home=home;
-                char** environment = nullptr;
-                _get_environ(&environment);
                 monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")),
-                    ClientSettingsLocation{current_executable_path().parent_path()/"shin-ce.exe", known_folder(FOLDERID_Profile), environment});
+                    ClientSettingsLocation{current_executable_path().parent_path()/"shin-ce.exe", known_folder(FOLDERID_Profile)});
             }
         }
         // Render in logical coordinates into a physical-resolution framebuffer.

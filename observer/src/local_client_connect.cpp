@@ -2,16 +2,36 @@
 #include "shin/observer/observer.h"
 #include "client_config.h"
 #include <set>
+#ifdef _WIN32
+#include <array>
+#include <windows.h>
+#endif
 
 namespace shin::observer {
 namespace {
 fs::path location(const char* variable, const fs::path& fallback, char** environment) {
-    const std::string key = std::string(variable) + "=";
-    const char* value = nullptr;
-    for (auto** entry = environment; entry && *entry; ++entry)
-        if (std::string_view(*entry).starts_with(key)) { value = *entry + key.size(); break; }
-    if (!value || !*value) return fallback;
-    fs::path path(value);
+    fs::path path;
+#ifdef _WIN32
+    if (!environment) {
+        // The desktop entry point has no CRT environment array. Read only the
+        // requested override from the process's native environment.
+        const std::wstring name(variable, variable + std::char_traits<char>::length(variable));
+        std::array<wchar_t, 32768> value{};
+        const auto size = GetEnvironmentVariableW(name.c_str(), value.data(), static_cast<DWORD>(value.size()));
+        if (size >= value.size())
+            throw Error("client-config-path", "A client configuration environment override exceeds the Windows path limit.");
+        if (size) path = fs::path(std::wstring(value.data(), size));
+    } else
+#endif
+    {
+        const std::string key = std::string(variable) + "=";
+        for (auto** entry = environment; entry && *entry; ++entry) {
+            if (!std::string_view(*entry).starts_with(key)) continue;
+            path = fs::path(*entry + key.size());
+            break;
+        }
+    }
+    if (path.empty()) return fallback;
     if (!path.is_absolute()) throw Error("client-config-path", "A client configuration environment override must be an absolute path.");
     return path.lexically_normal();
 }

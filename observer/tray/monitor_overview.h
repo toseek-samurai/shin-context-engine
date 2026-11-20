@@ -133,26 +133,28 @@ void render_overview(const ViewState& view, const Json& telemetry, const Json& h
         ImGui::TableSetupColumn("now", ImGuiTableColumnFlags_WidthStretch, 1.4f);
         ImGui::TableSetupColumn("maximum", ImGuiTableColumnFlags_WidthStretch, 1);
         ImGui::TableNextColumn();
-        metric(tr("Memory now (service + workers)"), memory, ink, compact ? 26 : 32);
+        metric(tr("Memory now (service + workers)"), memory, ink, compact ? 26.0f : 32.0f);
         ImGui::TableNextColumn();
-        metric(tr("Chart maximum"), visible && peak ? number(*peak, tr("MiB")) : "—", sand, 19);
+        metric(tr("Chart maximum"), visible && peak ? number(*peak, tr("MiB")) : "—", sand, 19.0f);
         ImGui::EndTable();
     }
-    const float memory_height = minimal_charts ? 52 : compact ? 79 : 106;
+    const float memory_height = minimal_charts ? 52.0f : compact ? 79.0f : 106.0f;
     if (history_hours) history_chart(retained, HistoryMetric::memory, view.connected, memory_height);
     else graph(samples, 0, view.connected, memory_height);
     end_surface();
 
     ImGui::Separator();
+    const float activity_height = compact ? 53.0f : 63.0f;
+    const float activity_value_size = compact ? 20.0f : 24.0f;
     if (ImGui::BeginTable("overview-activity", 2, ImGuiTableFlags_SizingStretchSame | ImGuiTableFlags_BordersInnerV)) {
         ImGui::TableNextColumn();
-        metric(tr("Requests"), requests, ink, compact ? 20 : 24);
-        if (!minimal_charts && history_hours) history_chart(retained, HistoryMetric::requests, view.connected, compact ? 53 : 63);
+        metric(tr("Requests"), requests, ink, activity_value_size);
+        if (!minimal_charts && history_hours) history_chart(retained, HistoryMetric::requests, view.connected, activity_height);
         else if (!history_hours) ImGui::TextColored(muted, "%s", tr("Current service run"));
         ImGui::TableNextColumn();
-        metric(tr(history_hours ? "Search time, mean" : "Search, p50"), duration, ink, compact ? 20 : 24);
-        if (!minimal_charts && history_hours) history_chart(retained, HistoryMetric::search_time, view.connected, compact ? 53 : 63);
-        else if (!minimal_charts) graph(recent, 2, view.connected, compact ? 53 : 63);
+        metric(tr(history_hours ? "Search time, mean" : "Search, p50"), duration, ink, activity_value_size);
+        if (!minimal_charts && history_hours) history_chart(retained, HistoryMetric::search_time, view.connected, activity_height);
+        else if (!minimal_charts) graph(recent, 2, view.connected, activity_height);
         ImGui::EndTable();
     }
 }

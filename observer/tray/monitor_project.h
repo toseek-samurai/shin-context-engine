@@ -42,7 +42,8 @@ void render_project_analytics(const ViewState& view, const Json& project, const 
         end = at; maximum = std::max(maximum, *sample.value() * 1.15);
     }
     for (int line = 0; line < 3; ++line)
-        draw->AddLineH(origin.x, origin.x + width, origin.y + line * height / 2, ImGui::GetColorU32(rule));
+        draw->AddLineH(origin.x, origin.x + width, origin.y + static_cast<float>(line) * height / 2.0f,
+            ImGui::GetColorU32(rule));
     ImVec2 previous{};
     double previous_at = 0;
     bool connected_point = false;

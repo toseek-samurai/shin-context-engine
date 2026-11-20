@@ -593,7 +593,7 @@ void action_button(const std::string& label, int code, float width = 0, bool ena
 void option_row(const char* label, int code, const std::string& detail = {}, bool enabled = true) {
     const auto origin = ImGui::GetCursorScreenPos();
     const float width = ImGui::GetContentRegionAvail().x;
-    const float height = ImGui::GetFrameHeight() + (detail.empty() ? 4 : 17);
+    const float height = ImGui::GetFrameHeight() + (detail.empty() ? 4.0f : 17.0f);
     const ImVec2 end{origin.x + width, origin.y + height};
     ImGui::PushID(code);
     ImGui::BeginDisabled(!enabled);
@@ -1187,8 +1187,8 @@ void render_projects(const ViewState& view, const Json& telemetry, const Json& h
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{tiny ? 4.0f : 10.0f, 4});
     const int visible_rows = std::min(layout.page_size, std::max(0, static_cast<int>(projects.size()) - project_page * layout.page_size));
     const float table_available = panel_fit_active ? panel_body_budget - ImGui::GetCursorPosY() : ImGui::GetContentRegionAvail().y;
-    const float table_height = std::min(std::max(1.0f, table_available - (tiny ? 21 : 28)),
-        std::max(1, visible_rows) * row_height + 8);
+    const float table_height = std::min(std::max(1.0f, table_available - (tiny ? 21.0f : 28.0f)),
+        static_cast<float>(std::max(1, visible_rows)) * row_height + 8.0f);
     ImGui::BeginChild("projects-table-region", {0, table_height}, ImGuiChildFlags_AlwaysUseWindowPadding,
         ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
     int index = 0;
@@ -1455,7 +1455,7 @@ float render(const ViewState& view, float height_limit = 0) {
     const float width = ImGui::GetContentRegionAvail().x;
     const float journal_width = ImGui::CalcTextSize(journal).x + 29;
     const bool update_notice = !release_update_version.empty();
-    const float settings_width = ImGui::CalcTextSize(settings).x + (update_notice ? 38 : 29);
+    const float settings_width = ImGui::CalcTextSize(settings).x + (update_notice ? 38.0f : 29.0f);
     const float about_width = ImGui::CalcTextSize(about_label).x + 29;
     view_tab(journal, 12, dashboard_view == 2, journal_width, Icon::history);
     ImGui::SameLine(std::max(journal_width + 4, (width - settings_width) / 2));

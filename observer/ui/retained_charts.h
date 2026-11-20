@@ -44,17 +44,16 @@ inline std::optional<double> telemetry_count(const nlohmann::json& value) {
 // The rendering surfaces select their own period and scale. Bucket identity,
 // missing measurements and run continuity belong to the retained history.
 inline RetainedCharts retained_charts(const nlohmann::json& history, int hours) {
-    using Json = nlohmann::json;
     RetainedCharts result;
-    if (hours <= 0 || !history.is_object() || history.value("status", Json()) != "ready") return result;
-    const auto captured = telemetry_measurement(history.value("captured_at_ms", Json()));
+    if (hours <= 0 || !history.is_object() || history.value("status", nlohmann::json()) != "ready") return result;
+    const auto captured = telemetry_measurement(history.value("captured_at_ms", nlohmann::json()));
     if (!captured) return result;
     const bool minutes = hours == 1;
     result.end = *captured;
     result.begin = std::max(0.0, result.end - static_cast<double>(hours) * 3600000);
     result.interval = minutes ? 60000.0 : 3600000.0;
     if (minutes) {
-        if (const auto oldest = telemetry_measurement(history.value("oldest_at_ms", Json())))
+        if (const auto oldest = telemetry_measurement(history.value("oldest_at_ms", nlohmann::json())))
             result.begin = std::min(std::max(0.0, result.end - 60000), std::max(result.begin, *oldest));
     }
 

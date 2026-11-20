@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The documented download baseline is [dev.135](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.135).
-It contains Core **2.0.5-dev.37** and Observer/CLI/MCP/Monitor **2.0.5-dev.135**.
+The documented download baseline is [dev.138](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.138).
+It contains Core **2.0.5-dev.37** and Observer/CLI/MCP/Monitor **2.0.5-dev.138**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,

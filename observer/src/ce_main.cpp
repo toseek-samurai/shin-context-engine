@@ -105,6 +105,7 @@ int run(int argc, char** argv, char** environment) {
                      "shin-ce client-connect-batch [--apply] [--root DIR] [--home DIR] reads selected connections as JSON from standard input.\n"
                      "shin-ce mcp-config --client codex|opencode|rider|generic [--root DIR] [--home DIR] [--text] prints settings without editing files.\n"
                      "shin-ce codex-skill [--config FILE] [--revision HASH] reviews or applies bundled Codex instructions, preserving user edits.\n"
+                     "shin-ce claude-skill [--config-dir DIR] [--revision HASH] reviews or applies bundled Claude Code instructions.\n"
                      "shin-ce detach [--root DIR] [--home DIR] disconnects one project; data and history stay.\n"
                      "shin-ce query TEXT [--root DIR]\n"
                      "Project reads/status accept --session-id ID and --model-id ID (host-provided only); read/inspect accept --parent-request-id ID.\n"
@@ -165,12 +166,14 @@ int run(int argc, char** argv, char** environment) {
     bool project_progress_json = false;
     [[maybe_unused]] bool preparation_check = false;
     bool text_status = false;
-    std::string setup_client = request.command == "codex-skill" ? "codex" : "generic", client_revision;
+    const bool claude_skill = request.command == "claude-skill";
+    const bool skill_command = claude_skill || request.command == "codex-skill";
+    std::string setup_client = skill_command ? (claude_skill ? "claude" : "codex") : "generic", client_revision;
     fs::path client_config;
     bool apply_client_batch = false;
     fs::path usage_file;
     if (background_child || supervised_child) request.command = "serve";
-    if (!std::set<std::string>{"prepare-projects", "codex-skill", "client-targets", "client-connect", "client-connect-batch", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
+    if (!skill_command && !std::set<std::string>{"prepare-projects", "client-targets", "client-connect", "client-connect-batch", "mcp-config", "stats", "init", "project-add", "storage-status", "storage-clean", "storage-policy", "attach", "detach", "status", "identity", "query", "inspect", "read", "watch", "serve", "refresh-release", "profile-accept", "profile-review", "marker-accept", "config-accept",
                                "profile-relocate", "service-start", "service-status", "service-stop", "service-definition",
                                "service-install", "service-update", "service-uninstall", "service-installation"}.contains(request.command))
         throw Error("invalid-arguments", "Unsupported command; see shin-ce --help.");
@@ -193,9 +196,9 @@ int run(int argc, char** argv, char** environment) {
             setup_client = argv[++i];
             continue;
         }
-        if ((request.command == "client-connect" || request.command == "codex-skill") && (option == "--config" || option == "--revision") && seen.insert(option).second && i + 1 < argc) {
-            if (option == "--config") client_config = argv[++i];
-            else client_revision = argv[++i];
+        if ((request.command == "client-connect" || skill_command) && (option == (claude_skill ? "--config-dir" : "--config") || option == "--revision") && seen.insert(option).second && i + 1 < argc) {
+            if (option == "--revision") client_revision = argv[++i];
+            else client_config = argv[++i];
             continue;
         }
         if (request.command == "client-connect-batch") {
@@ -312,7 +315,7 @@ int run(int argc, char** argv, char** environment) {
         } else throw Error("invalid-arguments", "Unsupported command argument; see shin-ce --help.");
     }
     std::unique_ptr<LocalInstallationGuard> installation_guard;
-    if (!std::set<std::string>{"codex-skill", "client-targets", "client-connect", "client-connect-batch", "mcp-config", "stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
+    if (!skill_command && !std::set<std::string>{"client-targets", "client-connect", "client-connect-batch", "mcp-config", "stats", "query", "read", "inspect", "status", "profile-review", "identity", "storage-status", "service-status", "service-installation", "service-definition"}.contains(request.command))
         installation_guard = lock_local_installation(executable_path(), background_child || supervised_child);
     if (const auto installed_home = installed_local_home(executable_path(), background_child || supervised_child)) {
         if (!request.home.empty() && fs::absolute(request.home).lexically_normal() != *installed_home)
@@ -341,7 +344,7 @@ int run(int argc, char** argv, char** environment) {
         std::cout << result.dump() << '\n';
         return result.at("ok") == true ? 0 : 1;
     }
-    if (request.command == "client-targets" || request.command == "client-connect" || request.command == "codex-skill") {
+    if (request.command == "client-targets" || request.command == "client-connect" || skill_command) {
         const auto targets = (request.command == "client-targets" || client_config.empty()) ? local_client_targets(fs::canonical(user_home(environment)), environment) : Json::object();
         if (request.command == "client-targets") {
             const auto result = seen.contains("--root") ? local_client_connections(executable_path(), request.root, request.home, targets) : targets;
@@ -349,10 +352,10 @@ int run(int argc, char** argv, char** environment) {
         }
         if (client_config.empty()) {
             for (const auto& target : targets.at("targets")) if (target.at("client") == setup_client) {
-                client_config = target.at("config").get<std::string>(); break;
+                client_config = target.value(claude_skill ? "skill_home" : "config", ""); break;
             }
         }
-        std::cout << (request.command == "codex-skill" ? local_codex_skill(executable_path(), client_config, client_revision) :
+        std::cout << (skill_command ? local_agent_skill(executable_path(), setup_client, client_config, client_revision) :
             local_client_connect(executable_path(), request.root, request.home, setup_client, client_config, client_revision)).dump(2) << '\n';
         return 0;
     }

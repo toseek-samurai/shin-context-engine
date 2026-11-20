@@ -66,6 +66,10 @@ version, which can lag native downloads; inspect it with
 3. **Ask and inspect.** A connected agent can discover code and follow
    snapshot-bound evidence. For a known file or symbol, it can read it directly.
 
+The dev.135 development build adds [Claude Code setup](docs/native-client-setup.md#claude-code)
+in Monitor. Connect the selected folder and install the optional `shin-context`
+skill from the same screen.
+
 For terminal setup after a native macOS installation:
 
 ```sh

@@ -204,6 +204,7 @@ int main(int argc,char** argv) {
         const auto project=root/"project",home=root/"data";ensure_private_directory(project);ensure_private_directory(home);
         const std::pair<const char*,const char*> fixtures[]{
             {"codex","# preserve\nmodel=\"keep\"\n[mcp_servers.other]\ncommand=\"other\"\n"},
+            {"claude","{\"theme\":\"keep\",\"mcpServers\":{\"other\":{\"type\":\"stdio\",\"command\":\"other\"}}}"},
             {"opencode","{/* preserve */\"model\":\"keep\",\"mcp\":{\"other\":{\"type\":\"local\",\"command\":[\"other\"]}}}"},
             {"command-code","{\"model\":\"keep\",\"mcpServers\":{\"other\":{\"command\":\"other\"}}}"},
             {"hermes","# preserve\nmodel: keep\nmcp_servers:\n  other:\n    command: other\n"}};

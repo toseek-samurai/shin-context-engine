@@ -95,6 +95,43 @@ class AgentSkillTests(unittest.TestCase):
         self.assertFalse(plan['client_modified'])
         self.assertFalse(self.config.parent.exists())
 
+    def test_claude_packaged_skill_respects_config_directory_and_user_edits(self):
+        resource = Path('share/shin-observer/agent-skills/claude')
+        packaged = next(prefix / resource for prefix in (binary.parent, binary.parent.parent)
+                        if (prefix / resource / 'bundle.json').is_file())
+        shutil.copytree(packaged, self.base / 'kit' / resource)
+        claude_home = self.base / 'Claude settings'
+        claude_home.mkdir()
+        settings = claude_home / '.claude.json'
+        original = '{"theme":"dark"}\n'
+        settings.write_text(original, encoding='utf-8', newline='\n')
+        self.private_file(settings)
+        target = claude_home / 'skills/shin-context/SKILL.md'
+
+        def run(*args, ok=True):
+            result = subprocess.run([str(self.bin), 'claude-skill', *args],
+                env={**os.environ, 'CLAUDE_CONFIG_DIR': str(claude_home)},
+                capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode == 0, ok, (result.stdout, result.stderr))
+            return json.loads(result.stdout or result.stderr)
+
+        plan = run()
+        self.assertEqual(plan['state'], 'not-installed')
+        self.assertEqual(Path(plan['directory']), target.parent)
+        self.assertFalse(target.parent.exists())
+        applied = run('--config-dir', str(claude_home), '--revision', plan['revision'])
+        self.assertEqual(applied['schema_version'], 'shin.claude-skill.v1')
+        self.assertTrue(applied['managed'])
+        self.assertEqual(target.read_bytes(), (packaged / 'shin-context/SKILL.md').read_bytes())
+        self.assertEqual(settings.read_bytes(), original.encode())
+        self.assertFalse(run('--revision', run()['revision'])['client_modified'])
+        self.assertEqual(self.preview()['state'], 'not-installed')
+        target.write_text('# Personal instructions\n', encoding='utf-8', newline='\n')
+        plan = run()
+        self.assertEqual(plan['state'], 'customized')
+        self.assertEqual(run('--revision', plan['revision'], ok=False)['error']['code'], 'agent-skill-customized')
+        self.assertEqual(target.read_text(encoding='utf-8'), '# Personal instructions\n')
+
     def test_install_idempotence_and_settings_preservation(self):
         self.config.parent.mkdir()
         self.config.write_text('# user settings\nmodel="example"\n', encoding='utf-8', newline='\n')

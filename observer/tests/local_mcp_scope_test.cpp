@@ -217,7 +217,7 @@ int main() {
             Fixture live;
             const auto first = live.root("first"), added = live.root("added");
             const auto executable = current_executable_path();
-            for (const auto* format : {"codex", "opencode", "command-code", "hermes"}) {
+            for (const auto* format : {"codex", "claude", "opencode", "command-code", "hermes"}) {
                 const auto config = live.base / (std::string(format) + ".config");
                 Json server{{"command", executable.string()}, {"args", Json::array({"--root", first.string(), "--home", live.home.string(),
                     "--client-config", config.string(), "--client-format", format})}};

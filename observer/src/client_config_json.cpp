@@ -12,7 +12,7 @@ struct Document {
     std::vector<Token> tokens;
     std::map<std::vector<std::string>, Span> spans;
     Json value;
-    explicit Document(const std::string& source) : clean(source) {
+    explicit Document(const std::string& source, bool strict = false) : clean(source) {
         // Blanking comments/trailing commas retains every byte offset for edits.
         if (source.starts_with("\xef\xbb\xbf")) clean.replace(0, 3, "   ");
         for (std::size_t i = source.starts_with("\xef\xbb\xbf") ? 3 : 0; i < source.size();) {
@@ -50,7 +50,7 @@ struct Document {
             if (depth > 64) throw Error("client-config-invalid", "JSON settings are nested too deeply.");
             if (token.kind == '}' || token.kind == ']') --depth;
         }
-        value = Json::parse(clean);
+        value = Json::parse(strict ? source : clean);
         std::size_t cursor = 0;
         scan(cursor, {}, 0);
         if (!value.is_object()) throw Error("client-config-invalid", "Client settings must be an object.");
@@ -89,16 +89,27 @@ struct Document {
     }
 };
 }
-Json read_json_server(const std::string& source, bool opencode) {
-    Document document(source.empty() ? "{}\n" : source);
-    const auto container = opencode ? "mcp" : "mcpServers";
+Json read_json_server(const std::string& source, const std::string& client) {
+    Document document(source.empty() ? "{}\n" : source, client == "claude");
+    const auto container = client == "opencode" ? "mcp" : "mcpServers";
     if (!document.value.contains(container)) return nullptr;
     if (!document.value.at(container).is_object()) throw Error("client-config-invalid", "The MCP settings must be an object.");
     return document.value.at(container).value("shin", Json());
 }
-std::string merge_json(const std::string& source, const Json& desired, bool opencode) {
+void check_claude_project_override(const std::string& source, const std::string& root) {
+    Document document(source.empty() ? "{}\n" : source);
+    const auto projects = document.value.find("projects");
+    if (projects == document.value.end() || !projects->is_object()) return;
+    const auto project = projects->find(root);
+    if (project == projects->end() || !project->is_object()) return;
+    const auto servers = project->find("mcpServers");
+    if (servers != project->end() && servers->contains("shin"))
+        throw Error("client-config-conflict", "Claude Code already has a project-local shin entry. Its higher-priority settings were preserved.");
+}
+std::string merge_json(const std::string& source, const Json& desired, const std::string& client) {
     const auto input = source.empty() ? std::string("{}\n") : source;
-    Document document(input);
+    const bool strict = client == "claude", opencode = client == "opencode";
+    Document document(input, strict);
     const std::string container = opencode ? "mcp" : "mcpServers";
     auto expected = document.value;
     if (!expected.contains(container)) expected[container] = Json::object();
@@ -121,7 +132,7 @@ std::string merge_json(const std::string& source, const Json& desired, bool open
         std::sort(edits.begin(), edits.end(), [](const auto& a, const auto& b) { return a.first.begin > b.first.begin; });
         for (const auto& [span, text] : edits) result.replace(span.begin, span.end - span.begin, text);
     }
-    if (Document(result).value != expected) throw Error("client-config-invalid", "Settings validation failed; the original file was preserved.");
+    if (Document(result, strict).value != expected) throw Error("client-config-invalid", "Settings validation failed; the original file was preserved.");
     return result;
 }
 }

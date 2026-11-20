@@ -421,6 +421,7 @@
     {"Indexes", "Индексы"},
     {"Input", "Вход"},
     {"Inspect", "Просмотр"},
+    {"Install instructions", "Установить инструкции"},
     {"Install the reviewed release? y confirms; n or Esc cancels.", "Установить выбранный выпуск? y — подтвердить, n или Esc — отменить."},
     {"Installed version: %@", "Установленная версия: %@"},
     {"Installing and restarting Shin…", "Установка и перезапуск Shin…"},

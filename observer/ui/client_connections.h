@@ -17,4 +17,10 @@ inline const char* client_skill_label(std::string_view state, bool managed = tru
     if (state == "recovery-required") return "Instruction update needs recovery";
     return "Instructions could not be checked";
 }
+inline const char* client_skill_action(std::string_view state) {
+    if (state == "not-installed") return "Install instructions";
+    if (state == "update-available") return "Update instructions";
+    if (state == "recovery-required") return "Recover instructions";
+    return "Enable instruction updates";
+}
 }

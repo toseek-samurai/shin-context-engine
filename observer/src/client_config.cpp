@@ -7,7 +7,7 @@ Json read_server(const std::string& source, const std::string& client) {
     try {
         if (client == "codex") return read_toml_server(source);
         if (client == "hermes") return read_yaml_server(source);
-        if (client == "opencode" || client == "command-code") return read_json_server(source, client == "opencode");
+        if (client == "opencode" || client == "command-code" || client == "claude") return read_json_server(source, client);
         throw Error("invalid-arguments", "Unsupported client settings format.");
     } catch (const Error&) { throw; }
     catch (...) { throw Error("client-config-invalid", "Cannot safely read the selected agent's MCP settings."); }

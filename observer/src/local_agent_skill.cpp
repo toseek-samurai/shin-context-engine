@@ -53,18 +53,18 @@ std::optional<std::string> contents(const fs::path& path) {
 }
 Json hash_of(const std::optional<std::string>& text) { return text ? Json(digest(*text)) : Json(); }
 struct Bundle { Json hashes; Contents files; std::string version, revision; };
-Bundle load_bundle(const fs::path& executable) {
+Bundle load_bundle(const fs::path& executable, const std::string& client) {
     const auto bin = fs::canonical(executable).parent_path();
     for (const auto& prefix : {bin, package_payload_prefix(executable)}) {
-        const auto root = prefix / "share/shin-observer/agent-skills/codex";
+        const auto root = prefix / "share/shin-observer/agent-skills" / client;
         if (!present(root)) continue;
         directory_identity(root);
         const auto descriptor = parse_json(read_text(root / "bundle.json", maximum_file, false));
-        if (descriptor.value("schema_version", "") != "shin.codex-skill-bundle.v1" ||
+        if (descriptor.value("schema_version", "") != "shin." + client + "-skill-bundle.v1" ||
             descriptor.value("name", "") != "shin-context" || !descriptor.contains("files") ||
             !descriptor.contains("version") || !descriptor.at("version").is_string() ||
             descriptor.at("version").get_ref<const std::string&>().size() > 64)
-            throw Error("agent-skill-bundle-invalid", "The bundled Codex instructions are invalid.");
+            throw Error("agent-skill-bundle-invalid", "The bundled agent instructions are invalid.");
         Bundle bundle{descriptor.at("files"), {}, descriptor.at("version"), {}};
         check_hashes(bundle.hashes);
         if (!bundle.hashes.contains("SKILL.md")) throw Error("agent-skill-bundle-invalid", "The instruction entry is missing.");
@@ -79,7 +79,7 @@ Bundle load_bundle(const fs::path& executable) {
         bundle.revision = digest(bundle.hashes.dump());
         return bundle;
     }
-    throw Error("agent-skill-bundle-unavailable", "This kit does not contain Codex instructions.");
+    throw Error("agent-skill-bundle-unavailable", "This kit does not contain instructions for this agent.");
 }
 struct Plan {
     fs::path target, state_dir;
@@ -88,9 +88,9 @@ struct Plan {
     Contents current;
     Directories directories;
 };
-void validate_saved(const Json& saved, const fs::path& target) {
+void validate_saved(const Json& saved, const fs::path& target, const std::string& owner_schema) {
     if (saved == Json::object()) return;
-    if (!saved.is_object() || saved.value("schema_version", "") != "shin.codex-skill-owner.v1" ||
+    if (!saved.is_object() || saved.value("schema_version", "") != owner_schema ||
         saved.value("directory", "") != target.string() || !saved.contains("files") ||
         saved.value("directory_identity", "") != directory_identity(target))
         throw Error("agent-skill-state-invalid", "The instruction ownership receipt is invalid.");
@@ -132,20 +132,22 @@ Json recovery_conflicts(const Json& saved, const fs::path& target, Contents* cur
     }
     return conflicts;
 }
-Plan preview(const fs::path& executable, const fs::path& config) {
-    if (!config.is_absolute() || config.filename().empty() || config.lexically_normal() != config)
-        throw Error("client-config-path", "Choose an absolute, normalized Codex settings path.");
-    Plan plan; plan.target = config.parent_path() / "skills/shin-context";
-    plan.state_dir = config.parent_path() / ".shin-agent-skills/shin-context";
-    plan.bundle = load_bundle(executable); plan.saved = Json::object(); plan.pending_io = nullptr;
-    observe_parents(config.parent_path(), plan.directories);
+Plan preview(const fs::path& executable, const std::string& client, const fs::path& location,
+             const std::string& owner_schema) {
+    if (!location.is_absolute() || location.filename().empty() || location.lexically_normal() != location)
+        throw Error("client-config-path", "Choose an absolute, normalized agent settings location.");
+    const auto home = client == "codex" ? location.parent_path() : location;
+    Plan plan; plan.target = home / "skills/shin-context";
+    plan.state_dir = home / ".shin-agent-skills/shin-context";
+    plan.bundle = load_bundle(executable, client); plan.saved = Json::object(); plan.pending_io = nullptr;
+    observe_parents(home, plan.directories);
     observe_parents(plan.target, plan.directories);
     if (present(plan.state_dir)) {
         StateStore state(plan.state_dir, false); plan.saved = state.load().value_or(Json::object());
         observe_parents(plan.state_dir, plan.directories);
         if (present(plan.state_dir / "state.pending")) plan.pending_io = read_text(plan.state_dir / "state.pending", kMaximumStateBytes, true);
     }
-    validate_saved(plan.saved, plan.target);
+    validate_saved(plan.saved, plan.target, owner_schema);
     const bool managed = plan.saved != Json::object();
     Json modified = Json::array(), changed = Json::array(), observed = Json::object();
     const bool recovery = plan.saved.contains("pending") || !plan.pending_io.is_null();
@@ -173,10 +175,10 @@ Plan preview(const fs::path& executable, const fs::path& config) {
     for (const auto& [name, text] : plan.current) observed[name] = hash_of(text);
     Json directories = Json::object();
     for (const auto& [path, identity] : plan.directories) directories[path.string()] = identity;
-    const auto revision = digest(Json::array({config.string(), plan.bundle.revision, plan.saved, plan.pending_io, observed, directories}).dump());
+    const auto revision = digest(Json::array({client, location.string(), plan.bundle.revision, plan.saved, plan.pending_io, observed, directories}).dump());
     const std::string status = recovery ? "recovery-required" : !modified.empty() ? "customized" :
         !changed.empty() ? (managed ? "update-available" : "not-installed") : "current";
-    plan.result = {{"ok", true}, {"schema_version", "shin.codex-skill.v1"}, {"state", status},
+    plan.result = {{"ok", true}, {"schema_version", "shin." + client + "-skill.v1"}, {"state", status},
         {"managed", managed}, {"can_apply", modified.empty()}, {"changed", !changed.empty()},
         {"changed_files", changed}, {"modified_files", modified}, {"directory", plan.target.string()},
         {"source_version", plan.bundle.version}, {"bundle_revision", plan.bundle.revision},
@@ -210,8 +212,12 @@ void rollback(StateStore& state, const Json& saved, const fs::path& target) {
 }
 }
 
-Json local_codex_skill(const fs::path& executable, const fs::path& config, const std::string& revision) {
-    auto plan = preview(executable, config);
+Json local_agent_skill(const fs::path& executable, const std::string& client, const fs::path& location,
+                       const std::string& revision) {
+    if (client != "codex" && client != "claude")
+        throw Error("invalid-arguments", "Choose codex or claude for bundled instructions.");
+    const auto owner_schema = "shin." + client + "-skill-owner.v1";
+    auto plan = preview(executable, client, location, owner_schema);
     if (revision.empty()) return plan.result;
     if (revision != plan.result.at("revision").get<std::string>()) throw Error("agent-skill-changed", "Instructions changed after review. Refresh before updating.");
     if (!plan.result.at("can_apply").get<bool>()) throw Error("agent-skill-customized", "User instruction edits need review; no files were overwritten.");
@@ -224,11 +230,11 @@ Json local_codex_skill(const fs::path& executable, const fs::path& config, const
     state.recover_pending();
     if (plan.saved.contains("pending")) {
         rollback(state, plan.saved, plan.target);
-        auto result = preview(executable, config).result; result["recovered"] = true; result["client_modified"] = true;
+        auto result = preview(executable, client, location, owner_schema).result; result["recovered"] = true; result["client_modified"] = true;
         return result;
     }
     if (!plan.pending_io.is_null()) {
-        auto result = preview(executable, config).result; result["recovered"] = true;
+        auto result = preview(executable, client, location, owner_schema).result; result["recovered"] = true;
         return result;
     }
     // Capture every file parent after our own exclusive directory creation.
@@ -249,7 +255,7 @@ Json local_codex_skill(const fs::path& executable, const fs::path& config, const
         if (before != after) edits.push_back({{"path", name}, {"before", before ? Json(*before) : Json()}, {"after", hash_of(after)}});
     }
     auto journal = plan.saved;
-    if (journal == Json::object()) journal = {{"schema_version", "shin.codex-skill-owner.v1"}, {"directory", plan.target.string()}, {"directory_identity", directory_identity(plan.target)}, {"files", Json::object()}, {"was_unmanaged", true}};
+    if (journal == Json::object()) journal = {{"schema_version", owner_schema}, {"directory", plan.target.string()}, {"directory_identity", directory_identity(plan.target)}, {"files", Json::object()}, {"was_unmanaged", true}};
     journal["pending"] = {{"edits", edits}, {"directories", parent_ids}};
     // StateStore bounds the entire recovery record before the first file write.
     if (!edits.empty()) state.save(journal);
@@ -264,7 +270,7 @@ Json local_codex_skill(const fs::path& executable, const fs::path& config, const
             const auto expected = plan.bundle.files.contains(name) ? plan.bundle.files.at(name) : std::nullopt;
             if (contents(plan.target / name) != expected) throw Error("agent-skill-changed", "Instructions changed before update confirmation.");
         }
-        state.save({{"schema_version", "shin.codex-skill-owner.v1"}, {"directory", plan.target.string()},
+        state.save({{"schema_version", owner_schema}, {"directory", plan.target.string()},
             {"directory_identity", directory_identity(plan.target)},
             {"files", plan.bundle.hashes}, {"bundle_revision", plan.bundle.revision}, {"version", plan.bundle.version}});
     } catch (...) {

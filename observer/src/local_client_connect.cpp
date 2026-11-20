@@ -31,7 +31,7 @@ std::string merged(const std::string& source, const Json& server, const std::str
     try {
         if (client == "codex") return client_config::merge_toml(source, server);
         if (client == "hermes") return client_config::merge_yaml(source, server);
-        return client_config::merge_json(source, server, client == "opencode");
+        return client_config::merge_json(source, server, client);
     } catch (const Error&) { throw; }
     catch (...) { throw Error("client-config-invalid", "Client settings could not be parsed or safely updated. The original file was preserved."); }
 }
@@ -87,8 +87,10 @@ Json local_client_connections(const fs::path& executable, const fs::path& root,
     for (auto& target : targets.at("targets")) {
         target["access_state"] = "not-configured";
         if (target.value("config", "").empty()) continue;
-        if (target.at("client") == "codex") {
-            try { target["skill"] = local_codex_skill(executable, fs::path(target.at("config").get<std::string>())); }
+        const auto client = target.at("client").get<std::string>();
+        if (client == "codex" || client == "claude") {
+            auto skill_location = target.value("skill_home", target.at("config").get<std::string>());
+            try { target["skill"] = local_agent_skill(executable, client, fs::path(skill_location)); }
             catch (const Error& error) { target["skill"] = {{"state", "unavailable"}, {"error", error_json(error)}}; }
             catch (...) { target["skill"] = {{"state", "unavailable"}}; }
         }
@@ -117,6 +119,16 @@ Json local_client_targets(const fs::path& user_home, char** environment) {
     try { add("codex", "Codex", location("CODEX_HOME", user_home / ".codex", environment) / "config.toml"); }
     catch (const std::exception&) { unavailable("codex", "Codex"); }
     try {
+        const auto custom = location("CLAUDE_CONFIG_DIR", {}, environment);
+        const auto config = (custom.empty() ? user_home : custom) / ".claude.json";
+        const auto skill_home = custom.empty() ? user_home / ".claude" : custom;
+        if (!seen.contains(config)) {
+            add("claude", "Claude Code", config);
+            targets.back()["detected"] = present(config) || present(skill_home);
+            targets.back()["skill_home"] = skill_home.string();
+        }
+    } catch (const std::exception&) { unavailable("claude", "Claude Code"); }
+    try {
     const auto opencode = location("XDG_CONFIG_HOME", user_home / ".config", environment) / "opencode";
     const auto opencode_file = present(opencode / "opencode.jsonc") ? opencode / "opencode.jsonc" : opencode / "opencode.json";
     add("opencode", "OpenCode", location("OPENCODE_CONFIG", opencode_file, environment));
@@ -142,15 +154,22 @@ Json local_client_targets(const fs::path& user_home, char** environment) {
 Json local_client_connect(const fs::path& executable, const fs::path& root,
                           const fs::path& home, const std::string& client,
                           const fs::path& config, const std::string& revision) {
-    if (client != "codex" && client != "opencode" && client != "command-code" && client != "hermes")
-        throw Error("invalid-arguments", "Choose codex, opencode, command-code or hermes.");
+    if (client != "codex" && client != "claude" && client != "opencode" && client != "command-code" && client != "hermes")
+        throw Error("invalid-arguments", "Choose codex, claude, opencode, command-code or hermes.");
     if (!config.is_absolute() || config.filename().empty() || config.lexically_normal() != config)
         throw Error("client-config-path", "Choose an absolute, normalized configuration file path.");
     auto setup = local_client_setup(executable, root, home, "generic");
     for (const auto& arg : Json::array({"--client-config", config.string(), "--client-format", client})) setup["server"]["args"].push_back(arg);
     const bool exists = present(config);
     const auto original = exists ? read_user_config(config, kMaximumStateBytes) : std::string();
+    if (client == "claude") setup["server"]["type"] = "stdio";
     const auto content = merged(original, setup.at("server"), client);
+    if (client == "claude") {
+        const auto project_mcp = fs::path(setup.at("root").get<std::string>()) / ".mcp.json";
+        client_config::check_claude_project_override(original, setup.at("root").get<std::string>());
+        if (present(project_mcp) && !client_config::read_server(read_text(project_mcp, kMaximumStateBytes, false), client).is_null())
+            throw Error("client-config-conflict", "This project's .mcp.json already defines shin in Claude Code. Its higher-priority settings were preserved.");
+    }
     const auto before = client_config::read_server(original, client);
     const auto before_args = arguments(before, client);
     bool root_present = false, live_catalog = false;
@@ -184,7 +203,8 @@ Json local_client_connect(const fs::path& executable, const fs::path& root,
         write_private_archive(backup, original);
         replace_user_config(config, original, content, identity);
         result["backup"] = backup.string();
-    } else write_user_archive(config, content);
+    } else if (!write_user_archive(config, content))
+        throw Error("client-config-changed", "Settings appeared during connection. Review them and try again.");
     result["client_modified"] = true;
     result["status"] = "configured";
     result["access_configured"] = true;
@@ -194,8 +214,8 @@ Json local_client_connect(const fs::path& executable, const fs::path& root,
 
 Json local_client_connect_batch(const fs::path& executable, const fs::path& root,
                                 const fs::path& home, const Json& targets, bool apply) {
-    if (!targets.is_array() || targets.empty() || targets.size() > 4 + 64)
-        throw Error("invalid-arguments", "Choose between one and 68 agent settings files.");
+    if (!targets.is_array() || targets.empty() || targets.size() > 5 + 64)
+        throw Error("invalid-arguments", "Choose between one and 69 agent settings files.");
     std::set<fs::path> paths;
     for (const auto& target : targets) {
         if (!target.is_object() || !target.contains("client") || !target.at("client").is_string() ||

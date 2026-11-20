@@ -28,9 +28,13 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
         'codex': '# keep café\nmodel = "unchanged"\n[mcp_servers.other]\ncommand = "other"\n[mcp_servers.shin]\ncommand = '+command+'\nargs = '+args+' # keep suffix\nenabled = false\n[mcp_servers.shin.env]\nKEEP = "private-value"\n',
         'opencode': '{\n// keep café\n"model":"unchanged", "nested":[{"mcp":{"shin":0}}],\n"mcp":{"other":{"type":"remote","url":"https://example.test/a//b"}, "shin":{"type":"local","command":'+json.dumps([server['command'],*old_server['args']],ensure_ascii=False)+',"enabled":false,"environment":{"KEEP":"private-value"},},},\n}\n',
         'command-code': json.dumps({'preferences':{'keep':True},'mcpServers':{'other':{'command':'other'},'shin':old_server}},indent=2)+'\n',
+        'claude': json.dumps({'preferences': {'keep': True}, 'projects': {str(root): {'hasTrustDialogAccepted': True}},
+                              'mcpServers': {'other': {'command': 'other'},
+                                             'shin': {**old_server, 'type': 'stdio', 'env': {'KEEP': 'private-value'}}}},
+                             indent=2, ensure_ascii=False) + '\n',
         'hermes': '# keep café\nmodel: unchanged\nmcp_servers:\n  other:\n    command: other\n  shin:\n    command: '+command+'\n    args:\n      - "--root"\n      - '+json.dumps(str(old),ensure_ascii=False)+'\n      - "--home"\n      - '+json.dumps(str(home))+'\n    enabled: false\n    env: {KEEP: private-value}\n# keep footer\nterminal:\n  backend: local\n',
     }
-    extensions={'codex':'toml','opencode':'jsonc','command-code':'json','hermes':'yaml'}
+    extensions={'codex':'toml','opencode':'jsonc','command-code':'json','claude':'json','hermes':'yaml'}
     selected = []
     for client in ('codex', 'opencode', 'hermes'):
         config = base / f'batch-{client}.{extensions[client]}'
@@ -73,9 +77,13 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
             value=tomllib.loads(updated);assert value['model']=='unchanged' and value['mcp_servers']['other']['command']=='other'
             assert value['mcp_servers']['shin']['args']==old_server['args']+['--root',str(root),'--client-config',str(config),'--client-format',client]
             assert '# keep café' in updated and '# keep suffix' in updated
-        elif client=='command-code':
+        elif client in ('command-code', 'claude'):
             value=json.loads(updated);assert value['preferences']=={'keep':True}
             assert value['mcpServers']['shin']['args']==old_server['args']+['--root',str(root),'--client-config',str(config),'--client-format',client]
+            assert value['mcpServers']['other'] == {'command': 'other'}
+            if client == 'claude':
+                assert value['projects'] == json.loads(original)['projects']
+                assert value['mcpServers']['shin']['env'] == {'KEEP': 'private-value'}
         elif client=='opencode':
             assert '// keep café' in updated and 'https://example.test/a//b' in updated
             assert '"nested":[{"mcp":{"shin":0}}]' in updated
@@ -109,13 +117,34 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
         assert not config.parent.exists()
         run('client-connect','--client',client,'--root',root,'--home',home,'--config',config,'--revision',plan['revision'])
         assert config.exists() and stat.S_IMODE(config.stat().st_mode)==0o600
+        if client == 'claude':
+            assert json.loads(config.read_text())['mcpServers']['shin']['type'] == 'stdio'
     # Unsupported/ambiguous input is not rewritten, and diagnostic output never contains values.
     for client, source in [('codex','secret = "do-not-echo"\n[bad'),('opencode','{"secret":"do-not-echo","mcp":{},"mcp":{}}'),
                            ('hermes','secret: &keep do-not-echo\ncopy: *keep\n'),
+                           ('claude','{"preferences": "do-not-echo", invalid}'),
+                           ('claude','{"preferences": "do-not-echo", /* Claude requires JSON */ "mcpServers": {}}'),
                            ('command-code','{"mcpServers":{"shin":{"command":"other","args":[]}}}')]:
         config=base/('bad.'+extensions[client]);config.write_text(source)
         error=run('client-connect','--client',client,'--root',root,'--home',home,'--config',config,ok=False)
         assert config.read_text()==source and 'do-not-echo' not in json.dumps(error)
+    # Claude's private local and repository scopes take precedence over the
+    # user's default. An existing server there needs review before connecting.
+    config = base / '.claude.json'
+    project_config = root / '.mcp.json'
+    claude_connect = ('client-connect', '--client', 'claude', '--root', root, '--home', home, '--config', config)
+    local_override = json.dumps({'projects': {str(root): {'mcpServers': {'shin': {'command': 'other'}}}}})
+    config.write_text(local_override)
+    error = run(*claude_connect, ok=False)
+    assert error['error']['code'] == 'client-config-conflict' and config.read_text() == local_override
+    config.write_text('{}')
+    plan = run(*claude_connect)
+    shared = '{"mcpServers":{"shin":{"command":"other"}}}'
+    project_config.write_text(shared)
+    error = run(*claude_connect, '--revision', plan['revision'], ok=False)
+    assert error['error']['code'] == 'client-config-conflict'
+    assert project_config.read_text() == shared and config.read_text() == '{}'
+    project_config.unlink()
     # Inline UTF-8 before the edited node must not corrupt source offsets.
     for client, source in [
         ('codex', 'mcp_servers = { shin = { command = '+command+', note="café", args='+args+' } } # keep\n'),
@@ -126,10 +155,15 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
         assert '# keep' in config.read_text() and 'café' in config.read_text()
     # Custom locations are discovered without creating them; one bad override
     # must not hide every other supported agent.
-    env={**os.environ,'CODEX_HOME':str(base/'custom-codex'),'XDG_CONFIG_HOME':str(base/'custom-xdg'),'HERMES_HOME':str(base/'custom-hermes')}
+    env={**os.environ,'CODEX_HOME':str(base/'custom-codex'),'CLAUDE_CONFIG_DIR':str(base/'custom-claude'),
+         'XDG_CONFIG_HOME':str(base/'custom-xdg'),'HERMES_HOME':str(base/'custom-hermes')}
     targets=run('client-targets',env=env)['targets']
     assert any(t['client']=='codex' and t['config']==str(base/'custom-codex/config.toml') for t in targets)
     assert any(t['client']=='opencode' and t['config']==str(base/'custom-xdg/opencode/opencode.json') for t in targets)
+    claude = next(t for t in targets if t['client'] == 'claude')
+    assert claude['config'] == str(base/'custom-claude/.claude.json')
+    assert claude['skill_home'] == str(base/'custom-claude') and not claude['detected']
+    assert not (base/'custom-claude').exists()
     assert not (base/'custom-codex').exists()
     env['CODEX_HOME']='relative-path'
     targets=run('client-targets',env=env)['targets']
@@ -185,4 +219,4 @@ with tempfile.TemporaryDirectory(prefix='shin-client-connect-',dir='/tmp') as te
     assert next(r for r in rows if r['client']=='codex')['access_state']=='configured'
     assert next(r for r in rows if r['client']=='hermes')['access_state']=='not-configured'
     assert config.read_bytes()==saved and not home.exists()
-print('Four formats: preservation, comments, backups, idempotence, stale edits, new files and unsafe-path refusals passed')
+print('Client settings preservation, precedence, backups, idempotence, stale edits and unsafe-path refusals passed')

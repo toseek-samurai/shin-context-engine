@@ -205,21 +205,29 @@ void render_management() {
             const auto state=agent.target.value("access_state","not-configured");
             ImGui::TextColored(state=="configured"?green:state=="not-configured"?muted:sand,"%s",tr(shin::ui::client_access_label(state)));
             ImGui::TextWrapped("%s",agent.target.value("config","").c_str());
-            if (agent.target.value("client", "") == "codex") {
+            const auto skill_home = agent.target.value("skill_home", "");
+            if (agent.target.value("client", "") == "codex" || !skill_home.empty()) {
+                const bool claude = agent.target.value("client", "") == "claude";
+                const std::vector<std::string> skill_args{claude ? "claude-skill" : "codex-skill",
+                    claude ? "--config-dir" : "--config", claude ? skill_home : agent.target.value("config", "")};
                 const auto skill = agent.target.value("skill", Json::object());
                 ImGui::TextWrapped("%s", tr(shin::ui::client_skill_label(skill.value("state", "unavailable"), skill.value("managed", false))));
                 if (ImGui::SmallButton(tr("Review instructions…"))) {
                     management.skill_index = i; management.skill_review = Json();
-                    management.run("skill-review", {"codex-skill", "--config", agent.target.value("config", "")});
+                    management.run("skill-review", skill_args);
                 }
                 if (i == management.skill_index && management.skill_review.is_object()) {
                     const auto& review = management.skill_review;
                     ImGui::TextWrapped("%s", tr("Only unchanged Shin files are updated. Your own files and agent settings stay in place."));
+                    ImGui::TextWrapped("%s", review.value("directory", "").c_str());
                     for (const auto& file : review.value("modified_files", Json::array())) ImGui::TextWrapped("%s", file.get_ref<const std::string&>().c_str());
                     const auto skill_state = review.value("state", "unavailable");
                     if (review.value("can_apply", false) && (skill_state == "recovery-required" || review.value("changed", false) || !review.value("managed", false))) {
-                        const auto* action = skill_state == "recovery-required" ? "Recover instructions" : review.value("changed", false) ? "Update instructions" : "Enable instruction updates";
-                        if (ImGui::SmallButton(tr(action))) management.run("skill-apply", {"codex-skill", "--config", agent.target.value("config", ""), "--revision", review.at("revision").get<std::string>()});
+                        if (ImGui::SmallButton(tr(shin::ui::client_skill_action(skill_state)))) {
+                            auto apply_args = skill_args;
+                            apply_args.insert(apply_args.end(), {"--revision", review.at("revision").get<std::string>()});
+                            management.run("skill-apply", std::move(apply_args));
+                        }
                     }
                 }
             }

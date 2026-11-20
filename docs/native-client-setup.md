@@ -49,6 +49,7 @@ agents on your behalf. Undetected supported agents can be configured for later u
 | Agent | Default destination |
 | --- | --- |
 | Codex | `~/.codex/config.toml`, respecting `CODEX_HOME` |
+| Claude Code (dev.135 and later) | `~/.claude.json`, or `$CLAUDE_CONFIG_DIR/.claude.json` |
 | OpenCode | `~/.config/opencode/opencode.jsonc` when present, otherwise `opencode.json`; respects `XDG_CONFIG_HOME` and `OPENCODE_CONFIG` |
 | Command Code | `~/.commandcode/mcp.json` (user scope) |
 | Hermes | `~/.hermes/config.yaml`, respecting `HERMES_HOME`; named profiles under `~/.hermes/profiles` are listed separately |
@@ -152,7 +153,38 @@ user edits block that recovery and are preserved. Recovery does not replay the
 abandoned update. Review a fresh plan afterward. File/path safety checks, size
 bounds and stale-review refusal also apply to this workflow.
 
+## Claude Code
+
+1. In Monitor, open **Settings → Connect projects and agents…** and choose the
+   project folder.
+2. Select **Claude Code** and confirm **Connect selected agents**. Shin adds the
+   folder to the user-scoped `shin` MCP entry. The entry is visible across
+   Claude Code projects and serves only its explicitly granted folders.
+3. To install the optional `shin-context` skill, use **Review instructions…**
+   on the Claude Code row and confirm **Install instructions**. This installs
+   the skill once in `~/.claude/skills/shin-context` or under `CLAUDE_CONFIG_DIR`.
+4. After the first MCP configuration, open a new local Claude Code session and
+   check `/mcp`. For a first search, ask Claude to use Shin to locate where the
+   project validates incoming requests.
+
+Claude Code gives its project-local entry and repository `.mcp.json` precedence
+over user settings. Monitor reports and preserves an existing `shin` entry in
+either location. It also preserves other MCP servers and custom skill edits.
+
+For terminal-only installs, use `shin-ce client-connect --client claude` with
+the [reviewed CLI workflow](#automatic-setup). To install or update the skill,
+run `shin-ce claude-skill`, then `shin-ce claude-skill --revision REVISION`.
+Use `--config-dir DIR` for an explicit Claude Code home.
+
+The published dev.134 preview supports manual Claude Code setup. Run the
+following from an enrolled project using the installed, PATH-visible adapter:
+
+```sh
+claude mcp add --transport stdio --scope local shin -- "$(command -v shin-mcp)" --root "$(pwd -P)"
+```
+
 Client format references: [Codex](https://developers.openai.com/codex/mcp),
+[Claude Code](https://code.claude.com/docs/en/mcp#user-scope),
 [OpenCode](https://opencode.ai/docs/mcp-servers/),
 [Command Code](https://commandcode.ai/docs/mcp),
 [Hermes](https://hermes-agent.nousresearch.com/docs/user-guide/features/mcp),

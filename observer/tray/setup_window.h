@@ -225,8 +225,10 @@
             NSString* client = [NSString stringWithUTF8String:row.at("client").get<std::string>().c_str()];
             NSString* label = [NSString stringWithUTF8String:row.at("label").get<std::string>().c_str()];
             NSString* path = [NSString stringWithUTF8String:row.at("config").get<std::string>().c_str()];
-            const bool detected = row.value("detected", false) || [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:bundles[client]] != nil;
+            NSString* bundle = bundles[client];
+            const bool detected = row.value("detected", false) || (bundle && [NSWorkspace.sharedWorkspace URLForApplicationWithBundleIdentifier:bundle] != nil);
             NSMutableDictionary* target = [@{@"client": client, @"label": label, @"config": path} mutableCopy];
+            target[@"skillHome"] = diagnostic_text_content(row.value("skill_home", ""));
             target[@"accessState"] = diagnostic_text_content(row.value("access_state", "not-configured"));
             const NSInteger index = static_cast<NSInteger>(self.setupTargets.count); [self.setupTargets addObject:target];
             NSStackView* group = [[NSStackView alloc] init]; group.orientation = NSUserInterfaceLayoutOrientationVertical; group.alignment = NSLayoutAttributeLeading; group.spacing = 4;
@@ -253,7 +255,7 @@
             target[@"accessLabel"] = access;
             [self showSetupAccess:target state:target[@"accessState"]];
             [group addArrangedSubview:controls]; [group addArrangedSubview:access];
-            if ([client isEqualToString:@"codex"]) {
+            if ([client isEqualToString:@"codex"] || [target[@"skillHome"] length]) {
                 const auto skill = row.value("skill", Json::object());
                 target[@"skillState"] = diagnostic_text_content(skill.value("state", "unavailable"));
                 target[@"skillManaged"] = @(skill.value("managed", false));
@@ -328,12 +330,15 @@
 - (void)reviewSetupSkill:(NSButton*)sender {
     if (self.setupConnecting || self.setupAdding || sender.tag < 0 || static_cast<NSUInteger>(sender.tag) >= self.setupTargets.count) return;
     NSMutableDictionary* target = self.setupTargets[static_cast<NSUInteger>(sender.tag)];
-    NSString* config = target[@"config"];
-    if (!config.length) return;
+    const bool claude = [target[@"client"] isEqualToString:@"claude"];
+    NSString* location = claude ? target[@"skillHome"] : target[@"config"];
+    if (!location.length) return;
+    NSString* command = claude ? @"claude-skill" : @"codex-skill";
+    NSArray<NSString*>* arguments = @[claude ? @"--config-dir" : @"--config", location];
     bool expected = false;
     if (!project_management_busy.compare_exchange_strong(expected, true)) return;
     ++self.setupEpoch; self.setupConnecting = YES;
-    [self runCLI:@"codex-skill" arguments:@[@"--config", config] completion:^(Json plan, NSString* failure) {
+    [self runCLI:command arguments:arguments completion:^(Json plan, NSString* failure) {
         if (failure || !plan.value("ok", false)) {
             self.setupStatus.stringValue = failure ? failure : ui_text("Instructions could not be checked"); self.setupConnecting = NO; return;
         }
@@ -348,12 +353,12 @@
         NSMutableString* detail = [NSMutableString stringWithFormat:@"%@\n\n%@", ui_text("Only unchanged Shin files are updated. Your own files and agent settings stay in place."), diagnostic_text_content(plan.value("directory", ""))];
         for (const auto& file : plan.value("modified_files", Json::array())) [detail appendFormat:@"\n%@", diagnostic_text_content(file.get<std::string>())];
         alert.informativeText = detail;
-        if (apply) [alert addButtonWithTitle:ui_text(recovery ? "Recover instructions" : plan.value("changed", false) ? "Update instructions" : "Enable instruction updates")];
+        if (apply) [alert addButtonWithTitle:ui_text(shin::ui::client_skill_action(state))];
         [alert addButtonWithTitle:ui_text("Close")];
         [alert beginSheetModalForWindow:self.setupWindow completionHandler:^(NSModalResponse answer) {
             if (!apply || answer != NSAlertFirstButtonReturn) { self.setupConnecting = NO; return; }
             NSString* revision = diagnostic_text_content(plan.at("revision").get<std::string>());
-            [self runCLI:@"codex-skill" arguments:@[@"--config", config, @"--revision", revision] completion:^(Json result, NSString* updateFailure) {
+            [self runCLI:command arguments:[arguments arrayByAddingObjectsFromArray:@[@"--revision", revision]] completion:^(Json result, NSString* updateFailure) {
                 if (!updateFailure && result.value("ok", false)) {
                     target[@"skillState"] = diagnostic_text_content(result.value("state", "unavailable")); target[@"skillManaged"] = @(result.value("managed", false));
                     self.setupStatus.stringValue = ui_text(shin::ui::client_skill_label([target[@"skillState"] UTF8String], [target[@"skillManaged"] boolValue]));

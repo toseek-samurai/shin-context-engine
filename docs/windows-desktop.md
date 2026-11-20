@@ -30,7 +30,7 @@ for connection review and manual integrations.
 | Core and retrieval | Shared indexing, source discovery and snapshot-bound reads. Hosted smoke checks cover a selected native subset of the Core suite. |
 | Observer, CLI and MCP | Native processes and authenticated named pipes; project work runs with unelevated user tokens and explicit root authority. |
 | Storage and workers | Owner-private ACLs, Windows file identities, atomic replacement and bounded Job Objects. UNC paths and reparse traversal are refused. |
-| Monitor | Win32/DX11 tray host, Sand, EN/RU, Overview, Projects, History and Settings; per-monitor DPI awareness with matching logical input. |
+| Monitor | Win32/DX11 tray host, Sand, EN/RU, Overview and Projects tabs, Journal, Settings and About in the footer, and per-monitor DPI awareness with matching logical input. |
 | Setup and management | Reviewed agent connections, project actions, storage management and Windows Startup Apps access. |
 | Usage | Automatic collection from readable supported Codex, OpenCode and Hermes history; missing sources remain visibly unavailable or partial. |
 | Updates | Automatic or manual release checks; confirmed MSI download/verification, normal UAC, project preparation and retained results. |
@@ -72,9 +72,8 @@ interactive accessibility and multiple-display verification.
 
 ### Earlier Sand screenshots
 
-The dev.98 captures below show the Sand palette and navigation in the older tray
-panel. The current desktop window uses the same **Overview**, **Projects**,
-**History** and **Settings** navigation.
+The dev.98 captures below show the Sand palette and earlier tray layout.
+Current desktop navigation is shared with the [macOS Monitor](images/README.md#macos-monitor).
 
 <p>
   <img src="images/monitor-windows-overview.png" width="400" alt="Windows Sand Overview rendered by the native Win32/DX11 Monitor with synthetic data">
@@ -91,7 +90,7 @@ in a signed-in session at 100% render scaling with synthetic data. See
 
 ### Windows Monitor update screen
 
-Open **Settings → Check for updates…**, or use the notification-area menu.
+Open **Settings → Updates → Check for updates…**, or use the notification-area menu.
 The check runs in the background and shows the running version and the
 checking/current/available/error state. A complete newer release offers
 **Download and install** and **Release notes**. **Technical details** provides
@@ -170,12 +169,12 @@ No project data is changed by SYSTEM during the MSI transaction.
   atomic replacement. Reconnect MCP once to activate a new connection or migrate
   an older static connection. Subsequent allowed projects appear on the next
   `shin_projects` call. See the [MCP client setup guide](native-client-setup.md).
-- **Projects → project → Project actions** provides agent connection,
+- **Projects → project → Project settings** provides agent connection,
   disconnection and storage access. Disconnecting preserves sources, indexes,
   history and settings. Cache deletion is separate, confirmed and tied to the
   exact storage-plan revision. A partial connection failure retains the completed
   results in the diagnostic report; it does not undo or repeat earlier writes.
-- **Settings → Login settings…** opens Windows Startup Apps for Monitor.
+- **Settings → Start at login** opens Windows Startup Apps for Monitor.
   The machine MSI host continues to own the background service.
 - The registered service collects readable Codex, OpenCode and Hermes history
   automatically. Missing or unsupported history remains visible as unavailable

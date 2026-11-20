@@ -147,10 +147,10 @@
       "id": "ui-project-readiness",
       "query": "render_readiness",
       "mustPaths": [
-        "observer/tray/monitor_view.h"
+        "observer/tray/monitor_overview.h"
       ],
       "mustTopPaths": [
-        "observer/tray/monitor_view.h"
+        "observer/tray/monitor_overview.h"
       ],
       "mustTopN": 2,
       "mustNotPaths": [

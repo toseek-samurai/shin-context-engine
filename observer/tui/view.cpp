@@ -74,14 +74,17 @@ void move_subpage(State& state, int direction) {
 
 Line project_status(const Json& row, bool connected) {
     using ui::ProjectState;
-    const auto state = ui::project_state(row, connected);
+    const auto presentation = ui::project_presentation(row, connected);
+    const auto state = presentation.state;
+    if (presentation.searchable() && presentation.advisory())
+        return {"! " + std::string(ui::tr(project_state_name(state))), Tone::warning};
     const auto tone = state == ProjectState::current ? Tone::good : state == ProjectState::blocked ? Tone::error :
         state == ProjectState::standby || state == ProjectState::stopped ? Tone::idle :
         state == ProjectState::checking || state == ProjectState::pending || state == ProjectState::recovering ? Tone::info : Tone::muted;
     const char* symbol = state == ProjectState::current ? "● " : state == ProjectState::blocked ? "× " :
         state == ProjectState::standby || state == ProjectState::stopped ? "○ " :
         tone == Tone::info ? "↻ " : "? ";
-    return {std::string(symbol) + state_name(row, connected), tone};
+    return {std::string(symbol) + ui::tr(project_state_name(state)), tone};
 }
 
 std::string terminal_text(std::string_view input, int columns, bool pad) {
@@ -259,14 +262,12 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 std::ostringstream line;
                 line << std::left << terminal_text(state_name(row, connected), 15, true)
                     << terminal_text(shin::ui::tr(text(field(row, "phase")).c_str()), 15, true) << text(field(row, "name"));
-                const bool partial = ui::partial_coverage(row);
-                if (partial) line << shin::ui::tr(" [partial]");
-                const bool search_warning = ui::quality_warning(row);
-                if (search_warning) line << shin::ui::tr(" [search warning]");
-                const bool documentation_warning = ui::count(row, "documentation_warnings") > 0;
-                if (documentation_warning) line << shin::ui::tr(" [docs warning]");
+                const auto presentation = ui::project_presentation(row, connected);
+                if (presentation.partial) line << shin::ui::tr(" [partial]");
+                if (presentation.search_warning) line << shin::ui::tr(" [search warning]");
+                if (presentation.documentation_warnings) line << shin::ui::tr(" [docs warning]");
                 out.push_back({line.str(), key(row) == state.project ? Tone::selected :
-                    ui::active_issue(row) || partial || documentation_warning || search_warning ? Tone::warning : Tone::normal});
+                    presentation.state == ui::ProjectState::blocked || presentation.notice() ? Tone::warning : Tone::normal});
             }
             out.push_back({}); out.push_back({shin::ui::tr("Up/Down select  |  Enter details")});
         } else {
@@ -277,13 +278,14 @@ std::vector<Line> lines(const Snapshot& snapshot, State& state) {
                 const auto status = project_status(row, connected);
                 out.push_back(status);
                 out.push_back({shin::ui::tr("Search: ") + state_name(row, connected) + shin::ui::tr(" | Observer: ") + shin::ui::tr(text(field(row, "phase")).c_str())});
-                const auto explanation = ui::diagnostic_overview(row, connected);
+                const auto presentation = ui::project_presentation(row, connected);
+                const auto explanation = ui::diagnostic_overview(row, presentation);
                 const auto recovery = ui::recovery_options(row, connected);
-                const auto project_state = ui::project_state(row, connected);
-                out.push_back({explanation.title, (project_state == ui::ProjectState::current ||
-                    project_state == ui::ProjectState::standby) && (ui::count(row, "documentation_warnings") > 0 || ui::quality_warning(row)) ?
+                out.push_back({explanation.title, presentation.searchable() && presentation.advisory() ?
                     Tone::warning : status.tone});
                 out.push_back({explanation.summary});
+                for (const auto& summary : ui::additional_advisory_summaries(presentation, explanation))
+                    out.push_back({summary, Tone::warning});
                 if (!recovery.title.empty()) out.push_back({recovery.title, recovery.automatic ? Tone::info : Tone::warning});
                 out.push_back({recovery.next.empty() ? explanation.next : recovery.next, Tone::muted});
                 if (recovery.action == ui::RecoveryAction::profile)

@@ -124,20 +124,16 @@ stays attached to its popover; it does not detach into a standalone window or
 add a Dock icon. If the menu bar is crowded, hold Command and drag the Shin
 icon to a visible position. An explicit Quit exits Monitor.
 
-The current native preview uses dark Sand with **Overview**, **Projects**,
-**History** and **Settings**. Short pages fit their contents; longer views scroll
-within the panel. Earlier desktop previews use **Activity** as their third section.
-Overview summarizes current project readiness and leads to a project needing
-review. Projects groups folder and agent connections with their current context
-status. Project explanations expose a labeled next action, with search-check
-details inside the panel and technical reports disclosed separately. History
-opens with the session journal; request timing and agent token history remain
-available as secondary views. Agent token totals are distinct from calls to Shin. Timing explicitly selects this service
-run or retained history, independently of the overview chart's period. Settings
-provides language, storage and update entry points. Controls use readable labels
-and compact buttons; status labels remain passive. Agent setup keeps custom
-configuration paths under **Advanced agent settings**. The TUI retains its
-existing navigation and appearance, with platform-specific setup and update capabilities.
+The dev.136 Sand panel has **Overview** and **Projects** tabs with **Journal**,
+**Settings** and **About Shin** in the footer. Short pages fit their contents.
+Longer pages scroll within the panel. Overview shows service memory, requests
+and search time for the selected period, followed by project readiness. Select
+a project for its search history, agent access and any next step. Use
+**Project settings** for access, exclusions, storage, reports or disconnection.
+The journal can show all projects or just the selected project. Request timing
+and agent tokens are available there. Settings provides language, login startup,
+storage and updates. About shows component versions and installation ownership.
+Agent setup keeps custom paths under **Advanced agent settings**.
 
 The installed native-kit Monitor registers itself with macOS Login Items
 on its first launch. Use **Launch Monitor at login** in its app or
@@ -165,9 +161,8 @@ use the same native updater as Monitor. Automatic release download is macOS-only
 Enter opens project details,
 `?` shows keyboard help and `q` exits. The dashboard observes the existing
 service. Model counters are collected automatically for enrolled projects.
-The desktop redesign shows them under **History → Agents**; the TUI and earlier dark
-Monitor previews keep **Activity → Agents**. Both use the automatic snapshot by
-default. The first
+Find them under **Journal → Agent tokens** in Monitor and **Activity → Agents**
+in the TUI. Both use the automatic snapshot by default. The first
 pass starts in the background; enrollment changes are checked within five seconds,
 and counters refresh every five minutes. Missing or unreadable client history is
 reported as incomplete, not as proof of zero usage. Storage inspection happens on demand;

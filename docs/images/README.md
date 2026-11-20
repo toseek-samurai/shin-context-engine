@@ -1,10 +1,11 @@
 # UI screenshots
 
-The gallery was refreshed on **2026-11-07**. macOS PNGs and terminal SVGs come
-from an Observer dev.98 and Core dev.19 source build. Windows PNGs come from the
-published dev.98 ZIP (Core dev.18) rendered in a signed-in session. All displayed
-project names, activity, paths and measurements are synthetic examples. For the
-current Windows tray and desktop window, see [Windows Monitor](../windows-desktop.md#windows-quick-status-and-desktop-monitor).
+The macOS gallery was captured on **2026-11-20** with Observer dev.136 and
+Core dev.37. The terminal Projects SVG was captured from the same source
+build at 80×24. The other terminal SVGs come from the dev.98 source build.
+Windows PNGs come from the published dev.98 ZIP (Core dev.18), rendered
+in a signed-in session. Project names, activity, paths and measurements are
+synthetic. [Windows tray and desktop Monitor](../windows-desktop.md#windows-quick-status-and-desktop-monitor).
 
 ## macOS Monitor
 
@@ -12,20 +13,21 @@ The macOS PNGs are rendered by the actual ImGui/Metal Monitor UI using the
 synthetic scenarios in [layout_test.inc](../../observer/tray/layout_test.inc).
 No live service, enrolled project, client usage history, or saved user preference
 is read. Displayed metrics are fixture values, not performance measurements.
-The Windows captures below use the shared dashboard with their native system
-fonts, icons, scaling and available actions;
-see the [platform matrix](../README.md#capabilities-by-platform).
+The Windows captures below show the earlier shared layout with Windows fonts,
+icons and scaling. [Capabilities by platform](../README.md#capabilities-by-platform).
 
 | README asset | Native fixture output |
 | --- | --- |
-| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-520x680-fit.png` (EN / RU) |
+| `monitor-overview.png` / `monitor-overview-ru.png` | `overview-warning-520x680-fit.png` (EN / RU) |
 | `monitor-settings.png` / `monitor-settings-ru.png` | `settings-520x680-fit.png` (EN / RU) |
 | `monitor-projects.png` / `monitor-projects-ru.png` | `project-states-520x680-fit.png` (EN / RU) |
 | `monitor-project.png` / `monitor-project-ru.png` | `project-analytics-520x680-fit.png` (EN / RU) |
+| `monitor-project-settings.png` / `monitor-project-settings-ru.png` | `project-settings-520x680-fit.png` (EN / RU) |
 | `monitor-search-warning.png` / `monitor-search-warning-ru.png` | `search-warning-520x680-fit.png` (EN / RU) |
 | `monitor-timing.png` | `timing-retained-520x680-fit.png` |
 | `monitor-sessions.png` | `sessions-520x680-fit.png` (EN) |
 | `monitor-sessions-ru.png` | `sessions-520x680-fit.png` (RU) |
+| `monitor-about.png` / `monitor-about-ru.png` | `about-520x680-fit.png` (EN / RU) |
 
 After building the macOS kit with testing enabled, render again:
 
@@ -37,42 +39,35 @@ After building the macOS kit with testing enabled, render again:
 Metal must be available; a skipped render is not a new screenshot. Inspect the
 outputs visually, then copy only the selected PNGs here without modifying
 their pixels. The screenshots use English; pass `ru` instead of `en` to render Russian.
-Both languages use the same native views and synthetic scenarios.
-These images show Overview, Projects, History and Settings. History opens with
-the journal; timing and optional model usage remain available separately. Its
-48-event display ceiling, monospace text, outcome colors and vector icons remain
-bounded. These macOS images use a 520 px logical width and fit their height to
-the page within a 680 px ceiling. Retina captures have a 1040 px pixel width;
-height varies with content and language. EN and RU are
-generated into separate output directories.
-The main project-detail image shows retained search totals, errors, response
-time and the recent request mix. The separate warning images show a search-check
-explanation and next action. Overview shows healthy
-context with its memory line graph and recent activity. Expected documents are
-revealed by the explicit search-check review. Dark Sand surfaces,
-compact type and labeled buttons distinguish actions from status
-labels. Project connections belong with their projects, and technical reports
-are disclosed separately. Settings groups language, storage and updates. Russian Overview and
-Settings are available as `monitor-overview-ru.png` and `monitor-settings-ru.png`.
+The macOS images use a 520 px logical width and fit the page within a 680 px
+ceiling. Retina captures are 1040 px wide. EN and RU use separate output
+directories. Overview shows memory, requests and mean search time in line
+charts. Memory curves retain observation gaps and service-run boundaries.
+The project screen shows retained search totals, errors, response times and
+agent access. Project settings groups access, exclusions, storage and
+disconnection. Separate warning images show the cause and next action.
+The Journal lists up to 48 events, with details on selection. Settings groups
+language, startup, storage, updates and recording. About shows component versions.
 The project list deliberately mixes ready, preparing, partial, blocked, on-demand,
 waiting and recovering states to demonstrate their distinct colors and symbols.
-The blocked project and displayed counters are synthetic examples. The
-compact layout remains available. Memory curves retain observation gaps and
-service-run boundaries.
 
 <p>
-  <img src="monitor-project.png" width="340" alt="Native project analytics in English with response-time graph and request mix">
+  <img src="monitor-project.png" width="340" alt="Native project analytics in English with response-time graph and agent access">
   <img src="monitor-project-ru.png" width="340" alt="The same project analytics in Russian">
 </p>
 
 [Project states in Russian](monitor-projects-ru.png) ·
+[Project settings](monitor-project-settings.png) ·
+[Project settings in Russian](monitor-project-settings-ru.png) ·
 [Search warning](monitor-search-warning.png) ·
 [Search warning in Russian](monitor-search-warning-ru.png).
 
 <p>
-  <img src="monitor-sessions.png" width="340" alt="English Sand History journal rendered with synthetic MCP events">
-  <img src="monitor-sessions-ru.png" width="340" alt="Russian Sand History journal with the same synthetic MCP events">
+  <img src="monitor-sessions.png" width="340" alt="English Sand Journal rendered with synthetic MCP events">
+  <img src="monitor-sessions-ru.png" width="340" alt="Russian Sand Journal with the same synthetic MCP events">
 </p>
+
+[About Shin](monitor-about.png) · [About Shin in Russian](monitor-about-ru.png).
 
 ## Windows Monitor
 
@@ -134,7 +129,8 @@ using the independent synthetic fixture in
 used. The screenshot demonstrates ready, partial, preparing, blocked and
 on-demand states. Its counters are fixture values.
 
-The [screen gallery](../tui.md) also includes Projects, partial-coverage details,
+The [screen gallery](../tui.md) includes a compact Projects example with warnings
+on ready and on-demand projects, partial-coverage details,
 Timing, Storage, Models, Russian, compact and disconnected views. These show
 the four-section Sand layout included in preview dev.66 and later. The
 underlying Sand renderer has shipped since preview dev.39.

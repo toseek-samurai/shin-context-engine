@@ -436,11 +436,14 @@ int native_update_tests(int argc, char** argv) {
             await_update_ui([&] { return app.popover.contentSize.height < monitor_panel_height_limit - 50; },
                 "short project page kept the maximum popup height");
             tabClick(12);
+            await_update_ui([&] { return app.popover.contentSize.height < monitor_panel_height_limit - 50; },
+                "empty journal kept the maximum popup height");
+            activate(60);
             await_update_ui([&] { return std::abs(app.popover.contentSize.height - monitor_panel_height_limit) <= 1; },
-                "long activity page did not restore the bounded maximum height");
+                "response timing did not restore the bounded maximum height");
             tabClick(11);
             await_update_ui([&] { return app.popover.contentSize.height < monitor_panel_height_limit - 50; },
-                "popup did not shrink again after leaving activity");
+                "popup did not shrink again after leaving response timing");
             const auto owner = app.popover.contentViewController;
             for (int cycle = 0; cycle < 6; ++cycle) {
                 phase = "reopen-" + std::to_string(cycle);

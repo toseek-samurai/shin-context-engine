@@ -7,6 +7,7 @@
 #include <cctype>
 #include <optional>
 #include <string>
+#include <vector>
 #include "shin/observer/local_status.h"
 #include "shin/observer/validation_diagnostic.h"
 
@@ -186,7 +187,31 @@ inline std::uint64_t count(const Json& row, const char* key) {
     return value->get<std::uint64_t>();
 }
 
-struct DiagnosticOverview { std::string title, summary, next; };
+enum class ProjectAdvisory { none, search, documentation };
+struct DiagnosticOverview {
+    std::string title, summary, next;
+    ProjectAdvisory advisory = ProjectAdvisory::none;
+};
+
+struct ProjectPresentation {
+    ProjectState state;
+    bool partial, search_warning;
+    std::uint64_t documentation_warnings;
+
+    bool searchable() const { return state == ProjectState::current || state == ProjectState::standby; }
+    bool advisory() const { return search_warning || documentation_warnings != 0; }
+    bool notice() const { return state != ProjectState::blocked && (partial || advisory()); }
+    int attention_priority() const {
+        if (state == ProjectState::blocked) return 3;
+        if (state == ProjectState::pending || state == ProjectState::checking || state == ProjectState::recovering) return 2;
+        return notice() ? 1 : 0;
+    }
+};
+
+inline ProjectPresentation project_presentation(const Json& project, bool connected) {
+    return {project_state(project, connected), connected && partial_coverage(project),
+        connected && quality_warning(project), connected ? count(project, "documentation_warnings") : 0};
+}
 
 struct ProjectAvailability { std::size_t ready = 0, blocked = 0, notices = 0; };
 
@@ -194,42 +219,60 @@ inline ProjectAvailability project_availability(const Json& projects, bool conne
     ProjectAvailability result;
     if (!connected || !projects.is_array()) return result;
     for (const auto& row : projects) {
-        const auto state = project_state(row, true);
-        if (state == ProjectState::current || state == ProjectState::standby) ++result.ready;
-        if (state == ProjectState::blocked) ++result.blocked;
-        else if (quality_warning(row) || count(row, "documentation_warnings") || partial_coverage(row)) ++result.notices;
+        const auto presentation = project_presentation(row, true);
+        if (presentation.searchable()) ++result.ready;
+        if (presentation.state == ProjectState::blocked) ++result.blocked;
+        if (presentation.notice()) ++result.notices;
     }
     return result;
 }
 
-inline DiagnosticOverview diagnostic_overview(const Json& project, bool connected) {
-    const auto state = project_state(project, connected);
-    if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
+inline const char* search_warning_summary() {
+    return shin::ui::tr("Some search checks missed expected evidence. Verified current context remains available.");
+}
+
+inline std::string documentation_warning_summary(std::uint64_t warnings) {
+    return std::string(shin::ui::tr("Broken documentation links: ")) + std::to_string(warnings) +
+        ". " + shin::ui::tr("Available context remains usable.");
+}
+
+inline std::vector<std::string> additional_advisory_summaries(const ProjectPresentation& presentation, const DiagnosticOverview& primary) {
+    std::vector<std::string> result;
+    if (!presentation.searchable()) return result;
+    if (presentation.search_warning && primary.advisory != ProjectAdvisory::search)
+        result.push_back(search_warning_summary());
+    if (presentation.documentation_warnings && primary.advisory != ProjectAdvisory::documentation)
+        result.push_back(documentation_warning_summary(presentation.documentation_warnings));
+    return result;
+}
+
+inline DiagnosticOverview diagnostic_overview(const Json& project, const ProjectPresentation& presentation) {
+    const auto state = presentation.state;
+    if (presentation.searchable() && project.contains("source_coverage") &&
         project.at("source_coverage").is_object() &&
         text_field(project.at("source_coverage"), "reason") == "source-observation-limited")
         return {shin::ui::tr("Context partially available"),
             shin::ui::tr("Configured source limits were reached. Only unchanged, verified files from the approved context are available."),
             shin::ui::tr("You can use the available context. Review source scope and limits to restore full coverage.")};
-    if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
+    if (presentation.searchable() && project.contains("source_coverage") &&
         project.at("source_coverage").is_object() &&
         text_field(project.at("source_coverage"), "reason") == "profile-revision-pending")
         return {shin::ui::tr("Context partially available"), shin::ui::tr("The new file inventory has not passed checks yet. Verifiable files from the previous version remain available."),
             shin::ui::tr("You can use the available context. See profile diagnostics for the coverage gap.")};
-    if ((state == ProjectState::current || state == ProjectState::standby) && project.contains("source_coverage") &&
+    if (presentation.searchable() && project.contains("source_coverage") &&
         project.at("source_coverage").is_object() && count(project.at("source_coverage"), "redacted_files") > 0)
         return {shin::ui::tr("Partial source coverage"),
             std::string(shin::ui::tr("Files with hidden lines: ")) + std::to_string(count(project.at("source_coverage"), "redacted_files")) +
                 ". " + shin::ui::tr("Search and reading remain available for the other lines."),
             shin::ui::tr("Review the listed files and scanner rules if the hidden lines affect your task.")};
-    if ((state == ProjectState::current || state == ProjectState::standby) && quality_warning(project))
+    if (presentation.searchable() && presentation.search_warning)
         return {shin::ui::tr("Ready with search warnings"),
-            shin::ui::tr("Some search checks missed expected evidence. Verified current context remains available."),
-            shin::ui::tr("Review the search diagnostics. The warning clears when the checks pass.")};
-    if ((state == ProjectState::current || state == ProjectState::standby) && count(project, "documentation_warnings") > 0)
+            search_warning_summary(), shin::ui::tr("Review the search diagnostics. The warning clears when the checks pass."),
+            ProjectAdvisory::search};
+    if (presentation.searchable() && presentation.documentation_warnings)
         return {shin::ui::tr("Ready with documentation warnings"),
-            std::string(shin::ui::tr("Broken documentation links: ")) + std::to_string(count(project, "documentation_warnings")) +
-                ". " + shin::ui::tr("Available context remains usable."),
-            shin::ui::tr("Fix the links when convenient. Shin will clear the warning automatically.")};
+            documentation_warning_summary(presentation.documentation_warnings),
+            shin::ui::tr("Fix the links when convenient. Shin will clear the warning automatically."), ProjectAdvisory::documentation};
     switch (state) {
     case ProjectState::offline: return {shin::ui::tr("Service offline"), shin::ui::tr("Previous data was retained but is not currently verified."), shin::ui::tr("Waiting for a fresh service response.")};
     case ProjectState::current: return {shin::ui::tr("Context is current"), shin::ui::tr("Checks passed. Shin is ready to answer project queries."), shin::ui::tr("No action needed.")};
@@ -275,6 +318,10 @@ inline DiagnosticOverview diagnostic_overview(const Json& project, bool connecte
     if (code.find("timeout") != std::string::npos) return {shin::ui::tr("Check delayed"), shin::ui::tr("The operation exceeded its deadline."), shin::ui::tr("Shin will retry the check automatically.")};
     return {shin::ui::tr("Needs attention"), shin::ui::tr("Shin paused updates to avoid serving unverified context."),
         shin::ui::tr("Open the report for the cause and next step.")};
+}
+
+inline DiagnosticOverview diagnostic_overview(const Json& project, bool connected) {
+    return diagnostic_overview(project, project_presentation(project, connected));
 }
 
 enum class RecoveryAction { none, profile, search, storage, folder, report };

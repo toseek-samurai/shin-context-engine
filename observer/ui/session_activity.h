@@ -22,11 +22,15 @@ struct SessionActivityEvent {
     std::int64_t at_ms = 0;
     std::string label, method;
     SessionEventTone tone = SessionEventTone::neutral;
+    std::string project_id{}, model{}, error_code{};
+    std::optional<double> duration_ms{};
+    std::string key{};
 };
 struct SessionActivityEntry {
     std::string id, calls, errors, tasks;
     std::vector<std::string> details;
     std::vector<SessionActivityEvent> events;
+    std::string client{};
 };
 struct SessionActivity {
     bool available = false;
@@ -35,6 +39,18 @@ struct SessionActivity {
     std::vector<SessionActivityEntry> sessions;
     std::vector<std::string> notes;
 };
+
+inline std::string session_event_key(const nlohmann::json& event, const char* field, const char* category,
+                                     const std::string& session, std::int64_t at, const std::string& kind) {
+    const auto value = event.value(field, nlohmann::json());
+    if (value.is_string()) {
+        const auto& id = value.get_ref<const std::string&>();
+        if (id.size() == 64 && id.find_first_not_of("0123456789abcdef") == std::string::npos)
+            return std::string(category) + ":" + id;
+    }
+    // An older observation can be selected by its original fields if unique.
+    return std::string(category) + ":" + session + ":" + std::to_string(at) + ":" + kind;
+}
 // Structured presentation keeps the desktop summary separate from detailed
 // observations. Terminal clients retain the same full text through the adapter below.
 inline SessionActivity session_activity(const nlohmann::json& telemetry, const nlohmann::json& usage = {}) {
@@ -80,6 +96,7 @@ inline SessionActivity session_activity(const nlohmann::json& telemetry, const n
         std::size_t compactions = 0; std::int64_t last_compaction = 0; std::string history_model;
         if (markers.is_array() && markers.size() <= 64) for (const auto& marker : markers) {
             if (!marker.is_object() || marker.value("session_id",Json()) != id) continue;
+            if (events.value("source", Json()) == "codex") result.sessions.back().client = "Codex";
             if (marker.value("kind",Json()) == "compaction") {
                 ++compactions;
                 const auto when = marker.value("at_ms",Json());
@@ -152,7 +169,12 @@ inline SessionActivity session_activity(const nlohmann::json& telemetry, const n
             const auto kind = marker.value("kind",Json());
             const char* title = kind == "compaction" ? "Host compaction" : kind == "turn-start" ? "Client turn started" :
                 kind == "turn-finish" ? "Client turn ended" : kind == "turn-abort" ? "Client turn aborted" : nullptr;
-            if (title) recent.push_back({marker.at("at_ms").get<std::int64_t>(),tr(title),"",SessionEventTone::host});
+            if (title) {
+                const auto at = marker.at("at_ms").get<std::int64_t>();
+                SessionActivityEvent event{at, tr(title), "", SessionEventTone::host};
+                event.key = session_event_key(marker, "event_id", "host", id, at, kind.get_ref<const std::string&>());
+                recent.push_back(std::move(event));
+            }
         }
         const auto timeline = row.value("timeline",Json::array());
         if (timeline.is_array()) for (std::size_t i = 0; i < std::min(session_activity_max_call_events,timeline.size()); ++i) {
@@ -170,8 +192,22 @@ inline SessionActivity session_activity(const nlohmann::json& telemetry, const n
             const auto method = call.value("method",Json());
             const auto tone = outcome == "success" ? SessionEventTone::success : outcome == "tool-error" || outcome == "rpc-error" ?
                 SessionEventTone::error : outcome == "unfinished" ? SessionEventTone::pending : SessionEventTone::neutral;
-            recent.push_back({when.is_number_integer() ? when.get<std::int64_t>() : 0,std::move(text),
-                method.is_string() && (method == "query" || method == "read" || method == "inspect") ? method.get<std::string>() : "",tone});
+            SessionActivityEvent observation{when.is_number_integer() ? when.get<std::int64_t>() : 0,std::move(text),
+                method.is_string() && (method == "query" || method == "read" || method == "inspect" || method == "resume") ? method.get<std::string>() : "",tone};
+            const auto checked_text = [&](const char* key, const char* allowed) {
+                const auto value = call.value(key, Json());
+                if (!value.is_string()) return std::string{};
+                const auto& raw = value.get_ref<const std::string&>();
+                return raw.size() <= 64 && raw.find_first_not_of(allowed) == std::string::npos ? raw : std::string{};
+            };
+            observation.project_id = checked_text("project_id", "0123456789abcdef");
+            observation.model = checked_text("model_id", "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789_.:/-");
+            observation.error_code = checked_text("error_code", "abcdefghijklmnopqrstuvwxyz0123456789-");
+            observation.key = session_event_key(call, "call_id", "call", id, observation.at_ms, observation.method);
+            const auto duration = call.value("duration_ms", Json());
+            if (duration.is_number() && std::isfinite(duration.get<double>()) && duration.get<double>() >= 0)
+                observation.duration_ms = duration.get<double>();
+            recent.push_back(std::move(observation));
         }
         std::stable_sort(recent.begin(),recent.end(),[](const auto& a,const auto& b) { return a.at_ms > b.at_ms; });
         result.sessions.back().events.assign(recent.begin(),recent.begin()+std::min(session_activity_max_events,recent.size()));

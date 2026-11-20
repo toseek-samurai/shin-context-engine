@@ -61,10 +61,11 @@ the chart reports omitted measurements explicitly; omissions never become zeroes
 ## Projects
 
 Availability and source coverage have separate columns. A project can be
-searchable with partial coverage; preparing and on-demand readers have their own
-states. Use arrows or `j`/`k` to select a row, then Enter for details.
+searchable with partial coverage. Preparing and on-demand readers have their own
+states. A `!` in the Search column flags a search or documentation warning.
+Use arrows or `j`/`k` to select a row, then Enter to see the reason.
 
-![Project list with ready, partial, preparing, blocked and on-demand examples](images/tui-projects.svg)
+![Compact project list with warnings on ready and on-demand projects and separate coverage](images/tui-projects.svg)
 
 ## Project details
 

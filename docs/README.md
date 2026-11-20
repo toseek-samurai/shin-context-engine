@@ -31,10 +31,10 @@ restart them.
 
 ## Desktop layout
 
-Monitor groups tasks under **Overview**, **Projects**, **History** and
-**Settings**, with labeled actions and technical details disclosed separately.
-History opens with recorded calls; timing and optional agent usage remain
-secondary views.
+Starting with dev.136, Monitor opens on **Overview** or **Projects**. The footer opens **Journal**,
+**Settings** and **About Shin**. Select a project to see its search metrics,
+agent access and settings. The journal leads to call details, response timing
+and agent token history.
 
 The macOS menu bar panel uses the dark Sand palette, 14 px body text and a
 standard width of 520 px. Short pages fit their contents up to 680 px and longer
@@ -51,7 +51,7 @@ dashboard does not imply that every platform has the same setup and update tools
 | Capability | macOS native kit | macOS Homebrew | Linux / WSL2 terminal tools | Windows x64 ZIP / MSI |
 | --- | --- | --- | --- | --- |
 | Core, local Observer, CLI and MCP | Yes | Yes | Yes | Yes |
-| Dark Sand desktop Monitor, EN/RU | Overview, Projects, History, Settings | Overview, Projects, History, Settings | No native desktop host | Overview, Projects, History, Settings |
+| Dark Sand desktop Monitor, EN/RU | Overview, Projects, Journal, Settings, About | Overview, Projects, Journal, Settings, About | No native desktop host | Overview, Projects, Journal, Settings, About |
 | TUI `shin-ce stats`, line charts and EN/RU | Yes | Yes | Yes | Not implemented |
 | Add a project from Monitor | Yes | Yes | Use CLI | Yes |
 | Automatic MCP client configuration | Reviewed CLI / Monitor setup | Reviewed CLI / Monitor setup | Reviewed CLI setup | Reviewed CLI / Monitor setup |

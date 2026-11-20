@@ -152,7 +152,7 @@ private:
             int position = 1;
             for (const auto* key : {"calls", "first_at_ms", "last_at_ms", "context_calls", "errors", "recovery_requests", "tasks", "model_unknown"})
                 row[key] = sqlite3_column_int64(sessions.get(), position++);
-            auto recent = prepare(db, "SELECT at_ms,method,outcome,intent,task_id,model_id,duration_ms FROM calls "
+            auto recent = prepare(db, "SELECT at_ms,method,outcome,intent,task_id,model_id,duration_ms,project_id,error_code,call_id FROM calls "
                 "WHERE session_id=?1 AND at_ms>=?2 AND at_ms<=?3 ORDER BY at_ms DESC,call_id LIMIT 8");
             sqlite3_bind_text(recent.get(), 1, id.c_str(), -1, SQLITE_TRANSIENT);
             sqlite3_bind_int64(recent.get(), 2, now-retention_ms); sqlite3_bind_int64(recent.get(), 3, now);
@@ -160,7 +160,9 @@ private:
             while ((detail_rc = sqlite3_step(recent.get())) == SQLITE_ROW)
                 row["timeline"].push_back({{"at_ms", sqlite3_column_int64(recent.get(), 0)}, {"method", column(recent.get(), 1)},
                     {"outcome", column(recent.get(), 2)}, {"intent", column(recent.get(), 3)}, {"task_id", column(recent.get(), 4)},
-                    {"model_id", column(recent.get(), 5)}, {"duration_ms", sqlite3_column_type(recent.get(), 6) == SQLITE_NULL ? Json(nullptr) : Json(sqlite3_column_double(recent.get(), 6))}});
+                    {"model_id", column(recent.get(), 5)}, {"duration_ms", sqlite3_column_type(recent.get(), 6) == SQLITE_NULL ? Json(nullptr) : Json(sqlite3_column_double(recent.get(), 6))},
+                    {"project_id", column(recent.get(), 7)}, {"error_code", column(recent.get(), 8)},
+                    {"call_id", column(recent.get(), 9)}});
             require_sql(db, detail_rc == SQLITE_DONE);
             auto queries = prepare(db, "SELECT at_ms FROM calls WHERE session_id=?1 AND method='query' AND outcome='success' AND at_ms>=?2 AND at_ms<=?3 ORDER BY at_ms DESC LIMIT 9");
             sqlite3_bind_text(queries.get(),1,id.c_str(),-1,SQLITE_TRANSIENT);

@@ -98,13 +98,14 @@ agent connections and history. Indexes live in the private data home.
 
 Monitor uses dark **Sand**, with English and Russian. macOS opens a menu bar
 popup. Windows has a notification-area quick panel and a full desktop Monitor.
+The screenshots show the dev.136 layout from a source build.
 
-<img src="docs/images/monitor-overview.png" width="520" alt="Shin Overview shows project availability, recent request activity and a memory line graph">
+<img src="docs/images/monitor-overview.png" width="520" alt="Shin Overview shows line charts for memory, requests and search time, with project availability below">
 
-- **Overview:** project availability, memory and request activity.
-- **Projects:** folders, agent access, search analytics and explanations of warnings.
-- **History:** recorded calls, session activity, timing and optional agent usage.
-- **Settings:** language, storage and updates.
+- **Overview** shows project availability and line charts for memory, requests and search time.
+- **Projects** shows availability, search analytics and agent access for each folder. Project settings groups exclusions, storage and disconnection.
+- **Journal** lists recorded calls across projects or for the selected project. Agent tokens have their own view.
+- **Settings** groups language, startup, updates, storage and history recording. **About Shin** shows the kit and component versions.
 
 Preparation, partial coverage and search quality have separate explanations.
 A search warning can coexist with available verified context; a safety or
@@ -112,16 +113,14 @@ freshness failure can block retrieval. The project view explains the next step.
 [Availability, coverage and quality](GLOSSARY.md).
 
 <details>
-<summary>Project analytics and session history</summary>
+<summary>Project analytics and journal</summary>
 
-<img src="docs/images/monitor-project.png" width="520" alt="Project details show search totals, response times, errors and request mix">
+<img src="docs/images/monitor-project.png" width="520" alt="Project details show search totals, response times, errors and agent access">
 
-<img src="docs/images/monitor-sessions.png" width="520" alt="History journal groups synthetic MCP calls by session with timestamps and colored outcomes">
+<img src="docs/images/monitor-sessions.png" width="520" alt="Journal lists synthetic MCP calls by time with project, agent, duration and outcome">
 
-History groups recorded calls and explicit client events by session. Agent token
-totals remain separate from Shin call counts; unknown session or model metadata
-stays unknown. The journal displays up to 48 recent events alongside separate
-history and analysis totals. [What is recorded](docs/cli.md#sessions-and-optional-recovery-notes-dev45).
+The journal displays up to 48 recent calls and explicit client events. Select a
+row for its session and available details. [What is recorded](docs/cli.md#sessions-and-optional-recovery-notes-dev45).
 
 </details>
 

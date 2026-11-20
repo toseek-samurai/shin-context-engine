@@ -222,10 +222,12 @@ int main(int argc, char** argv) {
                 if (fit_test && maximum_size.x != 520) continue;
                 for (const auto* scenario : {"project-analytics", "project-analytics-empty", "project-analytics-offline", "first-run", "update", "cold", "current", "documentation-warning", "redacted-lines", "profile-partial", "blocked", "secret-blocked", "offline", "pending", "warming", "history", "unknown-history", "projects", "projects-last-page", "project-states",
                      "projection-partial", "timing-live-partial", "timing-live", "timing-retained", "timing-missing", "timing-offline", "timing-empty", "timing-partial",
-                     "overview", "overview-warning", "overview-warning-short", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
+                     "overview", "overview-hourly", "overview-warning", "overview-warning-short", "search-warning", "search-warning-details", "search-warning-invalid", "search-warning-opened", "settings", "settings-history", "about", "project-settings", "project-disconnect", "language-live-en", "language-live-ru", "language-live-auto", "sessions", "sessions-project", "sessions-partial", "sessions-full", "sessions-full-end", "sessions-empty", "sessions-notes", "sessions-details", "sessions-reorder-back", "sessions-unavailable", "sessions-omitted", "models", "models-partial", "models-stale", "models-details", "route-review", "profile-review", "profile-review-loading", "profile-review-error",
                      "profile-review-stale", "profile-review-waiting", "profile-review-success", "profile-review-partial", "profile-review-failed", "profile-review-disabled"}) {
                     const std::string kind = scenario;
                     if (!fit_test && kind == "overview-warning-short") continue;
+                    const bool test_journal_input = kind == "sessions-reorder-back";
+                    if ((test_journal_input || kind == "overview-hourly") && maximum_size.x != 520) continue;
                     auto limit = maximum_size;
                     if (kind == "overview-warning-short") limit.y = 420;
                     auto size = limit;
@@ -239,9 +241,18 @@ int main(int argc, char** argv) {
                     profile_review_open = kind.starts_with("profile-review-") || kind == "profile-review";
                     profile_review_root = "/fixture/workspace";
                     timing_open = kind.starts_with("timing-");
-                    dashboard_view = kind.starts_with("overview") ? 0 : timing_open || kind.starts_with("models") || kind.starts_with("sessions") ? 2 : kind == "settings" ? 3 : 1;
+                    dashboard_view = kind.starts_with("overview") ? 0 :
+                        timing_open || kind.starts_with("models") || kind.starts_with("sessions") ? 2 :
+                        kind == "about" ? 4 : kind.starts_with("settings") || kind == "update" ? 3 : 1;
+                    settings_view = kind == "update" ? SettingsPage::updates :
+                        kind == "settings-history" ? SettingsPage::history : SettingsPage::overview;
+                    project_view = kind == "project-settings" ? ProjectPage::settings :
+                        kind == "project-disconnect" ? ProjectPage::disconnect : ProjectPage::overview;
+                    journal_entry.reset();
+                    journal_project = kind == "sessions-project" ? std::string(64, 'b') : "";
+                    if (kind.starts_with("sessions")) project["id"] = std::string(64, 'b');
                     activity_view = kind.starts_with("models") ? 1 : kind.starts_with("sessions") ? 2 : 0;
-                    diagnostic_details_open = kind == "search-warning-details" || kind == "search-warning-invalid"; diagnostic_focus = -1;
+                    diagnostic_details_open = kind == "search-warning-details" || kind == "search-warning-invalid";
                     if (kind.starts_with("search-warning") || kind.starts_with("overview-warning")) project["quality_warning"] = {
                         {"state", "degraded"}, {"diagnostic", {{"schema_version", "shin.validation-diagnostic.v1"}, {"gates", Json::array({
                             {{"id", "eval"}, {"cases", Json::array({{{"id", "fixture-discovery"},
@@ -264,6 +275,11 @@ int main(int argc, char** argv) {
                     if (kind == "warming") project.update({{"query_ready", false}, {"query_phase", "preparing"}});
                     ViewState view;
                     view.connected = kind != "first-run" && kind != "offline" && kind != "timing-offline";
+                    view.agent_access_root = "/fixture/workspace";
+                    view.agent_access = std::make_shared<Json>(Json::array({
+                        {{"label", "Codex"}, {"access_state", "configured"}},
+                        {{"label", "Claude Code"}, {"access_state", "not-configured"}}
+                    }));
                     view.profile_review = std::make_shared<ProfileReviewChannel>();
                     if (kind.starts_with("profile-review")) {
                         view.profile_review->preview("/fixture/workspace");
@@ -317,27 +333,43 @@ int main(int argc, char** argv) {
                         }
                         projects.push_back(other);
                     }
-                    view.data = {{"version", "2.0.4"}, {"core_version", "2.0.4"},
+                    if (kind == "sessions")
+                        projects.push_back({{"id", std::string(64, 'c')}, {"name", "Example API"}});
+                    view.data = {{"version", SHIN_OBSERVER_VERSION}, {"core_version", "2.0.5-dev.37"},
                         {"registry_error", ""}, {"enrollment_errors", Json::object()}, {"query_workers", 0},
                         {"resident_projects", Json::array()}, {"telemetry", {{"project_states", projects},
                         {"history", {{"status", kind == "unknown-history" ? "unavailable" : "ready"}, {"rows", 14000},
                         {"projects", Json::array({{{"id", "fixture"}, {"requests", 1543}, {"errors", 5}, {"unobserved", 0}}})}}}}}};
                     if (kind.starts_with("overview")) {
-                        // A real retained-memory curve, including an unknown interval and a service restart.
-                        graph_mode = 0; history_hours = 1;
+                        // Retained buckets include a gap and restart in the ordinary Overview.
+                        history_hours = kind == "overview-hourly" ? 24 : 1;
                         auto& telemetry = view.data["telemetry"];
+                        telemetry["samples"] = Json::array({{{"elapsed_ms", 3600000}, {"rss_bytes", 128 * 1048576}, {"workers", 0}}});
                         auto& history = telemetry["history"];
                         constexpr std::int64_t captured = 1792756800000;
                         history["captured_at_ms"] = captured;
                         history["oldest_at_ms"] = captured - 3600000;
                         history["minute_timeline"] = Json::array();
                         for (int minute = 0; minute <= 60; ++minute) {
-                            const double rss = (174 + minute * .7 + (minute > 35 ? 17 : 0) + (minute % 7 < 3 ? 2 : 0)) * 1048576;
-                            const bool missing = minute >= 24 && minute <= 27;
+                            const double pulse = std::max(0.0, 1.0 - std::abs(minute - 30) / 18.0);
+                            const double rss = (118 + minute / 6.0 + 53 * pulse + (minute % 10 < 5 ? 1 : 0)) * 1048576;
+                            const bool missing = kind == "overview" && minute >= 24 && minute <= 27;
+                            const bool restarted = kind == "overview" && minute >= 45;
+                            const double latency = 65 + 34 * pulse + minute % 7;
                             history["minute_timeline"].push_back(Json::array({captured - (60 - minute) * 60000,
-                                12 + minute % 9, 0, 0, 350, 10, missing ? Json(nullptr) : Json(rss),
+                                1 + minute % 3 + static_cast<int>(6 * pulse), 0, 0, latency * 4, 4, missing ? Json(nullptr) : Json(rss),
                                 missing ? Json(nullptr) : Json(rss), missing ? 0 : 30, 1,
-                                minute < 45 ? "run-a" : "run-b"}));
+                                restarted ? "run-b" : "run-a"}));
+                        }
+                        if (history_hours == 24) {
+                            history["timeline"] = Json::array();
+                            // Hourly rows have no service-run identity.
+                            for (int hour = 2; hour <= 24; ++hour) {
+                                const int requests = 14 + hour % 7;
+                                const auto rss = (102 + hour % 12 * 5) * 1048576;
+                                history["timeline"].push_back(Json::array({captured - (24 - hour) * 3600000LL,
+                                    requests, 0, 0, requests * (28 + hour), requests, 62, rss, 30, 1}));
+                            }
                         }
                     }
                     if (kind == "projection-partial" || kind == "timing-live-partial")
@@ -390,12 +422,20 @@ int main(int argc, char** argv) {
                                     {{"method","read"},{"intent","follow-up"},{"outcome","success"},{"at_ms",1792920004500LL}},
                                     {{"method","query"},{"intent","explore"},{"outcome","tool-error"},{"at_ms",1792920005500LL}},
                                     {{"method","inspect"},{"intent","explore"},{"outcome","unfinished"},{"at_ms",1792920006500LL}}})}}})}};
-                        view.usage = std::make_shared<const Json>(Json{{"context_events",{{"complete",kind=="sessions"},
+                        view.usage = std::make_shared<const Json>(Json{{"context_events",{{"source","codex"},{"complete",kind=="sessions"},
                             {"events",Json::array({{{"session_id",session_id},{"at_ms",1792920002000LL},{"kind","compaction"}},
                                 {{"session_id",session_id},{"at_ms",1792920001000LL},{"kind","turn-model"},{"model_id","history-model"}}})}}}});
                     }
                     if (kind.starts_with("sessions")) {
                         auto& row = view.data["telemetry"]["mcp_activity"]["session_rows"][0];
+                        row["timeline"][0].update({{"project_id", std::string(64, 'b')}, {"duration_ms", 71}, {"model_id", "fixture-model"}});
+                        row["timeline"][1].update({{"project_id", std::string(64, 'c')}, {"duration_ms", 17}});
+                        if (kind == "sessions") {
+                            row["timeline"][2].update({{"project_id", std::string(64, 'b')}, {"duration_ms", 124}});
+                            row["timeline"][3].update({{"project_id", std::string(64, 'c')}});
+                            for (std::size_t event = 0; event < row["timeline"].size(); ++event)
+                                row["timeline"][event]["at_ms"] = 1792920003500LL + 180000 * static_cast<std::int64_t>(event);
+                        }
                         row["analysis"] = {{"schema_version","shin.session-analysis.v1"},{"calls_complete",kind=="sessions"},
                             {"unassigned_context_calls",3},{"reads",{{"reads",12},{"same_version_repeats",4},{"additional_versions",2},{"unknown_reads",1}}},
                             {"episodes",Json::array({{{"start_ms",1792920000000LL},{"kind","compaction"},{"closed",true},
@@ -421,9 +461,6 @@ int main(int argc, char** argv) {
                             }
                         }
                         if (kind == "sessions-notes") activate(90);
-                        if (kind == "sessions-details") {
-                            session_row_ids[0] = std::string(64,'a'); activate(91);
-                        }
                     }
                     if (kind.starts_with("project-analytics")) {
                         auto& telemetry = view.data["telemetry"];
@@ -456,7 +493,9 @@ int main(int argc, char** argv) {
                     auto* retained_context = ImGui::GetCurrentContext();
                     const int live_preference = kind == "language-live-en" ? 1 : kind == "language-live-ru" ? 2 : 0;
                     std::set<int> reachable_settings;
-                    const int frames = kind == "settings" ? 18 : kind == "overview-warning-short" ? 12 : fit_test ? 8 : 3;
+                    UiAction first_journal_action{};
+                    const int frames = kind == "settings" ? 18 : kind == "overview-warning-short" ? 12 :
+                        test_journal_input ? 10 : fit_test ? 8 : 3;
                     for (int frame = 0; frame < frames; ++frame) {
                         // Begin on the real short first-run page, then deliver
                         // a project with a warning under a smaller screen cap.
@@ -466,6 +505,33 @@ int main(int argc, char** argv) {
                             texture = [device newTextureWithDescriptor:descriptor];
                         }
                         if (kind == "search-warning-opened" && frame == 1) activate(120);
+                        if (kind == "sessions-details" && frame == 1 && journal_rows.front())
+                            activate(open_journal_record, journal_rows.front()->event.key);
+                        if (kind == "sessions-details" && frame == 2) activate(journal_session_details);
+                        if (test_journal_input && frame == 1) {
+                            const auto first = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                                return action.chart == open_journal_record && action.enabled;
+                            });
+                            if (first == ui_actions.end() || !first->item_id || first->target.empty())
+                                throw std::runtime_error("journal entry could not be selected");
+                            first_journal_action = *first;
+                        }
+                        if (test_journal_input && frame == 2) {
+                            view.data["telemetry"]["mcp_activity"]["session_rows"][0]["timeline"].push_back({
+                                {"call_id", std::string(64, 'd')}, {"method", "query"}, {"outcome", "success"}, {"at_ms", 1792920007500LL}});
+                        }
+                        if (test_journal_input && frame == 3) {
+                            const auto previous = std::find_if(ui_actions.begin(), ui_actions.end(), [&](const auto& action) {
+                                return action.chart == open_journal_record && action.target == first_journal_action.target;
+                            });
+                            if (!journal_rows.front() || journal_rows.front()->event.key == first_journal_action.target ||
+                                previous == ui_actions.end() || previous->item_id != first_journal_action.item_id)
+                                throw std::runtime_error("inserting a newer event changed a journal control's identity");
+                            if (journal_entry) throw std::runtime_error("releasing a reordered row activated its replacement");
+                            activate(open_journal_record, first_journal_action.target);
+                            if (!journal_entry || journal_entry->event.key != first_journal_action.target)
+                                throw std::runtime_error("a retained journal action opened another event");
+                        }
                         if (kind.starts_with("language-live-")) {
                             if (frame == 0) shin::ui::set_language(live_preference == 2 ? shin::ui::Language::en : shin::ui::Language::ru);
                             if (frame == 1) select_language_preference(live_preference);
@@ -486,6 +552,17 @@ int main(int argc, char** argv) {
                         } else if (kind == "sessions-full-end") {
                             io.AddMousePosEvent(size.x/2,size.y/2);
                             if (frame > 0) io.AddMouseWheelEvent(0,-1000);
+                        } else if (test_journal_input && (frame == 1 || frame == 2)) {
+                            io.AddMousePosEvent(first_journal_action.origin.x + first_journal_action.size.x / 2,
+                                first_journal_action.origin.y + first_journal_action.size.y / 2);
+                            io.AddMouseButtonEvent(0, frame == 1);
+                        } else if (test_journal_input && (frame == 5 || frame == 6)) {
+                            const auto back = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                                return action.chart == back_from_journal_entry && action.enabled;
+                            });
+                            if (back == ui_actions.end()) throw std::runtime_error("journal Back is unreachable");
+                            io.AddMousePosEvent(back->origin.x + back->size.x / 2, back->origin.y + back->size.y / 2);
+                            io.AddMouseButtonEvent(0, frame == 5);
                         } else io.AddMousePosEvent(-100, -100);
                         ImGui_ImplMetal_NewFrame(pass);
                         ImGui::NewFrame();
@@ -494,6 +571,8 @@ int main(int argc, char** argv) {
                         if (kind == "overview-warning-short" && frame < 3)
                             frame_view.data["telemetry"]["project_states"] = Json::array();
                         try { preferred = render(frame_view, fit_test ? limit.y : 0); } catch (const std::exception& e) { throw std::runtime_error(kind + " " + std::to_string(static_cast<int>(size.x)) + ": " + e.what()); }
+                        if (test_journal_input && (frame == 1 || frame == 5) && !ImGui::IsAnyItemActive())
+                            throw std::runtime_error("synthetic mouse down did not reach the journal control");
                         if (kind == "overview-warning-short" && frame == 2 && preferred >= 400)
                             throw std::runtime_error("warning regression fixture did not establish a short baseline");
                         if (kind == "settings") for (const auto& action : ui_actions)
@@ -519,9 +598,11 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("live switch lost ImGui state or retained an old accessibility label");
                     }
                     const auto context = kind + " " + std::to_string(static_cast<int>(size.x)) + "x" + std::to_string(static_cast<int>(size.y));
+                    if (test_journal_input && (journal_entry || dashboard_view != 2 || activity_view != 2))
+                        throw std::runtime_error("clicking Back did not return to the journal: " + context);
                     if (fit_test && kind == "overview" && (size.y <= 400 ||
                         std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
-                            return action.label == shin::ui::tr("View history");
+                            return action.chart == 44;
                         }))) throw std::runtime_error("overview did not grow from a short page: " + context);
                     if (kind == "overview-warning-short" &&
                         (size.y > 420 || std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) { return action.chart == 121; })))
@@ -581,21 +662,33 @@ int main(int argc, char** argv) {
                         });
                         if (setup == ui_actions.end()) throw std::runtime_error("fresh user cannot open setup without a service");
                     }
-                    if(kind=="update" && std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& a){return a.chart==86 && a.enabled;}))
-                        throw std::runtime_error("release offer is not actionable");
+                    if (kind == "update") {
+                        if (std::none_of(ui_actions.begin(),ui_actions.end(),[](const auto& a){return a.chart==86 && a.enabled;}))
+                            throw std::runtime_error("release offer is not actionable");
+                        if (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                            return action.chart == 13 && action.label.find(shin::ui::tr("Update available")) != std::string::npos;
+                        })) throw std::runtime_error("Settings does not disclose the update indication");
+                    }
                     if (kind.starts_with("sessions") && size.y >= 440) {
                         const auto has = [&](const char* key) { return std::any_of(ui_actions.begin(),ui_actions.end(),[&](const auto& action) {
                             return action.label == shin::ui::tr(key);
                         }); };
-                        if (kind != "sessions-full-end" && !has("MCP calls linked to agent chats.")) throw std::runtime_error("session explanation is inaccessible: " + context);
+                        if (kind != "sessions-details" && kind != "sessions-full-end" && !has("Shin requests"))
+                            throw std::runtime_error("journal tabs are inaccessible: " + context);
                         if ((kind == "sessions-empty" || kind == "sessions-notes") && !has("No linked sessions yet"))
                             throw std::runtime_error("session empty state is missing: " + context);
                         if (kind == "sessions-unavailable" && (has("No linked sessions yet") || !has("Session activity is unavailable.")))
                             throw std::runtime_error("unavailable sessions look empty: " + context);
                         if (kind == "sessions-omitted" && (has("No linked sessions yet") || !has("Only part of the session history is available.")))
                             throw std::runtime_error("omitted sessions look empty: " + context);
-                        if (kind == "sessions" && (!has("Recorded activity · UTC") || has("Caller-reported recovery and explicit host compaction are different events.")))
+                        if (kind == "sessions" && (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                                return action.chart == open_journal_record && !action.target.empty();
+                            }) ||
+                            has("Caller-reported recovery and explicit host compaction are different events.")))
                             throw std::runtime_error("session details are not disclosed separately: " + context);
+                        if (kind == "sessions-project" && std::count_if(journal_rows.begin(), journal_rows.end(), [](const auto& row) {
+                            return row.has_value();
+                        }) != 1) throw std::runtime_error("project journal did not filter the recorded calls: " + context);
                         if (kind == "sessions-notes" && size.y >= 620 && !has("Hide recording notes")) throw std::runtime_error("recording notes cannot be opened: " + context);
                         if (kind == "sessions-details" && session_details_open != std::string(64,'a')) throw std::runtime_error("session details cannot be opened: " + context);
                         if (kind == "sessions-full" && size.y >= 620) {
@@ -610,16 +703,14 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("full journal cannot scroll to its final controls: " + context + visible);
                         }
                     }
-                    if (std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
-                        return action.chart == 87 && action.informational && action.label == std::string("v") + SHIN_OBSERVER_VERSION;
-                    })) throw std::runtime_error("installed version is not visible and accessible: " + context);
+                    if (kind == "about" && size.y >= 440 && std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& action) {
+                        return action.chart == 87 && action.informational && action.label == SHIN_OBSERVER_VERSION;
+                    })) throw std::runtime_error("installed version is not visible and accessible in About: " + context);
                     for (const auto& action : ui_actions) {
                         if (action.chart == 50) {
-                            const auto updates = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) {
-                                return item.chart == 86 || (item.chart == 110 && item.label == shin::ui::tr("Updates"));
-                            });
-                            if (updates == ui_actions.end() || std::abs(action.origin.x + action.size.x -
-                                (updates->origin.x + updates->size.x)) > .5f)
+                            const auto about_item = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& item) { return item.chart == about; });
+                            if (about_item == ui_actions.end() || std::abs(action.origin.x + action.size.x -
+                                (about_item->origin.x + about_item->size.x)) > .5f)
                                 throw std::runtime_error("service status is not aligned with the footer: " + context);
                         }
                         if (action.origin.x < 0 || action.origin.y < 0 || action.origin.x + action.size.x > size.x + 1 ||
@@ -651,12 +742,14 @@ int main(int argc, char** argv) {
                             throw std::runtime_error("last project page hides its total or rows: " + context);
                     }
                     if (kind == "settings" && size.y >= 440) {
-                        for (const int id : {83, 85, 110, 111, 112, 113, 114, 115})
+                        for (const int id : std::array<int, 6>{83, 112, choose_language, compact_view, update_settings, history_settings})
                             if (!reachable_settings.contains(id))
                                 throw std::runtime_error("settings action unreachable: " + context + " " + std::to_string(id));
                     }
                     if (kind == "overview-warning" && size.y >= 440) {
-                        activate(121);
+                        const auto attention = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) { return action.chart == 121; });
+                        if (attention == ui_actions.end()) throw std::runtime_error("overview attention action is missing: " + context);
+                        activate(attention->chart, attention->target);
                         if (dashboard_view != 1 || selected != "fixture" || diagnostic_history_first)
                             throw std::runtime_error("overview attention action lost the affected project");
                     }
@@ -674,7 +767,7 @@ int main(int argc, char** argv) {
                         std::none_of(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 126 && a.label.find("docs/access.md") != std::string::npos; }))
                         throw std::runtime_error("warning details omit their expected owner");
                     if (kind == "current") {
-                        const auto actions = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == 84; });
+                        const auto actions = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& a) { return a.chart == project_settings; });
                         if (actions == ui_actions.end() || !actions->enabled)
                             throw std::runtime_error("project actions menu missing: " + context);
                         const auto overlaps = [](const UiAction& a, const UiAction& b) {
@@ -704,7 +797,7 @@ int main(int argc, char** argv) {
                         " surfaces=" + std::to_string(surface_pixels) + " text=" + std::to_string(text_pixels));
                     // The target is 2x: sample three logical points in, beyond
                     // the single stroke's antialiasing and inside the former rim.
-                    if (std::abs(pixels[(height / 2 * width + 6) * 4 + 1] - raised.y * 255) > 3)
+                    if (std::abs(pixels[(height / 2 * width + 6) * 4 + 1] - background.y * 255) > 3)
                         throw std::runtime_error("dark outer rim returned around the Sand outline: " + context);
                     const auto filename = output / (kind + "-" + std::to_string(static_cast<int>(limit.x)) + "x" + std::to_string(static_cast<int>(limit.y)) + (fit_test ? "-fit.png" : ".png"));
                     auto color = CGColorSpaceCreateDeviceRGB();
@@ -731,8 +824,48 @@ int main(int argc, char** argv) {
             if (selected != "fixture" || !diagnostic_history_first) throw std::runtime_error("history navigation failed");
             activate(35);
             if (selected != "fixture" || diagnostic_history_first) throw std::runtime_error("overview navigation failed");
+            dashboard_view = 1;
+            activate(project_settings);
+            activate(confirm_disconnect);
+            if (project_view != ProjectPage::disconnect || !back_from_panel_page() ||
+                project_view != ProjectPage::settings || !back_from_panel_page() || project_view != ProjectPage::overview)
+                throw std::runtime_error("project settings confirmation cannot be cancelled");
+            activate(project_journal);
+            if (dashboard_view != 2 || journal_project != "fixture" || activity_view != 2)
+                throw std::runtime_error("project log lost its scope");
+            activate(journal_back);
+            if (dashboard_view != 1 || selected != "fixture") throw std::runtime_error("journal did not return to its project");
+            activate(12);
+            if (!journal_project.empty()) throw std::runtime_error("general journal retained a project filter");
+            activate(journal_back);
             activate(32);
             if (!selected.empty()) throw std::runtime_error("project-list navigation failed");
+
+            const auto first = project_disconnection.begin("a", "/fixture/a", "Atlas");
+            if (!first || !project_disconnection.pending_for("a", "/fixture/a") ||
+                project_disconnection.begin("b", "/fixture/b", "Boreal"))
+                throw std::runtime_error("a second detach could replace the first request");
+            selected = "b";
+            dashboard_view = 1;
+            project_view = ProjectPage::disconnect;
+            complete_panel_disconnect(first->ticket, {{"ok", true}, {"service", {{"ok", false}, {"error", {{"code", "test-refusal"}}}}}});
+            const auto* refusal = project_disconnection.result_for("a", "/fixture/a");
+            if (!refusal || refusal->disconnected || refusal->detail != "test-refusal" ||
+                project_disconnection.result_for("b", "/fixture/b") || selected != "b" || project_view != ProjectPage::disconnect)
+                throw std::runtime_error("a detached project's refusal was routed to another project");
+            const auto second = project_disconnection.begin("a", "/fixture/a", "Atlas");
+            if (!second) throw std::runtime_error("a refusal prevented another attempt");
+            complete_panel_disconnect(first->ticket, {{"ok", true}});
+            if (!project_disconnection.pending_for("a", "/fixture/a") || project_disconnection.result())
+                throw std::runtime_error("a stale detach ticket replaced the pending request");
+            dashboard_view = 3;
+            settings_view = SettingsPage::history;
+            complete_panel_disconnect(second->ticket, {{"ok", true}});
+            const auto* success = project_disconnection.result_for("a", "/fixture/a");
+            if (!success || !success->disconnected || project_disconnection.result_for("a", "/fixture/moved") ||
+                dashboard_view != 3 || settings_view != SettingsPage::history || selected != "b")
+                throw std::runtime_error("a late detach replaced the current page");
+            project_disconnection = {};
             ImGui_ImplMetal_Shutdown(); ImGui::DestroyContext();
             std::cout << rendered << " Metal renders and 4 native Storage renders: bounds, counter alignment and nonblank pixels passed\n";
             return 0;

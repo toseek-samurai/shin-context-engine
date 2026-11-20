@@ -90,8 +90,11 @@ int main() try {
     {
         LocalMcpActivity upgraded(legacy_dir,true);
         await([&] { return upgraded.snapshot().value("attempts",0) == 1; });
-        const auto analysis = upgraded.snapshot().at("session_rows")[0].at("analysis");
-        check(analysis.at("reads").at("unknown_reads") == 1,"legacy read was guessed or deleted");
+        const auto row = upgraded.snapshot().at("session_rows").at(0);
+        check(row.at("analysis").at("reads").at("unknown_reads") == 1,"legacy read was guessed or deleted");
+        const auto& event = row.at("timeline").at(0);
+        check(event.at("call_id") == digest("old-call") && event.at("project_id") == digest("project") &&
+            event.at("duration_ms") == 1, "journal event lost its identity or duration");
         Json read{{"call_id",digest("new-read")},{"session_id",digest("chat")},{"project_id",digest("project")},
             {"at_ms",at+1},{"method","read"},{"outcome","success"},{"write_state","written"},
             {"read_file_id",digest("file")},{"read_version_id",digest("version")}};

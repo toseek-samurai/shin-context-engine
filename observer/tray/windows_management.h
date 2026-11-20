@@ -1,6 +1,22 @@
 #pragma once
 // client_connections.h belongs at translation-unit scope in the native host.
 // Sand management pages reuse the native CLI's authority and revision contracts.
+std::future<Json> start_management_command(fs::path executable, std::vector<std::string> args,
+        std::shared_ptr<std::atomic<unsigned>> progress = {}, std::string input = {}) {
+    return std::async(std::launch::async, [executable=std::move(executable), args=std::move(args),
+            progress=std::move(progress), input=std::move(input)] {
+        try {
+            return windows_command(executable, args, std::chrono::seconds(120), progress ? std::function<void(int)>([progress](int stage) {
+                progress->fetch_or(1U << stage);
+            }) : std::function<void(int)>{}, nullptr, input);
+        } catch (const Error& error) {
+            return Json{{"ok",false},{"error",{{"code",error.code},{"message",error.what()}}}};
+        } catch (...) {
+            return Json{{"ok",false},{"error",{{"code","monitor-command-failed"}}}};
+        }
+    });
+}
+
 struct WindowsManagement {
     enum class Page { setup, storage, project, login } page = Page::setup;
     struct Agent { Json target; bool selected = false; Json review; };
@@ -27,14 +43,7 @@ struct WindowsManagement {
             connection_started = std::chrono::steady_clock::now(); connection_seconds = 0;
         }
         const auto progress = name == "add" ? connection_progress : nullptr;
-        const auto executable = cli();
-        pending = std::async(std::launch::async,[executable,args=std::move(args),progress,input=std::move(input)] {
-            try { return windows_command(executable,args,std::chrono::seconds(120),progress ? std::function<void(int)>([progress](int stage) {
-                progress->fetch_or(1U << stage);
-            }) : std::function<void(int)>{},nullptr,input); }
-            catch (const Error& error) { return Json{{"ok",false},{"error",{{"code",error.code},{"message",error.what()}}}}; }
-            catch (...) { return Json{{"ok",false},{"error",{{"code","monitor-command-failed"}}}}; }
-        });
+        pending = start_management_command(cli(), std::move(args), progress, std::move(input));
     }
     void discover() {
         skill_review = Json();
@@ -139,6 +148,27 @@ struct WindowsManagement {
 };
 WindowsManagement management;
 
+std::uint64_t disconnect_ticket = 0;
+std::future<Json> disconnect_reply;
+void platform_disconnect(const DisconnectRequest& request) {
+    try {
+        if (!test_mode) {
+            auto arguments = management.arguments("detach");
+            arguments.insert(arguments.end(), {"--root", request.root});
+            disconnect_reply = start_management_command(management.cli(), std::move(arguments));
+            disconnect_ticket = request.ticket;
+            return;
+        }
+    } catch (const std::exception&) {
+        // The request still needs a visible outcome if the worker could not start.
+    }
+    complete_panel_disconnect(request.ticket, Json());
+}
+
+void poll_inline_disconnect() {
+    if (disconnect_reply.valid() && disconnect_reply.wait_for(std::chrono::seconds(0)) == std::future_status::ready)
+        complete_panel_disconnect(disconnect_ticket, disconnect_reply.get());
+}
 std::optional<fs::path> management_picker(bool folder) {
     ComPtr<IFileOpenDialog> dialog;
     checked(CoCreateInstance(CLSID_FileOpenDialog,nullptr,CLSCTX_INPROC_SERVER,IID_PPV_ARGS(&dialog)),"Cannot open picker.");
@@ -157,7 +187,7 @@ void open_management(int code) {
     else if(code==112) management.page=WindowsManagement::Page::login;
     else {
         management.page=WindowsManagement::Page::setup;
-        if(code==116) management.root=diagnostic_root;
+        if(code==116) { management.root=diagnostic_root; if (monitor) monitor->show_agent_access({}); }
         management.discover();
     }
     show_panel();

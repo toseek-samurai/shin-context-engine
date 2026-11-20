@@ -135,6 +135,13 @@ void chart_tests(tui::Snapshot s) {
     require(series.points.size() == 4 && series.points[1].connect && !series.points[2].connect && !series.points[3].connect,
         "history restarts or gaps joined");
     require(series.points[0].value == 10 && tui::chart(s, 2, 1).points[0].value == 18, "bucket means changed");
+    history["minute_timeline"][3][1] = 2;
+    history["minute_timeline"][3][4] = 108;
+    history["minute_timeline"][3][5] = 6;
+    history["minute_timeline"][2][4] = 60;
+    const auto retained = shin::ui::retained_charts(history, 1);
+    require(retained.requests == 14 && retained.mean_search_ms == 20 && retained.peaks[0] == 10,
+        "retained summaries no longer match observed buckets and query counts");
     history["minute_timeline"][1][7] = nullptr;
     require(!tui::chart(s, 0, 1).points[1].value, "null retained RSS became zero");
     history["minute_timeline"][0][5] = 0;
@@ -246,7 +253,38 @@ int main(int argc, char** argv) {
         require(render(snapshot, state, 80, 24).hits.project_count == 5, "compact dashboard hides projects unnecessarily");
         state.tab = 1; result = render(snapshot, state);
         require(result.plain.find("blocked") != std::string::npos && result.plain.find("standby") != std::string::npos, "project states hidden");
-        if (argc == 2) capture(result, argv[1], "projects-en");
+        auto advisory_snapshot = snapshot;
+        auto& advisory_projects = advisory_snapshot.service["telemetry"]["project_states"];
+        advisory_projects[0]["documentation_warnings"] = 2;
+        advisory_projects[4]["quality_warning"] = {{"state", "degraded"}};
+        if (argc == 2) capture(render(advisory_snapshot, state, 80, 24), argv[1], "projects-en");
+        for (const auto language : {shin::ui::Language::en, shin::ui::Language::ru}) {
+            using shin::ui::tr;
+            shin::ui::set_language(language);
+            const auto compact = render(advisory_snapshot, state, 80, 24, false, true);
+            const auto row_has = [&](const char* name, const std::string& status) {
+                const auto start = compact.plain.find(name);
+                return start != std::string::npos && compact.plain.substr(start, compact.plain.find('\n', start) - start).find(status) != std::string::npos;
+            };
+            require(row_has("shin-context-engine", std::string("! ") + tr("ready")) &&
+                row_has("docs-portal", std::string("! ") + tr("standby")) &&
+                row_has("atlas-workspace", std::string("● ") + tr("ready")), "compact monochrome table lost or overstated a project warning");
+            auto detail = state;
+            detail.project = "/workspace/shin-context-engine";
+            detail.detail = true;
+            require(render(advisory_snapshot, detail, 80, 24, false, true).plain.find(tr("Ready with documentation warnings")) != std::string::npos,
+                "compact project detail lost the warning reason");
+        }
+        shin::ui::set_language(shin::ui::Language::en);
+        advisory_projects[0]["quality_warning"] = {{"state", "degraded"}};
+        advisory_projects[0]["source_coverage"] = advisory_projects[1].at("source_coverage");
+        auto combined_detail = state;
+        combined_detail.project = "/workspace/shin-context-engine";
+        combined_detail.detail = true;
+        const auto combined = render(advisory_snapshot, combined_detail, 80, 24, false, true).plain;
+        require(combined.find("Partial source coverage") != std::string::npos &&
+            combined.find("Some search checks missed expected evidence.") != std::string::npos &&
+            combined.find("Broken documentation links: 2.") != std::string::npos, "one project warning hid another");
         require(tui::project_status(snapshot.service["telemetry"]["project_states"][3], true).tone == tui::Tone::error, "blocked state not red");
         state.project = "/workspace/atlas-workspace"; state.detail = true;
         result = render(snapshot, state);

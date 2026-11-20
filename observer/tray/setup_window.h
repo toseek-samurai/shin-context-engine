@@ -173,6 +173,7 @@
 - (void)showAgentSetup:(id)sender {
     (void)sender;
     if (diagnostic_root.empty()) return;
+    if (monitor) monitor->show_agent_access({});
     if (!self.setupConnecting && !self.setupAdding) {
         self.setupPreparationFailed = NO;
         self.setupProjectConfirmed = NO;

@@ -39,8 +39,8 @@ Removing a root or disabling that entry revokes access on the next call; an
 in-flight result is withheld if its grant disappears. Invalid, missing or unsafe
 settings fail closed. Manual exports remain explicit, static root lists.
 
-For an existing project on macOS, use **Projects → project → Connect agent…**.
-On Windows, open **Projects → project → Project actions** to connect agents.
+In dev.136 and later, open **Projects → project → Project settings → Agent access**
+to connect agents to an existing project on macOS or Windows.
 The list detects settings directories and, on macOS, installed applications.
 It shows the exact destination path. Detection does not modify files or select
 agents on your behalf. Undetected supported agents can be configured for later use.
@@ -155,8 +155,8 @@ bounds and stale-review refusal also apply to this workflow.
 
 ## Claude Code
 
-1. In Monitor, open **Settings → Connect projects and agents…** and choose the
-   project folder.
+1. In Monitor, add the folder from **Projects**. For an enrolled folder, select
+   it and open **Project settings → Agent access**.
 2. Select **Claude Code** and confirm **Connect selected agents**. Shin adds the
    folder to the user-scoped `shin` MCP entry. The entry is visible across
    Claude Code projects and serves only its explicitly granted folders.

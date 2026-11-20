@@ -268,7 +268,7 @@ ftxui::Element sand_view(const Snapshot& snapshot, State& state, int columns, in
             availability.ready, availability.blocked, availability.notices);
         secondary.push_back(paint.label(!online ? ui::tr("Current project readiness is unknown") :
             !rows.is_array() || rows.empty() ? ui::tr("No connected projects") : summary,
-            !online || availability.blocked ? Tone::warning : Tone::good));
+            !online || availability.blocked || availability.notices ? Tone::warning : Tone::good));
     }
     Elements body;
     const int available = height - 7;

@@ -1,16 +1,11 @@
 #pragma once
 #include "view.h"
-#include <optional>
+#include "../ui/retained_charts.h"
 
 namespace shin::observer::tui {
-struct ChartPoint {
-    double at = 0;
-    std::optional<double> value;
-    bool connect = false;
-};
 struct Chart {
     std::string title, unit;
-    std::vector<ChartPoint> points;
+    std::vector<ui::HistoryPoint> points;
     double begin = 0, end = 0, maximum = 1;
     bool retained = false, partial = false;
     std::size_t omitted = 0;

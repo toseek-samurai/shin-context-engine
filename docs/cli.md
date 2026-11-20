@@ -47,10 +47,12 @@ column. The header always shows the kit version and observation age.
 Overview combines memory, active queries and search p50 with a selectable line
 chart and project table. Choose a metric with the mouse or `g`; `h` cycles Live,
 one hour and 24 hours. Retained request counts are per minute/hour, while memory
-and search time are interval averages. Missing observations stay gaps. Memory
-across unverified service-run boundaries is shown as isolated measurements.
+and search time are interval averages. Missing observations stay gaps. Monitor
+and TUI join memory points only when adjacent minute buckets identify the same
+service run. Hourly memory buckets appear as individual points.
 Colors, symbols and text distinguish ready, on-demand, preparing and blocked
-search; partial source coverage has its own column. Enter opens the cause,
+search. A `!` next to a ready or on-demand status marks a search or documentation
+warning. Partial source coverage has its own column. Enter opens the cause,
 next step and any reported paths with hidden lines.
 
 Project details also explain nonblocking documentation warnings.
@@ -204,22 +206,22 @@ The table maps Monitor to CLI/TUI actions. On Windows, project onboarding and
 storage management are available in the desktop Monitor and CLI. See
 [Windows scope](windows-desktop.md#monitor-setup-and-updates).
 
-Desktop Monitor uses **Overview**, **Projects**, **History** and **Settings**.
+Desktop Monitor has **Overview** and **Projects** tabs. The footer opens
+**Journal**, **Settings** and **About Shin**.
 The macOS Monitor panel fits short pages. Windows uses a resizable desktop window
-and a quick status panel in the notification area. History opens with the
-recorded-call journal. Timing and agent token usage remain secondary views.
-Project details provide technical reports. Earlier desktop previews and the TUI keep
-**Activity** as their third section, with the journal under **Activity → Journal**.
+and a quick status panel in the notification area. Open a journal row for its
+details, or open **Project settings** for a project's technical report. In the TUI,
+the journal is under **Activity → Journal**.
 
 | In Monitor | In the CLI today |
 | --- | --- |
 | Overview / Projects: readiness and partial coverage | `shin-ce status --text` |
 | All projects, service health, recent RAM and request counts | `shin-ce service-status --text` |
-| History / Response time: detailed request telemetry and retained history summaries | TUI Activity / Response time with recent/history and traffic filters; `shin-ce service-status` JSON |
-| History: recorded calls and session details | TUI Activity / Journal; `shin-ce service-status` JSON |
+| Journal / Response time details: detailed request telemetry and retained history summaries | TUI Activity / Response time with recent/history and traffic filters; `shin-ce service-status` JSON |
+| Journal / Shin requests: recorded calls and session details | TUI Activity / Journal; `shin-ce service-status` JSON |
 | Projects: add a folder and connect coding agents | `shin-ce project-add --root /absolute/path/to/project`; follow the reviewed client setup procedure for agent connections |
 | Storage inventory and cleanup plan | TUI Storage or `shin-ce storage-status` JSON; cleanup remains a separate command requiring the reported revision |
-| History / Agents: model usage | TUI Activity / Agents reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
+| Journal / Agent tokens: model usage | TUI Activity / Agents reads automatic enrolled-project collection; `--usage-file` remains an explicit override |
 
 The TUI shares Monitor's project-state and request-timing calculations. It uses
 native service status for observations and the existing read-only storage
@@ -359,14 +361,11 @@ an old snapshot usable again.
 
 ### Sessions and optional recovery notes (dev.45)
 
-Monitor opens these observations from **History** in its session journal.
-Earlier dark desktop previews retain **Activity → Journal**.
-The journal uses UTC
-timestamps, short opaque session IDs, a monospace font and vector icons. Success,
-error, unfinished and explicit host events have distinct colors and text labels.
-Session counters and details remain available below the journal; **What is
-recorded?** opens its interpretation and coverage notes. Empty sessions and
-unavailable data have separate explanations. See the [EN/RU native screenshots](images/README.md).
+Open **Journal** in Monitor for all projects, or **Project log** inside a project
+to filter its recorded calls. Rows show local time, outcome and recorded duration,
+with project and caller information where available. Select a row for its
+session ID, reported model and available session details. **What is recorded?**
+opens the coverage notes. See the [EN/RU native screenshots](images/README.md).
 
 The desktop journal shows up to **eight sessions × six recent events = 48 events**,
 including host markers and MCP calls. Its count and ceiling appear above the
@@ -382,9 +381,8 @@ require omitting session rows; the UI then reports that omission rather than an
 empty history. The response ceiling remains 60 KiB, independently of the
 48-event desktop display limit.
 
-Open **History** in the current desktop Monitor, or **Activity → Journal** in
-earlier dark Monitor previews and `shin-ce stats`. In the TUI, press `3`, then
-Left/Right or `[` / `]` to select Journal. The latest eight correlated sessions show context calls, errors,
+In `shin-ce stats`, press `3`, then Left/Right or `[` / `]` to select Journal
+under **Activity**. The latest eight correlated sessions show context calls, errors,
 caller task labels, recovery requests and recent invocation outcomes. Calls can
 supply `task_key` and `intent` (`explore`, `follow-up`, `context-recovery`); labels
 are optional and do not impose quotas or create inferred tasks.

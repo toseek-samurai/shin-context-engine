@@ -22,6 +22,7 @@
 #include <utility>
 #include <future>
 #include <cmath>
+#include <cstdlib>
 #include <limits>
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND, UINT, WPARAM, LPARAM);
@@ -78,6 +79,7 @@ void save_settings() {
 std::string platform_system_language() {
     return PRIMARYLANGID(GetUserDefaultUILanguage()) == LANG_RUSSIAN ? "ru" : "en";
 }
+bool platform_compact_view() { return compact; }
 void platform_save_language(int preference) {
     settings["language"] = preference; save_settings();
     PostMessageW(panel, language_message, 0, 0);
@@ -139,6 +141,12 @@ void platform_action(int code) {
     if (code == 80 || code == 83 || code == 84 || code == 85 || code == 116 || code == 112) { open_management(code); return; }
     if (code == 111 || code == 110 || code == 86) { open_updates(code!=111); return; }
     if (code == 39) { show_report(); return; }
+    if (code == compact_view) { compact = !compact; settings["compact"] = compact; save_settings(); show_panel(); return; }
+    if (code == open_release_notes || code == open_repository || code == open_licenses ||
+        code == open_exclusion_guide || code == open_homebrew_guide) {
+        ShellExecuteW(panel, L"open", wide(monitor_link(code)).c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+        return;
+    }
     if (code == 43) {
         ComPtr<IFileOpenDialog> dialog;
         checked(CoCreateInstance(CLSID_FileOpenDialog, nullptr, CLSCTX_INPROC_SERVER, IID_PPV_ARGS(&dialog)), shin::ui::tr("Cannot open model history picker."));
@@ -175,7 +183,11 @@ void platform_action(int code) {
         return;
     }
     UINT choice = 0;
-    if (code == 44) choice = menu_choice({{20,wide(shin::ui::tr("Now")).c_str()},{23,wide(shin::ui::tr("Last hour")).c_str()},{21,wide(shin::ui::tr("24 hours")).c_str()},{22,wide(shin::ui::tr("7 days")).c_str()}},
+    if (code == choose_language) {
+        const auto choices = language_choices();
+        choice = menu_choice({{113, wide(choices[0])}, {114, wide(choices[1])}, {115, wide(choices[2])}},
+            static_cast<UINT>(113 + language_preference));
+    } else if (code == 44) choice = menu_choice({{20,wide(shin::ui::tr("Now")).c_str()},{23,wide(shin::ui::tr("Last hour")).c_str()},{21,wide(shin::ui::tr("24 hours")).c_str()},{22,wide(shin::ui::tr("7 days")).c_str()}},
         history_hours == 0 ? 20 : history_hours == 1 ? 23 : history_hours == 24 ? 21 : 22);
     else if (code == 62) choice = menu_choice({{63,wide(shin::ui::tr("All queries")).c_str()},{64,wide(shin::ui::tr("Unclassified")).c_str()},{65,wide(shin::ui::tr("Diagnostic")).c_str()}}, static_cast<UINT>(63 + timing_filter));
     else if (code == 66) choice = menu_choice({{67,wide(shin::ui::tr("Recent requests in this run")).c_str()},{68,wide(shin::ui::tr("All retained history")).c_str()}}, timing_retained ? 68 : 67);
@@ -184,7 +196,8 @@ void platform_action(int code) {
 void draw_icon(Icon icon, ImVec2 origin, float size, ImVec4 color) {
     // Windows' own MDL2 icon font, not a second hand-drawn icon set.
     constexpr std::array<unsigned, static_cast<std::size_t>(Icon::count)> glyphs{
-        0xe73e,0xe72c,0xe823,0xe90f,0xe7ba,0xe708,0xe769,0xeb55,0xe897,0xe81c,0xe8ab,0xe964,0xe8c8,0xe8b7,0xe76b,0xe9d9,0xe712};
+        0xe73e,0xe72c,0xe823,0xe90f,0xe7ba,0xe708,0xe769,0xeb55,0xe897,0xe81c,0xe8ab,0xe964,0xe8c8,0xe8b7,0xe76b,0xe9d9,0xe712,
+        0xe713,0xe946};
     const unsigned cp = glyphs.at(static_cast<std::size_t>(icon));
     const char text[]{static_cast<char>(0xe0 | (cp >> 12)), static_cast<char>(0x80 | ((cp >> 6) & 63)), static_cast<char>(0x80 | (cp & 63)), 0};
     ImGui::GetWindowDrawList()->AddText(symbols, size, origin, ImGui::GetColorU32(color), text);
@@ -266,6 +279,7 @@ float dashboard_height_limit(float dpi) {
     return std::max(1.0f,std::min(compact?560.0f:680.0f,available));
 }
 float render_frame(const ViewState& state,bool automatic=false,float test_height_limit=0) {
+    poll_inline_disconnect();
     const float dpi = test_mode ? test_dpi_scale : static_cast<float>(GetDpiForWindow(panel))/96.0f;
     shin_imgui_win32_scale(dpi);
     ImGui_ImplDX11_NewFrame(); ImGui_ImplWin32_NewFrame();
@@ -278,6 +292,7 @@ float render_frame(const ViewState& state,bool automatic=false,float test_height
         float height_limit=(test_mode&&automatic)?dashboard_height_limit(dpi):0;
         if(test_mode&&automatic&&test_height_limit>0) height_limit=std::min(height_limit,test_height_limit);
         preferred_height=render(state,height_limit);
+        if (monitor) monitor->show_agent_access(dashboard_view == 1 && state.connected ? diagnostic_root : std::string{});
     }
     ImGui::Render();
     constexpr float clear[]{background.x,background.y,background.z,1};
@@ -353,7 +368,7 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
         case WM_KEYDOWN:
             if(wparam==VK_ESCAPE && !modal) {
                 if(management_page || updates_page) management_page=updates_page=false;
-                else selected.clear();
+                else if (!back_from_panel_page()) activate(32);
                 return 0;
             }
             if(wparam=='W' && (GetKeyState(VK_CONTROL)&0x8000)) {close_panel();return 0;}
@@ -382,11 +397,12 @@ LRESULT CALLBACK window_proc(HWND window,UINT message,WPARAM wparam,LPARAM lpara
                 show_panel();
             } else if(LOWORD(lparam)==WM_CONTEXTMENU) {
                 close_quick_panel();
-                const auto choice=menu_choice({{1,wide(shin::ui::tr("Open Monitor")).c_str()},{4,wide(shin::ui::tr("Check for updates…")).c_str()},{2,wide(shin::ui::tr("Compact view")).c_str()},{3,wide(shin::ui::tr("Quit Monitor")).c_str()}},compact?2:0);
+                const auto choice=menu_choice({{1,wide(shin::ui::tr("Open Monitor")).c_str()},{5,wide(shin::ui::tr("About Shin")).c_str()},{4,wide(shin::ui::tr("Check for updates…")).c_str()},{2,wide(shin::ui::tr("Compact view")).c_str()},{3,wide(shin::ui::tr("Quit Monitor")).c_str()}},compact?2:0);
                 if(choice==1) show_panel();
                 else if(choice==2) {compact=!compact;settings["compact"]=compact;save_settings();if(IsWindowVisible(window))show_panel();}
                 else if(choice==3) {capture_desktop_placement(true);DestroyWindow(window);}
                 else if(choice==4) open_updates();
+                else if(choice==5) { management_page=updates_page=false; activate(about); show_panel(); }
             } return 0;
         default: break;
         }
@@ -478,13 +494,14 @@ unsigned documentation_warning_render(ViewState state, const fs::path& output, I
         check_action_bounds(size);
         check_action_ids();
         const std::string title=shin::ui::tr("Ready with documentation warnings");
+        const std::string links=std::string(shin::ui::tr("Broken documentation links: "))+"2";
         const auto visible=std::find_if(ui_actions.begin(),ui_actions.end(),[&](const auto& action) {
-            return details ? action.chart==54 && action.label==title :
+            return details ? action.chart==55 && action.label.starts_with(links) :
                 action.chart==-1 && action.label.find(title)!=std::string::npos;
         });
         if(visible==ui_actions.end()) throw std::runtime_error("Documentation warning is not visible in Monitor.");
         if(details && (Json::parse(diagnostic_copy).at("documentation_warnings")!=2 ||
-            diagnostic_report_text.find(std::string(shin::ui::tr("Broken documentation links: "))+"2")==std::string::npos))
+            diagnostic_report_text.find(links)==std::string::npos))
             throw std::runtime_error("Monitor report lost the documentation warning count.");
         const auto name=std::string("docs-")+(language==shin::ui::Language::ru?"ru-":"en-")+
             std::to_string(static_cast<int>(size.x))+"x"+std::to_string(static_cast<int>(size.y))+(details?"-details.png":"-list.png");
@@ -749,7 +766,7 @@ void documentation_main_views(ViewState state,const fs::path& output) {
     SetWindowPos(panel,nullptr,0,0,520,680,SWP_NOZORDER|SWP_NOACTIVATE);
     const std::pair<int,const char*> views[]{{0,"overview"},{1,"projects"},{3,"settings"}};
     for(const auto language:{shin::ui::Language::en,shin::ui::Language::ru}) {
-        apply_language_preference(language==shin::ui::Language::ru?2:1);history_hours=1;graph_mode=2;selected.clear();project_page=0;
+        apply_language_preference(language==shin::ui::Language::ru?2:1);history_hours=1;selected.clear();project_page=0;
         for(const auto& [view,name]:views) {
             dashboard_view=view;monitor_motion=MonitorMotion{};
             SendMessageW(panel,WM_MOUSEMOVE,0,MAKELPARAM(-100,-100));
@@ -803,7 +820,7 @@ int render_test(const fs::path& output, bool shell) {
             check_action_ids();
             if(view==3 && size.y>=440) {
                 const auto reachable=reachable_settings_actions(state,size);
-                for(const int id:{83,85,110,111,112,113,114,115}) if(!reachable.contains(id))
+                for(const int id:std::array<int,6>{83,112,choose_language,compact_view,update_settings,history_settings}) if(!reachable.contains(id))
                     throw std::runtime_error("Settings action is unreachable: "+std::to_string(id));
             }
             save_frame(output/(std::to_string(++frames)+".png"));
@@ -911,7 +928,10 @@ int WINAPI wWinMain(HINSTANCE instance,HINSTANCE,PWSTR,int) {
             model_project=settings.value("model_project","");
             if(!test_mode) {
                 management.home=home;
-                monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")));
+                char** environment = nullptr;
+                _get_environ(&environment);
+                monitor=std::make_unique<Monitor>(home,fs::path(settings.value("usage_file","")),
+                    ClientSettingsLocation{current_executable_path().parent_path()/"shin-ce.exe", known_folder(FOLDERID_Profile), environment});
             }
         }
         // Render in logical coordinates into a physical-resolution framebuffer.

@@ -6,6 +6,7 @@
 #import <ServiceManagement/ServiceManagement.h>
 #include <climits>
 #include <cerrno>
+#include <crt_externs.h>
 #include <poll.h>
 #include <signal.h>
 #include <unistd.h>
@@ -128,6 +129,9 @@ std::string platform_system_language() {
         if (shin::ui::supported_language(preferred.UTF8String)) return preferred.UTF8String;
     return "en";
 }
+bool platform_compact_view() {
+    return [[NSUserDefaults standardUserDefaults] boolForKey:@"ShinCompact"];
+}
 void platform_save_language(int preference) {
 #if defined(SHIN_TRAY_LAYOUT_TEST)
     (void)preference;
@@ -170,12 +174,23 @@ void platform_action(int code) {
     case 40: [NSApp sendAction:@selector(chooseUsageProject:) to:NSApp.delegate from:nil]; break;
     case 43: [NSApp sendAction:@selector(chooseUsageFile:) to:NSApp.delegate from:nil]; break;
     case 44: [NSApp sendAction:@selector(choosePeriod:) to:NSApp.delegate from:nil]; break;
+    case choose_language:
+        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(chooseLanguage:) to:NSApp.delegate from:nil]; });
+        break;
     case 62: [NSApp sendAction:@selector(chooseTimingTraffic:) to:NSApp.delegate from:nil]; break;
     case 66: [NSApp sendAction:@selector(chooseTimingScope:) to:NSApp.delegate from:nil]; break;
     case 110: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(checkForUpdates:) to:NSApp.delegate from:nil]; }); break;
     case 111: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showLastUpdateResult:) to:NSApp.delegate from:nil]; }); break;
     case 112: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(openLoginSettings:) to:NSApp.delegate from:nil]; }); break;
     case 116: dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showAgentSetup:) to:NSApp.delegate from:nil]; }); break;
+    case compact_view:
+        dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(toggleCompact:) to:NSApp.delegate from:nil]; });
+        break;
+    case open_release_notes: case open_repository: case open_licenses: case open_exclusion_guide: case open_homebrew_guide: {
+        NSString* address = [NSString stringWithUTF8String:monitor_link(code).c_str()];
+        if (address) [NSWorkspace.sharedWorkspace openURL:[NSURL URLWithString:address]];
+        break;
+    }
     case 86:
         dispatch_async(dispatch_get_main_queue(), ^{ [NSApp sendAction:@selector(showUpdateOffer:) to:NSApp.delegate from:nil]; });
         break;
@@ -197,7 +212,8 @@ void load_icons(id<MTLDevice> device) {
     const std::array names{@"checkmark.circle", @"arrow.triangle.2.circlepath", @"clock",
         @"wrench.and.screwdriver", @"exclamationmark.triangle", @"moon.zzz",
         @"pause.circle", @"wifi.slash", @"questionmark.circle", @"clock.arrow.circlepath",
-        @"arrow.left.arrow.right", @"memorychip", @"doc.on.doc", @"folder", @"chevron.left", @"doc.text.magnifyingglass", @"ellipsis"};
+        @"arrow.left.arrow.right", @"memorychip", @"doc.on.doc", @"folder", @"chevron.left", @"doc.text.magnifyingglass", @"ellipsis",
+        @"gearshape", @"info.circle"};
     constexpr std::size_t pixels = 48;
     for (std::size_t i = 0; i < names.size(); ++i) {
         NSImage* image = [NSImage imageWithSystemSymbolName:names[i] accessibilityDescription:nil];
@@ -381,12 +397,13 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
     ImGui::NewFrame();
     float fitted_height = 0;
     try { fitted_height = render(snapshot, monitor_panel_height_limit); } catch (...) { ImGui::EndFrame(); return; }
+    monitor->show_agent_access(dashboard_view == 1 && snapshot.connected ? diagnostic_root : std::string{});
     const NSInteger frame_rate = monitor_motion.active ? 60 : 20;
     if (view.preferredFramesPerSecond != frame_rate) view.preferredFramesPerSecond = frame_rate;
     NSMutableArray* accessible = [NSMutableArray array];
     NSMutableSet* activeKeys = [NSMutableSet set];
     for (const auto& action : ui_actions) {
-        NSString* key = [NSString stringWithUTF8String:(action.project + ":" + std::to_string(action.chart)).c_str()];
+        NSString* key = [NSString stringWithUTF8String:(action.project + ":" + std::to_string(action.chart) + ":" + action.target).c_str()];
         if (!key) continue;
         [activeKeys addObject:key];
         ShinAction* element = self.actionElements[key];
@@ -402,14 +419,15 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
                                        action.size.x, action.size.y);
         element.accessibilityFrameInParentSpace = local;
         const auto project = action.project;
+        const auto target = action.target;
         const int chart = action.chart;
         const bool enabled = action.enabled;
         const bool informational = action.informational;
         element.activate = ^{
             if (!enabled || informational) return;
             if (chart >= 0) {
-                if (project.empty() || project == selected) activate(chart);
-            } else select_project(project);
+                if (project.empty() || project == selected) activate(chart, target);
+            } else activate(-1, project);
         };
         [accessible addObject:element];
     }
@@ -550,6 +568,7 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 - (void)chooseUsageProject:(id)sender;
 - (void)selectUsageProject:(NSMenuItem*)sender;
 - (void)choosePeriod:(id)sender;
+- (void)chooseLanguage:(id)sender;
 - (void)chooseTimingTraffic:(id)sender;
 - (void)chooseTimingScope:(id)sender;
 - (void)showSetup:(id)sender;
@@ -864,9 +883,8 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 
 - (void)disconnectProject:(id)sender {
     (void)sender;
-    if (diagnostic_root.empty()) { release_project_operation(); return; }
     NSString* root = [NSString stringWithUTF8String:diagnostic_root.c_str()];
-    if (!root) { release_project_operation(); return; }
+    if (!root.length) { release_project_operation(); return; }
     [self closePanel:nil];
     [self runCLI:@"detach" arguments:@[@"--root", root] completion:^(Json result, NSString* failure) {
         const bool ok = !failure && result.value("ok", false);
@@ -1260,7 +1278,11 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
     if (![NSFileManager.defaultManager fileExistsAtPath:[home stringByAppendingPathComponent:@"registry"]])
         dispatch_async(dispatch_get_main_queue(), ^{ [self showSetup:nil]; });
     NSString* usageFile = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinUsageFile"];
-    monitor = std::make_unique<Monitor>(std::string(home.fileSystemRepresentation), usageFile ? fs::path(usageFile.fileSystemRepresentation) : fs::path{});
+    const auto cli = [self nativeCLIPath];
+    monitor = std::make_unique<Monitor>(std::string(home.fileSystemRepresentation),
+        usageFile ? fs::path(usageFile.fileSystemRepresentation) : fs::path{},
+        ClientSettingsLocation{cli ? fs::path(cli.fileSystemRepresentation) : fs::path{},
+            fs::path(NSHomeDirectory().fileSystemRepresentation), *_NSGetEnviron()});
     NSString* usageProject = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinUsageSelection"];
     if (!usageProject) {
         NSString* old = [[NSUserDefaults standardUserDefaults] stringForKey:@"ShinUsageProject"];
@@ -1423,6 +1445,8 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* open = [menu addItemWithTitle:ui_text("Open panel") action:@selector(toggle:) keyEquivalent:@""];
         open.target = self;
+        NSMenuItem* information = [menu addItemWithTitle:ui_text("About Shin") action:@selector(selectView:) keyEquivalent:@""];
+        information.target = self; information.tag = about;
         NSMenuItem* compact = [menu addItemWithTitle:ui_text("Compact view") action:@selector(toggleCompact:) keyEquivalent:@""];
         compact.target = self;
         NSMenuItem* storage = [menu addItemWithTitle:ui_text("Storage…") action:@selector(openStorageWindow:) keyEquivalent:@""];
@@ -1454,7 +1478,10 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
     self.outsideMonitor = [NSEvent addGlobalMonitorForEventsMatchingMask:NSEventMaskLeftMouseDown | NSEventMaskRightMouseDown
         handler:^(NSEvent* event) { (void)event; [weakSelf closePanel:nil]; }];
     self.escapeMonitor = [NSEvent addLocalMonitorForEventsMatchingMask:NSEventMaskKeyDown handler:^NSEvent*(NSEvent* event) {
-        if (event.keyCode == 53 && weakSelf.popover.shown) { [weakSelf closePanel:nil]; return nil; }
+        if (event.keyCode == 53 && weakSelf.popover.shown) {
+            if (!back_from_panel_page()) [weakSelf closePanel:nil];
+            return nil;
+        }
         return event;
     }];
 }
@@ -1527,6 +1554,23 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
         item.state = history_hours == hours[i] ? NSControlStateValueOn : NSControlStateValueOff;
     }
     [menu popUpMenuPositioningItem:nil atLocation:NSMakePoint(self.content.view.bounds.size.width - 116, self.content.view.bounds.size.height - 138) inView:self.content.view];
+}
+- (void)chooseLanguage:(id)sender {
+    (void)sender;
+    if (!self.popover.shown || dashboard_view != 3 || settings_view != SettingsPage::overview) return;
+    const auto control = std::find_if(ui_actions.begin(), ui_actions.end(), [](const auto& action) { return action.chart == choose_language; });
+    if (control == ui_actions.end()) return;
+    NSMenu* menu = [[NSMenu alloc] initWithTitle:ui_text("Language")];
+    const auto choices = language_choices();
+    for (int i = 0; i < static_cast<int>(choices.size()); ++i) {
+        NSMenuItem* item = [menu addItemWithTitle:[NSString stringWithUTF8String:choices.at(i)] action:@selector(selectView:) keyEquivalent:@""];
+        item.tag = 113 + i; item.target = self;
+        item.state = i == language_preference ? NSControlStateValueOn : NSControlStateValueOff;
+    }
+    NSView* view = self.content.view;
+    const auto bottom = control->origin.y + control->size.y;
+    const NSPoint anchor = NSMakePoint(control->origin.x, view.isFlipped ? bottom : view.bounds.size.height - bottom);
+    [menu popUpMenuPositioningItem:nil atLocation:anchor inView:view];
 }
 - (void)chooseTimingTraffic:(id)sender {
     (void)sender;
@@ -1610,6 +1654,23 @@ static float monitor_panel_height_limit = 680, monitor_panel_fitted_height = 0;
 }
 @end
 
+namespace {
+void platform_disconnect(const DisconnectRequest& request) {
+    NSString* root = [NSString stringWithUTF8String:request.root.c_str()];
+    const auto ticket = request.ticket;
+    dispatch_async(dispatch_get_main_queue(), ^{
+        ShinApp* app = (ShinApp*)NSApp.delegate;
+        if (!root.length || ![app isKindOfClass:ShinApp.class]) {
+            complete_panel_disconnect(ticket, Json());
+            return;
+        }
+        [app runCLI:@"detach" arguments:@[@"--root", root] completion:^(Json reply, NSString* failure) {
+            complete_panel_disconnect(ticket, reply, failure.UTF8String ? failure.UTF8String : "");
+        }];
+    });
+}
+}
+
 #ifdef SHIN_TRAY_UPDATE_WINDOW_TEST
 #include "updates_focus_test.inc"
 #elif defined(SHIN_TRAY_LAYOUT_TEST)
@@ -1657,7 +1718,10 @@ int main(int argc, char** argv) {
         NSMenu* menu = [[NSMenu alloc] init];
         NSMenuItem* item = [[NSMenuItem alloc] init];
         NSMenu* application = [[NSMenu alloc] init];
-        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("History"), ui_text("Settings"),
+        NSMenuItem* information = [application addItemWithTitle:ui_text("About Shin") action:@selector(selectView:) keyEquivalent:@""];
+        information.target = delegate; information.tag = about;
+        [application addItem:[NSMenuItem separatorItem]];
+        NSArray<NSString*>* titles = @[ui_text("Overview"), ui_text("Projects"), ui_text("Journal"), ui_text("Settings"),
             ui_text("Now"), ui_text("24 hours"), ui_text("7 days")];
         for (NSUInteger i = 0; i < titles.count; ++i) {
             NSMenuItem* choice = [application addItemWithTitle:titles[i] action:@selector(selectView:) keyEquivalent:@""];

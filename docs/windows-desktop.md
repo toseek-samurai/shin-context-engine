@@ -11,10 +11,10 @@ interactive desktop and installation lifecycle checks remain separate proof.
 
 ## Download a preview
 
-The [documented dev.134 preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.134) provides these Windows downloads.
+The [documented dev.135 preview](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.135) provides these Windows downloads.
 
-- `shin-desktop-2.0.5-dev.134-windows-AMD64.msi` for desktop installation.
-- `shin-desktop-2.0.5-dev.134-windows-AMD64.zip` for portable use.
+- `shin-desktop-2.0.5-dev.135-windows-AMD64.msi` for desktop installation.
+- `shin-desktop-2.0.5-dev.135-windows-AMD64.zip` for portable use.
 - The matching `.sha256` file for each package. In PowerShell, compare it with
   `Get-FileHash -Algorithm SHA256 .\path\to\downloaded-package` before use.
 

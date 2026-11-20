@@ -176,8 +176,8 @@ the [reviewed CLI workflow](#automatic-setup). To install or update the skill,
 run `shin-ce claude-skill`, then `shin-ce claude-skill --revision REVISION`.
 Use `--config-dir DIR` for an explicit Claude Code home.
 
-The published dev.134 preview supports manual Claude Code setup. Run the
-following from an enrolled project using the installed, PATH-visible adapter:
+For dev.134 or earlier, run the following from an enrolled project using the
+installed, PATH-visible adapter:
 
 ```sh
 claude mcp add --transport stdio --scope local shin -- "$(command -v shin-mcp)" --root "$(pwd -P)"

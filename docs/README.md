@@ -2,8 +2,8 @@
 
 ## Current preview
 
-The documented download baseline is [dev.134](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.134).
-It contains Core **2.0.5-dev.37** and Observer/CLI/MCP/Monitor **2.0.5-dev.134**.
+The documented download baseline is [dev.135](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.135).
+It contains Core **2.0.5-dev.37** and Observer/CLI/MCP/Monitor **2.0.5-dev.135**.
 Its macOS kit, Windows ZIP/MSI and Ubuntu 24.04 x86_64 terminal archive have each
 passed their platform's guarded publication checks. Each download group has a
 `shin-preview-PLATFORM.json` receipt binding its files to the qualified source,
@@ -11,6 +11,9 @@ CI run, attempt and SHA-256 values.
 Core and Observer are versioned independently; `shin-context --version` reports
 the generator, and `shin-ce --version` reports both component versions.
 There is no stable public release yet.
+
+Monitor can [connect Claude Code and install its optional skill](native-client-setup.md#claude-code).
+The same reviewed setup is available from the CLI on all three platforms.
 
 The native packages use RE2-based secret scanning. Shin reports the triggering
 rules at each hidden line range and keeps surrounding text available.

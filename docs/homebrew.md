@@ -35,6 +35,8 @@ monitor. Both interfaces support English and Russian. Use Monitor's project setu
 to select detected agents and connect them, or follow the
 [CLI connection procedure](native-client-setup.md#automatic-setup).
 Existing agent settings are preserved by the native review/apply flow.
+[Claude Code setup](native-client-setup.md#claude-code) is available with the
+dev.135 formula or newer.
 
 The fully qualified install command selects the individual formula from the
 project's tap. See [Homebrew's tap trust guide](https://docs.brew.sh/Tap-Trust).

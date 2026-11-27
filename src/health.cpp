@@ -1,4 +1,5 @@
 #include "context_internal.h"
+#include "generation_admission.h"
 #include "project_files.h"
 #include "compact_terms.h"
 #include "generated_snapshot.h"
@@ -1137,6 +1138,31 @@ static void scan_doctor_source_secrets(const RuntimeOptions& options, DoctorResu
         }
     }
     std::optional<bool> projection_matches;
+    const auto record_hit = [&](const std::string& path, const std::string& kind, const std::string& content_hash) {
+        ++result.counts.secret_findings;
+        const auto binding = redacted.find(path);
+        if (binding != redacted.end() && binding->second.first == content_hash && binding->second.second == kind) {
+            // A manifest label alone cannot establish that the searchable
+            // artifacts contain only the safe projection.
+            if (!projection_matches) projection_matches = published_projection_matches(options);
+            if (*projection_matches) {
+                ++result.counts.redacted_files;
+                add_doctor_issue(result.issues, result.counts, "info", "source-redacted", path, 0,
+                    "Sensitive source lines are hidden. Other lines remain available to retrieval.", kind);
+                return;
+            }
+        }
+        add_doctor_issue(result.issues, result.counts, "error", "secret-like-source-content", path, 0,
+            "The current publication has no verified redaction for this finding. Value redacted.", kind);
+    };
+    if (options.profile.automatic_project_files && options.generation_admission) {
+        if (const auto* audit = options.generation_admission->doctor_source_audit(options)) {
+            result.counts.secret_scan_excluded_files += audit->excluded_files;
+            for (const auto& finding : audit->findings)
+                record_hit(finding.path, finding.rule, finding.content_hash);
+            return;
+        }
+    }
     for (const std::string& path :
          doctor_secret_scan_paths(options.profile, options.root, result.counts.secret_scan_excluded_files)) {
         const fs::path full_path = options.root / path;
@@ -1151,20 +1177,7 @@ static void scan_doctor_source_secrets(const RuntimeOptions& options, DoctorResu
         }
         const auto hit = source_range_secret(content, path);
         if (hit.found) {
-            ++result.counts.secret_findings;
-            if (binding != redacted.end() && binding->second == Binding{fnv1a64(content), hit.kind}) {
-                // A manifest label alone cannot establish that the searchable
-                // artifacts contain only the safe projection.
-                if (!projection_matches) projection_matches = published_projection_matches(options);
-                if (*projection_matches) {
-                    ++result.counts.redacted_files;
-                    add_doctor_issue(result.issues, result.counts, "info", "source-redacted", path, 0,
-                        "Sensitive source lines are hidden. Other lines remain available to retrieval.", hit.kind);
-                    continue;
-                }
-            }
-            add_doctor_issue(result.issues, result.counts, "error", "secret-like-source-content", path, 0,
-                "The current publication has no verified redaction for this finding. Value redacted.", hit.kind);
+            record_hit(path, hit.kind, binding != redacted.end() ? fnv1a64(content) : std::string{});
             continue;
         }
         if (automatic || binding != redacted.end()) continue;

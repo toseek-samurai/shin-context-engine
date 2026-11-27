@@ -580,7 +580,10 @@ Json qualified_readiness(core::RuntimeOptions& options, const std::vector<std::s
         const auto& snapshot = *observed;
         if (saved->at("snapshot_id") == snapshot.snapshot_id &&
             saved->at("manifest_sha256") == digest(snapshot.manifest_content)) {
-            options.generation_admission = m.measure("qualification_generation_ms", [&] { return core::GenerationAdmission::reuse(options, saved->at("generation_fingerprint"), &snapshot, membership); });
+            options.generation_admission = m.measure("qualification_generation_ms", [&] {
+                return core::GenerationAdmission::reuse(options, saved->at("generation_fingerprint"),
+                    &snapshot, membership, reader_snapshot != nullptr);
+            });
           if (options.generation_admission) {
             m.values["qualification_reused_output_bytes"] = options.generation_admission->reused_output_bytes();
             m.values["qualification_reused_output_files"] = options.generation_admission->reused_output_files();

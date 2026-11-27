@@ -462,6 +462,56 @@ void response_budget(const LocalProjectRequest& request) {
     check(!session.reuse(options, workspace, "response-budget", unused) && session.weight() == 0,
         "idle diagnostics exceeded the original response budget");
 }
+void compact_metadata_and_reader_audit(const fs::path& base, const fs::path& profiles) {
+    namespace core = shin::context;
+    const auto request = project(base, profiles, "shared-source-observation", 37);
+    const auto workspace = request.home / "projects" / digest(request.root.string());
+    LocalRefreshWorker worker;
+    const std::string sample = "/local/warehouse/v2/manifest";
+    write(request.root / "quoted.cpp", "int orchardWitness() { return 27; }\nauto " +
+        std::string("se") + "cret = client.fetch(\"" + sample + "\",\n                           3);\n" +
+        "const char* address = \"" + sample + "\";\nint cedarWitness() { return 31; }\n");
+    (void)warm(worker, request);
+    core::RuntimeOptions options;
+    options.root = request.root;
+    options.out_root = workspace / "index";
+    options.profile_dir = profiles;
+    options.profile = core::make_profile("generic-source", profiles);
+    const auto lock = core::lock_index_for_read(options.out_root);
+    const auto ordinary = core::inspect_generated_kb_health(options, true);
+    options.generation_admission = core::GenerationAdmission::reuse(
+        options, core::generation_fingerprint(options), nullptr, {}, true);
+    check(options.generation_admission != nullptr, "reader could not admit an unchanged qualified input");
+    const auto* audit = options.generation_admission->doctor_source_audit(options);
+    check(audit != nullptr, "reader did not capture a shared source audit");
+    if (audit->scanned_files != 3 || audit->findings.size() != 1)
+        throw std::runtime_error("shared source audit coverage: " + std::to_string(audit->scanned_files) +
+            " files, " + std::to_string(audit->findings.size()) + " findings");
+    const auto shared = core::inspect_generated_kb_health(options, true);
+    check(ordinary.counts.secret_findings == 1 && ordinary.counts.redacted_files == 1 &&
+        shared.counts.secret_findings == ordinary.counts.secret_findings &&
+        shared.counts.redacted_files == ordinary.counts.redacted_files &&
+        shared.counts.errors == ordinary.counts.errors, "shared source audit changed doctor verdict");
+    check(std::any_of(shared.issues.begin(), shared.issues.end(), [](const auto& issue) {
+        return issue.id == "source-redacted" && issue.path == "quoted.cpp" && issue.reason == "credential-assignment";
+    }), "shared source audit changed the redaction diagnostic");
+    options.generation_admission->verify_content(options);
+    const auto compact = options.generation_admission->idle_checkpoint(digest);
+    check(compact && compact->retained_bytes() < 8192, "small checkpoint retained unexpected metadata");
+    compact->verify(options);
+    // Check the actual disk fence independently of a delivered watcher event.
+    write(options.root / "new.cpp", "int anotherMember() { return 19; }\n");
+    try { compact->verify(options); }
+    catch (const core::CliError& error) {
+        check(error.code() == "generation-admission-changed", "compact checkpoint lost its membership fence");
+        const auto changed = core::GenerationAdmission::reuse(
+            options, options.generation_admission->fingerprint(), nullptr, {}, true);
+        check(!changed, "reader reused a qualification for a different corpus");
+        return;
+    }
+    throw std::runtime_error("compact checkpoint accepted a new file without watcher evidence");
+}
+
 void persistent_process_and_suspend_boundary(const LocalProjectRequest& request, const fs::path& base) {
     double slept = 0;
     const auto executable = base / "refresh-worker.exe";
@@ -546,6 +596,11 @@ int main(int argc, char** argv) {
         if (argc == 2 && std::string_view(argv[1]) == "_refresh-worker") return shin::observer::local_refresh_worker();
         if (argc != 2 && argc != 3) return 2;
         Fixture fixture; const auto profiles = fs::canonical(fs::path(argv[1]));
+        if (argc == 3 && std::string_view(argv[2]) == "--metadata-audit") {
+            stage = "compacted metadata and shared source audit";
+            compact_metadata_and_reader_audit(fixture.path, profiles);
+            return 0;
+        }
         if (argc == 3 && std::string_view(argv[2]) == "--descriptor-pressure") {
             descriptor_pressure(fixture.path, profiles);
             return 0;

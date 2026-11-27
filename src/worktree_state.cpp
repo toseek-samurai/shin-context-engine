@@ -1,6 +1,8 @@
 #include "context_internal.h"
 #include "worktree_state.h"
 #include "project_files.h"
+#include "source_read.h"
+#include <ranges>
 
 namespace shin::context {
 namespace {
@@ -96,9 +98,10 @@ std::map<std::string, SourceState> current_document_sources(const RuntimeOptions
 
 std::map<std::string, SourceState> current_source_fact_sources(
     const RuntimeOptions& options,
-    const SourceFactPathResult& paths) {
+    const SourceFactPathResult& paths,
+    DoctorSourceAudit* audit) {
     std::vector<SourceState> states(paths.paths.size());
-    parallel_for_indices(paths.paths.size(), [&](std::size_t index) {
+    const auto observe = [&](std::size_t index) {
         const std::string& path = paths.paths[index];
         const fs::path full_path = options.root / path;
         const FileMetadata metadata = source_file_metadata(full_path, "read-source-metadata");
@@ -108,10 +111,28 @@ std::map<std::string, SourceState> current_source_fact_sources(
             states[index] = {path, "skipped-large", "", metadata.byte_count, metadata, true};
             return;
         }
-        const FileFingerprint fingerprint = source_fingerprint_file(full_path, "read-source-content");
+        FileFingerprint fingerprint;
+        if (audit && !path_matches_any_profile_prefix(path, options.profile.secret_scan_exclude_prefixes)) {
+            const auto content = read_project_text(options.root, path,
+                static_cast<std::size_t>(options.profile.source_fact_max_file_bytes));
+            if (content.size() != metadata.byte_count ||
+                source_file_metadata(full_path, "verify-source-metadata") != metadata)
+                throw_source_changed_during_verification("verify-source-metadata");
+            fingerprint = {metadata, fnv1a64(content)};
+            const auto hit = source_range_secret(content, path);
+            if (hit.found) audit->findings.push_back({path, fingerprint.content_hash, hit.kind});
+            ++audit->scanned_files;
+        } else {
+            fingerprint = source_fingerprint_file(full_path, "read-source-content");
+            if (audit) ++audit->excluded_files;
+        }
         states[index] = {path, "scanned", fingerprint.content_hash,
                          fingerprint.metadata.byte_count, fingerprint.metadata, true};
-    });
+    };
+    // Like the automatic doctor scan, retain at most one full source body.
+    if (audit) {
+        for (std::size_t i = 0; i < paths.paths.size(); ++i) observe(i);
+    } else parallel_for_indices(paths.paths.size(), observe);
     std::map<std::string, SourceState> result;
     for (SourceState& state : states) {
         result.emplace(state.path, std::move(state));
@@ -119,22 +140,39 @@ std::map<std::string, SourceState> current_source_fact_sources(
     return result;
 }
 
+struct Selection {
+    std::vector<std::string> documents;
+    SourceFactPathResult facts;
+    ProjectIgnoreBinding exclusions;
+};
+
+Selection select_worktree(const RuntimeOptions& options, const char* operation) {
+    if (options.profile.automatic_project_files) {
+        auto project = ProjectFiles::scan(options.profile, options.root);
+        return {std::move(project.documents), std::move(project.sources), std::move(project.exclusions)};
+    }
+    auto documents = observe_source(operation, [&] { return enumerate_source_paths(options.profile, options.root); });
+    return {std::move(documents), enumerate_source_fact_paths(options.profile, options.root), {}};
+}
+
+Selection observed_selection(const WorktreeInventory& inventory) {
+    Selection result;
+    result.documents.reserve(inventory.documents.size());
+    result.facts.paths.reserve(inventory.source_facts.size());
+    for (const auto& entry : inventory.documents) result.documents.push_back(entry.first);
+    for (const auto& entry : inventory.source_facts) result.facts.paths.push_back(entry.first);
+    result.facts.candidate_file_count = inventory.source_fact_candidate_files;
+    result.facts.capped_file_count = inventory.source_fact_capped_files;
+    return result;
+}
+
 void verify_inventory_stable(const RuntimeOptions& options,
                              const CurrentInventory& inventory,
-                             const std::vector<std::string>& document_paths,
-                             const SourceFactPathResult& source_fact_paths) {
-    const auto project = options.profile.automatic_project_files
-        ? std::optional(ProjectFiles::scan(options.profile, options.root)) : std::nullopt;
-    const auto after_documents = project ? project->documents : observe_source("enumerate-source-entry", [&] {
-        return enumerate_source_paths(options.profile, options.root);
-    });
-    if (after_documents != document_paths) {
-        throw_source_changed_during_verification("enumerate-source-entry");
-    }
-    const SourceFactPathResult after = project ? project->sources : enumerate_source_fact_paths(options.profile, options.root);
-    if (after.paths != source_fact_paths.paths ||
-        after.candidate_file_count != source_fact_paths.candidate_file_count ||
-        after.capped_file_count != source_fact_paths.capped_file_count) {
+                             const Selection& before) {
+    const auto after = select_worktree(options, "enumerate-source-entry");
+    if (after.documents != before.documents || after.facts.paths != before.facts.paths ||
+        after.facts.candidate_file_count != before.facts.candidate_file_count ||
+        after.facts.capped_file_count != before.facts.capped_file_count) {
         throw_source_changed_during_verification("enumerate-source-entry");
     }
     require_worktree_metadata_stable(options, inventory);
@@ -159,27 +197,69 @@ void verify_source_metadata(const RuntimeOptions& options, const WorktreeInvento
     verify_states(inventory.source_facts);
 }
 
-CurrentInventory load_current_inventory(const RuntimeOptions& options) {
+CurrentInventory load_current_inventory(const RuntimeOptions& options, DoctorSourceAudit* audit = nullptr) {
     CurrentInventory inventory;
-    const auto project = options.profile.automatic_project_files
-        ? std::optional(ProjectFiles::scan(options.profile, options.root)) : std::nullopt;
-    const auto document_paths = project ? project->documents : observe_source("enumerate-source-root", [&] {
-        return enumerate_source_paths(options.profile, options.root);
-    });
-    const auto source_fact_paths = project ? project->sources : enumerate_source_fact_paths(options.profile, options.root);
-    inventory.source_facts = current_source_fact_sources(options, source_fact_paths);
-    if (project) {
-        inventory.exclusions = project->exclusions;
-        for (const auto& path : document_paths) {
+    const auto selection = select_worktree(options, "enumerate-source-root");
+    inventory.source_facts = current_source_fact_sources(options, selection.facts, audit);
+    if (options.profile.automatic_project_files) {
+        inventory.exclusions = selection.exclusions;
+        for (const auto& path : selection.documents) {
             auto document = inventory.source_facts.at(path);
             document.status.clear();
             inventory.documents.emplace(path, std::move(document));
         }
-    } else inventory.documents = current_document_sources(options, document_paths);
-    inventory.source_fact_candidate_files = source_fact_paths.candidate_file_count;
-    inventory.source_fact_capped_files = source_fact_paths.capped_file_count;
-    verify_inventory_stable(options, inventory, document_paths, source_fact_paths);
+    } else inventory.documents = current_document_sources(options, selection.documents);
+    inventory.source_fact_candidate_files = selection.facts.candidate_file_count;
+    inventory.source_fact_capped_files = selection.facts.capped_file_count;
+    verify_inventory_stable(options, inventory, selection);
     return inventory;
+}
+
+template <typename Documents, typename Facts, typename ReadMetadata>
+std::string metadata_payload(const Documents& documents, const Facts& facts,
+                             const ProjectIgnoreBinding& exclusions, int candidates, int capped, ReadMetadata read) {
+    constexpr std::size_t limit = 4 * 1024 * 1024;
+    std::string out;
+    const auto number = [&](const auto value) {
+        out.append(reinterpret_cast<const char*>(&value), sizeof(value));
+    };
+    const auto path = [&](const std::string& value) {
+        number(value.size());
+        out.append(value);
+    };
+    const auto fits = [&](std::size_t text_bytes, std::size_t field_bytes) {
+        const auto remaining = limit - out.size();
+        return field_bytes <= remaining && text_bytes <= remaining - field_bytes;
+    };
+    if (!fits(exclusions.revision.size(), 2 * sizeof(int) + 2 * sizeof(std::size_t))) return {};
+    number(candidates);
+    number(capped);
+    path(exclusions.revision);
+    number(exclusions.directories.size());
+    for (const auto& directory : exclusions.directories) {
+        if (!fits(directory.size(), sizeof(std::size_t))) return {};
+        path(directory);
+    }
+    auto doc = documents.begin();
+    auto fact = facts.begin();
+    while (doc != documents.end() || fact != facts.end()) {
+        const bool document = doc != documents.end() && (fact == facts.end() || *doc <= *fact);
+        const bool source = fact != facts.end() && (doc == documents.end() || *fact <= *doc);
+        const auto& name = document ? *doc : *fact;
+        if (document) ++doc;
+        if (source) ++fact;
+        constexpr auto fields = sizeof(std::size_t) + sizeof(unsigned char) + sizeof(FileMetadata);
+        if (!fits(name.size(), fields)) return {};
+        const auto metadata = read(name, document, source);
+        number(static_cast<unsigned char>((document ? 1 : 0) | (source ? 2 : 0)));
+        path(name);
+        number(metadata.byte_count);
+        number(metadata.modified_ticks);
+        number(metadata.changed_ticks);
+        number(metadata.device_id);
+        number(metadata.file_id);
+    }
+    return out;
 }
 
 bool source_state_changed(const SourceState& baseline,
@@ -304,8 +384,8 @@ int manifest_nonnegative_int(const Json& object,
 
 }  // namespace
 
-WorktreeInventory observe_worktree(const RuntimeOptions& options) {
-    return load_current_inventory(options);
+WorktreeInventory observe_worktree(const RuntimeOptions& options, DoctorSourceAudit* audit) {
+    return load_current_inventory(options, audit);
 }
 
 void require_worktree_metadata_stable(const RuntimeOptions& options, const WorktreeInventory& inventory) {
@@ -313,19 +393,34 @@ void require_worktree_metadata_stable(const RuntimeOptions& options, const Workt
 }
 
 void require_worktree_stable(const RuntimeOptions& options, const WorktreeInventory& inventory) {
-    std::vector<std::string> documents;
-    SourceFactPathResult facts;
-    for (const auto& [path, state] : inventory.documents) {
-        (void)state;
-        documents.push_back(path);
-    }
-    for (const auto& [path, state] : inventory.source_facts) {
-        (void)state;
-        facts.paths.push_back(path);
-    }
-    facts.candidate_file_count = inventory.source_fact_candidate_files;
-    facts.capped_file_count = inventory.source_fact_capped_files;
-    verify_inventory_stable(options, inventory, documents, facts);
+    verify_inventory_stable(options, inventory, observed_selection(inventory));
+}
+
+std::string worktree_metadata_payload(const WorktreeInventory& inventory) {
+    return metadata_payload(std::views::keys(inventory.documents), std::views::keys(inventory.source_facts),
+        inventory.exclusions, inventory.source_fact_candidate_files, inventory.source_fact_capped_files,
+        [&](const std::string& path, bool document, bool source) {
+            const auto& state = source ? inventory.source_facts.at(path) : inventory.documents.at(path);
+            if (!state.has_metadata) throw_source_changed_during_verification("verify-source-metadata");
+            if (document && source) {
+                const auto& other = inventory.documents.at(path);
+                if (!other.has_metadata || other.metadata != state.metadata)
+                    throw_source_changed_during_verification("verify-source-metadata");
+            }
+            return state.metadata;
+        });
+}
+
+WorktreeMetadataObservation observe_worktree_metadata(const RuntimeOptions& options) {
+    auto selection = select_worktree(options, "enumerate-source-entry");
+    auto payload = metadata_payload(selection.documents, selection.facts.paths, selection.exclusions,
+        selection.facts.candidate_file_count, selection.facts.capped_file_count,
+        [&](const std::string& path, bool, bool) {
+            return source_file_metadata(options.root / path, "verify-source-metadata");
+        });
+    if (options.profile.automatic_project_files && !selection.exclusions.current(options.root))
+        throw_source_changed_during_verification("verify-project-exclusions");
+    return {std::move(payload), std::move(selection.facts.paths)};
 }
 
 Json worktree_identity(const RuntimeOptions& options, const WorktreeInventory& inventory) {

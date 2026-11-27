@@ -1,5 +1,6 @@
 #pragma once
 #include "local_project.h"
+#include <algorithm>
 #include <chrono>
 #include <map>
 
@@ -15,7 +16,12 @@ public:
     Json execute(const Json& payload, const std::function<bool()>& stopped,
                  const std::function<void(const Json&)>& progress = {});
 private:
-    struct Entry { std::shared_ptr<LocalRefreshSession> session; std::uint64_t used = 0; };
+    struct Entry {
+        std::shared_ptr<LocalRefreshSession> session;
+        std::uint64_t used = 0;
+        double full_ms = 0, idle_ms = 0;
+        double saved_ms() const { return std::max(0.0, full_ms - idle_ms); }
+    };
     std::map<std::string, Entry> sessions_;
     std::uint64_t sequence_ = 0;
 };

@@ -22,6 +22,9 @@ public:
     static std::shared_ptr<const GeneratedSnapshot> load(
         RuntimeOptions options, SnapshotLoadLimits limits = {},
         const VerifiedSnapshot* observation = nullptr);
+    // Adopt an observation owned by the reader preparation without duplicating the manifest.
+    static std::shared_ptr<const GeneratedSnapshot> load(
+        RuntimeOptions options, SnapshotLoadLimits limits, VerifiedSnapshot&& observation);
 
     const RuntimeOptions& options() const noexcept { return options_; }
     const Json& manifest() const noexcept { return manifest_; }
@@ -31,6 +34,9 @@ public:
     bool contains(const fs::path& path) const;
 
 private:
+    static std::shared_ptr<const GeneratedSnapshot> load_impl(
+        RuntimeOptions options, SnapshotLoadLimits limits, const VerifiedSnapshot* observation,
+        VerifiedSnapshot* owned);
     GeneratedSnapshot();
     struct Backing;
     std::string relative_key(const fs::path& path) const;

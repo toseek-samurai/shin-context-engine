@@ -112,7 +112,10 @@ struct LocalQuerySession::Impl {
         if (!changes->healthy()) throw Error("local-watcher-unavailable", "Reactive source observation could not start.");
         epoch = changes->sequence();
         stage("reader-snapshot");
-        snapshot = core::GeneratedSnapshot::load(options, {config.max_snapshot_bytes, config.max_file_bytes}, qualification.snapshot);
+        const core::SnapshotLoadLimits limits{config.max_snapshot_bytes, config.max_file_bytes};
+        snapshot = qualification.snapshot
+            ? core::GeneratedSnapshot::load(options, limits, std::move(*qualification.snapshot))
+            : core::GeneratedSnapshot::load(options, limits);
         options.generated_snapshot = snapshot;
         if (options.profile.automatic_project_files) {
             exclusions = core::published_project_exclusions(options.profile, snapshot->manifest());

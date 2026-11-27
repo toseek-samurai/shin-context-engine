@@ -231,22 +231,52 @@ Json LocalRefreshWorker::execute(const Json& payload, const std::function<bool()
         evict_oldest();
     auto& entry = sessions_[key];
     entry.used = ++sequence_;
+    const auto started = Clock::now();
     auto result = execute_local_worker_refresh(payload, stopped, progress, &entry.session);
+    const bool hit = result.value("refresh_work", Json::object()).value("idle_checkpoint_hit", false);
     const auto* miss = entry.session ? entry.session->take_miss_reason() : "not-eligible";
+    const char* dropped = entry.session ? entry.session->dropped() : nullptr;
     if (!result.value("ok", false) || result.value("phase", "") != "current") entry.session.reset();
-    const char* dropped = nullptr;
     if (entry.session) {
-        std::size_t weight = 0;
-        for (const auto& [scope, value] : sessions_) { (void)scope; if (value.session) weight += value.session->weight(); }
+        const auto weight = entry.session->weight();
+        const auto elapsed = std::chrono::duration<double, std::milli>(Clock::now() - started).count();
+        if (weight != 0) {
+            auto& estimate = hit ? entry.idle_ms : entry.full_ms;
+            estimate = estimate == 0 ? elapsed : 0.75 * estimate + 0.25 * elapsed;
+        }
         if (!local_refresh_descriptor_headroom(kRefreshActiveDescriptorReserve)) dropped = "descriptor-budget";
-        else if (weight > 8192) dropped = "metadata-budget";
-        // A sequential sweep larger than the cache would otherwise evict every
-        // checkpoint before its next use. Keep the admitted working set and
-        // discard this visit's optional checkpoint when it does not fit.
+        else if (weight > kRefreshCheckpointBytes) dropped = "metadata-budget";
+        else if (weight != 0 && !hit) {
+            std::size_t retained = weight;
+            std::vector<Entry*> others;
+            for (auto& [scope, value] : sessions_) {
+                if (scope == key || !value.session || value.session->weight() == 0) continue;
+                retained += value.session->weight();
+                others.push_back(&value);
+            }
+            if (retained > kRefreshCheckpointBytes) {
+                std::sort(others.begin(), others.end(), [](const Entry* a, const Entry* b) {
+                    const auto value = [](const Entry* e) {
+                        return e->saved_ms() / static_cast<double>(e->session->weight());
+                    };
+                    return std::pair{value(a), a->used} < std::pair{value(b), b->used};
+                });
+                double replaced_ms = 0;
+                auto end = others.begin();
+                while (retained > kRefreshCheckpointBytes && end != others.end()) {
+                    retained -= (*end)->session->weight();
+                    replaced_ms += (*end)->saved_ms();
+                    ++end;
+                }
+                // A serial sweep must not evict the whole working set in turn.
+                if (entry.saved_ms() > 1.1 * replaced_ms) {
+                    for (auto it = others.begin(); it != end; ++it) (*it)->session.reset();
+                } else dropped = "metadata-budget";
+            }
+        }
         if (dropped) entry.session.reset();
     }
     while (sessions_.size() > kLocalServiceProjectLimit) evict_oldest();
-    const bool hit = result.value("refresh_work", Json::object()).value("idle_checkpoint_hit", false);
     // Optional diagnostics leave room inside the existing bounded refresh view.
     if (result.value("ok", false) && (!hit || dropped) && result.dump(2).size() + 192 <= 65536) {
         auto& work = result["refresh_work"];

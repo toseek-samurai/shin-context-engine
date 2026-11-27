@@ -17,10 +17,26 @@ std::vector<std::string> fact_paths(const WorktreeInventory& sources) {
 void changed() {
     throw_index_error("generation-admission-changed", "Qualified generation inputs or output changed during this request.");
 }
+
+void verify_generation_binding(const RuntimeOptions& options, const fs::path& root, const fs::path& out_root,
+                               const std::string& profile_hash) {
+    if (root != options.root || out_root != options.out_root ||
+        profile_hash != profile_config_hash(options.profile) ||
+        profile_hash != profile_config_hash(make_profile(options.profile.id, options.profile_dir))) changed();
+}
+
+template <typename Links>
+void verify_links(const RuntimeOptions& options, const Links& links) {
+    for (const auto& [path, exists] : links)
+        if (observed_link_exists(options.profile.automatic_project_files, options.root, path) != exists) changed();
+}
+
 std::size_t verify_files(const std::map<fs::path, FileFingerprint>& files) {
-    std::vector<std::pair<fs::path, FileFingerprint>> selected(files.begin(), files.end());
+    std::vector<const std::map<fs::path, FileFingerprint>::value_type*> selected;
+    selected.reserve(files.size());
+    for (const auto& entry : files) selected.push_back(&entry);
     parallel_for_indices(selected.size(), [&](std::size_t index) {
-        const auto& [path, expected] = selected[index];
+        const auto& [path, expected] = *selected[index];
         const auto current = fingerprint_file(path);
         if (current.metadata != expected.metadata || current.content_hash != expected.content_hash) changed();
     });
@@ -28,9 +44,13 @@ std::size_t verify_files(const std::map<fs::path, FileFingerprint>& files) {
 }
 } // namespace
 
-GenerationAdmission::GenerationAdmission(const RuntimeOptions& options, const VerifiedSnapshot* observed_snapshot)
+GenerationAdmission::GenerationAdmission(const RuntimeOptions& options, const VerifiedSnapshot* observed_snapshot,
+                                          bool audit_automatic_sources)
     : root_(options.root), out_root_(options.out_root),
-      profile_hash_(profile_config_hash(options.profile)), sources_(observe_worktree(options)) {
+      profile_hash_(profile_config_hash(options.profile)),
+      source_audit_(audit_automatic_sources && options.profile.automatic_project_files
+          ? std::optional(DoctorSourceAudit{}) : std::nullopt),
+      sources_(observe_worktree(options, source_audit_ ? &*source_audit_ : nullptr)) {
     const auto paths = expected_generated_relative_files(options);
     verify_snapshot_filesystem(out_root_, {paths.begin(), paths.end()});
     if (observed_snapshot && (observed_snapshot->out_root != out_root_ ||
@@ -84,12 +104,21 @@ std::string generation_fingerprint(const RuntimeOptions& options) {
 
 std::shared_ptr<const GenerationAdmission> GenerationAdmission::reuse(
     const RuntimeOptions& options, const std::string& qualified_fingerprint, const VerifiedSnapshot* observed_snapshot,
-    std::function<bool()> unchanged_source_membership) {
-    auto observed = std::shared_ptr<GenerationAdmission>(new GenerationAdmission(options, observed_snapshot));
+    std::function<bool()> unchanged_source_membership, bool audit_automatic_sources) {
+    auto observed = std::shared_ptr<GenerationAdmission>(new GenerationAdmission(options, observed_snapshot, audit_automatic_sources));
     if (observed->fingerprint_ != qualified_fingerprint || !worktree_observation_complete(observed->sources_))
+        return {};
+    if (const auto& audit = observed->source_audit_; audit &&
+        audit->scanned_files + static_cast<std::size_t>(audit->excluded_files) != observed->sources_.source_facts.size())
         return {};
     observed->unchanged_source_membership_ = std::move(unchanged_source_membership);
     return observed;
+}
+
+const DoctorSourceAudit* GenerationAdmission::doctor_source_audit(const RuntimeOptions& options) const {
+    if (!source_audit_) return nullptr;
+    verify_binding(options);
+    return &*source_audit_;
 }
 
 std::shared_ptr<const GenerationAdmission> GenerationAdmission::published_copy(
@@ -106,17 +135,14 @@ std::shared_ptr<const GenerationAdmission> GenerationAdmission::published_copy(
 }
 
 void GenerationAdmission::verify_binding(const RuntimeOptions& options) const {
-    if (root_ != options.root || out_root_ != options.out_root ||
-        profile_hash_ != profile_config_hash(options.profile) ||
-        profile_hash_ != profile_config_hash(make_profile(options.profile.id, options.profile_dir))) changed();
+    verify_generation_binding(options, root_, out_root_, profile_hash_);
 }
 
 void GenerationAdmission::verify_sources(const RuntimeOptions& options, bool complete_inventory) const {
     if (!complete_inventory && unchanged_source_membership_ && unchanged_source_membership_())
         require_worktree_metadata_stable(options, sources_);
     else require_worktree_stable(options, sources_);
-    for (const auto& [path, exists] : links_)
-        if (observed_link_exists(options.profile.automatic_project_files, root_, path) != exists) changed();
+    verify_links(options, links_);
     if (retool_ && retool_generation_environment(root_, fact_paths(sources_)) != retool_environment_) changed();
 }
 
@@ -142,6 +168,46 @@ IndexFreshness GenerationAdmission::assess(const RuntimeOptions& options) const 
     result.snapshot_id = snapshot_;
     result.source_count = static_cast<int>(sources_.documents.size());
     return result;
+}
+
+std::unique_ptr<const IdleGenerationCheckpoint> GenerationAdmission::idle_checkpoint(
+    IdleGenerationCheckpoint::Digest digest) const {
+    const auto metadata = worktree_metadata_payload(sources_);
+    if (metadata.empty()) return {};
+    auto result = std::unique_ptr<IdleGenerationCheckpoint>(new IdleGenerationCheckpoint(digest));
+    result->root_ = root_;
+    result->out_root_ = out_root_;
+    result->profile_hash_ = profile_hash_;
+    result->source_metadata_ = digest(metadata);
+    if (retool_) result->retool_environment_ = digest(retool_environment_.dump());
+    result->outputs_.reserve(outputs_.size());
+    for (const auto& [path, value] : outputs_) result->outputs_.emplace_back(path, value.metadata);
+    result->links_.assign(links_.begin(), links_.end());
+    return result;
+}
+
+void IdleGenerationCheckpoint::verify(const RuntimeOptions& options) const {
+    verify_generation_binding(options, root_, out_root_, profile_hash_);
+    const auto live = observe_worktree_metadata(options);
+    if (live.payload.empty() || digest_(live.payload) != source_metadata_) changed();
+    verify_links(options, links_);
+    if (!retool_environment_.empty() &&
+        digest_(retool_generation_environment(root_, live.fact_paths).dump()) != retool_environment_) changed();
+    const auto paths = expected_generated_relative_files(options);
+    verify_snapshot_filesystem(out_root_, {paths.begin(), paths.end()});
+    for (const auto& [path, metadata] : outputs_)
+        if (file_metadata(out_root_ / path) != metadata) changed();
+}
+
+std::size_t IdleGenerationCheckpoint::retained_bytes() const noexcept {
+    const auto storage = [](const auto& entries) {
+        std::size_t bytes = entries.capacity() * sizeof(typename std::decay_t<decltype(entries)>::value_type);
+        for (const auto& entry : entries) bytes += entry.first.capacity() + 1;
+        return bytes;
+    };
+    return sizeof(*this) + (root_.native().capacity() + out_root_.native().capacity() + 2) * sizeof(fs::path::value_type) +
+        profile_hash_.capacity() + source_metadata_.capacity() + retool_environment_.capacity() + 3 +
+        storage(outputs_) + storage(links_);
 }
 
 void GenerationAdmission::append_content_files(std::map<fs::path, FileFingerprint>& files) const {

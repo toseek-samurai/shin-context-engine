@@ -22,9 +22,27 @@ struct WorktreeInventory {
     int source_fact_capped_files = 0;
 };
 
-WorktreeInventory observe_worktree(const RuntimeOptions& options);
+// Canonically framed, process-local metadata. No source bodies or content hashes.
+// An empty payload means the optional checkpoint could not be represented.
+struct WorktreeMetadataObservation {
+    std::string payload;
+    std::vector<std::string> fact_paths;
+};
+
+struct DoctorSourceAudit {
+    struct Finding {
+        std::string path, content_hash, rule;
+    };
+    int excluded_files = 0;
+    std::size_t scanned_files = 0;
+    std::vector<Finding> findings;
+};
+
+WorktreeInventory observe_worktree(const RuntimeOptions& options, DoctorSourceAudit* audit = nullptr);
 void require_worktree_stable(const RuntimeOptions& options, const WorktreeInventory& inventory);
 void require_worktree_metadata_stable(const RuntimeOptions& options, const WorktreeInventory& inventory);
+std::string worktree_metadata_payload(const WorktreeInventory& inventory);
+WorktreeMetadataObservation observe_worktree_metadata(const RuntimeOptions& options);
 Json worktree_identity(const RuntimeOptions& options, const WorktreeInventory& inventory);
 bool worktree_observation_complete(const WorktreeInventory& inventory);
 Json compare_worktree(const RuntimeOptions& options, const Json& manifest,

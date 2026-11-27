@@ -168,6 +168,7 @@ if(SHIN_OBSERVER_SOURCE_DISCOVERY)
         target_link_libraries(shin-local-idle-refresh-tests PRIVATE shin-observer-native)
         target_compile_options(shin-local-idle-refresh-tests PRIVATE ${SHIN_NATIVE_WARNINGS})
         add_test(NAME shin-local-idle-refresh COMMAND shin-local-idle-refresh-tests "${SHIN_OBSERVER_ROOT}/../profiles")
+        add_test(NAME shin-local-metadata-audit COMMAND shin-local-idle-refresh-tests "${SHIN_OBSERVER_ROOT}/../profiles" --metadata-audit)
         set_tests_properties(shin-local-idle-refresh PROPERTIES TIMEOUT 60)
         if(APPLE)
             # This fixture times real FSEvents delivery while hashing an image

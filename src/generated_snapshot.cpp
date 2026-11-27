@@ -180,6 +180,17 @@ GeneratedSnapshot::~GeneratedSnapshot() = default;
 
 std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions options, SnapshotLoadLimits limits,
                                                                  const VerifiedSnapshot* observation) {
+    return load_impl(std::move(options), limits, observation, nullptr);
+}
+
+std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions options, SnapshotLoadLimits limits,
+                                                                 VerifiedSnapshot&& observation) {
+    auto owned = std::move(observation);
+    return load_impl(std::move(options), limits, &owned, &owned);
+}
+
+std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load_impl(RuntimeOptions options, SnapshotLoadLimits limits,
+    const VerifiedSnapshot* observation, VerifiedSnapshot* owned) {
     if (options.force_source_scan || options.generated_snapshot || limits.maximum_file_bytes == 0 ||
         limits.maximum_payload_bytes == 0 || limits.maximum_file_bytes > limits.maximum_payload_bytes ||
         limits.maximum_payload_bytes > 1024ULL * 1024ULL * 1024ULL)
@@ -192,6 +203,7 @@ std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions 
     if (!observation) {
         loaded = load_verified_snapshot(options.out_root, limits.maximum_payload_bytes, limits.maximum_file_bytes);
         observation = &*loaded;
+        owned = &*loaded;
     } else {
         if (observation->out_root != options.out_root)
             throw_index_error("snapshot-route-mismatch", "Snapshot observation belongs to another output route.", false);
@@ -226,7 +238,8 @@ std::shared_ptr<const GeneratedSnapshot> GeneratedSnapshot::load(RuntimeOptions 
     result->options_ = std::move(options);
     result->options_.lexical_manifest_cache.reset();
     result->options_.document_row_index_cache.reset();
-    result->manifest_ = verified.manifest;
+    if (owned) result->manifest_ = std::move(owned->manifest);
+    else result->manifest_ = verified.manifest;
     result->id_ = verified.snapshot_id;
     result->backing_ = std::make_unique<Backing>();
     result->backing_->append(verified.manifest_content);

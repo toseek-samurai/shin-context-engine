@@ -129,11 +129,15 @@ bounded by the existing 15-second idle wait.
 After full qualification, a process-local checkpoint can avoid full corpus reads
 and content rehashing while native source/output observation is healthy. Each
 idle pass still checks complete input membership, file metadata, generated layout,
-profile, external dependencies and current project authority. Any change, lost
-events, invalid authority or process restart restores the full qualification
-path. Checkpoints are never persisted or imported from RPC; service LRU retention is
-limited to 16 scopes and 8192 input records in total. Eviction changes cost, not
-the profile's coverage or quality bounds.
+profile, external dependencies and current project authority. The checkpoint
+holds a SHA-256 digest of the observed paths, roles, metadata and exclusions,
+plus the output metadata and link dependencies. Files used as both documents
+and facts contribute one metadata record. Any change, lost events, invalid
+authority or process restart restores full qualification. The service keeps
+checkpoints in memory for up to 16 scopes and charges their allocated metadata
+and cached replies to a byte budget based on the former 8192-row capacity.
+When it runs out of space, admission favors the checkpoints that save more
+repeated verification work.
 Small policy and authority files are still read; the diagnostic verification
 flags describe the work performed, not raw operating-system I/O counters.
 
@@ -151,6 +155,10 @@ The reader path holds a process-local source observation while it
 prepares. An unchanged healthy observation avoids repeated intermediate
 membership enumeration; selected-file metadata, links and environment checks
 still run. Missing, changed or unhealthy observation restores the full walk.
+For a matching automatic-project qualification, the source fingerprint and
+doctor's source secret scan use the same bounded, verified read of each eligible
+file. The full doctor, redaction projection and final byte verification still run.
+The reader takes ownership of the parsed manifest prepared by qualification.
 Admission begins with a complete inventory and always ends with complete
 membership checks around source/output byte verification. This observation is
 not a persisted qualification certificate. Source bindings point into the held

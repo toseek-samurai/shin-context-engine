@@ -1,8 +1,9 @@
 # Homebrew installation
 
 The [Homebrew tap](https://github.com/toseek-samurai/homebrew-tap) pins a published
-source preview. `brew info toseek-samurai/tap/shin-context-engine` shows its current
-version; `brew upgrade` installs the version selected by that formula.
+source preview. After installing, check the version selected by the tap with
+`brew info toseek-samurai/tap/shin-context-engine`. Use `brew upgrade` to install
+the version selected by the formula.
 
 The project-owned tap distributes the complete macOS preview: Core, Observer,
 CLI, MCP, usage collector, Sand TUI and Shin Monitor. It builds from the pinned
@@ -38,12 +39,24 @@ Existing agent settings are preserved by the native review/apply flow.
 [Claude Code setup](native-client-setup.md#claude-code) is available with the
 dev.135 formula or newer.
 
-The fully qualified install command selects the individual formula from the
-project's tap. See [Homebrew's tap trust guide](https://docs.brew.sh/Tap-Trust).
-
 The installed commands are `shin-context`, `shin-ce`, `shin-observer`, `shin-mcp`,
 `shin-usage` and `shin-monitor`. MCP configurations and default profile bindings
 use the stable `opt` prefix, not a particular Cellar version.
+
+### Tap trust
+
+Homebrew 6 and later require trust for formulae from third-party taps.
+Installing with the full formula name above grants trust to the Shin
+formula. If you already added the tap and a command reports that it is
+untrusted, trust the formula and retry the command.
+
+```sh
+brew trust --formula toseek-samurai/tap/shin-context-engine
+```
+
+You can also trust the entire tap with `brew trust toseek-samurai/tap`.
+Homebrew can then load every current and future formula, cask and external
+command from that tap. [Homebrew tap trust guide](https://docs.brew.sh/Tap-Trust).
 
 ## Background service and login
 

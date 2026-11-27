@@ -52,9 +52,12 @@ brew install toseek-samurai/tap/shin-context-engine
 shin-monitor
 ```
 
+The full formula name lets Homebrew 6 and later trust just the Shin formula
+during installation. [Homebrew tap trust](docs/homebrew.md#tap-trust).
+
 The first source build can take several minutes. The tap has its own qualified
-version, which can lag native downloads; inspect it with
-`brew info toseek-samurai/tap/shin-context-engine`.
+version, which can lag native downloads. After installing, check the version
+selected by the tap with `brew info toseek-samurai/tap/shin-context-engine`.
 [Homebrew setup and lifecycle](docs/homebrew.md).
 
 ## Connect your project and agent

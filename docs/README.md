@@ -18,8 +18,9 @@ The same reviewed setup is available from the CLI on all three platforms.
 The native packages use RE2-based secret scanning. Shin reports the triggering
 rules at each hidden line range and keeps surrounding text available.
 The Homebrew tap has an independent qualified version, which can lag these
-binary downloads. Check it with `brew info toseek-samurai/tap/shin-context-engine`. See
-[Homebrew installation](homebrew.md) for its build and update steps.
+binary downloads. After installing, check the version selected by the tap with
+`brew info toseek-samurai/tap/shin-context-engine`.
+[Homebrew installation](homebrew.md).
 
 Source identities are maintained in [VERSION](../VERSION),
 [observer/VERSION](../observer/VERSION) and the

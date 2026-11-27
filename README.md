@@ -1,6 +1,6 @@
 # <img src="docs/images/shin-logo.png" align="absmiddle" width="48" height="48" alt="Shin logo"> Shin Context Engine
 
-[![Qualified dev.138 downloads](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.138)](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.138)
+[![Qualified dev.139 downloads](https://github.com/toseek-samurai/shin-context-engine/actions/workflows/ci.yml/badge.svg?branch=v2.0.5-dev.139)](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.139)
 
 **Local code and documentation context for coding agents.**
 
@@ -13,9 +13,9 @@ Local retrieval needs no account, model download, embedding service or cloud
 inference API. Your coding agent keeps its own model and workflow.
 
 [Documentation](docs/README.md) · [Connect your agent](docs/native-client-setup.md) ·
-[Download preview dev.138](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.138)
+[Download preview dev.139](https://github.com/toseek-samurai/shin-context-engine/releases/tag/v2.0.5-dev.139)
 
-**Development preview.** The documented download baseline is dev.138, with
+**Development preview.** The documented download baseline is dev.139, with
 qualified macOS, Windows and Linux packages. There is no stable release yet.
 [Source, package identities and platform support](docs/README.md#current-preview).
 
@@ -24,7 +24,7 @@ qualified macOS, Windows and Linux packages. There is no stable release yet.
 On **macOS 15+ with Apple Silicon**, install the versioned native kit:
 
 ```sh
-curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.138/install.sh | sh
+curl -fsSL https://github.com/toseek-samurai/shin-context-engine/releases/download/v2.0.5-dev.139/install.sh | sh
 open "$HOME/.local/opt/shin-local/Shin Monitor.app"
 ```
 
